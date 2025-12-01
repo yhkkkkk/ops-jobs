@@ -413,6 +413,31 @@
             >
               <template #action>
                 <a-space>
+                  <a-dropdown @select="handleBatchCopy">
+                    <a-button 
+                      size="small"
+                    >
+                      <template #icon>
+                        <icon-copy />
+                      </template>
+                      批量复制
+                      <icon-down />
+                    </a-button>
+                    <template #content>
+                      <a-doption value="ip">
+                        复制 IP
+                      </a-doption>
+                      <a-doption value="internal_ip">
+                        复制内网 IP
+                      </a-doption>
+                      <a-doption value="hostname">
+                        复制主机名
+                      </a-doption>
+                      <a-doption value="instance_id">
+                        复制实例 ID / 固资号
+                      </a-doption>
+                    </template>
+                  </a-dropdown>
                   <a-dropdown>
                     <a-button 
                       v-permission="{ resourceType: 'host', permission: 'change' }"
@@ -1505,6 +1530,75 @@ const handleBatchTest = async () => {
   } finally {
     batchTesting.value = false
   }
+}
+
+// 复制到剪贴板
+const copyTextToClipboard = async (text: string, successMessage: string) => {
+  if (!text) return
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    Message.success(successMessage)
+  } catch (error) {
+    console.error('复制到剪贴板失败:', error)
+    Message.error('复制失败，请手动复制')
+  }
+}
+
+// 批量复制字段
+const handleBatchCopy = async (type: string) => {
+  if (selectedRowKeys.value.length === 0) {
+    Message.warning('请先选择主机')
+    return
+  }
+
+  const selectedHosts = hosts.value.filter(host =>
+    selectedRowKeys.value.includes(host.id)
+  )
+
+  let values: string[] = []
+  let label = ''
+
+  switch (type) {
+    case 'ip':
+      values = selectedHosts.map(h => h.ip_address).filter(Boolean)
+      label = 'IP 地址'
+      break
+    case 'internal_ip':
+      values = selectedHosts.map(h => h.internal_ip || '').filter(Boolean)
+      label = '内网 IP'
+      break
+    case 'hostname':
+      values = selectedHosts.map(h => (h.hostname || h.name || '')).filter(Boolean)
+      label = '主机名'
+      break
+    case 'instance_id':
+      values = selectedHosts.map(h => h.instance_id || '').filter(Boolean)
+      label = '实例 ID / 固资号'
+      break
+    default:
+      return
+  }
+
+  if (!values.length) {
+    Message.warning(`选中的主机没有可用的 ${label}`)
+    return
+  }
+
+  const text = values.join('\n')
+  await copyTextToClipboard(text, `已复制 ${values.length} 条 ${label}`)
 }
 
 // 云同步处理
