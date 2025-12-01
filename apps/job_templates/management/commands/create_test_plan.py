@@ -89,7 +89,6 @@ class Command(BaseCommand):
                 step_script_type=step.script_type,
                 step_timeout=step.timeout,
                 step_ignore_error=step.ignore_error,
-                step_condition=step.condition or "",
                 step_parameters=step.step_parameters or [],
                 step_target_host_ids=[host.id for host in hosts],
                 step_target_group_ids=[]

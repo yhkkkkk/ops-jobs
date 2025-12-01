@@ -10,7 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from utils.audit_service import AuditLogService
 from utils.captcha_serializers import CaptchaValidationSerializer
 from .models import UserProfile
-from .views import get_user_profile_data
+from .utils import get_user_profile_data
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

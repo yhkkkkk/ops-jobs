@@ -95,7 +95,6 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                     'step_parameters': step_data.get('step_parameters', []),
                     'timeout': step_data.get('timeout', 300),
                     'ignore_error': step_data.get('ignore_error', False),
-                    'condition': step_data.get('condition', '')
                 }
 
                 # 添加脚本相关字段
@@ -233,7 +232,6 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         'step_parameters': step_data.get('step_parameters', []),
                         'timeout': step_data.get('timeout', 300),
                         'ignore_error': step_data.get('ignore_error', False),
-                        'condition': step_data.get('condition', '')
                     }
 
                     # 添加脚本相关字段

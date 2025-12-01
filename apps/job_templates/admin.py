@@ -20,7 +20,6 @@ class JobStepInline(admin.StackedInline):
         ('transfer_type', 'local_path', 'remote_path'),
         'step_parameters',
         ('target_hosts', 'target_groups'),
-        'condition'
     ]
     ordering = ['order']
     
@@ -149,7 +148,7 @@ class JobStepAdmin(GuardedModelAdmin):
             'classes': ('collapse',)
         }),
         ('执行配置', {
-            'fields': ('timeout', 'ignore_error', 'condition')
+            'fields': ('timeout', 'ignore_error')
         })
     )
 

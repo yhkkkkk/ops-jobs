@@ -22,6 +22,7 @@ from .serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer
 )
+from .utils import get_user_profile_data
 from utils.audit_service import AuditLogService
 
 
@@ -33,19 +34,6 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
     return ip
-
-
-def get_user_profile_data(user):
-    """获取用户扩展信息"""
-    try:
-        profile = user.userprofile
-        return {
-            'phone': profile.phone,
-            'department': profile.department,
-            'position': profile.position,
-        }
-    except UserProfile.DoesNotExist:
-        return None
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):

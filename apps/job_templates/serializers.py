@@ -50,7 +50,7 @@ class JobStepSerializer(serializers.ModelSerializer):
         model = JobStep
         fields = [
             'id', 'name', 'description', 'step_type', 'step_type_display',
-            'order', 'step_parameters', 'timeout', 'ignore_error', 'condition',
+            'order', 'step_parameters', 'timeout', 'ignore_error',
             # 脚本相关字段
             'script_type', 'script_content', 'account_id', 'account_name',
             # 文件传输相关字段
@@ -123,7 +123,6 @@ class JobStepCreateSerializer(serializers.Serializer):
     )
     timeout = serializers.IntegerField(required=False, min_value=1, default=300, help_text="超时时间(秒)")
     ignore_error = serializers.BooleanField(required=False, default=False, help_text="是否忽略错误")
-    condition = serializers.CharField(required=False, allow_blank=True, help_text="执行条件")
     
     # 脚本相关字段
     script_type = serializers.CharField(required=False, allow_blank=True, help_text="脚本类型")
@@ -226,7 +225,7 @@ class PlanStepSerializer(serializers.ModelSerializer):
             'step_name', 'step_description', 'step_type',
             'step_script_content', 'step_script_type',
             'step_parameters', 'step_timeout', 'step_ignore_error',
-            'step_condition', 'step_target_host_ids', 'step_target_group_ids', 'step_targets',
+            'step_target_host_ids', 'step_target_group_ids', 'step_targets',
             'step_account_name',
             'step_account_id', 'step_transfer_type', 'step_local_path', 'step_remote_path',
             # 覆盖配置

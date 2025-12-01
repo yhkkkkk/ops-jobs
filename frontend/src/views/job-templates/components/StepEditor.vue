@@ -418,17 +418,6 @@
           </a-form-item>
         </a-col>
       </a-row>
-
-      <a-form-item label="执行条件">
-        <a-input
-          v-model="form.condition"
-          placeholder="可选，条件表达式"
-        />
-        <div class="form-tip">
-          <icon-info-circle />
-          条件表达式为空时总是执行，支持变量引用
-        </div>
-      </a-form-item>
     </a-form>
   </a-modal>
 
@@ -531,7 +520,6 @@ const form = reactive<Partial<JobStep>>({
   step_parameters: [],  // 位置参数数组
   timeout: 300,
   ignore_error: false,
-  condition: '',
   target_hosts: [],
   target_groups: [],
   // 脚本相关字段
@@ -1006,7 +994,6 @@ const handleSubmit = async () => {
       step_parameters: validPositionalArgs,  // 位置参数数组
       timeout: form.timeout || 300,
       ignore_error: form.ignore_error || false,
-      condition: form.condition || '',
       target_hosts: selectedHosts.value || [],
       target_groups: selectedGroups.value || []
     }

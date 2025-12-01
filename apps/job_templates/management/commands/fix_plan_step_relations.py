@@ -79,7 +79,6 @@ class Command(BaseCommand):
                                             self.step_parameters = plan_step.step_parameters
                                             self.timeout = plan_step.step_timeout
                                             self.ignore_error = plan_step.step_ignore_error
-                                            self.condition = plan_step.step_condition
                                             # 模拟空的关联查询
                                             self.target_hosts = type('MockQuerySet', (), {'values_list': lambda *args, **kwargs: []})()
                                             self.target_groups = type('MockQuerySet', (), {'values_list': lambda *args, **kwargs: []})()
@@ -119,7 +118,6 @@ class Command(BaseCommand):
                                         self.step_parameters = plan_step.step_parameters
                                         self.timeout = plan_step.step_timeout
                                         self.ignore_error = plan_step.step_ignore_error
-                                        self.condition = plan_step.step_condition
                                         self.target_hosts = type('MockQuerySet', (), {'values_list': lambda *args, **kwargs: []})()
                                         self.target_groups = type('MockQuerySet', (), {'values_list': lambda *args, **kwargs: []})()
 

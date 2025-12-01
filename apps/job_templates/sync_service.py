@@ -28,7 +28,6 @@ class TemplateChangeDetector:
             'step_parameters': step.step_parameters,
             'timeout': step.timeout,
             'ignore_error': step.ignore_error,
-            'condition': step.condition,
             'target_host_ids': sorted(list(step.target_hosts.values_list('id', flat=True))),
             'target_group_ids': sorted(list(step.target_groups.values_list('id', flat=True))),
         }
@@ -102,7 +101,6 @@ class TemplateChangeDetector:
                         'step_parameters': plan_step.step_parameters,
                         'timeout': plan_step.step_timeout,
                         'ignore_error': plan_step.step_ignore_error,
-                        'condition': plan_step.step_condition,
                         'target_host_ids': plan_step.step_target_host_ids,
                         'target_group_ids': plan_step.step_target_group_ids,
                     }
@@ -198,9 +196,6 @@ class TemplateChangeDetector:
         if old_step.ignore_error != new_step.ignore_error:
             changes.append(f'忽略错误: {old_step.ignore_error} → {new_step.ignore_error}')
         
-        if old_step.condition != new_step.condition:
-            changes.append('执行条件已修改')
-        
         # 检查目标主机变更
         old_hosts = set(old_step.target_hosts.values_list('id', flat=True))
         new_hosts = set(new_step.target_hosts.values_list('id', flat=True))
@@ -289,15 +284,6 @@ class TemplateChangeDetector:
                 'field_name': '忽略错误',
                 'old_value': '是' if snapshot['ignore_error'] else '否',
                 'new_value': '是' if new_step.ignore_error else '否',
-                'change_type': 'text'
-            })
-
-        if snapshot['condition'] != new_step.condition:
-            changes.append({
-                'field': 'condition',
-                'field_name': '执行条件',
-                'old_value': snapshot['condition'],
-                'new_value': new_step.condition,
                 'change_type': 'text'
             })
 

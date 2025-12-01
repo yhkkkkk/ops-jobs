@@ -495,11 +495,12 @@ const showHostWarningModal = (warnings: any[]) => {
 }
 
 // 返回列表
-const handleBack = async () => {
-  const canLeavePage = await canLeave()
-  if (canLeavePage) {
-    router.push('/job-templates')
+const handleBack = () => {
+  if (!canLeave.value) {
+    Message.warning('您有未保存的更改，请先保存或放弃。')
+    return
   }
+  router.push('/job-templates')
 }
 
 // 调试执行模板

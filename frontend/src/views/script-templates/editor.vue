@@ -271,11 +271,12 @@ const getBreadcrumbTitle = () => {
 }
 
 // 返回列表
-const goBack = async () => {
-  const canLeavePage = await canLeave()
-  if (canLeavePage) {
-    router.push('/script-templates')
+const goBack = () => {
+  if (!canLeave.value) {
+    Message.warning('您有未保存的更改，请先保存或放弃。')
+    return
   }
+  router.push('/script-templates')
 }
 
 // 删除旧的 showLeaveConfirm 函数，使用 composable 中的

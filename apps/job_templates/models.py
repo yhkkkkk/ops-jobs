@@ -117,9 +117,6 @@ class JobStep(models.Model):
     timeout = models.IntegerField(default=300, verbose_name="超时时间(秒)")
     ignore_error = models.BooleanField(default=False, verbose_name="忽略错误继续执行")
 
-    # 条件执行
-    condition = models.TextField(blank=True, verbose_name="执行条件", help_text="条件表达式，为空则总是执行")
-
     class Meta:
         verbose_name = "作业步骤"
         verbose_name_plural = "作业步骤"
@@ -252,7 +249,6 @@ class PlanStep(models.Model):
     step_parameters = models.JSONField(default=list, verbose_name="位置参数快照")
     step_timeout = models.IntegerField(default=300, verbose_name="超时时间快照")
     step_ignore_error = models.BooleanField(default=False, verbose_name="忽略错误快照")
-    step_condition = models.TextField(blank=True, verbose_name="执行条件快照")
     step_target_host_ids = models.JSONField(default=list, verbose_name="目标主机ID快照")
     step_target_group_ids = models.JSONField(default=list, verbose_name="目标分组ID快照")
     step_targets = models.JSONField(default=list, verbose_name="目标快照（统一格式）", 
@@ -315,7 +311,6 @@ class PlanStep(models.Model):
             self.step_parameters = self.step.step_parameters
             self.step_timeout = self.step.timeout
             self.step_ignore_error = self.step.ignore_error
-            self.step_condition = self.step.condition
             self.step_target_host_ids = sorted(list(self.step.target_hosts.values_list('id', flat=True)))
             self.step_target_group_ids = sorted(list(self.step.target_groups.values_list('id', flat=True)))
             

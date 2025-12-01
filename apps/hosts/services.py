@@ -298,7 +298,7 @@ if [ "$INTERNAL_IP" = "" ] || [ "$INTERNAL_IP" = "unknown" ]; then
 fi
 if [ "$INTERNAL_IP" = "" ] || [ "$INTERNAL_IP" = "unknown" ]; then
     if command -v ifconfig >/dev/null 2>&1; then
-        INTERNAL_IP=$(ifconfig 2>/dev/null | grep -E 'inet.*192\.168\.|inet.*10\.|inet.*172\.' | head -1 | awk '{print $2}' | cut -d: -f2 2>/dev/null || echo 'unknown')
+        INTERNAL_IP=$(ifconfig 2>/dev/null | grep -E 'inet.*192\\.168\\.|inet.*10\\.|inet.*172\\.' | head -1 | awk '{print $2}' | cut -d: -f2 2>/dev/null || echo 'unknown')
     fi
 fi
 echo "INTERNAL_IP=$INTERNAL_IP"
