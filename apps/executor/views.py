@@ -68,7 +68,6 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 content=serializer.data,
                 message='执行正在进行中，可使用实时日志接口'
             )
-
         # 如果执行已完成，返回历史日志
         elif execution_record.is_completed:
             from utils.log_archive_service import log_archive_service

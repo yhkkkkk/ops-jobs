@@ -195,14 +195,113 @@ function getCronDescription(expression: string): string {
   return expression
 }
 
-// 辅助函数：生成下次执行时间（简单模拟）
-function generateNextRuns(expression: string, count: number): string[] {
-  const now = new Date()
-  const runs: string[] = []
+// 辅助函数：判断某个值是否匹配 Cron 字段
+function matchCronField(value: number, field: string, min: number, max: number): boolean {
+  if (field === '*') return true
 
-  for (let i = 0; i < count; i++) {
-    const nextTime = new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000) // 简单的每天递增
-    runs.push(nextTime.toISOString())
+  // 支持逗号列表，如 "1,3,5"
+  const parts = field.split(',')
+
+  const matchSinglePart = (part: string): boolean => {
+    // 处理步长 (如 */5 或 1-10/2)
+    if (part.includes('/')) {
+      const [base, stepStr] = part.split('/')
+      const step = Number(stepStr)
+      if (!step || step <= 0) return false
+
+      if (base === '*') {
+        return (value - min) % step === 0
+      }
+
+      // 处理范围 + 步长 (如 1-10/2)
+      if (base.includes('-')) {
+        const [startStr, endStr] = base.split('-')
+        const start = Number(startStr)
+        const end = Number(endStr)
+        if (isNaN(start) || isNaN(end)) return false
+        if (value < start || value > end) return false
+        return (value - start) % step === 0
+      }
+
+      // 单值 + 步长其实意义不大，这里按单值处理
+      const baseVal = Number(base)
+      if (isNaN(baseVal)) return false
+      return value === baseVal
+    }
+
+    // 处理范围 (如 1-5)
+    if (part.includes('-')) {
+      const [startStr, endStr] = part.split('-')
+      const start = Number(startStr)
+      const end = Number(endStr)
+      if (isNaN(start) || isNaN(end)) return false
+      return value >= start && value <= end
+    }
+
+    // 单个数值
+    const num = Number(part)
+    if (isNaN(num)) return false
+    return value === num
+  }
+
+  return parts.some(p => matchSinglePart(p))
+}
+
+// 辅助函数：生成下次执行时间（基于简单 Cron 解析）
+function generateNextRuns(expression: string, count: number): string[] {
+  const parts = expression.trim().split(/\s+/)
+  if (parts.length !== 5) {
+    return []
+  }
+
+  const [minuteField, hourField, dayField, monthField, weekdayField] = parts
+
+  const runs: string[] = []
+  const now = new Date()
+
+  // 从下一分钟开始计算，避免当前时间已经过了本分钟
+  let current = new Date(now.getTime())
+  current.setSeconds(0, 0)
+  current.setMinutes(current.getMinutes() + 1)
+
+  // 安全上限：最多遍历约 2 年的分钟数，防止死循环
+  const maxAttempts = 60 * 24 * 365 * 2
+  let attempts = 0
+
+  while (runs.length < count && attempts < maxAttempts) {
+    attempts += 1
+
+    const minute = current.getMinutes()
+    const hour = current.getHours()
+    const dayOfMonth = current.getDate()
+    const month = current.getMonth() + 1 // JS 月份从 0 开始
+    let dayOfWeek = current.getDay() // 0-6，0 是周日
+
+    // 在 Cron 里，通常 0 或 7 表示周日，这里我们统一用 0-6，周日为 0
+    // 匹配时如果字段里写了 7，在验证阶段已经通过，所以这里仍按 7 处理
+
+    const minuteMatch = matchCronField(minute, minuteField, 0, 59)
+    const hourMatch = matchCronField(hour, hourField, 0, 23)
+    const dayMatch = matchCronField(dayOfMonth, dayField, 1, 31)
+    const monthMatch = matchCronField(month, monthField, 1, 12)
+
+    // weekday 字段：0-6 或 0-7，这里按 0-6 处理，7 当作 0 已由校验保证
+    const weekdayMatch = matchCronField(dayOfWeek, weekdayField, 0, 7)
+
+    // 大多数 Cron 实现中，"日" 与 "周" 字段满足其一即可；这里采用相同策略：
+    // - 如果 dayField 和 weekdayField 都是 '*'，则不限制
+    // - 否则二者至少有一个匹配
+    let dayAndWeekOk = true
+    if (dayField !== '*' || weekdayField !== '*') {
+      dayAndWeekOk = (dayField === '*' || dayMatch) || (weekdayField === '*' || weekdayMatch)
+    }
+
+    if (minuteMatch && hourMatch && monthMatch && dayAndWeekOk) {
+      runs.push(current.toISOString())
+    }
+
+    // 前进到下一分钟
+    current = new Date(current.getTime() + 60 * 1000)
   }
 
   return runs
