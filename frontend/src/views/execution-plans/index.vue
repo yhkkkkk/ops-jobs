@@ -1,5 +1,11 @@
 <template>
-  <div class="execution-plans-page">
+  <div
+    class="execution-plans-page"
+    v-page-permissions="{
+      resourceType: 'executionplan',
+      permissions: ['view', 'add', 'change', 'delete', 'execute']
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -16,7 +22,10 @@
               刷新
             </a-button>
             <a-dropdown @select="handleCreateAction">
-              <a-button type="primary">
+              <a-button
+                type="primary"
+                v-permission="{ resourceType: 'executionplan', permission: 'add' }"
+              >
                 <template #icon>
                   <icon-plus />
                 </template>
@@ -150,13 +159,23 @@
 
         <template #actions="{ record }">
           <a-space>
-            <a-button type="text" size="small" @click="handleView(record)">
+            <a-button
+              type="text"
+              size="small"
+              @click="handleView(record)"
+              v-permission="{ resourceType: 'executionplan', permission: 'view', resourceId: record.id }"
+            >
               <template #icon>
                 <icon-eye />
               </template>
               查看
             </a-button>
-            <a-button type="text" size="small" @click="handleEdit(record)">
+            <a-button
+              type="text"
+              size="small"
+              @click="handleEdit(record)"
+              v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: record.id }"
+            >
               <template #icon>
                 <icon-edit />
               </template>
@@ -167,6 +186,7 @@
               size="small"
               status="success"
               @click="handleExecute(record)"
+              v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: record.id }"
             >
               <template #icon>
                 <icon-play-arrow />
@@ -181,7 +201,11 @@
               </a-button>
               <template #content>
 
-                <a-doption value="delete" class="danger-option">
+                <a-doption
+                  value="delete"
+                  class="danger-option"
+                  v-permission="{ resourceType: 'executionplan', permission: 'delete', resourceId: record.id }"
+                >
                   <template #icon>
                     <icon-delete />
                   </template>

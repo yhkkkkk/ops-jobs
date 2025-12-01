@@ -1,5 +1,11 @@
 <template>
-  <div class="scheduled-tasks-page">
+  <div
+    class="scheduled-tasks-page"
+    v-page-permissions="{
+      resourceType: 'job',
+      permissions: ['view', 'add', 'change', 'delete', 'execute']
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -15,7 +21,11 @@
               </template>
               刷新
             </a-button>
-            <a-button type="primary" @click="handleCreate">
+            <a-button
+              type="primary"
+              @click="handleCreate"
+              v-permission="{ resourceType: 'job', permission: 'add' }"
+            >
               <template #icon>
                 <icon-plus />
               </template>
@@ -137,7 +147,12 @@
               </template>
               查看
             </a-button>
-            <a-button type="text" size="small" @click="handleEdit(record)">
+            <a-button
+              type="text"
+              size="small"
+              @click="handleEdit(record)"
+              v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
+            >
               <template #icon>
                 <icon-edit />
               </template>
@@ -154,6 +169,7 @@
                   v-if="record.is_active"
                   @click="handleToggleStatus(record)"
                   class="text-orange-500"
+                  v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
                 >
                   <template #icon>
                     <icon-pause />
@@ -164,13 +180,18 @@
                   v-else
                   @click="handleToggleStatus(record)"
                   class="text-green-500"
+                  v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
                 >
                   <template #icon>
                     <icon-play-arrow />
                   </template>
                   启用
                 </a-doption>
-                <a-doption @click="handleDelete(record)" class="text-red-500">
+                <a-doption
+                  @click="handleDelete(record)"
+                  class="text-red-500"
+                  v-permission="{ resourceType: 'job', permission: 'delete', resourceId: record.id }"
+                >
                   <template #icon>
                     <icon-delete />
                   </template>

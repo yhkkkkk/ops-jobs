@@ -25,6 +25,29 @@ from django.db.models import Q
 logger = logging.getLogger(__name__)
 
 
+# 资源类型到真实 app_label / model 的映射
+RESOURCE_MAP = {
+    # 资源类型   (app_label,      model_name)
+    'host':          ('hosts',          'host'),
+    'jobtemplate':   ('job_templates',  'jobtemplate'),
+    'executionplan': ('job_templates',  'executionplan'),
+    'scripttemplate':('script_templates', 'scripttemplate'),
+    'job':           ('scheduler',      'scheduledjob'),
+    # 'script' 可以根据后续业务再单独映射
+}
+
+
+def build_codename(model: str, perm: str) -> str:
+    """
+    将前端的权限级别（view/add/change/delete/...）
+    转换为后端真实的 codename（如 view_host、change_jobtemplate）
+    """
+    if perm in ('view', 'add', 'change', 'delete'):
+        return f'{perm}_{model}'
+    # 其他自定义权限（如 execute_* 等）可按需求扩展
+    return perm
+
+
 class PermissionCheckView(APIView):
     """权限检查视图 - 前端用于检查用户权限"""
     
@@ -44,27 +67,37 @@ class PermissionCheckView(APIView):
             user = request.user
             result = {}
             
+            if resource_type not in RESOURCE_MAP:
+                return SycResponse.error(f'不支持的资源类型: {resource_type}', code=400)
+
+            app_label, model_name = RESOURCE_MAP[resource_type]
+
             # 检查模型级权限
             if not resource_id:
                 for perm in permissions_to_check:
-                    full_perm = f'{resource_type}.{perm}'
+                    codename = build_codename(model_name, perm)
+                    full_perm = f'{app_label}.{codename}'
                     result[perm] = user.has_perm(full_perm)
-            
+
             # 检查对象级权限
             else:
                 try:
-                    # 获取内容类型
-                    content_type = ContentType.objects.get(model=resource_type)
+                    # 获取内容类型和模型类
+                    content_type = ContentType.objects.get(app_label=app_label, model=model_name)
                     model_class = content_type.model_class()
-                    
+
                     # 获取具体对象
                     obj = model_class.objects.get(id=resource_id)
-                    
+
                     # 检查对象级权限
                     for perm in permissions_to_check:
-                        result[perm] = user.has_perm(f'{resource_type}.{perm}', obj)
-                        
-                except (ContentType.DoesNotExist, model_class.DoesNotExist):
+                        codename = build_codename(model_name, perm)
+                        full_perm = f'{app_label}.{codename}'
+                        result[perm] = user.has_perm(full_perm, obj)
+
+                except ContentType.DoesNotExist:
+                    return SycResponse.not_found('资源类型不存在')
+                except model_class.DoesNotExist:  # type: ignore[name-defined]
                     return SycResponse.not_found('资源不存在')
             
             return SycResponse.success({
@@ -187,17 +220,23 @@ class ResourcePermissionsView(APIView):
             user = request.user
             result = {}
             
+            if resource_type not in RESOURCE_MAP:
+                return SycResponse.error('不支持的资源类型', code=400)
+
+            app_label, model_name = RESOURCE_MAP[resource_type]
+
             try:
-                # 获取内容类型
-                content_type = ContentType.objects.get(model=resource_type)
+                # 获取内容类型和模型类
+                content_type = ContentType.objects.get(app_label=app_label, model=model_name)
                 model_class = content_type.model_class()
-                
+
                 # 如果没有指定资源ID，返回模型级权限
                 if not resource_ids:
                     for perm in permissions_to_check:
-                        full_perm = f'{resource_type}.{perm}'
+                        codename = build_codename(model_name, perm)
+                        full_perm = f'{app_label}.{codename}'
                         result[perm] = user.has_perm(full_perm)
-                    
+
                     return SycResponse.success({
                         'user_id': user.id,
                         'username': user.username,
@@ -205,21 +244,23 @@ class ResourcePermissionsView(APIView):
                         'permissions': result,
                         'level': 'model'
                     }, message='资源权限检查成功')
-                
+
                 # 检查对象级权限
                 for resource_id in resource_ids:
                     try:
                         obj = model_class.objects.get(id=resource_id)
                         obj_perms = {}
-                        
+
                         for perm in permissions_to_check:
-                            obj_perms[perm] = user.has_perm(f'{resource_type}.{perm}', obj)
-                        
+                            codename = build_codename(model_name, perm)
+                            full_perm = f'{app_label}.{codename}'
+                            obj_perms[perm] = user.has_perm(full_perm, obj)
+
                         result[str(resource_id)] = obj_perms
-                        
-                    except model_class.DoesNotExist:
+
+                    except model_class.DoesNotExist:  # type: ignore[name-defined]
                         result[str(resource_id)] = {'error': '资源不存在'}
-                
+
                 return SycResponse.success({
                     'user_id': user.id,
                     'username': user.username,
@@ -227,7 +268,7 @@ class ResourcePermissionsView(APIView):
                     'permissions': result,
                     'level': 'object'
                 }, message='资源权限检查成功')
-                
+
             except ContentType.DoesNotExist:
                 return SycResponse.not_found('资源类型不存在')
                 

@@ -34,8 +34,24 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     filterset_class = JobTemplateFilter
 
     def get_queryset(self):
-        """基础查询集"""
-        return super().get_queryset().select_related('created_by').prefetch_related('steps', 'plans')
+        """基础查询集，结合Guardian对象权限进行过滤"""
+        base_qs = super().get_queryset().select_related('created_by').prefetch_related('steps', 'plans')
+
+        # 超级用户可以看到所有作业模板
+        if self.request.user.is_superuser:
+            return base_qs
+
+        # 其他用户只能看到具有 view_jobtemplate 对象权限的作业模板
+        from guardian.shortcuts import get_objects_for_user
+
+        permitted_qs = get_objects_for_user(
+            user=self.request.user,
+            perms='view_jobtemplate',
+            klass=JobTemplate,
+            accept_global_perms=False
+        )
+
+        return base_qs.filter(id__in=permitted_qs.values('id'))
 
     def get_client_ip(self, request):
         """获取客户端IP地址"""
@@ -448,10 +464,26 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
     filterset_class = ExecutionPlanFilter
 
     def get_queryset(self):
-        """基础查询集"""
-        return super().get_queryset().select_related('template', 'created_by').prefetch_related(
+        """基础查询集，结合Guardian对象权限进行过滤"""
+        base_qs = super().get_queryset().select_related('template', 'created_by').prefetch_related(
             'planstep_set__step'
         )
+
+        # 超级用户可以看到所有执行方案
+        if self.request.user.is_superuser:
+            return base_qs
+
+        # 其他用户只能看到具有 view_executionplan 对象权限的执行方案
+        from guardian.shortcuts import get_objects_for_user
+
+        permitted_qs = get_objects_for_user(
+            user=self.request.user,
+            perms='view_executionplan',
+            klass=ExecutionPlan,
+            accept_global_perms=False
+        )
+
+        return base_qs.filter(id__in=permitted_qs.values('id'))
 
     def get_client_ip(self, request):
         """获取客户端IP地址"""

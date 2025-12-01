@@ -1,5 +1,11 @@
 <template>
-  <div class="job-templates-page">
+  <div
+    class="job-templates-page"
+    v-page-permissions="{
+      resourceType: 'jobtemplate',
+      permissions: ['view', 'add', 'change', 'delete']
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -15,7 +21,11 @@
               </template>
               刷新
             </a-button>
-            <a-button type="primary" @click="handleCreate">
+            <a-button
+              type="primary"
+              @click="handleCreate"
+              v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
+            >
               <template #icon>
                 <icon-plus />
               </template>
@@ -151,13 +161,23 @@
 
         <template #actions="{ record }">
           <a-space>
-            <a-button type="text" size="small" @click="handleView(record)">
+            <a-button
+              type="text"
+              size="small"
+              @click="handleView(record)"
+              v-permission="{ resourceType: 'jobtemplate', permission: 'view', resourceId: record.id }"
+            >
               <template #icon>
                 <icon-eye />
               </template>
               查看
             </a-button>
-            <a-button type="text" size="small" @click="handleEdit(record)">
+            <a-button
+              type="text"
+              size="small"
+              @click="handleEdit(record)"
+              v-permission="{ resourceType: 'jobtemplate', permission: 'change', resourceId: record.id }"
+            >
               <template #icon>
                 <icon-edit />
               </template>
@@ -170,31 +190,47 @@
                 </template>
               </a-button>
               <template #content>
-                <a-doption @click="handleCreatePlan(record)">
+                <a-doption
+                  @click="handleCreatePlan(record)"
+                  v-permission="{ resourceType: 'executionplan', permission: 'add' }"
+                >
                   <template #icon>
                     <icon-plus />
                   </template>
                   新增执行方案
                 </a-doption>
-                <a-doption @click="handleViewPlans(record)">
+                <a-doption
+                  @click="handleViewPlans(record)"
+                  v-permission="{ resourceType: 'executionplan', permission: 'view' }"
+                >
                   <template #icon>
                     <icon-list />
                   </template>
                   查看执行方案
                 </a-doption>
-                <a-doption @click="handleSync(record)">
+                <a-doption
+                  @click="handleSync(record)"
+                  v-permission="{ resourceType: 'executionplan', permission: 'change' }"
+                >
                   <template #icon>
                     <icon-sync />
                   </template>
                   同步方案
                 </a-doption>
-                <a-doption @click="handleCopy(record)">
+                <a-doption
+                  @click="handleCopy(record)"
+                  v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
+                >
                   <template #icon>
                     <icon-copy />
                   </template>
                   复制
                 </a-doption>
-                <a-doption @click="handleDelete(record)" class="text-red-500">
+                <a-doption
+                  @click="handleDelete(record)"
+                  class="text-red-500"
+                  v-permission="{ resourceType: 'jobtemplate', permission: 'delete', resourceId: record.id }"
+                >
                   <template #icon>
                     <icon-delete />
                   </template>

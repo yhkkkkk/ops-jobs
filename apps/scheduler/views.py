@@ -35,7 +35,25 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
         return ScheduledJobSerializer
 
     def get_queryset(self):
-        return super().get_queryset().select_related('execution_plan__template', 'created_by')
+        """基于Guardian对象权限过滤定时作业列表"""
+        base_qs = super().get_queryset().select_related('execution_plan__template', 'created_by')
+
+        # 超级用户可以看到所有定时作业
+        if self.request.user.is_superuser:
+            return base_qs
+
+        # 其他用户只能看到具有 view_scheduledjob 对象权限的定时作业
+        from guardian.shortcuts import get_objects_for_user
+
+        permitted_qs = get_objects_for_user(
+            user=self.request.user,
+            perms='view_scheduledjob',
+            klass=ScheduledJob,
+            accept_global_perms=False
+        )
+
+        # 与基础查询集求交集，保留预取/选择关联
+        return base_qs.filter(id__in=permitted_qs.values('id'))
 
     def retrieve(self, request, *args, **kwargs):
         """获取定时作业详情"""
