@@ -1,6 +1,7 @@
 """
 统一执行记录API视图
 """
+from django_filters import OrderingFilter
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -23,8 +24,13 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ExecutionRecordSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ExecutionRecordFilter
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ExecutionRecordDetailSerializer
+        return ExecutionRecordSerializer
 
     def get_queryset(self):
         """获取查询集 - 支持混合模式"""
@@ -57,7 +63,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
         # 如果执行正在运行，返回实时日志连接信息
         if execution_record.is_running and execution_record.celery_task_id:
-            serializer = ExecutionRecordDetailSerializer(execution_record)
+            serializer = self.get_serializer(execution_record)
             return SycResponse.success(
                 content=serializer.data,
                 message='执行正在进行中，可使用实时日志接口'
@@ -78,7 +84,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 }
 
                 # 使用详情序列化器
-                serializer = ExecutionRecordDetailSerializer(
+                serializer = self.get_serializer(
                     execution_record,
                     log_data=log_data
                 )
@@ -99,7 +105,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                             'failed_hosts': 0
                         }
                     }
-                    serializer = ExecutionRecordDetailSerializer(
+                    serializer = self.get_serializer(
                         execution_record,
                         log_data=log_data
                     )
@@ -113,7 +119,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
         else:
             # 其他状态，返回基本信息
-            serializer = ExecutionRecordDetailSerializer(execution_record)
+            serializer = self.get_serializer(execution_record)
             return SycResponse.success(
                 content=serializer.data,
                 message='执行记录详情获取成功'
