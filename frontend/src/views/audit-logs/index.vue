@@ -308,12 +308,18 @@ const actionOptions = computed(() => [
   { value: 'transfer_file', label: '传输文件' },
   { value: 'create_job', label: '创建作业' },
   { value: 'execute_job', label: '执行作业' },
+  { value: 'create_scheduled_job', label: '创建定时作业' },
+  { value: 'update_scheduled_job', label: '更新定时作业' },
+  { value: 'delete_scheduled_job', label: '删除定时作业' },
+  { value: 'enable_scheduled_job', label: '启用定时作业' },
+  { value: 'disable_scheduled_job', label: '停用定时作业' },
   { value: 'manage_host', label: '管理主机' },
   { value: 'test_connection', label: '测试连接' },
   { value: 'manage_template', label: '管理模板' },
   { value: 'system_config', label: '系统配置' },
   { value: 'user_management', label: '用户管理' },
   { value: 'collect_system_info', label: '收集系统信息' },
+  { value: 'sync_cloud_hosts', label: '同步云主机' },
 ])
 
 // 获取操作类型颜色
@@ -329,6 +335,11 @@ const getActionColor = (action: string) => {
     transfer_file: 'purple',
     create_job: 'green',
     execute_job: 'blue',
+    create_scheduled_job: 'green',
+    update_scheduled_job: 'orange',
+    delete_scheduled_job: 'red',
+    enable_scheduled_job: 'cyan',
+    disable_scheduled_job: 'gray',
     manage_host: 'orange',
     test_connection: 'cyan',
     manage_template: 'purple',
@@ -337,6 +348,7 @@ const getActionColor = (action: string) => {
     system_config: 'orange',
     user_management: 'purple',
     collect_system_info: 'magenta',
+    sync_cloud_hosts: 'cyan',
   }
   return colorMap[action] || 'default'
 }

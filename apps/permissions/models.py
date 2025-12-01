@@ -33,6 +33,13 @@ class AuditLog(models.Model):
         ('execute_job', '执行作业'),
         ('cancel_job', '取消作业'),
         
+        # 定时作业
+        ('create_scheduled_job', '创建定时作业'),
+        ('update_scheduled_job', '更新定时作业'),
+        ('delete_scheduled_job', '删除定时作业'),
+        ('enable_scheduled_job', '启用定时作业'),
+        ('disable_scheduled_job', '停用定时作业'),
+        
         # 主机管理
         ('manage_host', '管理主机'),
         ('test_connection', '测试连接'),
@@ -47,6 +54,7 @@ class AuditLog(models.Model):
         ('system_config', '系统配置'),
         ('user_management', '用户管理'),
         ('collect_system_info', '收集系统信息'),
+        ('sync_cloud_hosts', '同步云主机'),
     ]
     
     # 基本信息
