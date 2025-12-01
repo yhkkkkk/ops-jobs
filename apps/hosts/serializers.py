@@ -383,3 +383,35 @@ class BatchMoveToGroupSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("主机ID列表不能为空")
         return value
+
+
+class HostExcelImportSerializer(serializers.Serializer):
+    """主机Excel导入序列化器"""
+
+    file = serializers.FileField(help_text="包含主机数据的Excel文件（.xlsx/.xlsm）")
+    default_group_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="可选：未匹配到任何分组时，默认加入的分组ID"
+    )
+    overwrite_existing = serializers.BooleanField(
+        default=False,
+        help_text="当IP+端口已存在时是否覆盖原有主机"
+    )
+
+    def validate_file(self, value):
+        filename = (value.name or '').lower()
+        if not filename.endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
+            raise serializers.ValidationError("仅支持 .xlsx / .xlsm Excel 文件")
+
+        max_size = 5 * 1024 * 1024  # 5MB
+        if value.size and value.size > max_size:
+            raise serializers.ValidationError("Excel 文件不能超过 5MB")
+        return value
+
+    def validate_default_group_id(self, value):
+        if value is None:
+            return value
+        if not HostGroup.objects.filter(id=value).exists():
+            raise serializers.ValidationError("指定的分组不存在")
+        return value

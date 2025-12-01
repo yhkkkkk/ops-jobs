@@ -22,6 +22,15 @@
               </template>
               刷新
             </a-button>
+            <a-button
+              v-permission="{ resourceType: 'host', permission: 'add' }"
+              @click="openImportModal"
+            >
+              <template #icon>
+                <icon-upload />
+              </template>
+              导入主机
+            </a-button>
             <a-button 
               v-permission="{ resourceType: 'host', permission: 'add' }"
               @click="handleCreateGroup"
@@ -605,6 +614,134 @@
       :parent-group="parentGroupForAdd"
       @success="handleGroupFormSuccess"
     />
+
+    <!-- 导入主机 -->
+    <a-modal
+      v-model:visible="importModalVisible"
+      title="导入主机（Excel）"
+      width="640px"
+      :mask-closable="false"
+      :closable="!importing"
+      unmount-on-close
+      destroy-on-close
+      :footer="false"
+    >
+      <a-alert type="info" class="mb-3">
+        支持 .xlsx / .xlsm 文件，必填列包含：主机名称、IP地址、用户名。可选列：端口、操作系统、认证方式、密码、私钥、分组。
+      </a-alert>
+
+      <ul class="import-instructions">
+        <li>认证方式支持 <code>password</code> 或 <code>key</code>（可填写“密码/密钥”字样）。</li>
+        <li>分组列可填写多个分组名称，使用逗号、分号、竖线分隔；未匹配的分组会被记录在结果中。</li>
+        <li>启用“覆盖已有主机”后，将按 IP + 端口覆盖更新已有记录。</li>
+      </ul>
+
+      <a-form layout="vertical" :model="importForm">
+        <a-form-item label="Excel 文件">
+          <a-upload
+            :file-list="importFileList"
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xlsm"
+            :show-file-list="false"
+            @change="handleImportFileChange"
+            @remove="handleImportFileRemove"
+            class="import-upload"
+          >
+            <template #upload-button>
+              <a-button type="outline">
+                <template #icon>
+                  <icon-upload />
+                </template>
+                选择文件
+              </a-button>
+            </template>
+          </a-upload>
+          <div v-if="importFileList.length > 0" class="selected-file">
+            已选择：{{ importFileList[0].name }}
+          </div>
+        </a-form-item>
+
+        <a-form-item label="默认分组（可选）">
+          <a-select
+            v-model="importForm.default_group_id"
+            placeholder="导入时未匹配到分组将加入此分组"
+            allow-clear
+            :options="groupOptions"
+            :disabled="groupOptions.length === 0"
+          />
+        </a-form-item>
+
+        <a-form-item>
+          <a-checkbox v-model="importForm.overwrite_existing">
+            覆盖已有主机（按 IP + 端口）
+          </a-checkbox>
+          <a-button type="text" size="small" class="download-template-btn" @click="downloadImportTemplate">
+            <template #icon>
+              <icon-download />
+            </template>
+            下载模板
+          </a-button>
+        </a-form-item>
+      </a-form>
+
+      <div v-if="importResult" class="import-result">
+        <a-divider orientation="left">导入结果</a-divider>
+        <a-descriptions :column="2" size="small" layout="vertical">
+          <a-descriptions-item label="总行数">{{ importResult.summary?.total ?? 0 }}</a-descriptions-item>
+          <a-descriptions-item label="新增">{{ importResult.summary?.created ?? 0 }}</a-descriptions-item>
+          <a-descriptions-item label="更新">{{ importResult.summary?.updated ?? 0 }}</a-descriptions-item>
+          <a-descriptions-item label="跳过">{{ importResult.summary?.skipped ?? 0 }}</a-descriptions-item>
+          <a-descriptions-item label="失败" :span="2">
+            <a-tag :color="(importResult.summary?.failed ?? 0) > 0 ? 'red' : 'green'">
+              {{ importResult.summary?.failed ?? 0 }}
+            </a-tag>
+          </a-descriptions-item>
+        </a-descriptions>
+
+        <p class="import-message">{{ importResult.message }}</p>
+        <p v-if="importResult.limit_note" class="import-message muted">{{ importResult.limit_note }}</p>
+
+        <a-table
+          v-if="importResult.details && importResult.details.length > 0"
+          :data="importResult.details"
+          :pagination="false"
+          size="small"
+          class="import-detail-table"
+          row-key="row"
+        >
+          <a-table-column title="行号" data-index="row" width="70" />
+          <a-table-column title="主机名" data-index="name" />
+          <a-table-column title="IP地址" data-index="ip_address" />
+          <a-table-column title="状态" data-index="status">
+            <template #cell="{ record }">
+              <a-tag
+                :color="record.status === 'failed' ? 'red' : (record.status === 'skipped' ? 'orange' : 'green')"
+              >
+                {{ record.status }}
+              </a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="说明" data-index="message">
+            <template #cell="{ record }">
+              <span>{{ record.message || '-' }}</span>
+              <span v-if="record.missing_groups?.length" class="missing-groups">
+                （缺少分组：{{ record.missing_groups.join(', ') }}）
+              </span>
+            </template>
+          </a-table-column>
+        </a-table>
+      </div>
+
+      <div class="import-modal-footer">
+        <a-space>
+          <a-button @click="closeImportModal" :disabled="importing">取消</a-button>
+          <a-button type="primary" @click="submitImportHosts" :loading="importing">
+            开始导入
+          </a-button>
+        </a-space>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -613,7 +750,7 @@ import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi } from '@/api/ops'
-import type { Host, HostGroup } from '@/types'
+import type { Host, HostGroup, HostImportResult } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import HostForm from './components/HostForm.vue'
 import HostGroupTree from './components/HostGroupTree.vue'
@@ -624,6 +761,16 @@ const loading = ref(false)
 const hosts = ref<Host[]>([])
 const formVisible = ref(false)
 const currentHost = ref<Host | null>(null)
+
+// 导入相关
+const importModalVisible = ref(false)
+const importFileList = ref<any[]>([])
+const importing = ref(false)
+const importResult = ref<HostImportResult | null>(null)
+const importForm = reactive({
+  default_group_id: null as number | null,
+  overwrite_existing: false
+})
 
 // 分组表单相关
 const groupFormVisible = ref(false)
@@ -639,6 +786,22 @@ const hostGroupTree = ref<HostGroup[]>([])
 const selectedGroupId = ref<number | null>(null)
 const totalHostCount = ref(0)
 const expandedGroups = ref<number[]>([])
+
+const groupOptions = computed(() => {
+  const result: Array<{ label: string; value: number }> = []
+  const traverse = (nodes: HostGroup[] | undefined, prefix = '') => {
+    if (!nodes) return
+    nodes.forEach((node) => {
+      const label = prefix ? `${prefix} / ${node.name}` : node.name
+      result.push({ label, value: node.id })
+      if (node.children && node.children.length > 0) {
+        traverse(node.children, label)
+      }
+    })
+  }
+  traverse(hostGroupTree.value, '')
+  return result
+})
 
 // 批量操作相关
 const selectedRowKeys = ref<number[]>([])
@@ -1107,6 +1270,90 @@ const handleDelete = async (record: Host) => {
   }
 }
 
+const resetImportState = () => {
+  importFileList.value = []
+  importResult.value = null
+  importForm.default_group_id = null
+  importForm.overwrite_existing = false
+}
+
+const openImportModal = () => {
+  importModalVisible.value = true
+  importResult.value = null
+}
+
+const closeImportModal = () => {
+  if (importing.value) return
+  importModalVisible.value = false
+  resetImportState()
+}
+
+const handleImportFileChange = (files: any[]) => {
+  importFileList.value = files.slice(-1)
+}
+
+const handleImportFileRemove = () => {
+  importFileList.value = []
+}
+
+const submitImportHosts = async () => {
+  if (importFileList.value.length === 0) {
+    Message.warning('请先选择Excel文件')
+    return
+  }
+
+  const rawFile = importFileList.value[0].file
+  if (!rawFile) {
+    Message.error('无法读取文件，请重新选择')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', rawFile)
+  if (importForm.default_group_id) {
+    formData.append('default_group_id', String(importForm.default_group_id))
+  }
+  formData.append('overwrite_existing', importForm.overwrite_existing ? 'true' : 'false')
+
+  importing.value = true
+  try {
+    const result = await hostApi.importHostsFromExcel(formData)
+    importResult.value = result
+    Message.success(result?.message || '导入完成')
+    fetchHosts()
+    fetchGroups()
+  } catch (error) {
+    console.error('导入主机失败:', error)
+    Message.error('导入主机失败')
+  } finally {
+    importing.value = false
+  }
+}
+
+const downloadImportTemplate = async () => {
+  try {
+    const blob = await hostApi.downloadImportTemplate()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'hosts_import_template.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    Message.success('模板下载成功')
+  } catch (error) {
+    console.error('下载模板失败:', error)
+    Message.error('模板下载失败')
+  }
+}
+
+watch(importModalVisible, (visible) => {
+  if (!visible && !importing.value) {
+    resetImportState()
+  }
+})
+
 // 表单提交成功
 const handleFormSuccess = () => {
   fetchHosts()
@@ -1546,6 +1793,65 @@ onMounted(async () => {
 
 .expand-icon.expanded {
   transform: rotate(180deg);
+}
+
+.import-instructions {
+  margin: 0 0 12px 0;
+  padding-left: 18px;
+  color: #4e5969;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.import-instructions code {
+  background: #f2f3f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #1d2129;
+}
+
+.selected-file {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #1d2129;
+}
+
+.import-result {
+  margin-top: 16px;
+}
+
+.import-message {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #1d2129;
+}
+
+.import-message.muted {
+  color: #86909c;
+}
+
+.import-detail-table {
+  margin-top: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.missing-groups {
+  display: inline-block;
+  margin-left: 6px;
+  color: #fa8c16;
+  font-size: 12px;
+}
+
+.import-modal-footer {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.download-template-btn {
+  margin-left: 12px;
+  padding-left: 0;
 }
 
 .group-hosts {

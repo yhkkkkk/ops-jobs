@@ -110,6 +110,34 @@ export interface Host {
   department?: string
 }
 
+export interface HostImportSummary {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+}
+
+export type HostImportStatus = 'created' | 'updated' | 'skipped' | 'failed'
+
+export interface HostImportDetail {
+  row: number
+  name?: string | null
+  ip_address?: string | null
+  status: HostImportStatus
+  message?: string
+  missing_groups?: string[]
+}
+
+export interface HostImportResult {
+  summary: HostImportSummary
+  details: HostImportDetail[]
+  message?: string
+  limit_note?: string
+  success?: boolean
+  missing_columns?: string[]
+}
+
 // 主机分组类型
 export interface HostGroup {
   id: number

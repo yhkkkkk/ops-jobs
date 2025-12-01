@@ -8,7 +8,8 @@ import type {
   ScheduledTask,
   PaginatedResponse,
   BatchTestResult,
-  HostGroup
+  HostGroup,
+  HostImportResult
 } from '@/types'
 
 // 主机管理API
@@ -62,6 +63,19 @@ export const hostApi = {
   // 批量移动主机到分组
   batchMoveToGroup(host_ids: number[], group_id?: number | null): Promise<{ success: boolean; message: string; moved_count?: number; target_group_name?: string }> {
     return http.post('/hosts/hosts/batch_move_to_group/', { host_ids, group_id })
+  },
+
+  // 导入主机（Excel）
+  importHostsFromExcel(formData: FormData): Promise<HostImportResult> {
+    return http.post('/hosts/hosts/import_excel/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  downloadImportTemplate(): Promise<Blob> {
+    return http.get('/hosts/hosts/import_excel_template/', {
+      responseType: 'blob'
+    })
   },
 }
 

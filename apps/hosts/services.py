@@ -4,12 +4,18 @@
 基于Fabric SSH管理器
 """
 import logging
-from typing import List, Dict, Any
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
 from django.utils import timezone
 from django.db import transaction
 from django.contrib.contenttypes.models import ContentType
+from openpyxl import load_workbook
+from rest_framework.exceptions import ValidationError as DRFValidationError
+
 from .models import Host, HostGroup
 from .fabric_ssh_manager import fabric_ssh_manager, FabricSSHError
+from .serializers import HostSerializer
 from utils.audit_service import AuditLogService
 
 logger = logging.getLogger(__name__)
@@ -17,6 +23,246 @@ logger = logging.getLogger(__name__)
 
 class HostService:
     """主机管理服务"""
+
+    RAW_HEADER_ALIASES = {
+        'name': ['name', '主机名', '主机名称'],
+        'ip_address': ['ip', 'ip地址', 'ip address', 'ip_address'],
+        'port': ['port', '端口', 'ssh_port', 'ssh端口'],
+        'os_type': ['os_type', '操作系统', '系统', 'os'],
+        'username': ['username', 'user', '用户', '用户名', 'account'],
+        'auth_type': ['auth_type', '认证方式', '认证', 'auth'],
+        'password': ['password', '密码', 'ssh_password'],
+        'private_key': ['private_key', '私钥', 'key', 'ssh_key'],
+        'description': ['description', '描述', '备注', 'remark'],
+        'group_names': ['groups', 'group', '分组', '分组名称', 'group_names'],
+        'environment': ['environment', '环境'],
+        'owner': ['owner', '负责人'],
+        'department': ['department', '部门'],
+        'public_ip': ['public_ip', '外网ip', '公网ip'],
+        'internal_ip': ['internal_ip', '内网ip', '内网'],
+        'business_system': ['business_system', '业务系统'],
+        'service_role': ['service_role', '服务角色'],
+        'remarks': ['remarks', 'notes', '备注'],
+    }
+    HEADER_ALIASES = {
+        field: [alias.lower() for alias in aliases]
+        for field, aliases in RAW_HEADER_ALIASES.items()
+    }
+
+    RAW_OS_ALIASES = {
+        'linux': ['linux'],
+        'windows': ['windows', 'win', 'winserver'],
+        'aix': ['aix'],
+        'solaris': ['solaris', 'sunos'],
+    }
+    OS_ALIASES = {
+        field: [alias.lower() for alias in aliases]
+        for field, aliases in RAW_OS_ALIASES.items()
+    }
+
+    RAW_AUTH_ALIASES = {
+        'password': ['password', 'pwd', 'pass', '密码'],
+        'key': ['key', 'ssh-key', 'private_key', '密钥'],
+    }
+    AUTH_ALIASES = {
+        field: [alias.lower() for alias in aliases]
+        for field, aliases in RAW_AUTH_ALIASES.items()
+    }
+
+    RAW_ENVIRONMENT_ALIASES = {
+        'dev': ['dev', 'development', '开发'],
+        'test': ['test', 'testing', '测试'],
+        'staging': ['staging', 'pre', '预发布', 'preprod'],
+        'prod': ['prod', 'production', '生产', 'online'],
+    }
+    ENVIRONMENT_ALIASES = {
+        field: [alias.lower() for alias in aliases]
+        for field, aliases in RAW_ENVIRONMENT_ALIASES.items()
+    }
+
+    SUPPORTED_OPTIONAL_FIELDS = [
+        'password', 'private_key', 'description',
+        'public_ip', 'internal_ip', 'environment',
+        'owner', 'department', 'business_system',
+        'service_role', 'remarks'
+    ]
+
+    MAX_DETAIL_ENTRIES = 200
+
+    @staticmethod
+    def _normalize_header(value) -> str:
+        if value is None:
+            return ''
+        return str(value).strip().lower()
+
+    @staticmethod
+    def _clean_str(value) -> str:
+        if value is None:
+            return ''
+        if isinstance(value, str):
+            return value.strip()
+        return str(value).strip()
+
+    @staticmethod
+    def _parse_port(value) -> int:
+        if value in (None, ''):
+            return 22
+        try:
+            port = int(float(value))
+        except (TypeError, ValueError):
+            raise ValueError("端口必须为数字")
+        if port <= 0 or port > 65535:
+            raise ValueError("端口必须在 1-65535 之间")
+        return port
+
+    @classmethod
+    def _normalize_os_type(cls, value):
+        text = cls._normalize_header(value)
+        if not text:
+            return None
+        for key, aliases in cls.OS_ALIASES.items():
+            if text == key or text in aliases:
+                return key
+        return None
+
+    @classmethod
+    def _normalize_auth_type(cls, value):
+        text = cls._normalize_header(value)
+        if not text:
+            return None
+        for key, aliases in cls.AUTH_ALIASES.items():
+            if text == key or text in aliases:
+                return key
+        return None
+
+    @classmethod
+    def _normalize_environment(cls, value):
+        text = cls._normalize_header(value)
+        if not text:
+            return None
+        for key, aliases in cls.ENVIRONMENT_ALIASES.items():
+            if text == key or text in aliases:
+                return key
+        return None
+
+    @staticmethod
+    def _split_group_names(value) -> List[str]:
+        if not value:
+            return []
+        if not isinstance(value, str):
+            value = str(value)
+        separators = [',', '，', ';', '；', '|', '/', '、']
+        normalized = value
+        for sep in separators:
+            normalized = normalized.replace(sep, ',')
+        return [part.strip() for part in normalized.split(',') if part.strip()]
+
+    @classmethod
+    def _build_header_map(cls, headers) -> Dict[str, int]:
+        header_map = {}
+        for idx, header in enumerate(headers):
+            normalized = cls._normalize_header(header)
+            if not normalized:
+                continue
+            for field, aliases in cls.HEADER_ALIASES.items():
+                if normalized == field or normalized in aliases:
+                    if field not in header_map:
+                        header_map[field] = idx
+                    break
+        return header_map
+
+    @staticmethod
+    def _format_validation_error(exc: DRFValidationError) -> str:
+        if isinstance(exc.detail, dict):
+            parts = []
+            for field, messages in exc.detail.items():
+                if isinstance(messages, list):
+                    joined = ','.join(str(msg) for msg in messages)
+                else:
+                    joined = str(messages)
+                parts.append(f"{field}: {joined}")
+            return '; '.join(parts)
+        if isinstance(exc.detail, list):
+            return '; '.join(str(item) for item in exc.detail)
+        return str(exc.detail)
+
+    @staticmethod
+    def _is_empty_row(row_values) -> bool:
+        for value in row_values:
+            if value is None:
+                continue
+            if isinstance(value, str) and value.strip() == '':
+                continue
+            return False
+        return True
+
+    @classmethod
+    def _resolve_groups(cls, group_value, default_group: Optional[HostGroup], cache) -> (List[int], List[str]):
+        names = cls._split_group_names(group_value)
+        resolved_ids: List[int] = []
+        missing_names: List[str] = []
+
+        for name in names:
+            key = name.lower()
+            if key in cache:
+                group = cache[key]
+            else:
+                group = HostGroup.objects.filter(name__iexact=name).first()
+                cache[key] = group
+            if group:
+                if group.id not in resolved_ids:
+                    resolved_ids.append(group.id)
+            else:
+                missing_names.append(name)
+
+        if not resolved_ids and default_group:
+            resolved_ids = [default_group.id]
+
+        return resolved_ids, missing_names
+
+    @classmethod
+    def _build_payload(cls, *, row_data, name: str, ip_address: str, username: str,
+                       port: int, existing: Optional[Host], default_group: Optional[HostGroup],
+                       group_cache) -> (Dict[str, Any], List[str]):
+        payload: Dict[str, Any] = {
+            'name': name,
+            'ip_address': ip_address,
+            'port': port,
+            'username': username,
+        }
+
+        os_value = cls._normalize_os_type(row_data.get('os_type'))
+        if os_value:
+            payload['os_type'] = os_value
+        elif not existing:
+            payload['os_type'] = 'linux'
+
+        auth_value = cls._normalize_auth_type(row_data.get('auth_type'))
+        if auth_value:
+            payload['auth_type'] = auth_value
+        elif not existing:
+            payload['auth_type'] = 'password'
+
+        for field in cls.SUPPORTED_OPTIONAL_FIELDS:
+            value = row_data.get(field)
+            if value in (None, ''):
+                continue
+
+            if field == 'environment':
+                env_value = cls._normalize_environment(value)
+                payload[field] = env_value or cls._clean_str(value)
+            else:
+                payload[field] = cls._clean_str(value)
+
+        group_ids, missing_groups = cls._resolve_groups(
+            row_data.get('group_names'),
+            default_group,
+            group_cache
+        )
+        if group_ids:
+            payload['groups'] = group_ids
+
+        return payload, missing_groups
     
     @staticmethod
     def test_host_connection(host: Host, user=None) -> Dict[str, Any]:
@@ -581,6 +827,203 @@ echo "=== SYSTEM_INFO_END ==="
                 'error': str(e),
                 'command': command
             }
+
+    @classmethod
+    def import_hosts_from_excel(cls, uploaded_file, user, default_group: Optional[HostGroup] = None,
+                                overwrite_existing: bool = False) -> Dict[str, Any]:
+        """通过Excel批量导入主机"""
+        if not uploaded_file:
+            return {'success': False, 'message': '未上传Excel文件'}
+
+        try:
+            file_bytes = uploaded_file.read()
+            buffer = BytesIO(file_bytes)
+            workbook = load_workbook(filename=buffer, data_only=True)
+        except Exception as exc:
+            logger.exception("解析Excel失败: %s", exc)
+            return {'success': False, 'message': f'解析Excel失败: {exc}'}
+        finally:
+            if hasattr(uploaded_file, 'seek'):
+                try:
+                    uploaded_file.seek(0)
+                except Exception:
+                    pass
+
+        summary = {
+            'total': 0,
+            'created': 0,
+            'updated': 0,
+            'skipped': 0,
+            'failed': 0,
+        }
+        row_results: List[Dict[str, Any]] = []
+        group_cache: Dict[str, Optional[HostGroup]] = {}
+
+        try:
+            sheet = workbook.active
+            header_iter = sheet.iter_rows(min_row=1, max_row=1, values_only=True)
+            try:
+                header_row = next(header_iter)
+            except StopIteration:
+                return {'success': False, 'message': 'Excel文件缺少表头'}
+
+            header_map = cls._build_header_map(header_row)
+            required_fields = ['name', 'ip_address', 'username']
+            missing_columns = [field for field in required_fields if field not in header_map]
+            if missing_columns:
+                return {
+                    'success': False,
+                    'message': f"Excel缺少必要列: {', '.join(missing_columns)}",
+                    'missing_columns': missing_columns
+                }
+
+            with transaction.atomic():
+                for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    if cls._is_empty_row(row):
+                        continue
+
+                    summary['total'] += 1
+                    row_data = {field: row[col_idx] for field, col_idx in header_map.items()}
+
+                    name = cls._clean_str(row_data.get('name'))
+                    ip_address = cls._clean_str(row_data.get('ip_address'))
+                    username = cls._clean_str(row_data.get('username'))
+
+                    row_result = {
+                        'row': row_idx,
+                        'name': name or None,
+                        'ip_address': ip_address or None,
+                    }
+
+                    try:
+                        if not name:
+                            raise ValueError('主机名称不能为空')
+                        if not ip_address:
+                            raise ValueError('IP地址不能为空')
+                        if not username:
+                            raise ValueError('登录用户名不能为空')
+
+                        port = cls._parse_port(row_data.get('port'))
+                        existing = Host.objects.filter(ip_address=ip_address, port=port).first()
+
+                        if existing and not overwrite_existing:
+                            summary['skipped'] += 1
+                            row_result['status'] = 'skipped'
+                            row_result['message'] = '主机已存在（根据 IP + 端口）'
+                            row_results.append(row_result)
+                            continue
+
+                        payload, missing_groups = cls._build_payload(
+                            row_data=row_data,
+                            name=name,
+                            ip_address=ip_address,
+                            username=username,
+                            port=port,
+                            existing=existing,
+                            default_group=default_group,
+                            group_cache=group_cache,
+                        )
+
+                        if existing:
+                            serializer = HostSerializer(existing, data=payload, partial=True)
+                        else:
+                            serializer = HostSerializer(data=payload)
+
+                        serializer.is_valid(raise_exception=True)
+                        if existing:
+                            serializer.save()
+                            summary['updated'] += 1
+                            row_result['status'] = 'updated'
+                            row_result['message'] = '已更新现有主机'
+                        else:
+                            serializer.save(created_by=user)
+                            summary['created'] += 1
+                            row_result['status'] = 'created'
+                            row_result['message'] = '创建成功'
+
+                        if missing_groups:
+                            row_result['missing_groups'] = missing_groups
+
+                    except DRFValidationError as exc:
+                        summary['failed'] += 1
+                        row_result['status'] = 'failed'
+                        row_result['message'] = cls._format_validation_error(exc)
+                    except ValueError as exc:
+                        summary['failed'] += 1
+                        row_result['status'] = 'failed'
+                        row_result['message'] = str(exc)
+                    except Exception as exc:
+                        summary['failed'] += 1
+                        row_result['status'] = 'failed'
+                        row_result['message'] = str(exc)
+                        logger.exception("导入主机失败 (行 %s): %s", row_idx, exc)
+
+                    row_results.append(row_result)
+        finally:
+            workbook.close()
+
+        details = row_results[:cls.MAX_DETAIL_ENTRIES]
+        message = (
+            f"导入完成：新增 {summary['created']} 条，"
+            f"更新 {summary['updated']} 条，跳过 {summary['skipped']} 条，"
+            f"失败 {summary['failed']} 条"
+        )
+
+        result = {
+            'summary': summary,
+            'details': details,
+            'message': message,
+        }
+        if len(row_results) > cls.MAX_DETAIL_ENTRIES:
+            result['limit_note'] = (
+                f"仅展示前 {cls.MAX_DETAIL_ENTRIES} 条明细，"
+                f"剩余 {len(row_results) - cls.MAX_DETAIL_ENTRIES} 条请查看日志或源文件"
+            )
+        result['success'] = summary['failed'] == 0
+        return result
+
+    @classmethod
+    def generate_excel_template(cls) -> bytes:
+        """生成主机导入模板Excel"""
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Hosts"
+
+        headers = [
+            "主机名称",
+            "IP地址",
+            "端口(可选, 默认22)",
+            "操作系统(可选: linux/windows/aix/solaris)",
+            "用户名",
+            "认证方式(可选: password/key)",
+            "密码",
+            "私钥",
+            "分组(支持多个, 逗号分隔)",
+            "描述",
+        ]
+        sheet.append(headers)
+
+        sample_row = [
+            "demo-host-01",
+            "192.168.1.10",
+            22,
+            "linux",
+            "root",
+            "password",
+            "encrypted-password",
+            "",
+            "默认分组,数据库",
+            "演示主机",
+        ]
+        sheet.append(sample_row)
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        workbook.close()
+        buffer.seek(0)
+        return buffer.read()
 
 
 class HostGroupService:

@@ -1,3 +1,4 @@
+from django.http.response import HttpResponse
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -20,7 +21,8 @@ from .serializers import (
     HostGroupHostsSerializer,
     ServerAccountSerializer,
     CloudSyncSerializer,
-    BatchMoveToGroupSerializer
+    BatchMoveToGroupSerializer,
+    HostExcelImportSerializer
 )
 from .filters import HostFilter, HostGroupFilter, ServerAccountFilter
 
@@ -293,6 +295,43 @@ class HostViewSet(viewsets.ModelViewSet):
 
         except Exception as e:
             return SycResponse.error(message=f"批量移动失败: {str(e)}", code=500)
+
+    @action(detail=False, methods=['post'], url_path='import_excel')
+    def import_excel(self, request):
+        """通过Excel批量导入主机"""
+        serializer = HostExcelImportSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(errors=serializer.errors)
+
+        default_group = None
+        group_id = serializer.validated_data.get('default_group_id')
+        if group_id:
+            try:
+                default_group = HostGroup.objects.get(id=group_id)
+            except HostGroup.DoesNotExist:
+                return SycResponse.error(message="默认分组不存在", code=404)
+
+        result = HostService.import_hosts_from_excel(
+            uploaded_file=serializer.validated_data['file'],
+            user=request.user,
+            default_group=default_group,
+            overwrite_existing=serializer.validated_data.get('overwrite_existing', False)
+        )
+
+        if result.get('success', True):
+            return SycResponse.success(content=result, message=result.get('message', '导入完成'))
+        return SycResponse.error(content=result, message=result.get('message', '导入失败'))
+
+    @action(detail=False, methods=['get'], url_path='import_excel_template')
+    def download_import_template(self, request):
+        """下载主机导入Excel模板"""
+        excel_bytes = HostService.generate_excel_template()
+        response = HttpResponse(
+            excel_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="hosts_import_template.xlsx"'
+        return response
 
     @action(detail=True, methods=['post'])
     def upload_file(self, request, pk=None):
