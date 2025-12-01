@@ -35,6 +35,7 @@
             placeholder="请输入模板名称"
             allow-clear
             @press-enter="handleSearch"
+            @clear="handleSearch"
             style="width: 200px"
           />
         </a-form-item>

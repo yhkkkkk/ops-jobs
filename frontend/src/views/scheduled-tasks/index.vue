@@ -34,6 +34,8 @@
             v-model="searchForm.name"
             placeholder="请输入任务名称"
             allow-clear
+            @press-enter="handleSearch"
+            @clear="handleSearch"
             style="width: 200px"
           />
         </a-form-item>
@@ -42,6 +44,8 @@
             v-model="searchForm.plan_name"
             placeholder="请输入执行方案名称"
             allow-clear
+            @press-enter="handleSearch"
+            @clear="handleSearch"
             style="width: 200px"
           />
         </a-form-item>
@@ -306,15 +310,14 @@ const fetchTasks = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
-      ...searchForm
+      name: searchForm.name,
+      plan_name: searchForm.plan_name,
     }
 
-    // 移除空值
-    Object.keys(params).forEach(key => {
-      if (params[key] === '' || params[key] === undefined) {
-        delete params[key]
-      }
-    })
+    // 状态筛选
+    if (searchForm.is_active !== undefined && searchForm.is_active !== null) {
+      params.is_active = searchForm.is_active
+    }
 
     const response = await scheduledJobApi.list(params)
     tasks.value = response.results || []

@@ -54,6 +54,7 @@
             placeholder="请输入方案名称"
             allow-clear
             @press-enter="handleSearch"
+            @clear="handleSearch"
             style="width: 200px"
           />
         </a-form-item>
