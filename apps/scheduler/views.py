@@ -71,7 +71,7 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
                 success=True
             )
 
-            response_serializer = ScheduledJobSerializer(scheduled_job)
+            response_serializer = self.get_serializer(scheduled_job)
             return SycResponse.success(
                 content=response_serializer.data,
                 message="定时作业创建成功"
@@ -117,7 +117,7 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
                 success=True
             )
 
-            response_serializer = ScheduledJobSerializer(updated_job)
+            response_serializer = self.get_serializer(updated_job)
             return SycResponse.success(
                 content=response_serializer.data,
                 message="定时作业更新成功"

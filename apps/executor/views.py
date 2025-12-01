@@ -24,7 +24,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ExecutionRecordSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filter_backends = [DjangoFilterBackend]
     filterset_class = ExecutionRecordFilter
 
     def get_serializer_class(self):
