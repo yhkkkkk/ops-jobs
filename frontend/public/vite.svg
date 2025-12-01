@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="opsGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1890ff"/>
+      <stop offset="50%" stop-color="#52c41a"/>
+      <stop offset="100%" stop-color="#722ed1"/>
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="1" dy="1" stdDeviation="1" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+
+  <!-- 背景圆形 -->
+  <circle cx="16" cy="16" r="15" fill="url(#opsGradient)" filter="url(#shadow)"/>
+
+  <!-- 主要图标：服务器/作业符号 -->
+  <g transform="translate(16,16)" fill="white">
+    <!-- 服务器机架 -->
+    <rect x="-8" y="-6" width="16" height="3" rx="1" fill="white" opacity="0.9"/>
+    <rect x="-8" y="-2" width="16" height="3" rx="1" fill="white" opacity="0.9"/>
+    <rect x="-8" y="2" width="16" height="3" rx="1" fill="white" opacity="0.9"/>
+
+    <!-- 服务器指示灯 -->
+    <circle cx="-5" cy="-4.5" r="0.8" fill="#52c41a"/>
+    <circle cx="-5" cy="-0.5" r="0.8" fill="#52c41a"/>
+    <circle cx="-5" cy="3.5" r="0.8" fill="#52c41a"/>
+
+    <!-- 执行箭头 -->
+    <path d="M2,-1 L6,0 L2,1 Z" fill="#ffa940" opacity="0.9"/>
+
+    <!-- 齿轮符号（表示自动化） -->
+    <g transform="translate(4,-8) scale(0.4)">
+      <path d="M-3,-1 L-3,-2 L-2,-3 L-1,-3 L-1,-4 L1,-4 L1,-3 L2,-3 L3,-2 L3,-1 L4,-1 L4,1 L3,1 L3,2 L2,3 L1,3 L1,4 L-1,4 L-1,3 L-2,3 L-3,2 L-3,1 L-4,1 L-4,-1 Z" fill="white"/>
+      <circle cx="0" cy="0" r="1.5" fill="url(#opsGradient)"/>
+    </g>
+  </g>
+
+  <!-- 底部状态指示 -->
+  <rect x="4" y="26" width="24" height="2" rx="1" fill="rgba(255,255,255,0.3)"/>
+  <rect x="4" y="26" width="18" height="2" rx="1" fill="#52c41a"/>
+</svg>

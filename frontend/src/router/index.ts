@@ -1,0 +1,378 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import type { RouteRecordRaw } from 'vue-router'
+import NProgress from 'nprogress'
+import '@/styles/nprogress.css'
+
+// 配置 NProgress
+NProgress.configure({
+  showSpinner: false, // 不显示右上角的加载图标
+  minimum: 0.2,       // 最小百分比
+  speed: 500,         // 递增进度条的速度
+  trickleSpeed: 200   // 自动递增间隔
+})
+
+// 路由配置
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: {
+      title: '登录',
+      requiresAuth: false,
+    },
+  },
+  {
+    path: '/',
+    name: 'Layout',
+    component: () => import('@/views/Layout.vue'),
+    redirect: '/dashboard',
+    meta: {
+      requiresAuth: true,
+    },
+    children: [
+      {
+        path: '/dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/dashboard/index.vue'),
+        meta: {
+          title: '仪表盘',
+          icon: 'icon-dashboard',
+        },
+      },
+      {
+        path: '/hosts',
+        name: 'Hosts',
+        component: () => import('@/views/hosts/index.vue'),
+        meta: {
+          title: '主机管理',
+          icon: 'icon-computer',
+        },
+      },
+      {
+        path: '/hosts/:id',
+        name: 'HostDetail',
+        component: () => import('@/views/hosts/detail.vue'),
+        meta: {
+          title: '主机详情',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/accounts',
+        name: 'Accounts',
+        component: () => import('@/views/accounts/index.vue'),
+        meta: {
+          title: '服务器账号',
+          icon: 'icon-user',
+        },
+      },
+      {
+        path: '/script-templates',
+        name: 'ScriptTemplates',
+        component: () => import('@/views/script-templates/index.vue'),
+        meta: {
+          title: '脚本模板',
+          icon: 'icon-code',
+        },
+      },
+      {
+        path: '/script-templates/editor/:id?',
+        name: 'ScriptTemplateEditor',
+        component: () => import('@/views/script-templates/editor.vue'),
+        meta: {
+          title: '脚本编辑器',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/job-templates',
+        name: 'JobTemplates',
+        component: () => import('@/views/job-templates/index.vue'),
+        meta: {
+          title: '作业模板',
+          icon: 'icon-settings',
+        },
+      },
+      {
+        path: '/job-templates/editor/:id?',
+        name: 'JobTemplateEditor',
+        component: () => import('@/views/job-templates/editor.vue'),
+        meta: {
+          title: '作业模板编辑器',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/job-templates/detail/:id',
+        name: 'JobTemplateDetail',
+        component: () => import('@/views/job-templates/detail.vue'),
+        meta: {
+          title: '作业模板详情',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/execution-plans',
+        name: 'ExecutionPlans',
+        component: () => import('@/views/execution-plans/index.vue'),
+        meta: {
+          title: '作业执行方案',
+          icon: 'icon-calendar',
+        },
+      },
+      {
+        path: '/execution-plans/create',
+        name: 'ExecutionPlanCreate',
+        component: () => import('@/views/execution-plans/editor.vue'),
+        meta: {
+          title: '创建执行方案',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/execution-plans/:id',
+        name: 'ExecutionPlanDetail',
+        component: () => import('@/views/execution-plans/detail.vue'),
+        meta: {
+          title: '执行方案详情',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/execution-plans/:id/edit',
+        name: 'ExecutionPlanEdit',
+        component: () => import('@/views/execution-plans/editor.vue'),
+        meta: {
+          title: '编辑执行方案',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/execution-plans/:id/execute',
+        name: 'ExecutionPlanExecute',
+        component: () => import('@/views/execution-plans/execute.vue'),
+        meta: {
+          title: '执行方案',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/execution-records',
+        name: 'ExecutionRecords',
+        component: () => import('@/views/execution-records/index.vue'),
+        meta: {
+          title: '执行记录',
+          icon: 'icon-history',
+        },
+      },
+      {
+        path: '/execution-records/:id',
+        name: 'ExecutionRecordDetail',
+        component: () => import('@/views/execution-records/detail.vue'),
+        meta: {
+          title: '执行记录详情',
+          hideInMenu: true,
+        },
+      },
+
+      {
+        path: '/scheduled-tasks',
+        name: 'ScheduledTasks',
+        component: () => import('@/views/scheduled-tasks/index.vue'),
+        meta: {
+          title: '定时任务',
+          icon: 'icon-schedule',
+        },
+      },
+      {
+        path: '/scheduled-tasks/create',
+        name: 'ScheduledTaskCreate',
+        component: () => import('@/views/scheduled-tasks/editor.vue'),
+        meta: {
+          title: '创建定时任务',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/scheduled-tasks/:id',
+        name: 'ScheduledTaskDetail',
+        component: () => import('@/views/scheduled-tasks/detail.vue'),
+        meta: {
+          title: '定时任务详情',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/scheduled-tasks/:id/edit',
+        name: 'ScheduledTaskEdit',
+        component: () => import('@/views/scheduled-tasks/editor.vue'),
+        meta: {
+          title: '编辑定时任务',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/system-config',
+        name: 'SystemConfig',
+        component: () => import('@/views/system-config/index.vue'),
+        meta: {
+          title: '系统配置',
+          icon: 'icon-settings',
+          requiresSuperUser: true,
+        },
+      },
+      {
+        path: '/audit-logs',
+        name: 'AuditLogs',
+        component: () => import('@/views/audit-logs/index.vue'),
+        meta: {
+          title: '审计日志',
+          icon: 'icon-file-text',
+          requiresSuperUser: true,
+        },
+      },
+      {
+        path: '/quick-execute',
+        name: 'QuickExecute',
+        component: () => import('@/views/QuickExecute.vue'),
+        meta: {
+          title: '快速执行',
+          icon: 'icon-thunderbolt',
+        },
+      },
+      {
+        path: '/realtime/:taskId',
+        name: 'Realtime',
+        component: () => import('@/views/Realtime.vue'),
+        meta: {
+          title: '实时监控',
+          hideInMenu: true,
+        },
+      },
+    ],
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue'),
+    meta: {
+      title: '页面不存在',
+    },
+  },
+]
+
+// 创建路由实例
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+
+// 全局状态管理，防止重复处理
+let isHandlingAuth = false
+let authErrorMessages = new Set<string>()
+
+// 清理认证错误消息
+const clearAuthErrorMessage = (message: string) => {
+  setTimeout(() => {
+    authErrorMessages.delete(message)
+  }, 3000)
+}
+
+// 显示唯一认证错误消息
+const showUniqueAuthMessage = async (message: string) => {
+  if (!authErrorMessages.has(message)) {
+    authErrorMessages.add(message)
+    const { Message } = await import('@arco-design/web-vue')
+    Message.warning(message)
+    clearAuthErrorMessage(message)
+  }
+}
+
+// 路由守卫
+router.beforeEach(async (to, from, next) => {
+  // 开始进度条
+  NProgress.start()
+
+  const authStore = useAuthStore()
+
+  // 设置页面标题
+  if (to.meta.title) {
+    document.title = `${to.meta.title} - 运维作业平台`
+  }
+  
+  // 检查是否需要认证
+  if (to.meta.requiresAuth !== false) {
+    // 检查是否已登录
+    if (!authStore.isAuthenticated) {
+      NProgress.done()
+      next({ name: 'Login', query: { redirect: to.fullPath } })
+      return
+    }
+
+    // 检查token是否过期，防止重复处理
+    if (authStore.isTokenExpired() && !isHandlingAuth) {
+      isHandlingAuth = true
+      
+      try {
+        console.log('检测到token过期，尝试自动刷新...')
+        await authStore.refreshAccessToken()
+        console.log('token刷新成功')
+        isHandlingAuth = false
+      } catch (error: any) {
+        console.warn('自动刷新token失败:', error)
+        
+        // 根据错误类型提供不同的用户提示
+        let userMessage = '登录已过期，正在跳转到登录页面...'
+        
+        if (error.message?.includes('网络连接失败')) {
+          userMessage = '网络连接失败，请检查网络后重试'
+        } else if (error.message?.includes('服务器内部错误')) {
+          userMessage = '服务器暂时不可用，请稍后重试'
+        } else if (error.message?.includes('Token已过期或无效')) {
+          userMessage = '登录已过期，正在跳转到登录页面...'
+        }
+        
+        // 显示唯一错误消息
+        await showUniqueAuthMessage(userMessage)
+        
+        // 清理认证状态并跳转
+        authStore.clearState()
+        NProgress.done()
+        next({ name: 'Login', query: { redirect: to.fullPath } })
+        
+        // 重置处理标志
+        setTimeout(() => {
+          isHandlingAuth = false
+        }, 1000)
+        
+        return
+      }
+    }
+
+    // 检查是否需要超级用户权限
+    if (to.meta.requiresSuperUser && !authStore.user?.is_superuser) {
+      NProgress.done()
+      next({ name: 'Dashboard' })
+      return
+    }
+  }
+
+  // 已登录用户访问登录页，重定向到首页
+  if (to.name === 'Login' && authStore.isAuthenticated && !authStore.isTokenExpired()) {
+    NProgress.done()
+    next({ name: 'Dashboard' })
+    return
+  }
+
+  next()
+})
+
+// 路由完成后的守卫
+router.afterEach(() => {
+  // 结束进度条
+  NProgress.done()
+})
+
+export default router

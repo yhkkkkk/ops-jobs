@@ -1,0 +1,14 @@
+# 1. 后端启动
+cd D:/dev/pyproject/ops-job
+uv sync
+uv run python manage.py migrate
+uv run python manage.py runserver 0.0.0.0:8000
+
+# 2. 前端启动（新终端）
+cd D:/dev/pyproject/ops-job/frontend
+pnpm install
+pnpm run dev
+
+# 3. 可选：Redis + Celery（新终端）
+cd D:/dev/pyproject/ops-job
+uv run celery -A ops_job worker -l info

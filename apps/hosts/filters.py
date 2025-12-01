@@ -1,0 +1,196 @@
+"""
+主机管理过滤器
+"""
+import django_filters
+from django.db import models
+from .models import Host, HostGroup, ServerAccount
+
+
+class HostFilter(django_filters.FilterSet):
+    """主机过滤器"""
+
+    # 搜索过滤器 - 支持名称、IP地址、描述的模糊搜索
+    search = django_filters.CharFilter(method='filter_search', label='搜索')
+
+    # 状态过滤器
+    status = django_filters.ChoiceFilter(
+        choices=Host.STATUS_CHOICES,
+        label='状态'
+    )
+
+    # OS类型过滤器
+    os_type = django_filters.ChoiceFilter(
+        choices=Host.OS_CHOICES,
+        label='操作系统'
+    )
+
+    # 云厂商过滤器
+    cloud_provider = django_filters.ChoiceFilter(
+        choices=Host.CLOUD_PROVIDER_CHOICES,
+        label='云厂商'
+    )
+
+    # 设备类型过滤器
+    device_type = django_filters.ChoiceFilter(
+        choices=Host.DEVICE_TYPE_CHOICES,
+        label='设备类型'
+    )
+
+    # 环境类型过滤器
+    environment = django_filters.ChoiceFilter(
+        choices=Host.ENVIRONMENT_CHOICES,
+        label='环境类型'
+    )
+
+    # 分组过滤器
+    group = django_filters.ModelChoiceFilter(
+        field_name='groups',
+        queryset=HostGroup.objects.all(),
+        label='主机分组'
+    )
+
+    # 分组ID过滤器（前端使用）
+    group_id = django_filters.NumberFilter(
+        field_name='groups',
+        label='主机分组ID'
+    )
+
+    # CPU核心数范围过滤器
+    cpu_cores_min = django_filters.NumberFilter(
+        field_name='cpu_cores',
+        lookup_expr='gte',
+        label='最小CPU核心数'
+    )
+    cpu_cores_max = django_filters.NumberFilter(
+        field_name='cpu_cores',
+        lookup_expr='lte',
+        label='最大CPU核心数'
+    )
+
+    # 内存范围过滤器
+    memory_gb_min = django_filters.NumberFilter(
+        field_name='memory_gb',
+        lookup_expr='gte',
+        label='最小内存(GB)'
+    )
+    memory_gb_max = django_filters.NumberFilter(
+        field_name='memory_gb',
+        lookup_expr='lte',
+        label='最大内存(GB)'
+    )
+
+    class Meta:
+        model = Host
+        fields = [
+            'search', 'status', 'os_type', 'cloud_provider', 'device_type',
+            'environment', 'group', 'group_id', 'cpu_cores_min', 'cpu_cores_max',
+            'memory_gb_min', 'memory_gb_max'
+        ]
+
+    def filter_search(self, queryset, name, value):
+        """自定义搜索过滤方法 - 支持多关键词搜索"""
+        if not value:
+            return queryset
+
+        # 将搜索值按空格分割，支持多关键词搜索
+        search_terms = [term.strip() for term in value.split() if term.strip()]
+
+        if not search_terms:
+            return queryset
+
+        # 对每个搜索词构建查询条件
+        query = models.Q()
+        for term in search_terms:
+            term_query = (
+                models.Q(name__icontains=term) |
+                models.Q(ip_address__icontains=term) |
+                models.Q(public_ip__icontains=term) |
+                models.Q(internal_ip__icontains=term) |
+                models.Q(hostname__icontains=term) |
+                models.Q(business_system__icontains=term) |
+                models.Q(service_role__icontains=term) |
+                models.Q(owner__icontains=term) |
+                models.Q(department__icontains=term) |
+                models.Q(description__icontains=term)
+            )
+            # 使用AND逻辑：每个搜索词都必须匹配
+            if query:
+                query &= term_query
+            else:
+                query = term_query
+
+        return queryset.filter(query)
+
+
+class HostGroupFilter(django_filters.FilterSet):
+    """主机分组过滤器"""
+
+    # 搜索过滤器
+    search = django_filters.CharFilter(method='filter_search', label='搜索')
+
+    class Meta:
+        model = HostGroup
+        fields = ['search']
+
+    def filter_search(self, queryset, name, value):
+        """自定义搜索过滤方法"""
+        if value:
+            return queryset.filter(
+                models.Q(name__icontains=value) |
+                models.Q(description__icontains=value)
+            )
+        return queryset
+
+
+class ServerAccountFilter(django_filters.FilterSet):
+    """服务器账号过滤器"""
+
+    # 搜索过滤器
+    search = django_filters.CharFilter(method='filter_search', label='搜索')
+
+    # 认证方式过滤器
+    auth_type = django_filters.CharFilter(method='filter_auth_type', label='认证方式')
+
+    class Meta:
+        model = ServerAccount
+        fields = ['search', 'auth_type']
+
+    def filter_search(self, queryset, name, value):
+        """自定义搜索过滤方法"""
+        if value:
+            return queryset.filter(
+                models.Q(name__icontains=value) |
+                models.Q(username__icontains=value) |
+                models.Q(description__icontains=value)
+            )
+        return queryset
+
+    def filter_auth_type(self, queryset, name, value):
+        """按认证方式过滤"""
+        if not value:
+            return queryset
+
+        if value == 'password':
+            # 只有密码认证
+            return queryset.filter(password__isnull=False).exclude(password='').filter(
+                models.Q(private_key__isnull=True) | models.Q(private_key='')
+            )
+        elif value == 'key':
+            # 只有密钥认证
+            return queryset.filter(private_key__isnull=False).exclude(private_key='').filter(
+                models.Q(password__isnull=True) | models.Q(password='')
+            )
+        elif value == 'both':
+            # 密码+密钥认证
+            return queryset.filter(
+                password__isnull=False, private_key__isnull=False
+            ).exclude(password='').exclude(private_key='')
+        elif value == 'none':
+            # 未配置认证
+            return queryset.filter(
+                models.Q(password__isnull=True) | models.Q(password='')
+            ).filter(
+                models.Q(private_key__isnull=True) | models.Q(private_key='')
+            )
+
+        return queryset
