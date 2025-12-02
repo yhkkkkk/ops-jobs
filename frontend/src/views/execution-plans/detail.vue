@@ -350,10 +350,10 @@ const handleExecute = () => {
   router.push(`/execution-plans/${route.params.id}/execute`)
 }
 
-// 查看模板
+// 查看所属模板详情
 const handleViewTemplate = () => {
   if (plan.value?.template) {
-    router.push(`/job-templates/${plan.value.template}`)
+    router.push(`/job-templates/detail/${plan.value.template}`)
   }
 }
 

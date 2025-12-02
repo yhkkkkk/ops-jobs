@@ -821,9 +821,8 @@ const getParameterType = (key: string) => {
   return param?.type || 'text' // 新格式
 }
 
-// 处理参数值变化
-const handleParameterValueChange = (key: string, event: Event) => {
-  const value = (event.target as HTMLInputElement).value
+// 处理参数值变化（Arco Input 的 @input 直接传字符串值）
+const handleParameterValueChange = (key: string, value: string) => {
   if (!form.global_parameters) {
     form.global_parameters = {}
   }
