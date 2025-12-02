@@ -293,54 +293,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export(self, request):
-        """导出审计日志为Excel文件"""
+        """导出审计日志为excel文件"""
         try:
-            # 获取查询参数
-            search = request.GET.get('search', '')
-            user_id = request.GET.get('user_id')
-            action = request.GET.get('action', '')
-            success = request.GET.get('success')
-            start_date = request.GET.get('start_date', '')
-            end_date = request.GET.get('end_date', '')
-            
-            # 构建查询条件
-            queryset = AuditLog.objects.select_related('user').all()
-            
-            if search:
-                queryset = queryset.filter(
-                    Q(description__icontains=search) |
-                    Q(resource_name__icontains=search) |
-                    Q(user__username__icontains=search)
-                )
-            
-            if user_id:
-                queryset = queryset.filter(user_id=user_id)
-            
-            if action:
-                queryset = queryset.filter(action=action)
-            
-            if success is not None:
-                success_bool = success.lower() == 'true'
-                queryset = queryset.filter(success=success_bool)
-            
-            if start_date:
-                try:
-                    start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
-                    queryset = queryset.filter(created_at__gte=start_datetime)
-                except ValueError:
-                    pass
-            
-            if end_date:
-                try:
-                    end_datetime = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
-                    queryset = queryset.filter(created_at__lt=end_datetime)
-                except ValueError:
-                    pass
-            
-            # 按时间倒序排列
-            queryset = queryset.order_by('-created_at')
-            
-            # 准备Excel数据
+            queryset = self.filter_queryset(self.get_queryset())
+
+            # 准备excel数据
             data = []
             for log in queryset:
                 data.append({

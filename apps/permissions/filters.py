@@ -4,6 +4,8 @@ from .models import AuditLog
 
 
 class AuditLogFilter(django_filters.FilterSet):
+    # 搜索字段：支持描述、资源名、用户名模糊匹配
+    search = django_filters.CharFilter(method='filter_search', label='搜索')
     # 用户
     user_id = django_filters.NumberFilter(field_name='user_id')
     # 操作类型
@@ -31,6 +33,27 @@ class AuditLogFilter(django_filters.FilterSet):
         end_datetime = datetime.combine(value, datetime.min.time()) + timedelta(days=1)
         return queryset.filter(created_at__lt=end_datetime)
 
+    def filter_search(self, queryset, name, value):
+        """按描述 / 资源名称 / 用户名模糊搜索"""
+        if not value:
+            return queryset
+
+        from django.db.models import Q
+        return queryset.filter(
+            Q(description__icontains=value) |
+            Q(resource_name__icontains=value) |
+            Q(user__username__icontains=value)
+        )
+
     class Meta:
         model = AuditLog
-        fields = ['user_id', 'action', 'success', 'resource_type', 'start_date', 'end_date', 'ip_address']
+        fields = [
+            'search',
+            'user_id',
+            'action',
+            'success',
+            'resource_type',
+            'start_date',
+            'end_date',
+            'ip_address',
+        ]
