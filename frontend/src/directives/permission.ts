@@ -115,32 +115,32 @@ function checkPermissionFromCache(
  * 应用权限检查结果
  */
 function applyPermissionResult(el: HTMLElement, hasPerm: boolean, fallback: boolean) {
-  if (hasPerm) {
-    // 有权限，显示元素
-    el.style.display = ''
-    el.style.visibility = 'visible'
-    el.style.position = ''
-    el.removeAttribute('data-permission-denied')
-  } else {
-    // 无权限
-    if (fallback) {
-      // 显示权限不足提示
+    if (hasPerm) {
+      // 有权限，显示元素
       el.style.display = ''
       el.style.visibility = 'visible'
       el.style.position = ''
-      el.setAttribute('data-permission-denied', 'true')
-      el.innerHTML = `
-        <div style="padding: 10px; text-align: center; color: #999;">
-          <icon-lock style="margin-right: 5px;" />
-          权限不足
-        </div>
-      `
+      el.removeAttribute('data-permission-denied')
     } else {
-      // 隐藏元素
-      el.style.display = 'none'
-      el.style.visibility = 'hidden'
-      el.style.position = ''
-    }
+      // 无权限
+      if (fallback) {
+        // 显示权限不足提示
+        el.style.display = ''
+        el.style.visibility = 'visible'
+        el.style.position = ''
+        el.setAttribute('data-permission-denied', 'true')
+        el.innerHTML = `
+          <div style="padding: 10px; text-align: center; color: #999;">
+            <icon-lock style="margin-right: 5px;" />
+            权限不足
+          </div>
+        `
+      } else {
+        // 隐藏元素
+        el.style.display = 'none'
+        el.style.visibility = 'hidden'
+        el.style.position = ''
+      }
   }
 }
 
@@ -479,7 +479,7 @@ async function preloadPagePermissions(
       if (!preloadRequestCache.has(objectRequestKey)) {
         const objectRequestPromise = (async () => {
           try {
-            await permissionsStore.batchCheckResourcePermissions(resourceType, resourceIds, permissions)
+      await permissionsStore.batchCheckResourcePermissions(resourceType, resourceIds, permissions)
           } finally {
             setTimeout(() => {
               preloadRequestCache.delete(objectRequestKey)

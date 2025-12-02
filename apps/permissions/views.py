@@ -21,6 +21,8 @@ from .permissions import IsSuperUser
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
 from django.db.models import Q
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import AuditLogFilter
 
 logger = logging.getLogger(__name__)
 
@@ -280,48 +282,15 @@ class ResourcePermissionsView(APIView):
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """审计日志ViewSet - 统一的系统审计日志"""
 
-    queryset = AuditLog.objects.all()
+    queryset = AuditLog.objects.select_related('user', 'resource_type').all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsSuperUser]
     pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = AuditLogFilter
 
     def get_queryset(self):
-        queryset = AuditLog.objects.select_related('user', 'resource_type')
-
-        # 按用户过滤
-        user_id = self.request.query_params.get('user_id')
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-
-        # 按操作类型过滤
-        action = self.request.query_params.get('action')
-        if action:
-            queryset = queryset.filter(action=action)
-
-        # 按成功状态过滤
-        success = self.request.query_params.get('success')
-        if success is not None:
-            queryset = queryset.filter(success=success.lower() == 'true')
-
-        # 按资源类型过滤
-        resource_type = self.request.query_params.get('resource_type')
-        if resource_type:
-            queryset = queryset.filter(resource_type__model=resource_type)
-
-        # 按时间范围过滤
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
-        if start_date:
-            queryset = queryset.filter(created_at__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__lte=end_date)
-
-        # 按IP地址过滤
-        ip_address = self.request.query_params.get('ip_address')
-        if ip_address:
-            queryset = queryset.filter(ip_address=ip_address)
-
-        return queryset.order_by('-created_at')
+        return AuditLog.objects.select_related('user', 'resource_type').order_by('-created_at')
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def export(self, request):

@@ -46,6 +46,7 @@
             placeholder="请输入账号名称或用户名"
             allow-clear
             @press-enter="handleSearch"
+            @clear="handleSearch"
             style="width: 200px"
           />
         </a-form-item>
@@ -54,6 +55,8 @@
             v-model="searchForm.auth_type"
             placeholder="请选择认证方式"
             allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
             style="width: 150px"
           >
             <a-option value="password">密码认证</a-option>
