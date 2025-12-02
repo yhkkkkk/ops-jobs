@@ -406,8 +406,9 @@ const getScriptPreview = (content?: string) => {
 }
 
 // 操作方法
+// 无论从哪里进入详情，都统一返回到作业模板列表
 const handleBack = () => {
-  router.back()
+  router.push('/job-templates')
 }
 
 const handleEdit = () => {
