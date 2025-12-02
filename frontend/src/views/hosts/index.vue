@@ -854,12 +854,12 @@ const displayPublicIp = ref('')
 
 
 
-// 格式化IP地址显示 - 多行显示策略
+// 格式化IP地址显示 - 多行显示策略（粘贴/输入后美化展示）
 const formatIpDisplay = (ipString: string) => {
   if (!ipString) return ''
 
   const ipList = ipString
-    .split(/[,，\s\n\r]+/)
+    .split(/[,，\s\n\r|]+/)  // 支持逗号、空格、换行和竖线分隔
     .map(ip => ip.trim())
     .filter(ip => ip.length > 0)
 
@@ -867,11 +867,11 @@ const formatIpDisplay = (ipString: string) => {
     return ipString
   }
 
-  // 多IP时，每行显示3-4个IP，用空格分隔
+  // 多IP时，每行显示3-4个IP，用竖线分隔，便于视觉分辨
   const result = []
   for (let i = 0; i < ipList.length; i += 4) {
     const lineIps = ipList.slice(i, i + 4)
-    result.push(lineIps.join(' '))
+    result.push(lineIps.join(' | '))
   }
 
   return result.join('\n')
@@ -883,9 +883,9 @@ const parseIpInput = (input: string) => {
 
   // 将多行内容转换为空格分隔的单行，供后端搜索使用
   return input
-    .split(/[\n\r]+/)
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
+    .split(/[\n\r|,，\s]+/)      // 统一按换行、竖线、逗号和空格拆分
+    .map(ip => ip.trim())
+    .filter(ip => ip.length > 0)
     .join(' ')
 }
 
@@ -1057,10 +1057,10 @@ const fetchHosts = async () => {
     const searchTerms = []
     if (searchForm.name) searchTerms.push(searchForm.name)
 
-    // 处理多IP搜索 - 支持逗号、空格、换行符分隔
+    // 处理多IP搜索 - 支持逗号、空格、换行符、竖线分隔
     if (searchForm.ip_address) {
       const ipList = searchForm.ip_address
-        .split(/[,，\s\n\r]+/)  // 支持中英文逗号、空格、换行符分隔
+        .split(/[,，\s\n\r|]+/)
         .map(ip => ip.trim())
         .filter(ip => ip.length > 0)
 
@@ -1084,10 +1084,10 @@ const fetchHosts = async () => {
       params.cloud_provider = advancedForm.cloud_provider
     }
 
-    // 处理内网IP多IP搜索
+    // 处理内网IP多IP搜索（支持竖线）
     if (advancedForm.internal_ip) {
       const internalIpList = advancedForm.internal_ip
-        .split(/[,，\s\n\r]+/)  // 支持换行符
+        .split(/[,，\s\n\r|]+/)
         .map(ip => ip.trim())
         .filter(ip => ip.length > 0)
 
@@ -1097,10 +1097,10 @@ const fetchHosts = async () => {
       }
     }
 
-    // 处理外网IP多IP搜索
+    // 处理外网IP多IP搜索（支持竖线）
     if (advancedForm.public_ip) {
       const publicIpList = advancedForm.public_ip
-        .split(/[,，\s\n\r]+/)  // 支持换行符
+        .split(/[,，\s\n\r|]+/)
         .map(ip => ip.trim())
         .filter(ip => ip.length > 0)
 

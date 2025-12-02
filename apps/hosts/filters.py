@@ -99,6 +99,7 @@ class HostFilter(django_filters.FilterSet):
             return queryset
 
         # 对每个搜索词构建查询条件
+        # 这里使用 OR 逻辑：任意一个搜索词匹配即可，便于多 IP / 多关键字联合过滤
         query = models.Q()
         for term in search_terms:
             term_query = (
@@ -113,11 +114,7 @@ class HostFilter(django_filters.FilterSet):
                 models.Q(department__icontains=term) |
                 models.Q(description__icontains=term)
             )
-            # 使用AND逻辑：每个搜索词都必须匹配
-            if query:
-                query &= term_query
-            else:
-                query = term_query
+            query |= term_query   # 使用 | 逻辑或运算符连接查询条件
 
         return queryset.filter(query)
 
