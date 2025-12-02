@@ -151,7 +151,7 @@
 
         <template #tags="{ record }">
           <div v-if="record.tag_list && record.tag_list.length > 0" class="tags-container">
-            <a-tooltip>
+            <a-tooltip content-class="script-tags-tooltip">
               <template #content>
                 <a-space>
                   <a-tag v-for="tag in record.tag_list" :key="tag" size="small">
@@ -163,7 +163,7 @@
             </a-tooltip>
           </div>
           <div v-else-if="record.tags_json && Object.keys(record.tags_json).length > 0" class="tags-container">
-            <a-tooltip>
+            <a-tooltip content-class="script-tags-tooltip">
               <template #content>
                 <a-space>
                   <a-tag v-for="(value, key) in record.tags_json" :key="key" size="small">
@@ -960,8 +960,23 @@ onMounted(() => {
 }
 
 .tags-ellipsis:hover {
-  background-color: #e8f4ff;
-  border-color: #4080ff;
-  color: #4080ff;
+  /* 调低悬停时的对比度，避免过于抢眼 */
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* 自定义标签提示气泡样式 */
+:global(.script-tags-tooltip) {
+  background-color: #f9fafb !important;  /* 浅灰背景 */
+  color: #111827 !important;              /* 深色文字 */
+  border: 1px solid #e5e7eb !important;   /* 边框 */
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);  /* 阴影 */
+}
+
+:global(.script-tags-tooltip .arco-tooltip-arrow::before) {
+  background-color: #f9fafb !important;  /* 箭头背景色(与主体一致) */
+  border: 1px solid #e5e7eb !important;   /* 箭头边框 */
 }
 </style>
