@@ -1,5 +1,12 @@
 <template>
-  <div class="account-management">
+  <div 
+    class="account-management"
+    v-page-permissions="{ 
+      resourceType: 'serveraccount', 
+      permissions: ['view', 'add', 'change', 'delete'],
+      resourceIds: accounts.map(a => a.id)
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -15,7 +22,11 @@
               </template>
               刷新
             </a-button>
-            <a-button type="primary" @click="handleCreate">
+            <a-button 
+              v-permission="{ resourceType: 'serveraccount', permission: 'add' }"
+              type="primary" 
+              @click="handleCreate"
+            >
               <template #icon>
                 <icon-plus />
               </template>
@@ -99,7 +110,12 @@
         </template>
 
         <template #actions="{ record }">
-          <a-button type="text" size="small" @click="handleEdit(record)">
+          <a-button 
+            v-permission="{ resourceType: 'serveraccount', permission: 'change', resourceId: record.id }"
+            type="text" 
+            size="small" 
+            @click="handleEdit(record)"
+          >
             <template #icon>
               <icon-edit />
             </template>
@@ -109,7 +125,12 @@
             content="确定要删除这个账号吗？"
             @ok="handleDelete(record.id)"
           >
-            <a-button type="text" status="danger" size="small">
+            <a-button 
+              v-permission="{ resourceType: 'serveraccount', permission: 'delete', resourceId: record.id }"
+              type="text" 
+              status="danger" 
+              size="small"
+            >
               <template #icon>
                 <icon-delete />
               </template>

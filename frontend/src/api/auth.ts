@@ -8,8 +8,8 @@ export const authApi = {
   },
 
   // 用户登出
-  logout() {
-    return http.post('/auth/logout/')
+  logout(refreshToken?: string) {
+    return http.post('/auth/logout/', refreshToken ? { refresh: refreshToken } : {})
   },
 
   // 刷新访问令牌

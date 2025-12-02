@@ -245,6 +245,42 @@ class ExecutionPlanPermission(permissions.BasePermission, BasePermissionMixin):
         # 使用 Guardian 检查对象级权限
         return request.user.has_perm(permission, obj)
 
+
+class ServerAccountPermission(permissions.BasePermission, BasePermissionMixin):
+    """服务器账号权限 - 使用Guardian对象级权限"""
+
+    def has_permission(self, request, view):
+        """检查是否有访问权限"""
+        if not request.user.is_authenticated:
+            return False
+
+        # 对于列表操作，允许访问（具体权限在has_object_permission中检查）
+        if view.action == 'list':
+            return True
+        elif view.action == 'create':
+            # 创建权限检查全局权限
+            return request.user.has_perm('permissions.manage_hosts') or request.user.is_superuser
+
+        return True  # 其他操作在has_object_permission中检查
+
+    def has_object_permission(self, request, view, obj):
+        """检查对象级权限"""
+        if not request.user.is_authenticated:
+            return False
+
+        # 构建权限名称
+        if view.action == 'retrieve':
+            permission = 'view_serveraccount'
+        elif view.action in ['update', 'partial_update']:
+            permission = 'change_serveraccount'
+        elif view.action == 'destroy':
+            permission = 'delete_serveraccount'
+        else:
+            permission = f'{view.action}_serveraccount'
+
+        # 使用 Guardian 检查对象级权限
+        return request.user.has_perm(permission, obj)
+
 class IsSuperUser(permissions.BasePermission):
     """
     只允许超级用户访问

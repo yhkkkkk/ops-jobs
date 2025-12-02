@@ -91,12 +91,6 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(content=serializer.data, message="获取脚本模板列表成功")
 
-    def retrieve(self, request, *args, **kwargs):
-        """获取脚本模板详情"""
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return SycResponse.success(content=serializer.data, message="获取脚本模板详情成功")
-
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 

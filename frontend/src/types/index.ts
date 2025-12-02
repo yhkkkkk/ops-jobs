@@ -478,4 +478,4 @@ export interface PermissionResult {
 export type PermissionLevel = 'view' | 'add' | 'change' | 'delete' | 'execute'
 
 // 资源类型
-export type ResourceType = 'host' | 'job' | 'script' | 'executionplan' | 'jobtemplate' | 'scripttemplate'
+export type ResourceType = 'host' | 'job' | 'script' | 'executionplan' | 'jobtemplate' | 'scripttemplate' | 'serveraccount'

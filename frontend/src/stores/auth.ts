@@ -114,8 +114,8 @@ export const useAuthStore = defineStore('auth', () => {
   // 登出
   const logout = async (): Promise<void> => {
     try {
-      // 调用后端登出接口
-      await authApi.logout()
+      // 调用后端登出接口，传递refresh_token以便后端将JWT加入黑名单
+      await authApi.logout(refreshToken.value)
     } catch (error) {
       console.error('登出请求失败:', error)
     } finally {

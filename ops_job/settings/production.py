@@ -132,9 +132,13 @@ REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB_CACH
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 SESSION_COOKIE_AGE = 60 * 60 * 8  # 8h
-SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_NAME = 'sessionid'  # Session Cookie名称
+SESSION_COOKIE_PATH = '/'  # Cookie路径，根路径
+SESSION_COOKIE_DOMAIN = None  # Cookie域名，None表示当前域名（可通过环境变量设置，如 '.example.com'）
+SESSION_COOKIE_HTTPONLY = True  # 防止XSS攻击，JavaScript无法访问
 SESSION_COOKIE_SECURE = True  # 生产环境使用HTTPS
-SESSION_COOKIE_SAMESITE = 'Strict'
+SESSION_COOKIE_SAMESITE = 'Strict'  # 防止CSRF攻击，严格模式
+SESSION_SAVE_EVERY_REQUEST = False  # 减少缓存写入
 
 # CORS 配置 - 生产环境限制来源
 CORS_ALLOW_ALL_ORIGINS = False
@@ -171,9 +175,14 @@ SECURE_SSL_REDIRECT = True
 USE_TZ = True
 
 # CSRF 配置
-CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Strict'
+CSRF_COOKIE_NAME = 'csrftoken'  # CSRF Cookie名称
+CSRF_COOKIE_PATH = '/'  # Cookie路径
+CSRF_COOKIE_DOMAIN = None  # Cookie域名，None表示当前域名（可通过环境变量设置）
+CSRF_COOKIE_SECURE = True  # 生产环境使用HTTPS
+CSRF_COOKIE_HTTPONLY = False  # CSRF token需要JavaScript访问，不能设为True
+CSRF_COOKIE_SAMESITE = 'Strict'  # 与Session保持一致，严格模式
+CSRF_COOKIE_AGE = None  # None表示会话Cookie（浏览器关闭时删除）
+CSRF_USE_SESSIONS = False  # 不使用Session存储CSRF token，使用Cookie
 CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
 
 # 静态文件配置

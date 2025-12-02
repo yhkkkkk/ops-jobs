@@ -130,10 +130,23 @@ CHANNEL_LAYERS = {
 # Session配置 - 用于django admin，接口使用jwt
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # 使用数据库存储session
 SESSION_COOKIE_AGE = 60 * 60 * 24  # 24h
-SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_NAME = 'sessionid'  # Session Cookie名称
+SESSION_COOKIE_PATH = '/'  # Cookie路径，根路径
+SESSION_COOKIE_DOMAIN = None  # Cookie域名，None表示当前域名
+SESSION_COOKIE_HTTPONLY = True  # 防止XSS攻击，JavaScript无法访问
 SESSION_COOKIE_SECURE = False  # 开发环境不使用HTTPS
-SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = 'Lax'  # 防止CSRF攻击，允许同站请求
 SESSION_SAVE_EVERY_REQUEST = False  # 减少数据库写入
+
+# CSRF Cookie配置 - 开发环境
+CSRF_COOKIE_NAME = 'csrftoken'  # CSRF Cookie名称
+CSRF_COOKIE_PATH = '/'  # Cookie路径
+CSRF_COOKIE_DOMAIN = None  # Cookie域名
+CSRF_COOKIE_SECURE = False  # 开发环境不使用HTTPS
+CSRF_COOKIE_HTTPONLY = False  # CSRF token需要JavaScript访问，不能设为True
+CSRF_COOKIE_SAMESITE = 'Lax'  # 与Session保持一致
+CSRF_COOKIE_AGE = None  # None表示会话Cookie（浏览器关闭时删除）
+CSRF_USE_SESSIONS = False  # 不使用Session存储CSRF token，使用Cookie
 
 # CORS 配置 - 开发环境允许所有来源
 CORS_ALLOW_ALL_ORIGINS = True

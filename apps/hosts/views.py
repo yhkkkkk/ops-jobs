@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from guardian.shortcuts import get_objects_for_user
-from apps.permissions.permissions import HostManagementPermission
+from apps.permissions.permissions import HostManagementPermission, ServerAccountPermission
 
 from utils.responses import SycResponse
 from utils.pagination import HostPagination
@@ -647,7 +647,7 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
     """服务器账号管理API"""
     queryset = ServerAccount.objects.all()
     serializer_class = ServerAccountSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [ServerAccountPermission]
     filter_backends = [DjangoFilterBackend]
     filterset_class = ServerAccountFilter
 

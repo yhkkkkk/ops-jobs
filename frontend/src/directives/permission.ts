@@ -37,7 +37,13 @@ export const permission: Directive = {
       return
     }
 
-    // 检查权限
+    // 先隐藏元素，避免在权限检查完成前显示（除非是fallback模式）
+    // 如果是fallback模式，保持显示但标记为权限不足
+    if (!fallback) {
+      el.style.display = 'none'
+    }
+
+    // 检查权限（异步，但元素已隐藏，不会闪烁）
     checkPermission(el, resourceType, permission, resourceId, fallback)
   },
 
@@ -66,10 +72,6 @@ async function checkPermission(
   fallback = false
 ) {
   try {
-    // 延迟导入避免循环依赖
-    const { usePermissionsStore } = await import('@/stores/permissions')
-    const permissionsStore = usePermissionsStore()
-    
     // 首先检查是否是超级用户 - 从认证存储获取
     try {
       const { useAuthStore } = await import('@/stores/auth')
@@ -82,19 +84,29 @@ async function checkPermission(
       }
     } catch (authError) {
       console.error('获取认证存储失败:', authError)
-      // 如果无法获取认证存储，回退到权限存储
-      if (permissionsStore.isSuperUser) {
-        el.style.display = ''
-        el.removeAttribute('data-permission-denied')
-        return
-      }
     }
     
-    // 首先尝试使用缓存的权限结果
-    let hasPerm = permissionsStore.hasPermission(resourceType, permission, resourceId)
+    // 延迟导入避免循环依赖
+    const { usePermissionsStore } = await import('@/stores/permissions')
+    const permissionsStore = usePermissionsStore()
     
-    // 如果缓存中没有，才调用API
-    if (hasPerm === null || hasPerm === undefined) {
+    // 再次检查超级用户（从权限存储）
+    if (permissionsStore.isSuperUser) {
+      el.style.display = ''
+      el.removeAttribute('data-permission-denied')
+      return
+    }
+    
+    // 检查缓存中是否有该权限的记录
+    const cacheKey = `${resourceType}:${permission}:${resourceId || 'model'}`
+    const hasCache = permissionsStore.permissionCache.has(cacheKey)
+    
+    // 首先尝试使用缓存的权限结果
+    let hasPerm: boolean
+    if (hasCache) {
+      hasPerm = permissionsStore.hasPermission(resourceType, permission, resourceId)
+    } else {
+      // 如果缓存中没有，调用API检查权限
       hasPerm = await permissionsStore.checkPermission(resourceType, permission, resourceId)
     }
     

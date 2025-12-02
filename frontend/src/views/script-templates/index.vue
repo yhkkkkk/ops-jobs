@@ -1,5 +1,12 @@
 <template>
-  <div class="script-templates-page">
+  <div 
+    class="script-templates-page"
+    v-page-permissions="{ 
+      resourceType: 'scripttemplate', 
+      permissions: ['view', 'add', 'change', 'delete'],
+      resourceIds: templates.map(t => t.id)
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -15,7 +22,11 @@
               </template>
               刷新
             </a-button>
-            <a-button type="primary" @click="handleCreate">
+            <a-button 
+              v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
+              type="primary" 
+              @click="handleCreate"
+            >
               <template #icon>
                 <icon-plus />
               </template>
@@ -172,13 +183,23 @@
 
         <template #actions="{ record }">
           <a-space>
-            <a-button type="text" size="small" @click="handleView(record)">
+            <a-button 
+              v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
+              type="text" 
+              size="small" 
+              @click="handleView(record)"
+            >
               <template #icon>
                 <icon-eye />
               </template>
               查看
             </a-button>
-            <a-button type="text" size="small" @click="handleEdit(record)">
+            <a-button 
+              v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
+              type="text" 
+              size="small" 
+              @click="handleEdit(record)"
+            >
               <template #icon>
                 <icon-edit />
               </template>
@@ -209,7 +230,11 @@
                   </template>
                   复制
                 </a-doption>
-                <a-doption @click="handleDelete(record)" class="text-red-500">
+                <a-doption 
+                  v-permission="{ resourceType: 'scripttemplate', permission: 'delete', resourceId: record.id }"
+                  @click="handleDelete(record)" 
+                  class="text-red-500"
+                >
                   <template #icon>
                     <icon-delete />
                   </template>
