@@ -101,7 +101,7 @@ class UserPagination(LogPagination):
 
 
 class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
-    """用户管理ViewSet - 支持缓存"""
+    """用户管理ViewSet"""
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]

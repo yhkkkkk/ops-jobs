@@ -282,7 +282,6 @@ class ResourcePermissionsView(APIView):
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """审计日志ViewSet - 统一的系统审计日志"""
 
-    queryset = AuditLog.objects.select_related('user', 'resource_type').all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsSuperUser]
     pagination_class = CustomPagination
@@ -292,7 +291,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return AuditLog.objects.select_related('user', 'resource_type').order_by('-created_at')
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=['get'])
     def export(self, request):
         """导出审计日志为Excel文件"""
         try:
@@ -398,7 +397,4 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             
         except Exception as e:
             logger.error(f"导出审计日志失败: {e}")
-            return Response(
-                {'error': f'导出失败: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return SycResponse.error(f'导出失败: {str(e)}', code=500)
