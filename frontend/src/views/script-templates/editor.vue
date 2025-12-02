@@ -219,13 +219,13 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
       name: data.name,
       description: data.description || '',
       script_type: data.script_type,
-      category: data.category || '', // 添加分类字段
+      category: data.category || '', // 分类
       script_content: data.content || '', // 前端的 content 对应后端的 script_content
       tags_json: data.tags_json || {}, // 键值对格式标签
-      template_type: 'user', // 用户模板
-      version: '1.0',
-      is_active: true,
-      is_public: false,
+      template_type: templateData.value?.template_type || 'user', // 模板类型，默认为用户模板
+      version: data.version || templateData.value?.version || '1.0.0',
+      is_active: data.is_active ?? templateData.value?.is_active ?? true,
+      is_public: data.is_public ?? templateData.value?.is_public ?? false,
     }
 
     console.log('转换后的API数据:', apiData)
