@@ -355,6 +355,27 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             content=None,
             message=f"作业模板 '{template_name}' 删除成功"
         )
+    
+    @action(detail=False, methods=['get'])
+    def tags(self, request):
+        """获取可用标签列表"""
+        queryset = self.get_queryset()
+        tags = set()
+        
+        for tag_json in queryset.values_list('tags_json', flat=True):
+            if not tag_json:
+                continue
+            for key, value in tag_json.items():
+                if not key:
+                    continue
+                value_str = '' if value is None else str(value).strip()
+                if value_str:
+                    tags.add(f"{key}:{value_str}")
+        
+        return SycResponse.success(
+            content={'tags': sorted(tags)},
+            message="获取标签列表成功"
+        )
 
     @action(detail=True, methods=['get'])
     def steps(self, request, pk=None):

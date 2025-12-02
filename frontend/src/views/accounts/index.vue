@@ -227,7 +227,6 @@ const fetchAccounts = async () => {
     pagination.total = response.total
   } catch (error) {
     console.error('获取账号列表失败:', error)
-    // 错误消息已由HTTP拦截器处理，这里不再重复显示
   } finally {
     loading.value = false
   }
@@ -279,7 +278,6 @@ const handleDelete = async (id: number) => {
     fetchAccounts()
   } catch (error) {
     console.error('删除账号失败:', error)
-    // 错误消息已由HTTP拦截器处理，这里不再重复显示
   }
 }
 

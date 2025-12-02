@@ -359,17 +359,9 @@ const columns = [
 // 获取可用标签列表
 const fetchAvailableTags = async () => {
   try {
-    // 从所有模板中提取标签
-    const allTags = new Set<string>()
-    templates.value.forEach(template => {
-      if (template.tag_list && template.tag_list.length > 0) {
-        template.tag_list.forEach(tagObj => {
-          // 将键值对转换为 "key:value" 格式
-          allTags.add(`${tagObj.key}:${tagObj.value}`)
-        })
-      }
-    })
-    availableTags.value = Array.from(allTags).sort()
+    const response = await jobTemplateApi.getTags()
+    const tags = Array.isArray(response?.tags) ? response.tags : Array.isArray(response) ? response : []
+    availableTags.value = tags.sort()
   } catch (error) {
     console.error('获取标签列表失败:', error)
   }
@@ -399,8 +391,8 @@ const fetchTemplates = async () => {
     templates.value = response.results || []
     pagination.total = response.total || 0
 
-    // 获取可用标签
-    await fetchAvailableTags()
+    // 异步刷新标签列表，确保下拉选项完整
+    fetchAvailableTags()
   } catch (error) {
     console.error('获取作业模板列表失败:', error)
     Message.error('获取作业模板列表失败')

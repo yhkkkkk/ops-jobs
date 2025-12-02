@@ -220,6 +220,24 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
             content={'is_active': template.is_active},
             message=f"模板已{status_text}"
         )
+    
+    @action(detail=False, methods=['get'])
+    def tags(self, request):
+        """获取可用标签列表"""
+        queryset = self.get_queryset()
+        tags = set()
+        
+        for tag_json in queryset.values_list('tags_json', flat=True):
+            if not tag_json:
+                continue
+            for key, value in tag_json.items():
+                if key and value not in (None, ''):
+                    tags.add(f"{key}:{value}")
+        
+        return SycResponse.success(
+            content={'tags': sorted(tags)},
+            message="获取标签列表成功"
+        )
 
     @action(detail=False, methods=['get'])
     def for_import(self, request):

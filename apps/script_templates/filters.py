@@ -10,6 +10,7 @@ class ScriptTemplateFilter(django_filters.FilterSet):
     """脚本模板过滤器"""
 
     # 按名称搜索
+    # 不区分大小写的包含查询
     name = django_filters.CharFilter(lookup_expr='icontains', label='模板名称')
 
     # 搜索过滤器（支持名称和描述）

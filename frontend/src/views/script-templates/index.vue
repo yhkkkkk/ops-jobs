@@ -603,18 +603,11 @@ const versionColumns = [
 // 获取可用标签列表
 const fetchAvailableTags = async () => {
   try {
-    // 从所有模板中提取标签
-    const allTags = new Set<string>()
-    templates.value.forEach(template => {
-      if (template.tag_list) {
-        template.tag_list.forEach(tag => allTags.add(tag))
-      }
-    })
-    availableTags.value = Array.from(allTags).sort()
+    const response = await scriptTemplateApi.getTags()
+    const tags = Array.isArray(response?.tags) ? response.tags : Array.isArray(response) ? response : []
+    availableTags.value = tags.sort()
   } catch (error) {
     console.error('获取标签列表失败:', error)
-    // 使用模拟标签
-    availableTags.value = ['部署', '监控', '维护', '备份', '安全', '数据库', '网络', '系统']
   }
 }
 
@@ -648,8 +641,8 @@ const fetchTemplates = async () => {
     pagination.total = response.total
     console.log('设置模板列表数据:', templates.value)
 
-    // 获取可用标签
-    await fetchAvailableTags()
+    // 拉取可用标签（独立接口，保持选项完整）
+    fetchAvailableTags()
   } catch (error) {
     console.error('获取模板列表失败:', error)
     Message.error('获取模板列表失败')

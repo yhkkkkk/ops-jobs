@@ -133,6 +133,11 @@ export const scriptTemplateApi = {
   getTemplates(params?: any): Promise<PaginatedResponse<ScriptTemplate>> {
     return http.get('/script-templates/', { params })
   },
+  
+  // 获取可用标签
+  getTags(): Promise<{ tags: string[] }> {
+    return http.get('/script-templates/tags/')
+  },
 
   // 获取脚本模板详情
   getTemplate(id: number): Promise<ScriptTemplate> {
@@ -187,6 +192,11 @@ export const jobTemplateApi = {
   // 获取作业模板列表
   getTemplates(params?: any): Promise<PaginatedResponse<JobTemplate>> {
     return http.get('/templates/templates/', { params })
+  },
+  
+  // 获取可用标签
+  getTags(): Promise<{ tags: string[] }> {
+    return http.get('/templates/templates/tags/')
   },
 
   // 获取作业模板详情
