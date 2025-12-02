@@ -16,6 +16,23 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const resourcePermissionsCache = ref<Map<string, ResourcePermissionsResponse>>(new Map())
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // 正在进行的权限检查请求缓存（粒度：单个权限 + 可选对象）
+  const pendingRequests = ref<Map<string, Promise<boolean>>>(new Map())
+
+  const getPendingKey = (
+    resourceType: ResourceType,
+    permission: PermissionLevel,
+    resourceId?: number | null
+  ) => `${resourceType}:${permission}:${resourceId ?? 'model'}`
+
+  const registerPendingPromise = (key: string, promise: Promise<boolean>) => {
+    pendingRequests.value.set(key, promise)
+    promise.finally(() => {
+      if (pendingRequests.value.get(key) === promise) {
+        pendingRequests.value.delete(key)
+      }
+    })
+  }
 
   // 计算属性 - 从认证存储获取超级用户状态
   const isSuperUser = computed(() => {
@@ -72,21 +89,39 @@ export const usePermissionsStore = defineStore('permissions', () => {
       return cached.permissions[permission] || false
     }
 
-    try {
-      const result = await permissionsApi.checkPermission({
-        resource_type: resourceType,
-        resource_id: resourceId,
-        permissions: [permission]
-      })
-
-      // 缓存结果
-      permissionCache.value.set(cacheKey, result)
-      
-      return result.permissions[permission] || false
-    } catch (err: any) {
-      console.error('权限检查失败:', err)
-      return false
+    const pendingKey = getPendingKey(resourceType, permission, resourceId || null)
+    if (pendingRequests.value.has(pendingKey)) {
+      return await pendingRequests.value.get(pendingKey)!
     }
+
+    const requestPromise = (async () => {
+      try {
+        const result = await permissionsApi.checkPermission({
+          resource_type: resourceType,
+          resource_id: resourceId,
+          permissions: [permission]
+        })
+
+        // 缓存结果
+        permissionCache.value.set(cacheKey, result)
+        
+        return result.permissions[permission] || false
+      } catch (err: any) {
+        console.error('权限检查失败:', err)
+        // 缓存失败结果，避免重复请求
+        permissionCache.value.set(cacheKey, {
+          user_id: 0,
+          username: '',
+          resource_type: resourceType,
+          resource_id: resourceId || null,
+          permissions: { [permission]: false }
+        })
+        return false
+      }
+    })()
+
+    registerPendingPromise(pendingKey, requestPromise)
+    return await requestPromise
   }
 
   /**
@@ -100,35 +135,110 @@ export const usePermissionsStore = defineStore('permissions', () => {
     // 超级用户拥有所有权限
     if (isSuperUser.value) {
       const result: Record<string, boolean> = {}
-      permissions.forEach(perm => result[perm] = true)
-      return result
-    }
-
-    const cacheKey = `${resourceType}:${permissions.join(',')}:${resourceId || 'model'}`
-    
-    // 检查缓存
-    if (permissionCache.value.has(cacheKey)) {
-      const cached = permissionCache.value.get(cacheKey)!
-      return cached.permissions
-    }
-
-    try {
-      const result = await permissionsApi.checkPermission({
-        resource_type: resourceType,
-        resource_id: resourceId,
-        permissions
+      permissions.forEach(perm => {
+        result[perm] = true
+        // 同时缓存到单个权限缓存中
+        const cacheKey = `${resourceType}:${perm}:${resourceId || 'model'}`
+        permissionCache.value.set(cacheKey, {
+          user_id: 0,
+          username: 'superuser',
+          resource_type: resourceType,
+          resource_id: resourceId || null,
+          permissions: { [perm]: true }
+        })
       })
-
-      // 缓存结果
-      permissionCache.value.set(cacheKey, result)
-      
-      return result.permissions
-    } catch (err: any) {
-      console.error('批量权限检查失败:', err)
-      const result: Record<string, boolean> = {}
-      permissions.forEach(perm => result[perm] = false)
       return result
     }
+
+    const cachedResults: Record<string, boolean> = {}
+    const missingPermissions: PermissionLevel[] = []
+    
+    permissions.forEach(perm => {
+      const cacheKey = `${resourceType}:${perm}:${resourceId || 'model'}`
+      if (permissionCache.value.has(cacheKey)) {
+        const cached = permissionCache.value.get(cacheKey)!
+        cachedResults[perm] = cached.permissions[perm] || false
+      } else {
+        missingPermissions.push(perm)
+      }
+    })
+
+    if (missingPermissions.length === 0) {
+      return cachedResults
+    }
+
+    const pendingPromises = missingPermissions.map(perm => {
+      const key = getPendingKey(resourceType, perm, resourceId || null)
+      return pendingRequests.value.get(key)
+    })
+
+    if (pendingPromises.every(Boolean)) {
+      const resolved = await Promise.all(pendingPromises.map(p => p!))
+      resolved.forEach((value, index) => {
+        const perm = missingPermissions[index]
+        cachedResults[perm] = value
+      })
+      return { ...cachedResults }
+    }
+
+    const requestPermissions = missingPermissions
+    const requestPromise = (async () => {
+      try {
+        const result = await permissionsApi.checkPermission({
+          resource_type: resourceType,
+          resource_id: resourceId,
+          permissions: requestPermissions
+        })
+
+        // 缓存结果（同时缓存到批量缓存和单个权限缓存）
+        const batchCacheKey = `${resourceType}:${requestPermissions.join(',')}:${resourceId || 'model'}`
+        permissionCache.value.set(batchCacheKey, result)
+        
+        // 同时将每个权限缓存到单个权限缓存中
+        requestPermissions.forEach(perm => {
+          const singleCacheKey = `${resourceType}:${perm}:${resourceId || 'model'}`
+          if (!permissionCache.value.has(singleCacheKey)) {
+            permissionCache.value.set(singleCacheKey, {
+              user_id: result.user_id,
+              username: result.username,
+              resource_type: resourceType,
+              resource_id: resourceId || null,
+              permissions: { [perm]: result.permissions[perm] || false }
+            })
+          }
+          cachedResults[perm] = result.permissions[perm] || false
+        })
+        
+        return result.permissions
+      } catch (err: any) {
+        console.error('批量权限检查失败:', err)
+        const fallback: Record<string, boolean> = {}
+        requestPermissions.forEach(perm => {
+          const cacheKey = `${resourceType}:${perm}:${resourceId || 'model'}`
+          permissionCache.value.set(cacheKey, {
+            user_id: 0,
+            username: '',
+            resource_type: resourceType,
+            resource_id: resourceId || null,
+            permissions: { [perm]: false }
+          })
+          fallback[perm] = false
+          cachedResults[perm] = false
+        })
+        return fallback
+      }
+    })()
+
+    requestPermissions.forEach(perm => {
+      const key = getPendingKey(resourceType, perm, resourceId || null)
+      if (!pendingRequests.value.has(key)) {
+        const permPromise = requestPromise.then(perms => perms[perm] || false)
+        registerPendingPromise(key, permPromise)
+      }
+    })
+    
+    const fetchedResults = await requestPromise
+    return { ...cachedResults, ...fetchedResults }
   }
 
   /**
@@ -247,26 +357,81 @@ export const usePermissionsStore = defineStore('permissions', () => {
         result[id.toString()] = {}
         permissions.forEach(perm => {
           result[id.toString()][perm] = true
+          // 同时缓存到单个权限缓存中
+          const cacheKey = `${resourceType}:${perm}:${id}`
+          permissionCache.value.set(cacheKey, {
+            user_id: 0,
+            username: 'superuser',
+            resource_type: resourceType,
+            resource_id: id,
+            permissions: { [perm]: true }
+          })
         })
       })
       return result
     }
 
-    try {
-      const result = await permissionsApi.batchCheckPermissions(resourceType, resourceIds, permissions)
-      return result.permissions
-    } catch (err: any) {
-      console.error('批量资源权限检查失败:', err)
-      // 返回默认权限（无权限）
-      const result: Record<string, Record<string, boolean>> = {}
-      resourceIds.forEach(id => {
-        result[id.toString()] = {}
-        permissions.forEach(perm => {
-          result[id.toString()][perm] = false
+    const basePromise = (async () => {
+      try {
+        const result = await permissionsApi.batchCheckPermissions(resourceType, resourceIds, permissions)
+        
+        // 将批量检查的结果缓存到单个权限缓存中，避免后续重复请求
+        resourceIds.forEach(id => {
+          const idStr = id.toString()
+          if (result.permissions[idStr]) {
+            permissions.forEach(perm => {
+              const cacheKey = `${resourceType}:${perm}:${id}`
+              // 如果缓存中还没有，或者需要更新，则设置缓存
+              if (!permissionCache.value.has(cacheKey)) {
+                permissionCache.value.set(cacheKey, {
+                  user_id: result.user_id,
+                  username: result.username,
+                  resource_type: resourceType,
+                  resource_id: id,
+                  permissions: { [perm]: result.permissions[idStr][perm] || false }
+                })
+              }
+            })
+          }
         })
+        
+        return result.permissions
+      } catch (err: any) {
+        console.error('批量资源权限检查失败:', err)
+        const fallback: Record<string, Record<string, boolean>> = {}
+        resourceIds.forEach(id => {
+          fallback[id.toString()] = {}
+          permissions.forEach(perm => {
+            const cacheKey = `${resourceType}:${perm}:${id}`
+            permissionCache.value.set(cacheKey, {
+              user_id: 0,
+              username: '',
+              resource_type: resourceType,
+              resource_id: id,
+              permissions: { [perm]: false }
+            })
+            fallback[id.toString()][perm] = false
+          })
+        })
+        return fallback
+      }
+    })()
+
+    // 为每个资源+权限注册 pending promise
+    resourceIds.forEach(id => {
+      permissions.forEach(perm => {
+        const key = getPendingKey(resourceType, perm, id)
+        if (!pendingRequests.value.has(key)) {
+          const permPromise = basePromise.then(result => {
+            const perms = result[id.toString()] || {}
+            return perms[perm] || false
+          })
+          registerPendingPromise(key, permPromise)
+        }
       })
-      return result
-    }
+    })
+
+    return await basePromise
   }
 
   return {

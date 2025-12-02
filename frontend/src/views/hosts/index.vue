@@ -588,7 +588,9 @@
               </template>
               查看
             </a-button>
-            <a-dropdown>
+            <a-dropdown
+              v-if="hasDropdownPermissions(record.id)"
+            >
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -777,6 +779,7 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import type { Host, HostGroup, HostImportResult } from '@/types'
 import { useAuthStore } from '@/stores/auth'
+import { usePermissionsStore } from '@/stores/permissions'
 import HostForm from './components/HostForm.vue'
 import HostGroupTree from './components/HostGroupTree.vue'
 import HostGroupForm from './components/HostGroupForm.vue'
@@ -786,6 +789,9 @@ const loading = ref(false)
 const hosts = ref<Host[]>([])
 const formVisible = ref(false)
 const currentHost = ref<Host | null>(null)
+
+// 权限store
+const permissionsStore = usePermissionsStore()
 
 // 导入相关
 const importModalVisible = ref(false)
@@ -1631,25 +1637,34 @@ const toggleGroupExpand = (groupId: number) => {
   }
 }
 
-// 这些方法已经不再需要，因为使用了新的树形组件
-// const getGroupHosts = (groupId: number) => {
-//   return hosts.value.filter(host =>
-//     host.groups_info?.some(group => group.id === groupId)
-//   )
-// }
-
-// const selectHost = (host: Host) => {
-//   // 选中主机，可以高亮显示或其他操作
-//   console.log('选中主机:', host)
-// }
-
-// 批量操作相关方法 - rowSelection已在模板中直接使用
-
 // 检查当前页是否全选
 const isAllCurrentPageSelected = computed(() => {
   if (hosts.value.length === 0) return false
   return hosts.value.every(host => selectedRowKeys.value.includes(host.id))
 })
+
+// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
+const hasDropdownPermissions = (hostId: number): boolean => {
+  // 如果是超级用户，直接返回true
+  if (permissionsStore.isSuperUser) return true
+  
+  // 检查缓存中是否有编辑或删除权限的记录
+  const changeCacheKey = `host:change:${hostId}`
+  const deleteCacheKey = `host:delete:${hostId}`
+  const hasChangeCache = permissionsStore.permissionCache.has(changeCacheKey)
+  const hasDeleteCache = permissionsStore.permissionCache.has(deleteCacheKey)
+  
+  // 如果缓存中有记录，检查权限
+  if (hasChangeCache || hasDeleteCache) {
+    const hasChange = permissionsStore.hasPermission('host', 'change', hostId)
+    const hasDelete = permissionsStore.hasPermission('host', 'delete', hostId)
+    return hasChange || hasDelete
+  }
+  
+  // 如果缓存中没有，暂时返回true（等待权限检查完成）
+  // 权限检查完成后，v-permission指令会隐藏没有权限的选项，下拉菜单也会被隐藏
+  return true
+}
 
 // 全选当前页
 const selectAllCurrentPage = () => {

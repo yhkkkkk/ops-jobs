@@ -38,7 +38,7 @@ export const permission: Directive = {
     }
 
     // 先隐藏元素，避免在权限检查完成前显示（除非是fallback模式）
-    // 如果是fallback模式，保持显示但标记为权限不足
+    // 权限检查函数会先检查缓存，如果有缓存会立即显示
     if (!fallback) {
       el.style.display = 'none'
     }
@@ -56,8 +56,91 @@ export const permission: Directive = {
     
     if (!resourceType || !permission) return
 
+    // 检查绑定值是否发生变化
+    const oldValue = binding.oldValue as PermissionBindingValue | undefined
+    if (oldValue && 
+        oldValue.resourceType === resourceType &&
+        oldValue.permission === permission &&
+        oldValue.resourceId === resourceId &&
+        oldValue.fallback === fallback) {
+      // 绑定值没有变化，且元素已经处理过权限，不需要重新检查
+      // 但需要检查缓存，如果缓存中有结果，直接应用
+      checkPermissionFromCache(el, resourceType, permission, resourceId, fallback)
+      return
+    }
+
     // 重新检查权限
     checkPermission(el, resourceType, permission, resourceId, fallback)
+  }
+}
+
+/**
+ * 从缓存检查权限（同步方法）
+ */
+function checkPermissionFromCache(
+  el: HTMLElement,
+  resourceType: ResourceType,
+  permission: PermissionLevel,
+  resourceId?: number,
+  fallback = false
+) {
+  try {
+    // 延迟导入避免循环依赖
+    const { usePermissionsStore } = require('@/stores/permissions')
+    const permissionsStore = usePermissionsStore()
+    
+    // 检查是否是超级用户
+    if (permissionsStore.isSuperUser) {
+      el.style.display = ''
+      el.removeAttribute('data-permission-denied')
+      return
+    }
+    
+    // 检查缓存中是否有该权限的记录
+    const hasPerm = permissionsStore.hasPermission(resourceType, permission, resourceId)
+    
+    // 如果缓存中没有结果，不处理（等待异步检查完成）
+    if (hasPerm === false && !permissionsStore.permissionCache.has(`${resourceType}:${permission}:${resourceId || 'model'}`)) {
+      return
+    }
+    
+    // 应用权限结果
+    applyPermissionResult(el, hasPerm, fallback)
+  } catch (error) {
+    console.error('从缓存检查权限失败:', error)
+  }
+}
+
+/**
+ * 应用权限检查结果
+ */
+function applyPermissionResult(el: HTMLElement, hasPerm: boolean, fallback: boolean) {
+  if (hasPerm) {
+    // 有权限，显示元素
+    el.style.display = ''
+    el.style.visibility = 'visible'
+    el.style.position = ''
+    el.removeAttribute('data-permission-denied')
+  } else {
+    // 无权限
+    if (fallback) {
+      // 显示权限不足提示
+      el.style.display = ''
+      el.style.visibility = 'visible'
+      el.style.position = ''
+      el.setAttribute('data-permission-denied', 'true')
+      el.innerHTML = `
+        <div style="padding: 10px; text-align: center; color: #999;">
+          <icon-lock style="margin-right: 5px;" />
+          权限不足
+        </div>
+      `
+    } else {
+      // 隐藏元素
+      el.style.display = 'none'
+      el.style.visibility = 'hidden'
+      el.style.position = ''
+    }
   }
 }
 
@@ -78,8 +161,7 @@ async function checkPermission(
       const authStore = useAuthStore()
       
       if (authStore.isAdmin) {
-        el.style.display = ''
-        el.removeAttribute('data-permission-denied')
+        applyPermissionResult(el, true, fallback)
         return
       }
     } catch (authError) {
@@ -92,8 +174,7 @@ async function checkPermission(
     
     // 再次检查超级用户（从权限存储）
     if (permissionsStore.isSuperUser) {
-      el.style.display = ''
-      el.removeAttribute('data-permission-denied')
+      applyPermissionResult(el, true, fallback)
       return
     }
     
@@ -104,32 +185,14 @@ async function checkPermission(
     // 首先尝试使用缓存的权限结果
     let hasPerm: boolean
     if (hasCache) {
+      // 有缓存，立即使用
       hasPerm = permissionsStore.hasPermission(resourceType, permission, resourceId)
+      applyPermissionResult(el, hasPerm, fallback)
     } else {
       // 如果缓存中没有，调用API检查权限
+      // 注意：页面级权限预加载应该已经缓存了大部分权限，这里主要是兜底
       hasPerm = await permissionsStore.checkPermission(resourceType, permission, resourceId)
-    }
-    
-    if (hasPerm) {
-      // 有权限，显示元素
-      el.style.display = ''
-      el.removeAttribute('data-permission-denied')
-    } else {
-      // 无权限
-      if (fallback) {
-        // 显示权限不足提示
-        el.style.display = ''
-        el.setAttribute('data-permission-denied', 'true')
-        el.innerHTML = `
-          <div style="padding: 10px; text-align: center; color: #999;">
-            <icon-lock style="margin-right: 5px;" />
-            权限不足
-          </div>
-        `
-      } else {
-        // 隐藏元素
-        el.style.display = 'none'
-      }
+      applyPermissionResult(el, hasPerm, fallback)
     }
   } catch (error) {
     console.error('权限检查失败:', error)
@@ -140,8 +203,7 @@ async function checkPermission(
       
       // 如果是超级用户，显示元素
       if (authStore.isAdmin) {
-        el.style.display = ''
-        el.removeAttribute('data-permission-denied')
+        applyPermissionResult(el, true, fallback)
         return
       }
     } catch (authError) {
@@ -149,7 +211,7 @@ async function checkPermission(
     }
     
     // 权限检查失败时隐藏元素
-    el.style.display = 'none'
+    applyPermissionResult(el, false, fallback)
   }
 }
 
@@ -320,7 +382,7 @@ async function checkBatchPermissions(
  * 这个指令应该放在页面的根元素上，用于预加载权限
  */
 export const pagePermissions: Directive = {
-  mounted(el: HTMLElement, binding: DirectiveBinding) {
+  mounted(_el: HTMLElement, binding: DirectiveBinding) {
     const { value } = binding
     
     if (!value || typeof value !== 'object') {
@@ -337,8 +399,43 @@ export const pagePermissions: Directive = {
 
     // 预加载页面权限
     preloadPagePermissions(resourceType, permissions, resourceIds)
+  },
+
+  updated(_el: HTMLElement, binding: DirectiveBinding) {
+    const { value } = binding
+    
+    if (!value || typeof value !== 'object') return
+
+    const { resourceType, permissions, resourceIds } = value as BatchPermissionBindingValue
+    
+    if (!resourceType || !permissions || !Array.isArray(permissions)) return
+
+    // 检查 resourceIds 是否发生变化（使用序列化比较避免数组引用问题）
+    const oldValue = binding.oldValue as BatchPermissionBindingValue | undefined
+    if (oldValue) {
+      const oldIds = oldValue.resourceIds || []
+      const newIds = resourceIds || []
+      
+      // 序列化比较 resourceIds
+      const oldIdsStr = JSON.stringify([...oldIds].sort((a, b) => (a || 0) - (b || 0)))
+      const newIdsStr = JSON.stringify([...newIds].sort((a, b) => (a || 0) - (b || 0)))
+      
+      // 如果 resourceIds 没有变化，不需要重新预加载
+      if (oldIdsStr === newIdsStr &&
+          oldValue.resourceType === resourceType &&
+          oldValue.permissions.length === permissions.length &&
+          oldValue.permissions.every((p, i) => p === permissions[i])) {
+        return
+      }
+    }
+
+    // resourceIds 发生变化，重新预加载权限
+    preloadPagePermissions(resourceType, permissions, resourceIds)
   }
 }
+
+// 预加载请求的缓存，用于去重
+const preloadRequestCache = new Map<string, Promise<void>>()
 
 /**
  * 预加载页面权限
@@ -355,19 +452,52 @@ async function preloadPagePermissions(
     
     // 如果是超级用户，直接返回（无需预加载）
     if (permissionsStore.isSuperUser) {
-      console.log(`✅ 超级用户无需预加载权限: ${resourceType}`, permissions)
       return
     }
     
-    if (resourceIds && resourceIds.length > 0) {
-      // 批量检查多个资源的权限
-      await permissionsStore.batchCheckResourcePermissions(resourceType, resourceIds, permissions)
-    } else {
-      // 检查模型级权限
-      await permissionsStore.checkPermissions(resourceType, permissions)
+    // 同时预加载模型级权限和对象级权限
+    // 1. 先预加载模型级权限（用于没有 resourceId 的 v-permission 指令）
+    const modelRequestKey = `preload:${resourceType}:model:${permissions.join(',')}`
+    if (!preloadRequestCache.has(modelRequestKey)) {
+      const modelRequestPromise = (async () => {
+        try {
+          await permissionsStore.checkPermissions(resourceType, permissions)
+        } finally {
+          setTimeout(() => {
+            preloadRequestCache.delete(modelRequestKey)
+          }, 1000)
+        }
+      })()
+      preloadRequestCache.set(modelRequestKey, modelRequestPromise)
     }
     
-    console.log(`✅ 页面权限预加载完成: ${resourceType}`, permissions)
+    // 2. 如果有 resourceIds，再预加载对象级权限
+    if (resourceIds && resourceIds.length > 0) {
+      const sortedIds = [...resourceIds].sort((a, b) => a - b).join(',')
+      const objectRequestKey = `preload:${resourceType}:${sortedIds}:${permissions.join(',')}`
+      
+      if (!preloadRequestCache.has(objectRequestKey)) {
+        const objectRequestPromise = (async () => {
+          try {
+            await permissionsStore.batchCheckResourcePermissions(resourceType, resourceIds, permissions)
+          } finally {
+            setTimeout(() => {
+              preloadRequestCache.delete(objectRequestKey)
+            }, 1000)
+          }
+        })()
+        preloadRequestCache.set(objectRequestKey, objectRequestPromise)
+      }
+      
+      // 等待两个请求都完成
+      await Promise.all([
+        preloadRequestCache.get(modelRequestKey),
+        preloadRequestCache.get(objectRequestKey)
+      ])
+    } else {
+      // 只等待模型级权限请求完成
+      await preloadRequestCache.get(modelRequestKey)
+    }
   } catch (error) {
     console.error('页面权限预加载失败:', error)
     // 权限预加载失败时，尝试检查用户信息
@@ -377,7 +507,6 @@ async function preloadPagePermissions(
       
       // 如果是超级用户，记录日志
       if (authStore.isAdmin) {
-        console.log(`✅ 超级用户无需预加载权限: ${resourceType}`, permissions)
         return
       }
     } catch (authError) {
