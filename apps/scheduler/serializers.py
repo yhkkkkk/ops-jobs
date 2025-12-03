@@ -8,16 +8,19 @@ from utils.validators import validate_cron_expression, validate_timezone
 
 class ScheduledJobSerializer(serializers.ModelSerializer):
     """定时作业序列化器"""
-    
+
     template_name = serializers.CharField(read_only=True)
     plan_name = serializers.CharField(read_only=True)
+    # 方便前端跳转到模板详情
+    template_id = serializers.IntegerField(source='execution_plan.template_id', read_only=True)
     success_rate = serializers.FloatField(read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
-    
+
     class Meta:
         model = ScheduledJob
         fields = [
-            'id', 'name', 'description', 'execution_plan', 'template_name', 'plan_name',
+            'id', 'name', 'description', 'execution_plan', 'template_id',
+            'template_name', 'plan_name',
             'cron_expression', 'timezone', 'is_active',
             'total_runs', 'success_runs', 'failed_runs', 'success_rate',
             'last_run_time', 'next_run_time', 'created_by', 'created_by_name',

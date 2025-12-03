@@ -91,7 +91,7 @@ class TemplateChangeDetector:
                 plan_steps[step_id] = {
                     'plan_step': plan_step,
                     'original_hash': getattr(plan_step, 'step_hash', None),
-                    # 快照数据
+                    # 快照数据（使用当时的模板步骤快照字段，而不是当前模板）
                     'snapshot': {
                         'name': plan_step.step_name,
                         'description': plan_step.step_description,
@@ -103,6 +103,11 @@ class TemplateChangeDetector:
                         'ignore_error': plan_step.step_ignore_error,
                         'target_host_ids': plan_step.step_target_host_ids,
                         'target_group_ids': plan_step.step_target_group_ids,
+                        # 执行账号 / 文件传输等字段快照，用于精确对比
+                        'account_id': plan_step.step_account_id,
+                        'transfer_type': plan_step.step_transfer_type,
+                        'local_path': plan_step.step_local_path,
+                        'remote_path': plan_step.step_remote_path,
                     }
                 }
 
@@ -415,6 +420,7 @@ class TemplateSyncService:
                 # 检测变更
                 changes = TemplateChangeDetector.detect_changes(plan)
 
+                # 统计本次同步中受影响的步骤数量
                 updated_steps = 0
 
                 # 1. 同步全局变量
@@ -424,7 +430,9 @@ class TemplateSyncService:
                 # 2. 删除步骤
                 deleted_step_ids = [step['step_id'] for step in changes.get('deleted_steps', [])]
                 if deleted_step_ids:
-                    plan.planstep_set.filter(step_id__in=deleted_step_ids).delete()
+                    deleted_count, _ = plan.planstep_set.filter(step_id__in=deleted_step_ids).delete()
+                    # 删除的步骤数量也算进“受影响的步骤”统计
+                    updated_steps += deleted_count
 
                 # 3. 新增步骤
                 added_step_ids = [step['step_id'] for step in changes.get('added_steps', [])]
@@ -438,6 +446,7 @@ class TemplateSyncService:
                     )
                     plan_step.copy_from_template_step()
                     plan_step.save()
+                    updated_steps += 1
 
                 # 4. 更新修改的步骤
                 modified_step_ids = [step['step_id'] for step in changes.get('modified_steps', [])]
@@ -447,6 +456,7 @@ class TemplateSyncService:
                     plan_step.copy_from_template_step()
                     plan_step.step_hash = TemplateChangeDetector.calculate_step_hash(template_step)
                     plan_step.save()
+                    updated_steps += 1
 
                 # 5. 更新同步状态
                 plan.is_synced = True

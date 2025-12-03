@@ -13,6 +13,12 @@
 
       <template #extra>
         <a-space>
+          <a-button type="outline" @click="handleRefresh">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
           <a-button type="outline" @click="handleEdit">
             <template #icon>
               <icon-edit />
@@ -91,7 +97,7 @@
                   class="variable-item"
                 >
                   <div class="variable-key">{{ key }}</div>
-                  <div class="variable-value">{{ value }}</div>
+                  <div class="variable-value">{{ formatGlobalParameterValue(value) }}</div>
                 </div>
               </div>
             </div>
@@ -271,7 +277,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { IconEdit, IconCopy, IconPlayArrow, IconDown, IconUp } from '@arco-design/web-vue/es/icon'
+import { IconEdit, IconCopy, IconPlayArrow, IconDown, IconUp, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
@@ -405,6 +411,26 @@ const getScriptPreview = (content?: string) => {
   return preview
 }
 
+// 全局变量展示：对密文参数做掩码处理
+const formatGlobalParameterValue = (rawValue: any) => {
+  // 兼容老格式：直接是字符串
+  if (rawValue === null || rawValue === undefined) return ''
+  if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+    return String(rawValue)
+  }
+
+  // 新格式：{ value, type, description }
+  const value = rawValue?.value
+  const type = rawValue?.type
+
+  if (type === 'secret') {
+    // 密文统一显示为掩码
+    return '******'
+  }
+
+  return value !== undefined ? String(value) : ''
+}
+
 // 操作方法
 // 无论从哪里进入详情，都统一返回到作业模板列表
 const handleBack = () => {
@@ -459,6 +485,11 @@ const handleDebugExecute = async () => {
     console.error('调试执行失败:', error)
     Message.error(error.response?.data?.message || '调试执行失败')
   }
+}
+
+// 刷新模板详情
+const handleRefresh = () => {
+  fetchTemplate()
 }
 
 // 生命周期

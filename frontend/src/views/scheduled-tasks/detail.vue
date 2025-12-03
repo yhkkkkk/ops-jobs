@@ -47,10 +47,16 @@
                 <a-tag v-else color="red">禁用</a-tag>
               </a-descriptions-item>
               <a-descriptions-item label="执行方案">
-                {{ task.plan_name }}
+                <a-link v-if="task.execution_plan" @click="handleViewPlan">
+                  {{ task.plan_name || `方案ID: ${task.execution_plan}` }}
+                </a-link>
+                <span v-else>-</span>
               </a-descriptions-item>
               <a-descriptions-item label="模板名称">
-                {{ task.template_name }}
+                <a-link v-if="task.template_id" @click="handleViewTemplate">
+                  {{ task.template_name || `模板ID: ${task.template_id}` }}
+                </a-link>
+                <span v-else>-</span>
               </a-descriptions-item>
               <a-descriptions-item label="Cron表达式">
                 <code>{{ task.cron_expression }}</code>
@@ -302,6 +308,16 @@ const handleToggleStatus = async () => {
 
 const handleViewExecution = (record) => {
   router.push(`/execution-records/${record.id}`)
+}
+
+const handleViewPlan = () => {
+  if (!task.value || !task.value.execution_plan) return
+  router.push(`/execution-plans/${task.value.execution_plan}`)
+}
+
+const handleViewTemplate = () => {
+  if (!task.value || !task.value.template_id) return
+  router.push(`/job-templates/detail/${task.value.template_id}`)
 }
 
 const handleHistoryPageChange = (page) => {

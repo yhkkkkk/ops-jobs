@@ -91,14 +91,17 @@
 
       <!-- 模板全局变量 -->
       <a-card v-if="plan" title="模板全局变量" class="mb-4">
-        <div v-if="plan.template_global_parameters && Object.keys(plan.template_global_parameters).length > 0" class="global-parameters">
+        <div
+          v-if="plan.template_global_parameters && Object.keys(plan.template_global_parameters).length > 0"
+          class="global-parameters"
+        >
           <div
             v-for="(value, key) in plan.template_global_parameters"
             :key="key"
             class="parameter-item global"
           >
             <span class="param-key">{{ key }}:</span>
-            <span class="param-value">{{ value }}</span>
+            <span class="param-value">{{ formatGlobalParameterValue(value) }}</span>
           </div>
         </div>
         <div v-else class="no-parameters">
@@ -430,6 +433,23 @@ const getPositionalArgs = (step: any) => {
   }
 
   return []
+}
+
+// 全局变量展示：对密文参数做掩码处理（与作业模板详情保持一致）
+const formatGlobalParameterValue = (rawValue: any) => {
+  if (rawValue === null || rawValue === undefined) return ''
+  if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+    return String(rawValue)
+  }
+
+  const value = rawValue?.value
+  const type = rawValue?.type
+
+  if (type === 'secret') {
+    return '******'
+  }
+
+  return value !== undefined ? String(value) : ''
 }
 
 // 生命周期

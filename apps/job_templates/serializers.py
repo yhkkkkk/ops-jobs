@@ -355,17 +355,44 @@ class JobTemplateCreateSerializer(serializers.Serializer):
         help_text="模板级别的全局变量，可在所有步骤中使用"
     )
 
-    # 步骤定义（与更新保持一致，复用 JobStepCreateSerializer）
+    # 步骤定义
     steps = serializers.ListField(
         child=JobStepCreateSerializer(),
         min_length=1,
         help_text="步骤列表，每个步骤包含name、step_type、step_parameters、target_host_ids等字段"
     )
 
+    def validate_global_parameters(self, value):
+        """
+        规范全局变量结构：
+        - 兼容旧格式：直接是字符串/数字/布尔
+        - 对对象值仅保留 value 和 type，丢弃 description 等其他字段
+        """
+        if not isinstance(value, dict):
+            return value
+
+        normalized = {}
+        for key, item in value.items():
+            if isinstance(item, (str, int, float, bool)) or item is None:
+                normalized[key] = item
+                continue
+
+            if isinstance(item, dict):
+                cleaned = {}
+                if 'value' in item:
+                    cleaned['value'] = item['value']
+                if 'type' in item:
+                    cleaned['type'] = item['type']
+                normalized[key] = cleaned
+            else:
+                normalized[key] = item
+
+        return normalized
+
 
 class JobTemplateUpdateSerializer(serializers.Serializer):
-    """作业模板更新序列化器"""
-    
+    """作业模板更新序列化器（与创建保持一致，steps 复用 JobStepCreateSerializer）"""
+
     name = serializers.CharField(max_length=200, required=False, help_text="模板名称")
     description = serializers.CharField(required=False, allow_blank=True, help_text="模板描述")
     category = serializers.CharField(max_length=50, required=False, allow_blank=True, help_text="分类")
@@ -375,14 +402,14 @@ class JobTemplateUpdateSerializer(serializers.Serializer):
         allow_empty=True,
         help_text="标签列表，格式：[{'key': 'env', 'value': 'prod'}, {'key': 'team', 'value': 'ops'}]"
     )
-    
+
     # 全局变量
     global_parameters = serializers.DictField(
         required=False,
         allow_empty=True,
         help_text="模板级别的全局变量，可在所有步骤中使用"
     )
-    
+
     # 步骤定义（可选，用于完整更新）
     steps = serializers.ListField(
         child=JobStepCreateSerializer(),
@@ -390,45 +417,40 @@ class JobTemplateUpdateSerializer(serializers.Serializer):
         min_length=1,
         help_text="步骤列表，用于完整更新步骤"
     )
-    
+
     def validate_name(self, value):
         """验证名称唯一性（排除当前实例）"""
         if self.instance and value != self.instance.name:
             if JobTemplate.objects.filter(name=value).exists():
                 raise serializers.ValidationError(f"模板名称 '{value}' 已存在，请使用其他名称")
         return value
-    
-    def validate_steps(self, value):
-        """验证步骤定义（如果提供）"""
-        if value is not None:
-            for i, step in enumerate(value):
-                if not step.get('name'):
-                    raise serializers.ValidationError(f"步骤{i+1}缺少name字段")
 
-                step_type = step.get('step_type')
-                if step_type not in ['script', 'file_transfer']:
-                    raise serializers.ValidationError(f"步骤{i+1}的step_type必须是script或file_transfer")
+    def validate_global_parameters(self, value):
+        """
+        规范全局变量结构（与创建保持一致）：
+        - 兼容旧格式：直接是字符串/数字/布尔
+        - 对对象值仅保留 value 和 type，丢弃 description 等其他字段
+        """
+        if not isinstance(value, dict):
+            return value
 
-                # 验证脚本步骤的必需字段
-                if step_type == 'script':
-                    if not step.get('script_content'):
-                        raise serializers.ValidationError(f"脚本步骤{i+1}必须包含script_content字段")
-                    if not step.get('script_type'):
-                        raise serializers.ValidationError(f"脚本步骤{i+1}必须包含script_type字段")
-                elif step_type == 'file_transfer':
-                    if not step.get('local_path'):
-                        raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含local_path字段")
-                    if not step.get('remote_path'):
-                        raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含remote_path字段")
-                    if not step.get('transfer_type'):
-                        raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含transfer_type字段")
+        normalized = {}
+        for key, item in value.items():
+            if isinstance(item, (str, int, float, bool)) or item is None:
+                normalized[key] = item
+                continue
 
-                # 验证位置参数格式
-                step_parameters = step.get('step_parameters', [])
-                if not isinstance(step_parameters, list):
-                    raise serializers.ValidationError(f"步骤{i+1}的step_parameters必须是数组格式")
+            if isinstance(item, dict):
+                cleaned = {}
+                if 'value' in item:
+                    cleaned['value'] = item['value']
+                if 'type' in item:
+                    cleaned['type'] = item['type']
+                normalized[key] = cleaned
+            else:
+                normalized[key] = item
 
-        return value
+        return normalized
 
 
 class ExecutionPlanCreateSerializer(serializers.Serializer):

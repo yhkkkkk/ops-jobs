@@ -802,11 +802,10 @@ const handleAddGlobalParameter = () => {
   if (!form.global_parameters) {
     form.global_parameters = {}
   }
-  // 使用新的扩展格式
+  // 使用扩展格式
   form.global_parameters[newKey] = {
     value: '',
-    type: 'text',
-    description: ''
+    type: 'text'
   }
   parameterKeys.value[newKey] = newKey
   parameterVisibility.value[newKey] = false
@@ -855,8 +854,7 @@ const handleParameterValueChange = (key: string, value: string) => {
     // 升级旧格式到新格式
     form.global_parameters[key] = {
       value: value,
-      type: 'text',
-      description: ''
+      type: 'text'
     }
   } else {
     // 更新新格式
@@ -881,8 +879,7 @@ const handleParameterTypeChange = (key: string, type: string) => {
 
   form.global_parameters[key] = {
     value: currentValue,
-    type: type,
-    description: param?.description || ''
+    type: type
   }
   
   // 检测变更
