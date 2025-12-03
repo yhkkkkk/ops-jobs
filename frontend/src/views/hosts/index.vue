@@ -140,7 +140,7 @@
                       @paste="handleIpPaste"
                       @input="handleIpInput"
                       :auto-size="{ minRows: 1, maxRows: 6 }"
-                      style="width: 320px"
+                      style="width: 300px"
                     />
                   </a-form-item>
                 </div>
