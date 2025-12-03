@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.decorators import action
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
+from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import AuditLog
 from .serializers import AuditLogSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -161,10 +162,61 @@ class UserPermissionsView(APIView):
             
             data['model_permissions'] = model_permissions
             
-            # 计算权限总数
+            # 获取对象级权限（Guardian）
+            object_permissions = {}
+            
+            # 获取用户直接的对象权限
+            user_obj_perms = UserObjectPermission.objects.filter(user=user).select_related(
+                'permission__content_type'
+            )
+            for obj_perm in user_obj_perms:
+                ct = obj_perm.permission.content_type
+                key = f"{ct.app_label}.{ct.model}"
+                if key not in object_permissions:
+                    object_permissions[key] = {}
+                
+                # 获取对象ID和权限名称
+                obj_id = str(obj_perm.object_pk)
+                perm_name = obj_perm.permission.codename
+                
+                if obj_id not in object_permissions[key]:
+                    object_permissions[key][obj_id] = []
+                
+                if perm_name not in object_permissions[key][obj_id]:
+                    object_permissions[key][obj_id].append(perm_name)
+            
+            # 获取用户所属组的对象权限
+            for group in user.groups.all():
+                group_obj_perms = GroupObjectPermission.objects.filter(group=group).select_related(
+                    'permission__content_type'
+                )
+                for obj_perm in group_obj_perms:
+                    ct = obj_perm.permission.content_type
+                    key = f"{ct.app_label}.{ct.model}"
+                    if key not in object_permissions:
+                        object_permissions[key] = {}
+                    
+                    obj_id = str(obj_perm.object_pk)
+                    perm_name = obj_perm.permission.codename
+                    
+                    if obj_id not in object_permissions[key]:
+                        object_permissions[key][obj_id] = []
+                    
+                    if perm_name not in object_permissions[key][obj_id]:
+                        object_permissions[key][obj_id].append(perm_name)
+            
+            data['object_permissions'] = object_permissions
+            
+            # 计算权限总数（模型级权限 + 对象级权限）
             total_perms = 0
             for perms in model_permissions.values():
                 total_perms += len(perms)
+            
+            # 统计对象级权限数量
+            for model_perms in object_permissions.values():
+                for obj_perms in model_perms.values():
+                    total_perms += len(obj_perms)
+            
             data['permission_count'] = total_perms
             
             return SycResponse.success(data, message='获取用户权限成功')

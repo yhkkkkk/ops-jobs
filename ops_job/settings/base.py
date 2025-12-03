@@ -497,3 +497,7 @@ LOGGING = {
 ASGI_APPLICATION = 'ops_job.asgi.application'
 
 # Channels 层配置将在具体环境配置中设置 (development.py, production.py)
+
+# 隐藏右侧收藏按钮和GitHub、Gitee链接
+SIMPLEUI_HOME_INFO = False
+SIMPLEUI_HOME_LINK = False

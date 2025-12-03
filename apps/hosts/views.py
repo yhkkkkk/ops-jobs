@@ -42,15 +42,20 @@ class HostViewSet(viewsets.ModelViewSet):
 
         # 如果是超级用户，返回所有主机
         if self.request.user.is_superuser:
-            return queryset
-        else:
-            # 其他用户只能看到有权限的主机
-            queryset = get_objects_for_user(
-                self.request.user,
-                'view_host',
-                klass=Host,
-                accept_global_perms=False
-            )
+            return queryset.order_by('-created_at')
+        
+        # 检查用户是否有模型级别的 view_host 权限
+        # 如果有模型级别权限，返回所有主机
+        if self.request.user.has_perm('hosts.view_host'):
+            return queryset.select_related('created_by').prefetch_related('groups').order_by('-created_at')
+        
+        # 否则，只返回有对象级别权限的主机
+        queryset = get_objects_for_user(
+            self.request.user,
+            'view_host',
+            klass=Host,
+            accept_global_perms=False
+        )
 
         return queryset.select_related('created_by').prefetch_related('groups').order_by('-created_at')
 
