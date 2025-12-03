@@ -183,7 +183,9 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown>
+            <a-dropdown
+              v-if="hasDropdownPermissions(record.id)"
+            >
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -260,6 +262,9 @@ import { Message } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
+import { usePermissionsStore } from '@/stores/permissions'
+
+const permissionsStore = usePermissionsStore()
 
 const router = useRouter()
 
@@ -531,6 +536,31 @@ const formatDate = (dateString: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
+const hasDropdownPermissions = (templateId: number): boolean => {
+  // 如果是超级用户，直接返回true
+  if (permissionsStore.isSuperUser) return true
+  
+  // 检查下拉菜单中的权限：
+  // 1. executionplan:add (新增执行方案)
+  // 2. executionplan:view (查看执行方案)
+  // 3. executionplan:change (同步方案)
+  // 4. jobtemplate:add (复制)
+  // 5. jobtemplate:delete (删除，需要 resourceId)
+  
+  // 检查模型级权限
+  const hasExecutionPlanAdd = permissionsStore.hasPermission('executionplan', 'add')
+  const hasExecutionPlanView = permissionsStore.hasPermission('executionplan', 'view')
+  const hasExecutionPlanChange = permissionsStore.hasPermission('executionplan', 'change')
+  const hasJobTemplateAdd = permissionsStore.hasPermission('jobtemplate', 'add')
+  
+  // 检查对象级权限（删除）
+  const hasJobTemplateDelete = permissionsStore.hasPermission('jobtemplate', 'delete', templateId)
+  
+  return hasExecutionPlanAdd || hasExecutionPlanView || hasExecutionPlanChange || 
+         hasJobTemplateAdd || hasJobTemplateDelete
 }
 
 // 生命周期

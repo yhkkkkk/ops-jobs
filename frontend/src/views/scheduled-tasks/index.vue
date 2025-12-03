@@ -158,7 +158,9 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown>
+            <a-dropdown
+              v-if="hasDropdownPermissions(record.id)"
+            >
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -222,6 +224,9 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { useRouter } from 'vue-router'
 import { scheduledJobApi } from '@/api/scheduler'
+import { usePermissionsStore } from '@/stores/permissions'
+
+const permissionsStore = usePermissionsStore()
 
 const router = useRouter()
 
@@ -459,6 +464,20 @@ const getProgressColor = (percent) => {
   if (percent >= 90) return '#00b42a'
   if (percent >= 70) return '#ff7d00'
   return '#f53f3f'
+}
+
+// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
+const hasDropdownPermissions = (taskId) => {
+  // 如果是超级用户，直接返回true
+  if (permissionsStore.isSuperUser) return true
+  
+  // 检查下拉菜单中的权限：
+  // 1. job:change (启用/禁用，对象级权限)
+  // 2. job:delete (删除，对象级权限)
+  const hasChange = permissionsStore.hasPermission('job', 'change', taskId)
+  const hasDelete = permissionsStore.hasPermission('job', 'delete', taskId)
+  
+  return hasChange || hasDelete
 }
 
 // 生命周期

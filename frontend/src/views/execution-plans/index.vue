@@ -193,7 +193,10 @@
               </template>
               执行
             </a-button>
-            <a-dropdown @select="(value) => handleMoreAction(value, record)">
+            <a-dropdown
+              v-if="hasDropdownPermissions(record.id)"
+              @select="(value) => handleMoreAction(value, record)"
+            >
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -277,6 +280,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { executionPlanApi, jobTemplateApi } from '@/api/ops'
 import type { ExecutionPlan, JobTemplate } from '@/types'
+import { usePermissionsStore } from '@/stores/permissions'
+
+const permissionsStore = usePermissionsStore()
 
 const router = useRouter()
 const route = useRoute()
@@ -537,6 +543,18 @@ const formatDateTime = (dateTime: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
+const hasDropdownPermissions = (planId: number): boolean => {
+  // 如果是超级用户，直接返回true
+  if (permissionsStore.isSuperUser) return true
+  
+  // 检查下拉菜单中的权限：
+  // executionplan:delete (删除方案，对象级权限)
+  const hasDelete = permissionsStore.hasPermission('executionplan', 'delete', planId)
+  
+  return hasDelete
 }
 
 // 生命周期

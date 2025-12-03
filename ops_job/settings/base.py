@@ -251,7 +251,7 @@ ANONYMOUS_USER_NAME = None  # 禁用匿名用户功能
 GUARDIAN_AUTO_PREFETCH = True  # 启用权限预加载以提升性能
 
 # SimpleUI 配置
-SIMPLEUI_HOME_TITLE = "运维作业平台"
+SIMPLEUI_HOME_TITLE = "运维作业管理后台"
 SIMPLEUI_HOME_ICON = "fas fa-server"
 SIMPLEUI_LOGO = "https://cdn-icons-png.flaticon.com/512/1087/1087815.png"  # 齿轮图标
 
@@ -494,10 +494,8 @@ LOGGING = {
 }
 
 # ASGI 应用配置
-ASGI_APPLICATION = 'ops_job.asgi.application'
-
 # Channels 层配置将在具体环境配置中设置 (development.py, production.py)
+ASGI_APPLICATION = 'ops_job.asgi.application'
 
 # 隐藏右侧收藏按钮和GitHub、Gitee链接
 SIMPLEUI_HOME_INFO = False
-SIMPLEUI_HOME_LINK = False
