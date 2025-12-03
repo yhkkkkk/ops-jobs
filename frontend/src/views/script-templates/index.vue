@@ -696,7 +696,7 @@ const handlePageSizeChange = (pageSize: number) => {
 
 // 新建模板
 const handleCreate = () => {
-  router.push('/script-templates/editor/new')
+  router.push('/script-templates/create')
 }
 
 // 查看模板
@@ -733,7 +733,7 @@ const handleView = async (record: ScriptTemplate) => {
 
 // 编辑模板
 const handleEdit = (record: ScriptTemplate) => {
-  router.push(`/script-templates/editor/${record.id}`)
+  router.push(`/script-templates/${record.id}/edit`)
 }
 
 // 复制模板
@@ -752,7 +752,7 @@ const handleCopy = (record: ScriptTemplate) => {
   sessionStorage.setItem('copyTemplateData', JSON.stringify(copiedTemplate))
 
   // 跳转到编辑器页面
-  router.push('/script-templates/editor/new?action=copy')
+  router.push('/script-templates/create?action=copy')
 }
 
 // 删除模板

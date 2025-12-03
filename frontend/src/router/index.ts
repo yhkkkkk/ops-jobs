@@ -78,11 +78,20 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/script-templates/editor/:id?',
-        name: 'ScriptTemplateEditor',
+        path: '/script-templates/create',
+        name: 'ScriptTemplateCreate',
         component: () => import('@/views/script-templates/editor.vue'),
         meta: {
-          title: '脚本编辑器',
+          title: '创建脚本模板',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/script-templates/:id/edit',
+        name: 'ScriptTemplateEdit',
+        component: () => import('@/views/script-templates/editor.vue'),
+        meta: {
+          title: '编辑脚本模板',
           hideInMenu: true,
         },
       },
@@ -96,11 +105,20 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/job-templates/editor/:id?',
-        name: 'JobTemplateEditor',
+        path: '/job-templates/create',
+        name: 'JobTemplateCreate',
         component: () => import('@/views/job-templates/editor.vue'),
         meta: {
-          title: '作业模板编辑器',
+          title: '创建作业模板',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: '/job-templates/:id/edit',
+        name: 'JobTemplateEdit',
+        component: () => import('@/views/job-templates/editor.vue'),
+        meta: {
+          title: '编辑作业模板',
           hideInMenu: true,
         },
       },
@@ -132,7 +150,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/execution-plans/:id',
+        path: '/execution-plans/detail/:id',
         name: 'ExecutionPlanDetail',
         component: () => import('@/views/execution-plans/detail.vue'),
         meta: {
@@ -150,7 +168,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/execution-plans/:id/execute',
+        path: '/execution-plans/detail/:id/execute',
         name: 'ExecutionPlanExecute',
         component: () => import('@/views/execution-plans/execute.vue'),
         meta: {
@@ -196,7 +214,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/scheduled-tasks/:id',
+        path: '/scheduled-tasks/detail/:id',
         name: 'ScheduledTaskDetail',
         component: () => import('@/views/scheduled-tasks/detail.vue'),
         meta: {

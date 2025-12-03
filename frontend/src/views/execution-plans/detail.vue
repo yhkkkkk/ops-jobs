@@ -350,7 +350,7 @@ const handleEdit = () => {
 
 // 执行方案
 const handleExecute = () => {
-  router.push(`/execution-plans/${route.params.id}/execute`)
+  router.push(`/execution-plans/detail/${route.params.id}/execute`)
 }
 
 // 查看所属模板详情

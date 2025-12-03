@@ -488,7 +488,7 @@ const handleTemplateSelectCancel = () => {
 
 // 查看方案
 const handleView = (plan: ExecutionPlan) => {
-  router.push(`/execution-plans/${plan.id}`)
+  router.push(`/execution-plans/detail/${plan.id}`)
 }
 
 // 编辑方案
@@ -498,7 +498,7 @@ const handleEdit = (plan: ExecutionPlan) => {
 
 // 执行方案
 const handleExecute = (plan: ExecutionPlan) => {
-  router.push(`/execution-plans/${plan.id}/execute`)
+  router.push(`/execution-plans/detail/${plan.id}/execute`)
 }
 
 // 更多操作

@@ -433,7 +433,7 @@ const handlePageSizeChange = (pageSize: number) => {
 
 // 操作处理
 const handleCreate = () => {
-  router.push('/job-templates/editor')
+  router.push('/job-templates/create')
 }
 
 const handleView = (record: JobTemplate) => {
@@ -441,7 +441,7 @@ const handleView = (record: JobTemplate) => {
 }
 
 const handleEdit = (record: JobTemplate) => {
-  router.push(`/job-templates/editor/${record.id}`)
+  router.push(`/job-templates/${record.id}/edit`)
 }
 
 const handleCreatePlan = (record: JobTemplate) => {
@@ -471,7 +471,7 @@ const handleCopy = async (record: JobTemplate) => {
     sessionStorage.setItem('copyTemplateData', JSON.stringify(copiedTemplate))
 
     // 跳转到编辑器页面
-    router.push('/job-templates/editor?action=copy')
+    router.push('/job-templates/create?action=copy')
     Message.success('模板数据已复制，请修改模板名称后保存')
   } catch (error) {
     console.error('复制模板失败:', error)

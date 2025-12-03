@@ -299,7 +299,7 @@ const handleExecute = async () => {
 
 // 返回详情页
 const handleBack = () => {
-  router.push(`/execution-plans/${route.params.id}`)
+  router.push(`/execution-plans/detail/${route.params.id}`)
 }
 
 // 生命周期

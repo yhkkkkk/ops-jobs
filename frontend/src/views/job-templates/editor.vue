@@ -570,7 +570,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         type: 'primary',
         icon: IconEye,
         handler: () => {
-          router.replace(`/job-templates/editor/${template.id}`)
+          router.replace(`/job-templates/${template.id}/edit`)
         }
       },
       {

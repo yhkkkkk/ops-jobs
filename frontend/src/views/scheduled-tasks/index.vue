@@ -390,7 +390,7 @@ const handleCreate = () => {
 
 // 查看任务
 const handleView = (record) => {
-  router.push(`/scheduled-tasks/${record.id}`)
+  router.push(`/scheduled-tasks/detail/${record.id}`)
 }
 
 // 编辑任务

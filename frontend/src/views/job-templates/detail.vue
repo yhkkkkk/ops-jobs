@@ -438,7 +438,7 @@ const handleBack = () => {
 }
 
 const handleEdit = () => {
-  router.push(`/job-templates/editor/${template.value?.id}`)
+  router.push(`/job-templates/${template.value?.id}/edit`)
 }
 
 const handleCopy = () => {
@@ -457,7 +457,7 @@ const handleCopy = () => {
   sessionStorage.setItem('copyTemplateData', JSON.stringify(copiedTemplate))
 
   // 跳转到编辑器页面
-  router.push('/job-templates/editor?action=copy')
+  router.push('/job-templates/create?action=copy')
   Message.success('模板数据已复制，请修改模板名称后保存')
 }
 

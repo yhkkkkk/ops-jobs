@@ -312,7 +312,7 @@ const handleViewExecution = (record) => {
 
 const handleViewPlan = () => {
   if (!task.value || !task.value.execution_plan) return
-  router.push(`/execution-plans/${task.value.execution_plan}`)
+  router.push(`/execution-plans/detail/${task.value.execution_plan}`)
 }
 
 const handleViewTemplate = () => {
