@@ -313,7 +313,7 @@ class ResourcePermissionsView(APIView):
 
                         result[str(resource_id)] = obj_perms
 
-                    except model_class.DoesNotExist:  # type: ignore[name-defined]
+                    except model_class.DoesNotExist:
                         result[str(resource_id)] = {'error': '资源不存在'}
 
                 return SycResponse.success({
