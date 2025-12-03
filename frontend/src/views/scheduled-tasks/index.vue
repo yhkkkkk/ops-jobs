@@ -3,7 +3,8 @@
     class="scheduled-tasks-page"
     v-page-permissions="{
       resourceType: 'job',
-      permissions: ['view', 'add', 'change', 'delete', 'execute']
+      permissions: ['view', 'add', 'change', 'delete', 'execute'],
+      resourceIds: tasks.map(t => t.id)
     }"
   >
     <!-- 页面头部 -->
