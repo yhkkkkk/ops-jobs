@@ -48,11 +48,6 @@ class JobTemplate(models.Model):
         return []
 
     @property
-    def tags(self):
-        """向后兼容属性，返回原始标签字典"""
-        return self.tags_json or {}
-
-    @property
     def step_count(self):
         """步骤数量"""
         return self.steps.count()

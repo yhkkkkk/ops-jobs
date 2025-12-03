@@ -53,7 +53,7 @@ class TemplateChangeDetector:
             'name': template.name,
             'description': template.description,
             'category': template.category,
-            'tags': template.tags,
+            'tags': template.tag_list,
             'steps': []
         }
         
