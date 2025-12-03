@@ -8,7 +8,7 @@ import pandas as pd
 import logging
 from django.http import FileResponse
 from django.utils import timezone
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -267,7 +267,7 @@ class ResourcePermissionsView(APIView):
             # 获取资源信息
             resource_type = request.data.get('resource_type')
             resource_ids = request.data.get('resource_ids', [])
-            permissions_to_check = request.data.get('permissions', ['view', 'change', 'delete'])
+            permissions_to_check = request.data.get('permissions', ['view', 'change', 'delete', 'add'])
             
             if not resource_type:
                 return SycResponse.error('必须提供资源类型', code=400)
