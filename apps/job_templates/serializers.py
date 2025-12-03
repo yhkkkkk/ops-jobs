@@ -355,43 +355,12 @@ class JobTemplateCreateSerializer(serializers.Serializer):
         help_text="模板级别的全局变量，可在所有步骤中使用"
     )
 
-    # 步骤定义
+    # 步骤定义（与更新保持一致，复用 JobStepCreateSerializer）
     steps = serializers.ListField(
-        child=serializers.DictField(),
+        child=JobStepCreateSerializer(),
         min_length=1,
-        help_text="步骤列表，每个步骤包含name、step_type、step_parameters等字段"
+        help_text="步骤列表，每个步骤包含name、step_type、step_parameters、target_host_ids等字段"
     )
-
-    def validate_steps(self, value):
-        """验证步骤定义"""
-        for i, step in enumerate(value):
-            if not step.get('name'):
-                raise serializers.ValidationError(f"步骤{i+1}缺少name字段")
-
-            step_type = step.get('step_type')
-            if step_type not in ['script', 'file_transfer']:
-                raise serializers.ValidationError(f"步骤{i+1}的step_type必须是script或file_transfer")
-
-            # 验证脚本步骤的必需字段
-            if step_type == 'script':
-                if not step.get('script_content'):
-                    raise serializers.ValidationError(f"脚本步骤{i+1}必须包含script_content字段")
-                if not step.get('script_type'):
-                    raise serializers.ValidationError(f"脚本步骤{i+1}必须包含script_type字段")
-            elif step_type == 'file_transfer':
-                if not step.get('local_path'):
-                    raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含local_path字段")
-                if not step.get('remote_path'):
-                    raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含remote_path字段")
-                if not step.get('transfer_type'):
-                    raise serializers.ValidationError(f"文件传输步骤{i+1}必须包含transfer_type字段")
-
-            # 验证位置参数格式
-            step_parameters = step.get('step_parameters', [])
-            if not isinstance(step_parameters, list):
-                raise serializers.ValidationError(f"步骤{i+1}的step_parameters必须是数组格式")
-
-        return value
 
 
 class JobTemplateUpdateSerializer(serializers.Serializer):

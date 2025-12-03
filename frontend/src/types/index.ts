@@ -211,7 +211,8 @@ export interface JobTemplate {
   name: string
   description: string
   category: string
-  tags: string[]
+  // 用于创建/编辑时的标签结构
+  tags: { key: string; value: string }[]
   global_parameters: Record<string, any>
   steps: JobStep[]
   step_count: number

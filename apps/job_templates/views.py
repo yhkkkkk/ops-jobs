@@ -101,13 +101,13 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
             # 创建步骤
             for i, step_data in enumerate(data['steps']):
-                # 基本步骤数据
+                # 基本步骤数据（使用验证后的结构，包含 target_host_ids）
                 step_kwargs = {
                     'template': template,
                     'name': step_data['name'],
                     'description': step_data.get('description', ''),
                     'step_type': step_data['step_type'],
-                    'order': i + 1,
+                    'order': step_data.get('order', i + 1),
                     'step_parameters': step_data.get('step_parameters', []),
                     'timeout': step_data.get('timeout', 300),
                     'ignore_error': step_data.get('ignore_error', False),
@@ -130,27 +130,10 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
                 step = JobStep.objects.create(**step_kwargs)
 
-                # 处理目标选择（统一格式）
-                targets_data = step_data.get('targets', [])
-                
-                # 分离主机和分组
-                target_host_ids = []
-                target_group_ids = []
-                
-                for target in targets_data:
-                    if isinstance(target, dict):
-                        target_type = target.get('type')
-                        target_id = target.get('id')
-                        
-                        if target_type == 'host' and target_id:
-                            target_host_ids.append(target_id)
-                        elif target_type == 'group' and target_id:
-                            target_group_ids.append(target_id)
-                
+                # 处理目标主机（统一使用 target_host_ids）
+                target_host_ids = step_data.get('target_host_ids', [])
                 if target_host_ids:
                     step.target_hosts.set(target_host_ids)
-                if target_group_ids:
-                    step.target_groups.set(target_group_ids)
 
             # 创建默认执行方案（包含所有步骤）
             default_plan = ExecutionPlan.objects.create(

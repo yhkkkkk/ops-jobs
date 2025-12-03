@@ -60,7 +60,7 @@
           <a-col :span="12">
             <a-form-item label="标签">
               <TagEditor
-                v-model="tagEditorValue"
+                v-model="form.tags"
                 placeholder="添加键值对标签"
                 :max-tags="10"
               />
@@ -322,31 +322,10 @@ const form = reactive<Partial<JobTemplate>>({
   name: '',
   description: '',
   category: '',
-  tags: [] as string[],
+  // 标签在前后端都使用 { key, value } 结构
+  tags: [] as any[],
   steps: [],
   global_parameters: {}
-})
-
-// 标签转换函数
-const convertTagsToStringArray = (tags: { key: string; value: string }[]): string[] => {
-  return tags.map(tag => `${tag.key}:${tag.value}`)
-}
-
-const convertStringArrayToTags = (tags: string[]): { key: string; value: string }[] => {
-  return tags.map(tag => {
-    const [key, ...valueParts] = tag.split(':')
-    return { key, value: valueParts.join(':') }
-  })
-}
-
-// 计算属性：用于 TagEditor 的标签数据
-const tagEditorValue = computed({
-  get: () => convertStringArrayToTags(form.tags || []),
-  set: (value: { key: string; value: string }[]) => {
-    form.tags = convertTagsToStringArray(value)
-    // 检测变更
-    checkFormChanges()
-  }
 })
 
 // 全局变量管理
@@ -415,13 +394,57 @@ const handleSave = async () => {
 
     saving.value = true
 
-    const data = {
+    const baseData: any = {
       name: form.name,
       description: form.description || '',
       category: form.category || '',
       tags: form.tags || [],
-      steps: form.steps || [],
       global_parameters: form.global_parameters || {}
+    }
+
+    // 统一规范步骤结构，兼容后端 JobTemplateCreate/UpdateSerializer + JobStepCreateSerializer：
+    // - 始终提供 target_host_ids（从 target_hosts 中提取）
+    const normalizedSteps = (form.steps || []).map((step: any, index: number) => {
+      const targetHosts = step.target_hosts || []
+      let targetHostIds: number[] = []
+
+      if (Array.isArray(targetHosts)) {
+        if (targetHosts.length > 0 && typeof targetHosts[0] === 'object') {
+          // 详情接口返回的对象数组：{ id, name, ip_address, status }
+          targetHostIds = targetHosts
+            .map((h: any) => h.id)
+            .filter((id: any) => typeof id === 'number')
+        } else {
+          // 已经是 ID 数组
+          targetHostIds = targetHosts.filter((id: any) => typeof id === 'number')
+        }
+      }
+
+      return {
+        name: step.name,
+        description: step.description,
+        step_type: step.step_type,
+        order: step.order ?? index + 1,
+        step_parameters: step.step_parameters || [],
+        timeout: step.timeout ?? 300,
+        ignore_error: step.ignore_error ?? false,
+        // 脚本相关
+        script_type: step.script_type,
+        script_content: step.script_content,
+        account_id: step.account_id,
+        // 文件传输相关
+        transfer_type: step.transfer_type,
+        local_path: step.local_path,
+        remote_path: step.remote_path,
+        overwrite_policy: step.overwrite_policy,
+        // 关键：提供 target_host_ids 以通过后端校验
+        target_host_ids: targetHostIds,
+      }
+    })
+
+    const data: any = {
+      ...baseData,
+      steps: normalizedSteps,
     }
 
     if (isEdit.value) {
