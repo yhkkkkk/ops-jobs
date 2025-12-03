@@ -42,7 +42,7 @@ class TemplateChangeDetector:
             step_data['local_path'] = step.local_path
             step_data['remote_path'] = step.remote_path
 
-        # 将数据序列化为JSON字符串，然后计算MD5哈希
+        # 将数据序列化为json字符串，然后计算md5哈希
         step_json = json.dumps(step_data, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(step_json.encode('utf-8')).hexdigest()
     
@@ -444,7 +444,7 @@ class TemplateSyncService:
                 for step_id in modified_step_ids:
                     template_step = plan.template.steps.get(id=step_id)
                     plan_step = plan.planstep_set.get(step_id=step_id)
-                    plan_step.copy_from_template_step()  # 使用快照复制函数简化更新
+                    plan_step.copy_from_template_step()
                     plan_step.step_hash = TemplateChangeDetector.calculate_step_hash(template_step)
                     plan_step.save()
 
