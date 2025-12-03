@@ -464,6 +464,16 @@
                     </template>
                   </a-dropdown>
                   <a-button 
+                    v-permission="{ resourceType: 'host', permission: 'change' }"
+                    size="small"
+                    @click="openBatchEdit"
+                  >
+                    <template #icon>
+                      <icon-edit />
+                    </template>
+                    批量编辑
+                  </a-button>
+                  <a-button 
                     v-permission="{ resourceType: 'host', permission: 'execute' }"
                     size="small" 
                     @click="handleBatchTest"
@@ -766,6 +776,77 @@
         </a-space>
       </div>
     </a-modal>
+
+    <!-- 批量编辑主机 -->
+    <a-modal
+      v-model:visible="batchEditVisible"
+      title="批量编辑主机"
+      width="520px"
+      :mask-closable="false"
+      :footer="false"
+    >
+      <a-alert type="info" class="mb-3">
+        仅会修改下方表单中<strong>填写了值</strong>的字段，其余字段保持不变。当前选中 {{ selectedRowKeys.length }} 台主机。
+      </a-alert>
+      <a-form :model="batchEditForm" layout="vertical">
+        <a-form-item label="环境类型">
+          <a-select
+            v-model="batchEditForm.environment"
+            allow-clear
+            placeholder="选择环境（可选）"
+          >
+            <a-option value="dev">开发环境</a-option>
+            <a-option value="test">测试环境</a-option>
+            <a-option value="staging">预生产环境</a-option>
+            <a-option value="prod">生产环境</a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="负责人">
+          <a-input
+            v-model="batchEditForm.owner"
+            allow-clear
+            placeholder="填写负责人（可选）"
+          />
+        </a-form-item>
+        <a-form-item label="所属部门">
+          <a-input
+            v-model="batchEditForm.department"
+            allow-clear
+            placeholder="填写所属部门（可选）"
+          />
+        </a-form-item>
+        <a-form-item label="业务系统">
+          <a-input
+            v-model="batchEditForm.business_system"
+            allow-clear
+            placeholder="填写业务系统（可选）"
+          />
+        </a-form-item>
+        <a-form-item label="服务角色">
+          <a-input
+            v-model="batchEditForm.service_role"
+            allow-clear
+            placeholder="填写服务角色（可选）"
+          />
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-textarea
+            v-model="batchEditForm.remarks"
+            allow-clear
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            placeholder="如需统一增加备注，可在此填写（可选）"
+          />
+        </a-form-item>
+      </a-form>
+      <div style="text-align: right; margin-top: 16px">
+        <a-space>
+          <a-button @click="cancelBatchEdit" :disabled="batchEditLoading">取消</a-button>
+          <a-button type="primary" @click="submitBatchEdit" :loading="batchEditLoading">
+            保存
+          </a-button>
+        </a-space>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -835,6 +916,16 @@ const groupOptions = computed(() => {
 const selectedRowKeys = ref<number[]>([])
 const batchTesting = ref(false)
 const cloudSyncing = ref(false)
+const batchEditVisible = ref(false)
+const batchEditLoading = ref(false)
+const batchEditForm = reactive({
+  environment: '' as string | '',
+  owner: '' as string | '',
+  department: '' as string | '',
+  business_system: '' as string | '',
+  service_role: '' as string | '',
+  remarks: '' as string | '',
+})
 
 // 搜索表单
 const searchForm = reactive({
@@ -1724,6 +1815,65 @@ const handleBatchMoveToGroup = async (groupId: number | null) => {
   } catch (error: any) {
     console.error('批量移动失败:', error)
     Message.error(error.message || '主机移动失败')
+  }
+}
+
+const openBatchEdit = () => {
+  if (selectedRowKeys.value.length === 0) {
+    Message.warning('请先选择要编辑的主机')
+    return
+  }
+  batchEditVisible.value = true
+}
+
+const resetBatchEditForm = () => {
+  batchEditForm.environment = ''
+  batchEditForm.owner = ''
+  batchEditForm.department = ''
+  batchEditForm.business_system = ''
+  batchEditForm.service_role = ''
+  batchEditForm.remarks = ''
+}
+
+const cancelBatchEdit = () => {
+  batchEditVisible.value = false
+  resetBatchEditForm()
+}
+
+const submitBatchEdit = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    Message.warning('请先选择要编辑的主机')
+    return
+  }
+
+  const data: Record<string, any> = {}
+  Object.entries(batchEditForm).forEach(([key, value]) => {
+    if (typeof value === 'string') {
+      if (value.trim() !== '') {
+        data[key] = value.trim()
+      }
+    } else if (value !== null && value !== undefined) {
+      data[key] = value
+    }
+  })
+
+  if (Object.keys(data).length === 0) {
+    Message.warning('请至少填写一个要修改的字段')
+    return
+  }
+
+  batchEditLoading.value = true
+  try {
+    const result = await hostApi.batchUpdateHosts(selectedRowKeys.value, data)
+    Message.success(`批量编辑成功，已更新 ${result.updated_count} 台主机`)
+    batchEditVisible.value = false
+    resetBatchEditForm()
+    fetchHosts()
+  } catch (error) {
+    console.error('批量编辑主机失败:', error)
+    Message.error('批量编辑主机失败')
+  } finally {
+    batchEditLoading.value = false
   }
 }
 

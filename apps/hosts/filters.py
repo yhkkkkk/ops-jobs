@@ -42,16 +42,16 @@ class HostFilter(django_filters.FilterSet):
         label='环境类型'
     )
 
-    # 分组过滤器
+    # 分组过滤器（仅匹配当前分组）
     group = django_filters.ModelChoiceFilter(
         field_name='groups',
         queryset=HostGroup.objects.all(),
         label='主机分组'
     )
 
-    # 分组ID过滤器（前端使用）
+    # 分组ID过滤器（前端使用）：匹配当前分组及其所有子分组的主机
     group_id = django_filters.NumberFilter(
-        field_name='groups',
+        method='filter_group_id',
         label='主机分组ID'
     )
 
@@ -117,6 +117,22 @@ class HostFilter(django_filters.FilterSet):
             query |= term_query   # 使用 | 逻辑或运算符连接查询条件
 
         return queryset.filter(query)
+
+    def filter_group_id(self, queryset, name, value):
+        """按分组过滤：包含当前分组及其所有子分组的主机"""
+        if not value:
+            return queryset
+
+        try:
+            group = HostGroup.objects.get(id=value)
+        except HostGroup.DoesNotExist:
+            return queryset.none()
+
+        # 获取该分组及其所有子分组的ID
+        group_ids = [g.id for g in group.get_descendants(include_self=True)]
+
+        # 过滤属于这些分组的主机，使用 distinct 避免重复
+        return queryset.filter(groups__in=group_ids).distinct()
 
 
 class HostGroupFilter(django_filters.FilterSet):

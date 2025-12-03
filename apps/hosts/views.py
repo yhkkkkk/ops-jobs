@@ -22,7 +22,9 @@ from .serializers import (
     ServerAccountSerializer,
     CloudSyncSerializer,
     BatchMoveToGroupSerializer,
-    HostExcelImportSerializer
+    HostExcelImportSerializer,
+    HostBatchUpdateSerializer,
+    HostToHostTransferSerializer,
 )
 from .filters import HostFilter, HostGroupFilter, ServerAccountFilter
 
@@ -221,6 +223,67 @@ class HostViewSet(viewsets.ModelViewSet):
         result = HostService.batch_test_connections(list(hosts), request.user)
         return SycResponse.success(content=result, message="批量连接测试完成")
 
+    @action(detail=False, methods=['post'], url_path='batch_update')
+    def batch_update(self, request):
+        """
+        批量更新主机信息
+        示例请求体：
+        {
+            "host_ids": [1, 2, 3],
+            "data": {
+                "os_type": "linux",
+                "environment": "prod"
+            }
+        }
+        """
+        serializer = HostBatchUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(errors=serializer.errors)
+
+        host_ids = serializer.validated_data['host_ids']
+        update_data = serializer.validated_data['data']
+
+        hosts = Host.objects.filter(id__in=host_ids)
+        if not hosts.exists():
+            return SycResponse.error(message="未找到指定的主机", code=404)
+
+        # 按权限过滤可编辑的主机
+        user = request.user
+        editable_hosts = []
+        no_permission_ids = []
+
+        for host in hosts:
+            if user.is_superuser or user.has_perm('hosts.change_host', host):
+                editable_hosts.append(host)
+            else:
+                no_permission_ids.append(host.id)
+
+        if not editable_hosts:
+            return SycResponse.error(
+                message="没有可编辑的主机，缺少 hosts.change_host 权限",
+                content={"no_permission_ids": no_permission_ids},
+                code=403,
+            )
+
+        updated_count = 0
+        for host in editable_hosts:
+            for field, value in update_data.items():
+                if field == 'password' and value:
+                    # 与单个 HostSerializer 行为保持一致，更新时加密密码
+                    from .utils import encrypt_password
+                    setattr(host, field, encrypt_password(value))
+                else:
+                    setattr(host, field, value)
+            host.save(update_fields=list(update_data.keys()) + ['updated_at'])
+            updated_count += 1
+
+        content = {
+            "requested_count": len(host_ids),
+            "updated_count": updated_count,
+            "no_permission_ids": no_permission_ids,
+        }
+        return SycResponse.success(content=content, message="批量更新主机成功")
+
     @action(detail=False, methods=['post'])
     def sync_cloud_hosts(self, request):
         """从云厂商同步主机"""
@@ -303,7 +366,7 @@ class HostViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='import_excel')
     def import_excel(self, request):
-        """通过Excel批量导入主机"""
+        """通过excel批量导入主机"""
         serializer = HostExcelImportSerializer(data=request.data)
         if not serializer.is_valid():
             return SycResponse.validation_error(errors=serializer.errors)
@@ -329,7 +392,7 @@ class HostViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='import_excel_template')
     def download_import_template(self, request):
-        """下载主机导入Excel模板"""
+        """下载主机导入excel模板"""
         excel_bytes = HostService.generate_excel_template()
         response = HttpResponse(
             excel_bytes,
@@ -425,22 +488,15 @@ class HostViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def transfer_between_hosts(self, request):
         """主机间文件传输"""
-        source_host_id = request.data.get('source_host_id')
-        target_host_id = request.data.get('target_host_id')
-        source_path = request.data.get('source_path')
-        target_path = request.data.get('target_path')
-        overwrite_policy = request.data.get('overwrite_policy', 'overwrite')
+        serializer = HostToHostTransferSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(errors=serializer.errors)
 
-        if not all([source_host_id, target_host_id, source_path, target_path]):
-            return SycResponse.error(message="源主机ID、目标主机ID、源路径和目标路径都不能为空", code=400)
-
-        # 验证覆盖策略
-        valid_policies = ['overwrite', 'skip', 'backup', 'fail']
-        if overwrite_policy not in valid_policies:
-            return SycResponse.error(message=f"无效的覆盖策略，支持: {', '.join(valid_policies)}", code=400)
-
-        if source_host_id == target_host_id:
-            return SycResponse.error(message="源主机和目标主机不能相同", code=400)
+        source_host_id = serializer.validated_data['source_host_id']
+        target_host_id = serializer.validated_data['target_host_id']
+        source_path = serializer.validated_data['source_path']
+        target_path = serializer.validated_data['target_path']
+        overwrite_policy = serializer.validated_data['overwrite_policy']
 
         try:
             source_host = Host.objects.get(id=source_host_id)

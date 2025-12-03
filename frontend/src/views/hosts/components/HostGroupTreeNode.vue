@@ -33,7 +33,7 @@
       </div>
       
       <div class="group-actions">
-        <span class="group-count">{{ group.host_count || 0 }}</span>
+        <span class="group-count">{{ group.total_host_count ?? group.host_count ?? 0 }}</span>
         <a-dropdown @select="handleMenuSelect">
           <a-button type="text" size="mini" @click.stop>
             <icon-more />

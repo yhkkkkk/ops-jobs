@@ -65,6 +65,11 @@ export const hostApi = {
     return http.post('/hosts/hosts/batch_move_to_group/', { host_ids, group_id })
   },
 
+  // 批量更新主机
+  batchUpdateHosts(host_ids: number[], data: Partial<Host>): Promise<{ requested_count: number; updated_count: number; no_permission_ids: number[] }> {
+    return http.post('/hosts/hosts/batch_update/', { host_ids, data })
+  },
+
   // 导入主机（Excel）
   importHostsFromExcel(formData: FormData): Promise<HostImportResult> {
     return http.post('/hosts/hosts/import_excel/', formData, {

@@ -271,6 +271,11 @@ class HostToHostTransferSerializer(serializers.Serializer):
     target_host_id = serializers.IntegerField(help_text="目标主机ID")
     source_path = serializers.CharField(help_text="源文件路径")
     target_path = serializers.CharField(help_text="目标文件路径")
+    overwrite_policy = serializers.ChoiceField(
+        choices=['overwrite', 'skip', 'backup', 'fail'],
+        default='overwrite',
+        help_text="覆盖策略：overwrite(覆盖)、skip(跳过)、backup(备份)、fail(冲突时报错)"
+    )
 
     def validate(self, attrs):
         if attrs['source_host_id'] == attrs['target_host_id']:
@@ -414,4 +419,58 @@ class HostExcelImportSerializer(serializers.Serializer):
             return value
         if not HostGroup.objects.filter(id=value).exists():
             raise serializers.ValidationError("指定的分组不存在")
+        return value
+
+
+class HostBatchUpdateSerializer(serializers.Serializer):
+    """
+    主机批量编辑序列化器
+    说明：
+    - host_ids：需要批量修改的主机 ID 列表
+    - data：要更新的字段键值对，只会更新允许的字段
+    """
+    host_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="主机ID列表"
+    )
+    data = serializers.DictField(
+        help_text="要更新的字段键值对（例如：{'os_type': 'linux', 'environment': 'prod'}）"
+    )
+
+    # 允许批量编辑的字段白名单，避免误改系统字段
+    ALLOWED_FIELDS = {
+        # 基本信息
+        'name', 'ip_address', 'port', 'os_type', 'username',
+        'auth_type', 'password', 'private_key', 'description',
+        # 网络信息
+        'public_ip', 'internal_ip', 'internal_mac', 'external_mac',
+        'gateway', 'dns_servers',
+        # 云厂商信息
+        'cloud_provider', 'instance_id', 'region', 'zone',
+        'instance_type', 'network_type',
+        # 硬件信息
+        'device_type', 'cpu_cores', 'memory_gb', 'disk_gb',
+        # 系统详细信息
+        'os_version', 'kernel_version', 'hostname', 'cpu_model',
+        'os_arch', 'cpu_arch',
+        # 业务信息
+        'environment', 'business_system', 'service_role', 'remarks',
+        # 管理信息
+        'owner', 'department',
+    }
+
+    def validate_host_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("主机ID列表不能为空")
+        return value
+
+    def validate_data(self, value):
+        if not value:
+            raise serializers.ValidationError("更新数据不能为空")
+
+        invalid_fields = [key for key in value.keys() if key not in self.ALLOWED_FIELDS]
+        if invalid_fields:
+            raise serializers.ValidationError(
+                f"不支持批量编辑以下字段: {', '.join(invalid_fields)}"
+            )
         return value
