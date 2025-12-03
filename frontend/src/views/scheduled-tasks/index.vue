@@ -159,9 +159,7 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown
-              v-if="hasDropdownPermissions(record.id)"
-            >
+            <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -170,9 +168,8 @@
               <template #content>
                 <a-doption
                   v-if="record.is_active"
-                  @click="handleToggleStatus(record)"
-                  class="text-orange-500"
-                  v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
+                  :class="['text-orange-500', { 'disabled-option': !canChangeTask(record.id) }]"
+                  @click="handleClickToggleStatus(record)"
                 >
                   <template #icon>
                     <icon-pause />
@@ -181,9 +178,8 @@
                 </a-doption>
                 <a-doption
                   v-else
-                  @click="handleToggleStatus(record)"
-                  class="text-green-500"
-                  v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
+                  :class="['text-green-500', { 'disabled-option': !canChangeTask(record.id) }]"
+                  @click="handleClickToggleStatus(record)"
                 >
                   <template #icon>
                     <icon-play-arrow />
@@ -191,9 +187,8 @@
                   启用
                 </a-doption>
                 <a-doption
-                  @click="handleDelete(record)"
-                  class="text-red-500"
-                  v-permission="{ resourceType: 'job', permission: 'delete', resourceId: record.id }"
+                  :class="['text-red-500', { 'disabled-option': !canDeleteTask(record.id) }]"
+                  @click="handleClickDeleteTask(record)"
                 >
                   <template #icon>
                     <icon-delete />
@@ -422,6 +417,14 @@ const handleToggleStatus = async (record) => {
   }
 }
 
+const handleClickToggleStatus = (record) => {
+  if (!canChangeTask(record.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleToggleStatus(record)
+}
+
 // 删除任务
 const handleDelete = async (record) => {
   try {
@@ -437,6 +440,14 @@ const handleDelete = async (record) => {
   } catch (error) {
     console.error('删除任务失败:', error)
   }
+}
+
+const handleClickDeleteTask = (record) => {
+  if (!canDeleteTask(record.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleDelete(record)
 }
 
 // 工具函数
@@ -467,18 +478,20 @@ const getProgressColor = (percent) => {
   return '#f53f3f'
 }
 
-// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
-const hasDropdownPermissions = (taskId) => {
-  // 如果是超级用户，直接返回true
+const canChangeTask = (taskId) => {
   if (permissionsStore.isSuperUser) return true
-  
-  // 检查下拉菜单中的权限：
-  // 1. job:change (启用/禁用，对象级权限)
-  // 2. job:delete (删除，对象级权限)
-  const hasChange = permissionsStore.hasPermission('job', 'change', taskId)
-  const hasDelete = permissionsStore.hasPermission('job', 'delete', taskId)
-  
-  return hasChange || hasDelete
+  return (
+    permissionsStore.hasPermission('job', 'change', taskId) ||
+    permissionsStore.hasPermission('job', 'change')
+  )
+}
+
+const canDeleteTask = (taskId) => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('job', 'delete', taskId) ||
+    permissionsStore.hasPermission('job', 'delete')
+  )
 }
 
 // 生命周期
@@ -534,6 +547,11 @@ onMounted(() => {
 
 .stats-cell > div:last-child {
   margin-bottom: 0;
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 表格样式优化 */

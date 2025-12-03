@@ -588,9 +588,7 @@
               </template>
               查看
             </a-button>
-            <a-dropdown
-              v-if="hasDropdownPermissions(record.id)"
-            >
+            <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -598,8 +596,8 @@
               </a-button>
               <template #content>
                 <a-doption
-                  v-permission="{ resourceType: 'host', permission: 'change', resourceId: record.id }"
-                  @click="handleEdit(record)"
+                  :class="{ 'disabled-option': !canEditHost(record.id) }"
+                  @click="handleClickEditHost(record)"
                 >
                   <template #icon>
                     <icon-edit />
@@ -608,9 +606,8 @@
                 </a-doption>
                 <a-divider style="margin: 4px 0;" />
                 <a-doption
-                  v-permission="{ resourceType: 'host', permission: 'delete', resourceId: record.id }"
-                  @click="handleDelete(record)"
-                  class="danger"
+                  :class="['danger', { 'disabled-option': !canDeleteHost(record.id) }]"
+                  @click="handleClickDeleteHost(record)"
                 >
                   <template #icon>
                     <icon-delete />
@@ -1643,27 +1640,36 @@ const isAllCurrentPageSelected = computed(() => {
   return hosts.value.every(host => selectedRowKeys.value.includes(host.id))
 })
 
-// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
-const hasDropdownPermissions = (hostId: number): boolean => {
-  // 如果是超级用户，直接返回true
+const canEditHost = (hostId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
-  
-  // 检查缓存中是否有编辑或删除权限的记录
-  const changeCacheKey = `host:change:${hostId}`
-  const deleteCacheKey = `host:delete:${hostId}`
-  const hasChangeCache = permissionsStore.permissionCache.has(changeCacheKey)
-  const hasDeleteCache = permissionsStore.permissionCache.has(deleteCacheKey)
-  
-  // 如果缓存中有记录，检查权限
-  if (hasChangeCache || hasDeleteCache) {
-    const hasChange = permissionsStore.hasPermission('host', 'change', hostId)
-    const hasDelete = permissionsStore.hasPermission('host', 'delete', hostId)
-    return hasChange || hasDelete
+  return (
+    permissionsStore.hasPermission('host', 'change', hostId) ||
+    permissionsStore.hasPermission('host', 'change')
+  )
+}
+
+const canDeleteHost = (hostId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('host', 'delete', hostId) ||
+    permissionsStore.hasPermission('host', 'delete')
+  )
+}
+
+const handleClickEditHost = (record: Host) => {
+  if (!canEditHost(record.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
   }
-  
-  // 如果缓存中没有，暂时返回true（等待权限检查完成）
-  // 权限检查完成后，v-permission指令会隐藏没有权限的选项，下拉菜单也会被隐藏
-  return true
+  handleEdit(record)
+}
+
+const handleClickDeleteHost = (record: Host) => {
+  if (!canDeleteHost(record.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleDelete(record)
 }
 
 // 全选当前页
@@ -2031,6 +2037,11 @@ onMounted(async () => {
 .danger:hover {
   background-color: #fef2f2 !important;
   color: #dc2626 !important;
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 下拉菜单项悬停效果 */

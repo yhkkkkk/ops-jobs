@@ -194,10 +194,7 @@
               </template>
               执行
             </a-button>
-            <a-dropdown
-              v-if="hasDropdownPermissions(record.id)"
-              @select="(value) => handleMoreAction(value, record)"
-            >
+            <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -208,7 +205,8 @@
                 <a-doption
                   value="delete"
                   class="danger-option"
-                  v-permission="{ resourceType: 'executionplan', permission: 'delete', resourceId: record.id }"
+                  :class="{ 'disabled-option': !canDeletePlan(record.id) }"
+                  @click="handleClickMoreAction('delete', record)"
                 >
                   <template #icon>
                     <icon-delete />
@@ -512,6 +510,14 @@ const handleMoreAction = async (action: string, plan: ExecutionPlan) => {
   }
 }
 
+const handleClickMoreAction = async (action: string, plan: ExecutionPlan) => {
+  if (action === 'delete' && !canDeletePlan(plan.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  await handleMoreAction(action, plan)
+}
+
 // 删除方案
 const handleDelete = (plan: ExecutionPlan) => {
   Modal.confirm({
@@ -546,16 +552,12 @@ const formatDateTime = (dateTime: string) => {
   })
 }
 
-// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
-const hasDropdownPermissions = (planId: number): boolean => {
-  // 如果是超级用户，直接返回true
+const canDeletePlan = (planId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
-  
-  // 检查下拉菜单中的权限：
-  // executionplan:delete (删除方案，对象级权限)
-  const hasDelete = permissionsStore.hasPermission('executionplan', 'delete', planId)
-  
-  return hasDelete
+  return (
+    permissionsStore.hasPermission('executionplan', 'delete', planId) ||
+    permissionsStore.hasPermission('executionplan', 'delete')
+  )
 }
 
 // 生命周期
@@ -682,6 +684,11 @@ onMounted(() => {
 .danger-option:hover {
   background-color: var(--color-danger-1);
   color: var(--color-danger-6);
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 表格样式优化 */

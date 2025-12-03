@@ -205,7 +205,7 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown v-if="hasDropdownPermissions(record.id!)">
+            <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -213,8 +213,8 @@
               </a-button>
               <template #content>
                 <a-doption
-                  v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
-                  @click="handleVersions(record)"
+                  :class="{ 'disabled-option': !canManageVersions(record.id!) }"
+                  @click="handleClickManageVersions(record)"
                 >
                   <template #icon>
                     <icon-history />
@@ -222,8 +222,8 @@
                   版本管理
                 </a-doption>
                 <a-doption
-                  v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
-                  @click="handleToggleStatus(record)"
+                  :class="{ 'disabled-option': !canToggleStatus(record.id!) }"
+                  @click="handleClickToggleStatus(record)"
                 >
                   <template #icon>
                     <icon-poweroff />
@@ -231,8 +231,8 @@
                   {{ record.is_active ? '下线' : '上线' }}
                 </a-doption>
                 <a-doption
-                  v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
-                  @click="handleCopy(record)"
+                  :class="{ 'disabled-option': !canCopyTemplate }"
+                  @click="handleClickCopy(record)"
                 >
                   <template #icon>
                     <icon-copy />
@@ -240,9 +240,8 @@
                   复制
                 </a-doption>
                 <a-doption 
-                  v-permission="{ resourceType: 'scripttemplate', permission: 'delete', resourceId: record.id }"
-                  @click="handleDelete(record)" 
-                  class="text-red-500"
+                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id!) }]"
+                  @click="handleClickDelete(record)" 
                 >
                   <template #icon>
                     <icon-delete />
@@ -438,7 +437,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
@@ -774,6 +773,42 @@ const handleDelete = (record: ScriptTemplate) => {
   })
 }
 
+const showNoPermissionMessage = () => {
+  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+}
+
+const handleClickManageVersions = (record: ScriptTemplate) => {
+  if (!canManageVersions(record.id!)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleVersions(record)
+}
+
+const handleClickToggleStatus = (record: ScriptTemplate) => {
+  if (!canToggleStatus(record.id!)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleToggleStatus(record)
+}
+
+const handleClickCopy = (record: ScriptTemplate) => {
+  if (!canCopyTemplate.value) {
+    showNoPermissionMessage()
+    return
+  }
+  handleCopy(record)
+}
+
+const handleClickDelete = (record: ScriptTemplate) => {
+  if (!canDeleteTemplate(record.id!)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleDelete(record)
+}
+
 // 工具函数
 const getScriptTypeColor = (type: string) => {
   const colors = {
@@ -904,19 +939,29 @@ const resetVersionForm = () => {
   versionForm.description = ''
 }
 
-const hasDropdownPermissions = (templateId: number): boolean => {
+const canManageVersions = (templateId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
-
-  const canChange =
+  return (
     permissionsStore.hasPermission('scripttemplate', 'change', templateId) ||
     permissionsStore.hasPermission('scripttemplate', 'change')
-  const canToggle = permissionsStore.hasPermission('scripttemplate', 'change', templateId)
-  const canCopy = permissionsStore.hasPermission('scripttemplate', 'add')
-  const canDelete =
+  )
+}
+
+const canToggleStatus = (templateId: number): boolean => {
+  return canManageVersions(templateId)
+}
+
+const canCopyTemplate = computed(() => {
+  if (permissionsStore.isSuperUser) return true
+  return permissionsStore.hasPermission('scripttemplate', 'add')
+})
+
+const canDeleteTemplate = (templateId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+  return (
     permissionsStore.hasPermission('scripttemplate', 'delete', templateId) ||
     permissionsStore.hasPermission('scripttemplate', 'delete')
-
-  return canChange || canToggle || canCopy || canDelete
+  )
 }
 
 // 生命周期
@@ -991,6 +1036,11 @@ onMounted(() => {
   border-color: #d1d5db;
   color: #4b5563;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 自定义标签提示气泡样式 */

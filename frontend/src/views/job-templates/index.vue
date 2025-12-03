@@ -184,9 +184,7 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown
-              v-if="hasDropdownPermissions(record.id)"
-            >
+            <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
@@ -194,8 +192,8 @@
               </a-button>
               <template #content>
                 <a-doption
-                  @click="handleCreatePlan(record)"
-                  v-permission="{ resourceType: 'executionplan', permission: 'add' }"
+                  :class="{ 'disabled-option': !canCreatePlan }"
+                  @click="handleClickCreatePlan(record)"
                 >
                   <template #icon>
                     <icon-plus />
@@ -203,8 +201,8 @@
                   新增执行方案
                 </a-doption>
                 <a-doption
-                  @click="handleViewPlans(record)"
-                  v-permission="{ resourceType: 'executionplan', permission: 'view' }"
+                  :class="{ 'disabled-option': !canViewPlans }"
+                  @click="handleClickViewPlans(record)"
                 >
                   <template #icon>
                     <icon-list />
@@ -212,8 +210,8 @@
                   查看执行方案
                 </a-doption>
                 <a-doption
-                  @click="handleSync(record)"
-                  v-permission="{ resourceType: 'executionplan', permission: 'change' }"
+                  :class="{ 'disabled-option': !canSyncPlans }"
+                  @click="handleClickSync(record)"
                 >
                   <template #icon>
                     <icon-sync />
@@ -221,8 +219,8 @@
                   同步方案
                 </a-doption>
                 <a-doption
-                  @click="handleCopy(record)"
-                  v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
+                  :class="{ 'disabled-option': !canCopyTemplate }"
+                  @click="handleClickCopyTemplate(record)"
                 >
                   <template #icon>
                     <icon-copy />
@@ -230,9 +228,8 @@
                   复制
                 </a-doption>
                 <a-doption
-                  @click="handleDelete(record)"
-                  class="text-red-500"
-                  v-permission="{ resourceType: 'jobtemplate', permission: 'delete', resourceId: record.id }"
+                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id) }]"
+                  @click="handleClickDeleteTemplate(record)"
                 >
                   <template #icon>
                     <icon-delete />
@@ -257,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
@@ -493,6 +490,50 @@ const handleDelete = async (record: JobTemplate) => {
   }
 }
 
+const showNoPermissionMessage = () => {
+  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+}
+
+const handleClickCreatePlan = (record: JobTemplate) => {
+  if (!canCreatePlan.value) {
+    showNoPermissionMessage()
+    return
+  }
+  handleCreatePlan(record)
+}
+
+const handleClickViewPlans = (record: JobTemplate) => {
+  if (!canViewPlans.value) {
+    showNoPermissionMessage()
+    return
+  }
+  handleViewPlans(record)
+}
+
+const handleClickSync = (record: JobTemplate) => {
+  if (!canSyncPlans.value) {
+    showNoPermissionMessage()
+    return
+  }
+  handleSync(record)
+}
+
+const handleClickCopyTemplate = (record: JobTemplate) => {
+  if (!canCopyTemplate.value) {
+    showNoPermissionMessage()
+    return
+  }
+  handleCopy(record)
+}
+
+const handleClickDeleteTemplate = (record: JobTemplate) => {
+  if (!canDeleteTemplate(record.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleDelete(record)
+}
+
 // 同步方案
 const handleSync = (record: JobTemplate) => {
   syncTemplateId.value = record.id
@@ -539,29 +580,32 @@ const formatDate = (dateString: string) => {
   })
 }
 
-// 检查下拉菜单是否有权限显示（至少有一个选项有权限）
-const hasDropdownPermissions = (templateId: number): boolean => {
-  // 如果是超级用户，直接返回true
+const canCreatePlan = computed(() => {
   if (permissionsStore.isSuperUser) return true
-  
-  // 检查下拉菜单中的权限：
-  // 1. executionplan:add (新增执行方案)
-  // 2. executionplan:view (查看执行方案)
-  // 3. executionplan:change (同步方案)
-  // 4. jobtemplate:add (复制)
-  // 5. jobtemplate:delete (删除，需要 resourceId)
-  
-  // 检查模型级权限
-  const hasExecutionPlanAdd = permissionsStore.hasPermission('executionplan', 'add')
-  const hasExecutionPlanView = permissionsStore.hasPermission('executionplan', 'view')
-  const hasExecutionPlanChange = permissionsStore.hasPermission('executionplan', 'change')
-  const hasJobTemplateAdd = permissionsStore.hasPermission('jobtemplate', 'add')
-  
-  // 检查对象级权限（删除）
-  const hasJobTemplateDelete = permissionsStore.hasPermission('jobtemplate', 'delete', templateId)
-  
-  return hasExecutionPlanAdd || hasExecutionPlanView || hasExecutionPlanChange || 
-         hasJobTemplateAdd || hasJobTemplateDelete
+  return permissionsStore.hasPermission('executionplan', 'add')
+})
+
+const canViewPlans = computed(() => {
+  if (permissionsStore.isSuperUser) return true
+  return permissionsStore.hasPermission('executionplan', 'view')
+})
+
+const canSyncPlans = computed(() => {
+  if (permissionsStore.isSuperUser) return true
+  return permissionsStore.hasPermission('executionplan', 'change')
+})
+
+const canCopyTemplate = computed(() => {
+  if (permissionsStore.isSuperUser) return true
+  return permissionsStore.hasPermission('jobtemplate', 'add')
+})
+
+const canDeleteTemplate = (templateId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('jobtemplate', 'delete', templateId) ||
+    permissionsStore.hasPermission('jobtemplate', 'delete')
+  )
 }
 
 // 生命周期
@@ -630,6 +674,11 @@ onMounted(() => {
 
 .tag-more {
   flex-shrink: 0;
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 修复表格固定列样式 */
