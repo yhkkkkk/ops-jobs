@@ -3,7 +3,8 @@
     class="execution-plans-page"
     v-page-permissions="{
       resourceType: 'executionplan',
-      permissions: ['view', 'add', 'change', 'delete', 'execute']
+      permissions: ['view', 'add', 'change', 'delete', 'execute'],
+      resourceIds: plans.map(p => p.id)
     }"
   >
     <!-- 页面头部 -->

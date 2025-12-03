@@ -3,7 +3,8 @@
     class="job-templates-page"
     v-page-permissions="{
       resourceType: 'jobtemplate',
-      permissions: ['view', 'add', 'change', 'delete']
+      permissions: ['view', 'add', 'change', 'delete'],
+      resourceIds: templates.map(t => t.id)
     }"
   >
     <!-- 页面头部 -->
