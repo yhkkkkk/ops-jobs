@@ -205,26 +205,35 @@
               </template>
               编辑
             </a-button>
-            <a-dropdown>
+            <a-dropdown v-if="hasDropdownPermissions(record.id!)">
               <a-button type="text" size="small">
                 <template #icon>
                   <icon-more />
                 </template>
               </a-button>
               <template #content>
-                <a-doption @click="handleVersions(record)">
+                <a-doption
+                  v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
+                  @click="handleVersions(record)"
+                >
                   <template #icon>
                     <icon-history />
                   </template>
                   版本管理
                 </a-doption>
-                <a-doption @click="handleToggleStatus(record)">
+                <a-doption
+                  v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
+                  @click="handleToggleStatus(record)"
+                >
                   <template #icon>
                     <icon-poweroff />
                   </template>
                   {{ record.is_active ? '下线' : '上线' }}
                 </a-doption>
-                <a-doption @click="handleCopy(record)">
+                <a-doption
+                  v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
+                  @click="handleCopy(record)"
+                >
                   <template #icon>
                     <icon-copy />
                   </template>
@@ -436,12 +445,14 @@ import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import dayjs from 'dayjs'
+import { usePermissionsStore } from '@/stores/permissions'
 
 const router = useRouter()
 const loading = ref(false)
 const templates = ref<ScriptTemplate[]>([])
 const previewVisible = ref(false)
 const currentTemplate = ref<ScriptTemplate | null>(null)
+const permissionsStore = usePermissionsStore()
 
 // 版本管理
 const versionVisible = ref(false)
@@ -891,6 +902,21 @@ const handleToggleStatus = async (record: ScriptTemplate) => {
 const resetVersionForm = () => {
   versionForm.version = ''
   versionForm.description = ''
+}
+
+const hasDropdownPermissions = (templateId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+
+  const canChange =
+    permissionsStore.hasPermission('scripttemplate', 'change', templateId) ||
+    permissionsStore.hasPermission('scripttemplate', 'change')
+  const canToggle = permissionsStore.hasPermission('scripttemplate', 'change', templateId)
+  const canCopy = permissionsStore.hasPermission('scripttemplate', 'add')
+  const canDelete =
+    permissionsStore.hasPermission('scripttemplate', 'delete', templateId) ||
+    permissionsStore.hasPermission('scripttemplate', 'delete')
+
+  return canChange || canToggle || canCopy || canDelete
 }
 
 // 生命周期
