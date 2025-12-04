@@ -310,7 +310,9 @@
         </a-descriptions>
 
         <div class="mb-4">
-          <h4>脚本内容</h4>
+          <div class="preview-header">
+            <h4>脚本内容</h4>
+          </div>
           <simple-monaco-editor
             :model-value="currentTemplate.script_content || currentTemplate.content"
             :language="currentTemplate.script_type"
@@ -561,10 +563,6 @@ const columns = [
     fixed: 'right',
   },
 ]
-
-
-
-
 
 // 版本表格列配置
 const versionColumns = [
