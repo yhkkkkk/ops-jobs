@@ -2,7 +2,7 @@
 系统配置 & 凭证 序列化器
 """
 from rest_framework import serializers
-from .models import SystemConfig, Credential
+from .models import SystemConfig
 
 
 class SystemConfigSerializer(serializers.ModelSerializer):

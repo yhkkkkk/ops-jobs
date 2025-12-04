@@ -8,7 +8,7 @@ from apps.permissions.permissions import IsSuperUser
 from django.db import transaction
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from utils.responses import SycResponse
-from .models import SystemConfig, ConfigManager, Credential
+from .models import SystemConfig, ConfigManager
 from .serializers import (
     SystemConfigSerializer,
     SystemConfigUpdateSerializer,
@@ -16,7 +16,6 @@ from .serializers import (
     SystemConfigCategorySerializer,
     TaskConfigSerializer,
     NotificationConfigSerializer,
-    CredentialSerializer,
 )
 
 
