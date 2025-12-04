@@ -65,6 +65,17 @@
             </a-space>
             <span v-else>-</span>
           </a-descriptions-item>
+          <a-descriptions-item label="版本号">
+            {{ previewData.version || '未设置' }}
+          </a-descriptions-item>
+          <a-descriptions-item label="状态">
+            <a-tag v-if="previewData.is_active" color="green">上线</a-tag>
+            <a-tag v-else color="red">下线</a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="可见性">
+            <a-tag v-if="previewData.is_public" color="arcoblue">公开</a-tag>
+            <a-tag v-else color="gray">私有</a-tag>
+          </a-descriptions-item>
           <a-descriptions-item label="描述" :span="2">
             {{ previewData.description || '暂无描述' }}
           </a-descriptions-item>
