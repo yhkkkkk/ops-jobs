@@ -374,7 +374,6 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
                            'total_executions', 'success_executions', 'failed_executions',
                            'last_executed_at', 'created_by', 'created_at', 'updated_at']
 
-
 class JobTemplateSerializer(serializers.ModelSerializer):
     """作业模板序列化器"""
 

@@ -103,24 +103,6 @@
       </div>
 
       <div v-else class="execution-flow-layout">
-        <!-- 日志摘要 -->
-        <div v-if="logSummary" class="log-summary">
-          <a-descriptions :column="4" size="small">
-            <a-descriptions-item label="总步骤数">
-              {{ logSummary.total_steps || Object.keys(stepLogs).length }}
-            </a-descriptions-item>
-            <a-descriptions-item label="总主机数">
-              {{ logSummary.total_hosts || getTotalHostCount() }}
-            </a-descriptions-item>
-            <a-descriptions-item label="成功主机">
-              {{ logSummary.success_hosts || getHostCountByStatus('success') }}
-            </a-descriptions-item>
-            <a-descriptions-item label="失败主机">
-              {{ logSummary.failed_hosts || getHostCountByStatus('failed') }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </div>
-
         <!-- 左右分栏布局 -->
         <div class="execution-flow-container">
           <!-- 左侧步骤列表 -->
@@ -549,7 +531,6 @@ const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const executionInfo = ref({})
-const logSummary = ref(null)
 const stepLogs = ref({})
 const selectedStepId = ref(null)
 const selectedHostId = ref(null)
@@ -1050,49 +1031,59 @@ const fetchExecutionDetail = async () => {
     const response = await executionRecordApi.getRecord(route.params.id)
     executionInfo.value = response
 
-    // 处理日志数据
+    // 处理日志数据 —— 现在只支持统一结构：{ summary, steps }
     if (response.execution_results) {
-      console.log('Raw execution_results:', response.execution_results)
+      const results = response.execution_results
+      console.log('execution_results (normalized):', results)
 
-      // 检查是否是最新格式（有step_results字段）
-      if (response.execution_results.step_results) {
-        console.log('Using step_results format:', response.execution_results.step_results)
-        // 最新格式：从step_results构建step_logs，传递执行记录信息
-        stepLogs.value = convertStepResultsToStepLogs(response.execution_results.step_results, response)
+      const steps = Array.isArray(results.steps) ? results.steps : []
+      const normalizedStepLogs = {}
 
-        // step_results中已经包含了完整的时间信息，不再需要step_logs
+      steps.forEach((step, index) => {
+        if (!step) return
 
-        logSummary.value = response.execution_results.log_summary || null
-      } else if (response.execution_results.step_logs) {
-        console.log('Using step_logs format:', response.execution_results.step_logs)
-        // 新格式：直接使用
-        stepLogs.value = response.execution_results.step_logs
-        logSummary.value = response.execution_results.log_summary || null
-      } else if (response.execution_results.host_logs) {
-        console.log('Using host_logs format:', response.execution_results.host_logs)
-        // 中间格式：转换为步骤格式
-        stepLogs.value = convertHostLogsToStepLogs(response.execution_results.host_logs)
-        logSummary.value = response.execution_results.log_summary || null
-      } else if (response.execution_results.logs) {
-        console.log('Using legacy logs format:', response.execution_results.logs)
-        // 旧格式：转换为新格式
-        stepLogs.value = convertLegacyLogsToStepLogs(response.execution_results.logs)
+        const stepId =
+          step.id ||
+          `step_${step.order || index + 1}_${step.name || 'step'}`
 
-        // 生成日志摘要
-        const totalHosts = getTotalHostCount()
-        const successCount = getHostCountByStatus('success')
-        const failedCount = getHostCountByStatus('failed')
+        const hosts = Array.isArray(step.hosts) ? step.hosts : []
+        const hostLogsMap = {}
 
-        logSummary.value = {
-          total_steps: Object.keys(stepLogs.value).length,
-          total_hosts: totalHosts,
-          success_hosts: successCount,
-          failed_hosts: failedCount,
-          total_size: calculateTotalLogSize()
+        hosts.forEach((host) => {
+          if (!host) return
+
+          const hostId =
+            host.id ?? host.host_id ?? host.ip ?? host.name ?? `${Math.random()}`
+
+          const stdout = host.stdout || ''
+          const stderr = host.stderr || ''
+
+          hostLogsMap[hostId] = {
+            host_id: hostId,
+            host_name: host.name || host.host_name || `Host-${hostId}`,
+            host_ip: host.ip || host.host_ip || '',
+            status: host.status || 'unknown',
+            stdout,
+            stderr,
+            logs: stdout,
+            error_logs: stderr,
+            log_count: stdout
+              .split('\n')
+              .filter(line => line.trim()).length,
+          }
+        })
+
+        normalizedStepLogs[stepId] = {
+          step_name: step.name || stepId,
+          step_order: step.order || index + 1,
+          status: step.status || 'unknown',
+          host_logs: hostLogsMap,
         }
-      }
-      
-      console.log('Final stepLogs:', stepLogs.value)
+      })
+
+      stepLogs.value = normalizedStepLogs
+
+      console.log('Final stepLogs (normalized from steps):', stepLogs.value)
 
       // 自动选择第一个步骤
       const stepIds = Object.keys(stepLogs.value)
@@ -1125,7 +1116,6 @@ const fetchExecutionDetail = async () => {
     }
   } catch (error) {
     console.error('获取执行记录详情失败:', error)
-    // 错误消息已由HTTP拦截器处理，这里不再重复显示
   } finally {
     loading.value = false
   }

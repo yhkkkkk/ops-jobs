@@ -89,7 +89,7 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
 class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     """执行记录详情序列化器 - 包含日志信息"""
     
-    execution_id = serializers.CharField(read_only=True)  # 将execution_id作为字符串返回
+    execution_id = serializers.CharField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     execution_type_display = serializers.CharField(source='get_execution_type_display', read_only=True)
     trigger_type_display = serializers.CharField(source='get_trigger_type_display', read_only=True)
@@ -160,23 +160,93 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     
     @extend_schema_field(serializers.DictField(allow_null=True))
     def get_execution_results(self, obj):
-        """获取执行结果，包含step_logs和summary"""
-        execution_results = obj.execution_results or {}
-        # 创建副本并移除重复的日志字段
-        if isinstance(execution_results, dict):
-            execution_results = execution_results.copy()
-            execution_results.pop('logs', None)
-            execution_results.pop('step_logs', None)  # 移除重复的step_logs字段
-            execution_results.pop('log_summary', None)  # 移除重复的log_summary字段
-            
-            # 添加步骤日志和摘要到execution_results中
-            if self.log_data:
-                if 'step_logs' in self.log_data:
-                    execution_results['step_logs'] = self.log_data['step_logs']
-                if 'summary' in self.log_data:
-                    # 移除log_summary中的started_at和finished_at字段，因为与主记录重复
-                    summary = self.log_data['summary'].copy()
-                    summary.pop('started_at', None)
-                    summary.pop('finished_at', None)
-                    execution_results['log_summary'] = summary
-        return execution_results
+        """
+        获取执行结果，对外只返回按步骤组织的结构：
+
+        {
+            "steps": [
+                {
+                    "id": "step_1_init",
+                    "order": 1,
+                    "name": "初始化环境",
+                    "status": "success",
+                    "hosts": [
+                        {
+                            "id": 1,
+                            "name": "web-01",
+                            "ip": "10.0.0.11",
+                            "status": "success",
+                            "stdout": "...",
+                            "stderr": "..."
+                        }
+                    ]
+                }
+            ]
+        }
+
+        兼容来源：
+        - log_archive_service.get_execution_logs 返回的 step_logs（通过 self.log_data 传入）
+        - ExecutionRecord.execution_results 中已有的 step_logs（例如模拟数据）
+        """
+        raw_results = obj.execution_results or {}
+
+        # 1. 优先从 log_data 中获取步骤日志（归档后的标准结构）
+        step_logs = None
+        if self.log_data and isinstance(self.log_data, dict):
+            step_logs = self.log_data.get('step_logs')
+
+        # 2. 如果 log_data 中没有步骤日志，尝试从 execution_results 中获取
+        if step_logs is None and isinstance(raw_results, dict):
+            step_logs = raw_results.get('step_logs')
+
+        # 安全兜底
+        if not isinstance(step_logs, dict):
+            step_logs = {}
+
+        # 3. 将 step_logs 统一转换为前端友好的 steps 结构
+        steps = []
+        for idx, (step_id, step_data) in enumerate(step_logs.items(), start=1):
+            if not isinstance(step_data, dict):
+                continue
+
+            step_name = step_data.get('step_name') or step_id
+            step_order = step_data.get('step_order') or idx
+            step_status = step_data.get('status') or 'unknown'
+
+            # 兼容 hosts / host_logs 两种字段
+            hosts_mapping = step_data.get('hosts') or step_data.get('host_logs') or {}
+            if not isinstance(hosts_mapping, dict):
+                hosts_mapping = {}
+
+            hosts = []
+            for host_key, host_data in hosts_mapping.items():
+                if not isinstance(host_data, dict):
+                    continue
+
+                host_id = host_data.get('host_id') or host_key
+                host_name = host_data.get('host_name') or host_data.get('hostname') or str(host_id)
+                host_ip = host_data.get('host_ip') or ''
+                host_status = host_data.get('status') or 'unknown'
+
+                # 统一 stdout/stderr 字段，兼容 logs / error_logs
+                stdout = host_data.get('stdout') or host_data.get('logs') or ''
+                stderr = host_data.get('stderr') or host_data.get('error_logs') or ''
+
+                hosts.append({
+                    'id': host_id,
+                    'name': host_name,
+                    'ip': host_ip,
+                    'status': host_status,
+                    'stdout': stdout,
+                    'stderr': stderr,
+                })
+
+            steps.append({
+                'id': step_id,
+                'order': step_order,
+                'name': step_name,
+                'status': step_status,
+                'hosts': hosts,
+            })
+
+        return {'steps': steps}

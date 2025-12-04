@@ -68,14 +68,14 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 content=serializer.data,
                 message='执行正在进行中，可使用实时日志接口'
             )
-        # 如果执行已完成，返回历史日志
+        # 如果执行已完成，优先尝试返回历史日志；如日志缺失则回退为基本信息
         elif execution_record.is_completed:
             from utils.log_archive_service import log_archive_service
 
             # 获取历史日志（不分页）
             result = log_archive_service.get_execution_logs(execution_record.execution_id)
 
-            if result['success']:
+            if result.get('success'):
                 # 准备序列化器需要的数据
                 log_data = {
                     'step_logs': result['data'].get('step_logs', {}),
@@ -93,8 +93,10 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                     message='执行记录详情获取成功'
                 )
             else:
-                # 如果是取消状态且没有日志，返回空日志而不是404
+                # 日志不存在或获取失败时，不再直接返回404，
+                # 而是根据状态返回空日志或仅基础信息，避免前端跳404页面。
                 if execution_record.status == 'cancelled':
+                    # 取消状态：返回空日志摘要
                     log_data = {
                         'step_logs': {},
                         'summary': {
@@ -114,7 +116,15 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                         message='任务已取消，暂无执行日志'
                     )
                 else:
-                    return SycResponse.not_found(message=f'获取历史日志失败: {result["message"]}')
+                    # 其他完成状态：返回无日志的详情（execution_results 会是空/原始值）
+                    serializer = self.get_serializer(
+                        execution_record,
+                        log_data=None
+                    )
+                    return SycResponse.success(
+                        content=serializer.data,
+                        message=f'执行记录详情获取成功，但历史日志获取失败: {result.get("message")}'
+                    )
 
         else:
             # 其他状态，返回基本信息

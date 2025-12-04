@@ -738,7 +738,7 @@ class LogArchiveService:
             # 从execution_results中获取日志数据
             execution_results = execution_record.execution_results or {}
             
-            # 先获取日志数据
+            # 先获取日志数据（日志列表 + 已聚合的step_logs）
             logs_data = execution_results.get('logs', [])
             step_logs = execution_results.get('step_logs', {})
             
@@ -750,15 +750,14 @@ class LogArchiveService:
             if 'log_summary' in execution_results:
                 del execution_results['log_summary']
 
-            # 如果没有日志数据，检查是否有步骤日志
+            # 如果既没有原始日志列表，也没有预聚合的步骤日志，则尝试从 step_results 衍生
             if not logs_data and not step_logs:
                 # 检查是否有状态更新信息，如果有则返回基本信息
                 status_updates = execution_results.get('status_updates', [])
 
-                # 尝试从execution_results中提取日志数据作为备用方案
-                # 优先使用step_results，其次使用results
+                # 尝试从 execution_results 中提取日志数据作为备用方案
+                # 现在仅支持 step_results 作为规范结构
                 step_results_data = execution_results.get('step_results', {})
-                results_data = execution_results.get('results', [])
 
                 if step_results_data:
                     # 从step_results中构建step_logs
@@ -821,74 +820,8 @@ class LogArchiveService:
                                 'execution_time': host_data.get('execution_time', 0)
                             }
 
-                    # 使用从step_results构建的日志数据
+                    # 使用从 step_results 构建的日志数据
                     logs_data = logs_list
-
-                elif results_data:
-                    # 从results中构建step_logs（注意：这里重新赋值外层变量）
-                    step_logs = {'脚本执行': {}}
-                    logs_list = []
-
-                    for result in results_data:
-                        host_id = str(result.get('host_id', 'unknown'))
-                        host_name = result.get('host_name', f'Host-{host_id}')
-                        host_ip = result.get('host_ip', '')
-
-                        # 构建主机日志
-                        host_logs = []
-
-                        # 处理stdout
-                        stdout = result.get('stdout', '').strip()
-                        if stdout:
-                            for line in stdout.split('\n'):
-                                if line.strip():
-                                    log_entry = {
-                                        'timestamp': execution_record.finished_at.isoformat() if execution_record.finished_at else execution_record.created_at.isoformat(),
-                                        'host_id': host_id,
-                                        'host_name': host_name,
-                                        'host_ip': host_ip,
-                                        'log_type': 'stdout',
-                                        'content': line.strip(),
-                                        'step_name': '脚本执行',
-                                        'step_order': 1
-                                    }
-                                    host_logs.append(log_entry)
-                                    logs_list.append(log_entry)
-
-                        # 处理stderr
-                        stderr = result.get('stderr', '').strip()
-                        if stderr:
-                            for line in stderr.split('\n'):
-                                if line.strip():
-                                    log_entry = {
-                                        'timestamp': execution_record.finished_at.isoformat() if execution_record.finished_at else execution_record.created_at.isoformat(),
-                                        'host_id': host_id,
-                                        'host_name': host_name,
-                                        'host_ip': host_ip,
-                                        'log_type': 'stderr',
-                                        'content': line.strip(),
-                                        'step_name': '脚本执行',
-                                        'step_order': 1
-                                    }
-                                    host_logs.append(log_entry)
-                                    logs_list.append(log_entry)
-
-                        # 添加到step_logs
-                        step_logs['脚本执行'][host_id] = {
-                            'host_id': host_id,
-                            'host_name': host_name,
-                            'host_ip': host_ip,
-                            'status': 'success' if result.get('success', False) else 'failed',
-                            'logs': host_logs,
-                            'log_count': len(host_logs),
-                            'start_time': execution_record.started_at.isoformat() if execution_record.started_at else execution_record.created_at.isoformat(),
-                            'end_time': execution_record.finished_at.isoformat() if execution_record.finished_at else execution_record.created_at.isoformat(),
-                            'execution_time': result.get('execution_time', 0)
-                        }
-
-                    # 使用从results构建的日志数据，并继续后续处理
-                    logs_data = logs_list
-                    # 注意：这里的step_logs是局部变量，需要让它继续被处理
 
                 elif status_updates:
                     # 有状态更新但没有具体日志，返回基本信息
@@ -915,8 +848,6 @@ class LogArchiveService:
                         'success': False,
                         'message': '未找到执行日志'
                     }
-
-            # 不再生成step_logs
             
             # 从step_results生成摘要
             step_results = execution_record.execution_results.get('step_results', {}) if execution_record.execution_results else {}
@@ -935,10 +866,9 @@ class LogArchiveService:
             end_index = start_index + page_size
             paginated_logs = all_logs[start_index:end_index]
 
-            # 转换日志格式为字符串列表（前端期望的格式）
+            # 转换日志格式为字符串列表
             formatted_logs = []
             for log in paginated_logs:
-                # 格式化日志行 - 兼容新旧格式
                 timestamp = log.get('timestamp', '')
                 host_name = log.get('host', log.get('host_name', ''))
                 content = log.get('message', log.get('content', ''))
@@ -976,6 +906,7 @@ class LogArchiveService:
                     'is_completed': execution_record.is_completed,
                     # 日志相关数据
                     'execution_results': execution_results,
+                    'step_logs': step_logs,
                     'summary': log_summary
                 }
             }

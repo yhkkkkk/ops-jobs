@@ -24,6 +24,7 @@ declare module 'vue' {
     AInput: typeof import('@arco-design/web-vue')['Input']
     AInputSearch: typeof import('@arco-design/web-vue')['InputSearch']
     AModal: typeof import('@arco-design/web-vue')['Modal']
+    AProgress: typeof import('@arco-design/web-vue')['Progress']
     ARow: typeof import('@arco-design/web-vue')['Row']
     ASpace: typeof import('@arco-design/web-vue')['Space']
     ASpin: typeof import('@arco-design/web-vue')['Spin']
