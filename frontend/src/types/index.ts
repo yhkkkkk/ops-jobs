@@ -345,16 +345,6 @@ export interface ExecutionRecord {
   executed_by_name: string
   celery_task_id?: string
   execution_parameters: any
-  target_hosts: Array<{
-    id: number | string
-    name: string
-    ip: string
-    status: string
-  }>
-  total_hosts: number
-  success_hosts: number
-  failed_hosts: number
-  success_rate: number
   execution_results: any
   error_message: string
   created_at: string

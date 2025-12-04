@@ -52,7 +52,7 @@ class ExecutionRecordAdmin(GuardedModelAdmin):
     search_fields = ['execution_id', 'name', 'executed_by__username', 'celery_task_id']
     readonly_fields = [
         'execution_id', 'created_at', 'started_at', 'finished_at',
-        'duration_display', 'success_rate', 'celery_task_id'
+        'duration_display', 'celery_task_id'
     ]
 
     formfield_overrides = {

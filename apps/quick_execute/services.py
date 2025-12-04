@@ -59,9 +59,8 @@ class QuickExecuteService:
                     'global_variables': global_variables,
                     'positional_args': positional_args,
                     'account_id': account_id,  # 保存account_id到执行参数中
+                    'target_host_ids': [host.id for host in target_hosts],
                 },
-                target_hosts=host_info_list,
-                total_hosts=len(host_info_list),
                 trigger_type='manual',
                 client_ip=client_ip,
                 user_agent=user_agent
@@ -172,10 +171,9 @@ class QuickExecuteService:
                     'execution_mode': transfer_data.get('execution_mode', 'parallel'),
                     'rolling_batch_size': transfer_data.get('rolling_batch_size', 20),
                     'rolling_batch_delay': transfer_data.get('rolling_batch_delay', 0),
-                    'overwrite_policy': transfer_data.get('overwrite_policy', 'overwrite')
+                    'overwrite_policy': transfer_data.get('overwrite_policy', 'overwrite'),
+                    'target_host_ids': [host.id for host in target_hosts],
                 },
-                target_hosts=host_info_list,
-                total_hosts=len(host_info_list),
                 trigger_type='manual',
                 client_ip=client_ip,
                 user_agent=user_agent

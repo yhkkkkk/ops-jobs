@@ -1678,32 +1678,12 @@ const getTotalHostCountInStep = (stepId) => {
 
 // 获取主机显示名称
 const getHostDisplayName = (hostLog) => {
-  // 如果主机信息是unknown、空字符串或null，尝试从executionInfo中获取实际主机信息
-  if ((!hostLog.hostname || hostLog.hostname === 'unknown') && 
-      (!hostLog.host_name || hostLog.host_name === 'unknown') && 
-      (!hostLog.host_ip || hostLog.host_ip === 'unknown')) {
-    // 从target_hosts中获取第一个主机信息（因为快速脚本执行通常只有一个主机）
-    if (executionInfo.value.target_hosts && executionInfo.value.target_hosts.length > 0) {
-      const targetHost = executionInfo.value.target_hosts[0]
-      return targetHost.name || targetHost.ip_address || '未知主机'
-    }
-  }
-  
   // 优先使用host_name，其次host_ip，最后hostname
   return hostLog.host_name || hostLog.host_ip || hostLog.hostname || '未知主机'
 }
 
 // 获取主机IP
 const getHostIP = (hostLog) => {
-  // 如果主机IP是unknown、空字符串或null，尝试从executionInfo中获取实际主机IP
-  if (!hostLog.host_ip || hostLog.host_ip === 'unknown' || hostLog.host_ip === '') {
-    // 从target_hosts中获取第一个主机信息
-    if (executionInfo.value.target_hosts && executionInfo.value.target_hosts.length > 0) {
-      const targetHost = executionInfo.value.target_hosts[0]
-      return targetHost.ip_address || '未知IP'
-    }
-  }
-  
   return hostLog.host_ip || '未知IP'
 }
 

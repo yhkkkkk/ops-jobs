@@ -284,11 +284,7 @@
               <div class="error-message">{{ retry.error_message }}</div>
             </div>
 
-            <div class="retry-stats" v-if="retry.total_hosts > 0">
-              <span>总主机: {{ retry.total_hosts }}</span>
-              <span class="ml-4">成功: {{ retry.success_hosts }}</span>
-              <span class="ml-4">失败: {{ retry.failed_hosts }}</span>
-              <span class="ml-4">成功率: {{ retry.success_rate }}%</span>
+            <div class="retry-stats">
             </div>
 
             <div class="retry-actions mt-2">
@@ -387,12 +383,6 @@ const columns = [
     dataIndex: 'status',
     slotName: 'status',
     width: 100
-  },
-  {
-    title: '目标主机',
-    dataIndex: 'total_hosts',
-    width: 120,
-    render: ({ record }) => `${record.success_hosts || 0}/${record.total_hosts || 0}`
   },
   {
     title: '执行时长',

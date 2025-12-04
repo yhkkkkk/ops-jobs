@@ -16,7 +16,6 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
     executed_by_name = serializers.CharField(source='executed_by.username', read_only=True)
 
     duration = serializers.SerializerMethodField()
-    success_rate = serializers.SerializerMethodField()
     is_completed = serializers.SerializerMethodField()
     is_running = serializers.SerializerMethodField()
 
@@ -29,11 +28,6 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
     def get_duration(self, obj):
         """获取执行时长"""
         return obj.duration
-
-    @extend_schema_field(serializers.FloatField())
-    def get_success_rate(self, obj):
-        """获取成功率"""
-        return obj.success_rate
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_completed(self, obj):
@@ -64,8 +58,7 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
             'id', 'execution_id', 'execution_type', 'execution_type_display',
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
-            'celery_task_id', 'execution_parameters', 'target_hosts',
-            'total_hosts', 'success_hosts', 'failed_hosts', 'success_rate',
+            'celery_task_id', 'execution_parameters',
             'execution_results', 'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'client_ip', 'user_agent', 'is_completed', 'is_running',
@@ -96,7 +89,6 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     executed_by_name = serializers.CharField(source='executed_by.username', read_only=True)
     
     duration = serializers.SerializerMethodField()
-    success_rate = serializers.SerializerMethodField()
     is_completed = serializers.SerializerMethodField()
     is_running = serializers.SerializerMethodField()
     
@@ -112,8 +104,7 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             'id', 'execution_id', 'execution_type', 'execution_type_display',
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
-            'celery_task_id', 'execution_parameters', 'target_hosts',
-            'total_hosts', 'success_hosts', 'failed_hosts', 'success_rate',
+            'celery_task_id', 'execution_parameters',
             'execution_results', 'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'is_completed', 'is_running',
@@ -130,11 +121,6 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     def get_duration(self, obj):
         """获取执行时长"""
         return obj.duration
-    
-    @extend_schema_field(serializers.FloatField())
-    def get_success_rate(self, obj):
-        """获取成功率"""
-        return obj.success_rate
     
     @extend_schema_field(serializers.BooleanField())
     def get_is_completed(self, obj):

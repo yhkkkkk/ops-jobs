@@ -59,12 +59,6 @@ class ExecutionRecord(models.Model):
     # 执行参数
     execution_parameters = models.JSONField(default=dict, blank=True, verbose_name="执行参数")
 
-    # 目标主机信息
-    target_hosts = models.JSONField(default=list, blank=True, verbose_name="目标主机")
-    total_hosts = models.IntegerField(default=0, verbose_name="总主机数")
-    success_hosts = models.IntegerField(default=0, verbose_name="成功主机数")
-    failed_hosts = models.IntegerField(default=0, verbose_name="失败主机数")
-
     # 执行结果
     execution_results = models.JSONField(default=dict, blank=True, verbose_name="执行结果")
     error_message = models.TextField(blank=True, verbose_name="错误信息")
@@ -122,13 +116,6 @@ class ExecutionRecord(models.Model):
             delta = self.finished_at - self.started_at
             return delta.total_seconds()
         return None
-
-    @property
-    def success_rate(self):
-        """成功率"""
-        if self.total_hosts == 0:
-            return 0
-        return round((self.success_hosts / self.total_hosts) * 100, 2)
 
     @property
     def is_completed(self):

@@ -17,7 +17,7 @@ class ExecutionRecordService:
     @staticmethod
     def create_execution_record(execution_type, name, executed_by, 
                               related_object=None, trigger_type='manual',
-                              execution_parameters=None, target_hosts=None,
+                              execution_parameters=None,
                               client_ip=None, user_agent=None, **kwargs):
         """创建执行记录"""
         try:
@@ -39,8 +39,6 @@ class ExecutionRecordService:
                 trigger_type=trigger_type,
                 executed_by=executed_by,
                 execution_parameters=execution_parameters or {},
-                target_hosts=target_hosts or [],
-                total_hosts=len(target_hosts) if target_hosts else 0,
                 client_ip=client_ip,
                 user_agent=user_agent or ''  # 确保不为 None
             )
@@ -80,14 +78,18 @@ class ExecutionRecordService:
             # 推送状态更新到实时日志
             if execution_record.celery_task_id:
                 # 使用execution_id作为task_id，与fabric_tasks.py保持一致
+                summary = (execution_record.execution_results or {}).get('summary', {})
+                total_hosts = summary.get('total_hosts', 0)
+                success_hosts = summary.get('success_hosts', 0)
+                failed_hosts = summary.get('failed_hosts', 0)
                 realtime_log_service.push_status(str(execution_record.execution_id), {
                     'status': status,
                     'progress': 100 if status in ['success', 'failed'] else 0,
                     'current_step': execution_record.name,
-                    'total_hosts': execution_record.total_hosts,
-                    'success_hosts': execution_record.success_hosts,
-                    'failed_hosts': execution_record.failed_hosts,
-                    'running_hosts': execution_record.total_hosts - execution_record.success_hosts - execution_record.failed_hosts,
+                    'total_hosts': total_hosts,
+                    'success_hosts': success_hosts,
+                    'failed_hosts': failed_hosts,
+                    'running_hosts': max(total_hosts - success_hosts - failed_hosts, 0),
                     'message': f'执行状态: {execution_record.get_status_display()}'
                 })
 
@@ -132,27 +134,26 @@ class ExecutionRecordService:
             raise
     
     @staticmethod
-    def update_host_results(execution_record, success_hosts=None, failed_hosts=None):
+    def update_host_results(execution_record, total_hosts=None, success_hosts=None, failed_hosts=None):
         """更新主机执行结果统计"""
         try:
-            if success_hosts is not None:
-                execution_record.success_hosts = success_hosts
-            if failed_hosts is not None:
-                execution_record.failed_hosts = failed_hosts
-            
-            execution_record.save()
-            
             # 推送统计更新到实时日志
             if execution_record.celery_task_id:
                 # 使用execution_id作为task_id，与fabric_tasks.py保持一致
+                summary = (execution_record.execution_results or {}).get('summary', {})
+                total = total_hosts if total_hosts is not None else summary.get('total_hosts', 0)
+                success = success_hosts if success_hosts is not None else summary.get('success_hosts', 0)
+                failed = failed_hosts if failed_hosts is not None else summary.get('failed_hosts', 0)
+                running = max(total - success - failed, 0)
+                progress = (success + failed) / total * 100 if total > 0 else 0
                 realtime_log_service.push_status(str(execution_record.execution_id), {
                     'status': execution_record.status,
-                    'progress': (execution_record.success_hosts + execution_record.failed_hosts) / execution_record.total_hosts * 100 if execution_record.total_hosts > 0 else 0,
+                    'progress': progress,
                     'current_step': execution_record.name,
-                    'total_hosts': execution_record.total_hosts,
-                    'success_hosts': execution_record.success_hosts,
-                    'failed_hosts': execution_record.failed_hosts,
-                    'running_hosts': execution_record.total_hosts - execution_record.success_hosts - execution_record.failed_hosts,
+                    'total_hosts': total,
+                    'success_hosts': success,
+                    'failed_hosts': failed,
+                    'running_hosts': running,
                     'message': f'主机执行统计更新'
                 })
             

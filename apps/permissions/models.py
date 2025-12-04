@@ -5,9 +5,7 @@ import json
 from django.db import models
 from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.utils.translation import gettext_lazy as _
-from django.core.exceptions import ValidationError
+# from guardian.models import Permission
 
 
 class AuditLog(models.Model):

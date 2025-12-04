@@ -367,8 +367,8 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
         params = execution_record.execution_parameters
 
-        # 从target_hosts重新构造主机ID列表
-        target_host_ids = [host['id'] for host in execution_record.target_hosts]
+        # 从execution_parameters重新构造主机ID列表
+        target_host_ids = params.get('target_host_ids') or []
 
         # 重新构造脚本执行参数
         script_data = {
@@ -404,11 +404,9 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
         params = execution_record.execution_parameters
 
-        # 从target_hosts重新构造targets格式
-        targets = [
-            {'type': 'host', 'id': host['id']} 
-            for host in execution_record.target_hosts
-        ]
+        # 从execution_parameters重新构造targets格式（新结构）
+        target_host_ids = params.get('target_host_ids') or []
+        targets = [{'type': 'host', 'id': host_id} for host_id in target_host_ids]
 
         # 重新构造文件传输参数
         transfer_data = {
