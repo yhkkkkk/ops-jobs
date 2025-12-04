@@ -110,6 +110,12 @@
                 >
                   <div class="variable-key">{{ key }}</div>
                   <div class="variable-value">{{ formatGlobalParameterValue(value) }}</div>
+                  <div
+                    v-if="getGlobalParameterDescription(value)"
+                    class="variable-description"
+                  >
+                    {{ getGlobalParameterDescription(value) }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -443,6 +449,11 @@ const formatGlobalParameterValue = (rawValue: any) => {
   return value !== undefined ? String(value) : ''
 }
 
+const getGlobalParameterDescription = (rawValue: any) => {
+  if (!rawValue || typeof rawValue !== 'object') return ''
+  return rawValue.description?.trim?.() || ''
+}
+
 // 操作方法
 // 无论从哪里进入详情，都统一返回到作业模板列表
 const handleBack = () => {
@@ -665,8 +676,9 @@ onMounted(() => {
 
 .variable-item {
   display: flex;
-  align-items: center;
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
   background: white;
   border-radius: 4px;
   border: 1px solid #e5e6eb;
@@ -681,7 +693,6 @@ onMounted(() => {
 .variable-key {
   font-weight: 500;
   color: #1d2129;
-  margin-right: 12px;
   min-width: 100px;
   font-size: 13px;
 }
@@ -699,8 +710,15 @@ onMounted(() => {
   background: #f2f3f5;
   padding: 4px 8px;
   border-radius: 3px;
-  flex: 1;
   word-break: break-all;
+}
+
+.variable-description {
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.5;
+  width: 100%;
+  word-break: break-word;
 }
 
 /* 位置参数样式 */

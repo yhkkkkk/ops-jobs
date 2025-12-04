@@ -107,8 +107,14 @@
             :key="key"
             class="parameter-item global"
           >
-            <span class="param-key">{{ key }}:</span>
-            <span class="param-value">{{ formatGlobalParameterValue(value) }}</span>
+            <div class="param-key">{{ key }}</div>
+            <div class="param-value">{{ formatGlobalParameterValue(value) }}</div>
+            <div
+              v-if="getGlobalParameterDescription(value)"
+              class="param-description"
+            >
+              {{ getGlobalParameterDescription(value) }}
+            </div>
           </div>
         </div>
         <div v-else class="no-parameters">
@@ -121,7 +127,7 @@
         <template #extra>
           <a-space>
             <a-tag>共 {{ steps.length }} 个步骤</a-tag>
-            <a-button v-if="plan.needs_sync" type="outline" size="small" @click="goToTemplate">
+            <a-button v-if="plan.needs_sync" type="outline" size="small" @click="handleViewTemplate">
               <template #icon>
                 <icon-sync />
               </template>
@@ -460,7 +466,7 @@ const getPositionalArgs = (step: any) => {
 // 全局变量展示：对密文参数做掩码处理（与作业模板详情保持一致）
 const formatGlobalParameterValue = (rawValue: any) => {
   if (rawValue === null || rawValue === undefined) return ''
-  if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+  if (typeof rawValue !== 'object') {
     return String(rawValue)
   }
 
@@ -472,6 +478,11 @@ const formatGlobalParameterValue = (rawValue: any) => {
   }
 
   return value !== undefined ? String(value) : ''
+}
+
+const getGlobalParameterDescription = (rawValue: any) => {
+  if (!rawValue || typeof rawValue !== 'object') return ''
+  return rawValue.description?.trim?.() || ''
 }
 
 // 生命周期
@@ -674,6 +685,34 @@ onMounted(() => {
   padding: 12px;
   border-radius: 4px;
   border: 1px solid var(--color-border-2);
+}
+
+.global-parameters .parameter-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border-1);
+  background: #fff;
+  border-radius: 4px;
+}
+
+.global-parameters .param-key {
+  font-weight: 500;
+  color: var(--color-text-1);
+  min-width: auto;
+}
+
+.global-parameters .param-value {
+  padding: 4px 6px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.global-parameters .param-description {
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.5;
 }
 
 .no-parameters {

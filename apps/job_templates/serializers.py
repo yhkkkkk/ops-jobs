@@ -366,7 +366,7 @@ class JobTemplateCreateSerializer(serializers.Serializer):
         """
         规范全局变量结构：
         - 兼容旧格式：直接是字符串/数字/布尔
-        - 对对象值仅保留 value 和 type，丢弃 description 等其他字段
+        - 对对象值保留 value / type / description
         """
         if not isinstance(value, dict):
             return value
@@ -383,6 +383,9 @@ class JobTemplateCreateSerializer(serializers.Serializer):
                     cleaned['value'] = item['value']
                 if 'type' in item:
                     cleaned['type'] = item['type']
+                description = item.get('description')
+                if isinstance(description, str):
+                    cleaned['description'] = description.strip()
                 normalized[key] = cleaned
             else:
                 normalized[key] = item
@@ -429,7 +432,7 @@ class JobTemplateUpdateSerializer(serializers.Serializer):
         """
         规范全局变量结构（与创建保持一致）：
         - 兼容旧格式：直接是字符串/数字/布尔
-        - 对对象值仅保留 value 和 type，丢弃 description 等其他字段
+        - 对对象值保留 value / type / description
         """
         if not isinstance(value, dict):
             return value
@@ -446,6 +449,9 @@ class JobTemplateUpdateSerializer(serializers.Serializer):
                     cleaned['value'] = item['value']
                 if 'type' in item:
                     cleaned['type'] = item['type']
+                description = item.get('description')
+                if isinstance(description, str):
+                    cleaned['description'] = description.strip()
                 normalized[key] = cleaned
             else:
                 normalized[key] = item

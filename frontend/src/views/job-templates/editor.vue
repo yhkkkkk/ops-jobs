@@ -107,55 +107,66 @@
           class="parameter-item"
         >
           <div class="parameter-content">
-            <div class="parameter-key">
-              <a-input
-                v-model="parameterKeys[key]"
-                placeholder="变量名"
-                @blur="handleParameterKeyChange(key, parameterKeys[key])"
-                @pressEnter="handleParameterKeyChange(key, parameterKeys[key])"
+            <div class="parameter-row">
+              <div class="parameter-key">
+                <a-input
+                  v-model="parameterKeys[key]"
+                  placeholder="变量名"
+                  @blur="handleParameterKeyChange(key, parameterKeys[key])"
+                  @pressEnter="handleParameterKeyChange(key, parameterKeys[key])"
+                />
+              </div>
+              <div class="parameter-type">
+                <a-select
+                  :model-value="getParameterType(key)"
+                  placeholder="类型"
+                  style="width: 80px"
+                  @change="handleParameterTypeChange(key, $event)"
+                >
+                  <a-option value="text">文本</a-option>
+                  <a-option value="secret">密文</a-option>
+                </a-select>
+              </div>
+              <div class="parameter-value">
+                <a-input
+                  :model-value="getParameterValue(key)"
+                  :type="getParameterType(key) === 'secret' && !parameterVisibility[key] ? 'password' : 'text'"
+                  :placeholder="getParameterType(key) === 'secret' ? '密文变量值' : '变量值'"
+                  @input="handleParameterValueChange(key, $event)"
+                />
+                <a-button
+                  v-if="getParameterType(key) === 'secret'"
+                  type="text"
+                  size="small"
+                  @click="toggleParameterVisibility(key)"
+                  class="visibility-toggle"
+                >
+                  <template #icon>
+                    <icon-eye v-if="parameterVisibility[key]" />
+                    <icon-eye-invisible v-else />
+                  </template>
+                </a-button>
+              </div>
+              <div class="parameter-actions">
+                <a-button
+                  type="text"
+                  status="danger"
+                  @click="handleRemoveGlobalParameter(key)"
+                >
+                  <template #icon>
+                    <icon-delete />
+                  </template>
+                </a-button>
+              </div>
+            </div>
+
+            <div class="parameter-description">
+              <a-textarea
+                :model-value="getParameterDescription(key)"
+                placeholder="变量描述，用于解释用途或限制"
+                :auto-size="{ minRows: 1, maxRows: 3 }"
+                @input="handleParameterDescriptionChange(key, $event)"
               />
-            </div>
-            <div class="parameter-type">
-              <a-select
-                :model-value="getParameterType(key)"
-                placeholder="类型"
-                style="width: 80px"
-                @change="handleParameterTypeChange(key, $event)"
-              >
-                <a-option value="text">文本</a-option>
-                <a-option value="secret">密文</a-option>
-              </a-select>
-            </div>
-            <div class="parameter-value">
-              <a-input
-                :model-value="getParameterValue(key)"
-                :type="getParameterType(key) === 'secret' && !parameterVisibility[key] ? 'password' : 'text'"
-                :placeholder="getParameterType(key) === 'secret' ? '密文变量值' : '变量值'"
-                @input="handleParameterValueChange(key, $event)"
-              />
-              <a-button
-                v-if="getParameterType(key) === 'secret'"
-                type="text"
-                size="small"
-                @click="toggleParameterVisibility(key)"
-                class="visibility-toggle"
-              >
-                <template #icon>
-                  <icon-eye v-if="parameterVisibility[key]" />
-                  <icon-eye-invisible v-else />
-                </template>
-              </a-button>
-            </div>
-            <div class="parameter-actions">
-              <a-button
-                type="text"
-                status="danger"
-                @click="handleRemoveGlobalParameter(key)"
-              >
-                <template #icon>
-                  <icon-delete />
-                </template>
-              </a-button>
             </div>
           </div>
         </div>
@@ -805,10 +816,11 @@ const handleAddGlobalParameter = () => {
   // 使用扩展格式
   form.global_parameters[newKey] = {
     value: '',
-    type: 'text'
+    type: 'text',
+    description: ''
   }
   parameterKeys.value[newKey] = newKey
-  parameterVisibility.value[newKey] = false
+  parameterVisibility.value[newKey] = true
   
   // 检测变更
   checkFormChanges()
@@ -828,19 +840,33 @@ const handleRemoveGlobalParameter = (key: string) => {
 // 获取参数值（兼容新旧格式）
 const getParameterValue = (key: string) => {
   const param = form.global_parameters?.[key]
-  if (typeof param === 'string') {
-    return param // 旧格式
+  if (param === null || param === undefined) {
+    return ''
   }
-  return param?.value || '' // 新格式
+  if (typeof param !== 'object') {
+    return String(param)
+  }
+  return param?.value !== undefined ? String(param.value) : ''
 }
 
 // 获取参数类型
 const getParameterType = (key: string) => {
   const param = form.global_parameters?.[key]
-  if (typeof param === 'string') {
-    return 'text' // 旧格式默认为文本
+  if (param === null || param === undefined) {
+    return 'text'
   }
-  return param?.type || 'text' // 新格式
+  if (typeof param !== 'object') {
+    return 'text'
+  }
+  return param?.type || 'text'
+}
+
+const getParameterDescription = (key: string) => {
+  const param = form.global_parameters?.[key]
+  if (!param || typeof param !== 'object') {
+    return ''
+  }
+  return param.description || ''
 }
 
 // 处理参数值变化（Arco Input 的 @input 直接传字符串值）
@@ -850,18 +876,13 @@ const handleParameterValueChange = (key: string, value: string) => {
   }
 
   const param = form.global_parameters[key]
-  if (typeof param === 'string') {
-    // 升级旧格式到新格式
-    form.global_parameters[key] = {
-      value: value,
-      type: 'text'
-    }
-  } else {
-    // 更新新格式
-    form.global_parameters[key] = {
-      ...param,
-      value: value
-    }
+  const currentType = typeof param === 'object' ? param?.type || 'text' : 'text'
+  const currentDescription = typeof param === 'object' ? param?.description || '' : ''
+
+  form.global_parameters[key] = {
+    value: value,
+    type: currentType,
+    description: currentDescription
   }
   
   // 检测变更
@@ -875,19 +896,44 @@ const handleParameterTypeChange = (key: string, type: string) => {
   }
 
   const param = form.global_parameters[key]
-  const currentValue = typeof param === 'string' ? param : param?.value || ''
+  const currentValue = typeof param === 'object' ? param?.value ?? '' : (param ?? '')
+  const currentDescription = typeof param === 'object' ? param?.description || '' : ''
 
   form.global_parameters[key] = {
     value: currentValue,
-    type: type
+    type: type,
+    description: currentDescription
   }
+  parameterVisibility.value[key] = type !== 'secret'
   
   // 检测变更
   checkFormChanges()
 }
 
+const handleParameterDescriptionChange = (key: string, description: string) => {
+  if (!form.global_parameters) {
+    form.global_parameters = {}
+  }
+
+  const param = form.global_parameters[key]
+  const currentValue = typeof param === 'object' ? param?.value ?? '' : (param ?? '')
+  const currentType = typeof param === 'object' ? param?.type || 'text' : 'text'
+  const normalizedDescription = (description ?? '').trim()
+
+  form.global_parameters[key] = {
+    value: currentValue,
+    type: currentType,
+    description: normalizedDescription
+  }
+
+  checkFormChanges()
+}
+
 // 切换参数可见性
 const toggleParameterVisibility = (key: string) => {
+  if (!(key in parameterVisibility.value)) {
+    parameterVisibility.value[key] = false
+  }
   parameterVisibility.value[key] = !parameterVisibility.value[key]
 }
 
@@ -908,6 +954,11 @@ const handleParameterKeyChange = (oldKey: string, newKey: string) => {
 
     delete parameterKeys.value[oldKey]
     parameterKeys.value[newKey] = newKey
+    if (oldKey in parameterVisibility.value) {
+      const visibility = parameterVisibility.value[oldKey]
+      delete parameterVisibility.value[oldKey]
+      parameterVisibility.value[newKey] = visibility
+    }
     
     // 检测变更
     checkFormChanges()
@@ -943,6 +994,9 @@ const loadCopyData = () => {
       if (templateData.global_parameters) {
         Object.keys(templateData.global_parameters).forEach(key => {
           parameterKeys.value[key] = key
+          const param = templateData.global_parameters[key]
+          const paramType = typeof param === 'object' ? (param?.type || 'text') : 'text'
+          parameterVisibility.value[key] = paramType !== 'secret'
         })
       }
 
@@ -1098,6 +1152,12 @@ onMounted(() => {
 
 .parameter-content {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parameter-row {
+  display: flex;
   align-items: center;
   gap: 12px;
 }
@@ -1127,5 +1187,13 @@ onMounted(() => {
 
 .parameter-actions {
   flex-shrink: 0;
+}
+
+.parameter-description :deep(.arco-textarea) {
+  font-size: 12px;
+}
+
+.parameter-description {
+  margin-top: 4px;
 }
 </style>
