@@ -44,12 +44,18 @@ class JobStepInline(admin.StackedInline):
         return CustomFormSet
 
 
-class PlanStepInline(admin.TabularInline):
-    """方案步骤内联编辑"""
+class PlanStepInline(admin.StackedInline):
+    """方案步骤内联编辑 - 使用StackedInline提供更好的布局（参考作业模板）"""
     model = PlanStep
     extra = 0
-    fields = ['step', 'order', 'override_timeout']
+    fields = [
+        ('step', 'order'),
+        'override_timeout',
+        'override_parameters',
+    ]
     ordering = ['order']
+    verbose_name = "执行步骤"
+    verbose_name_plural = "执行步骤"
 
     formfield_overrides = {
         models.JSONField: {'widget': JSONEditorWidget},
@@ -62,11 +68,18 @@ class JobTemplateAdmin(GuardedModelAdmin):
     list_filter = ['category', 'created_at']
     search_fields = ['name', 'description']
     readonly_fields = ['created_at', 'updated_at', 'step_count', 'plan_count']
+    formfield_overrides = {
+        models.JSONField: {'widget': JSONEditorWidget},
+    }
     inlines = [JobStepInline]  # 添加步骤内联编辑
 
     fieldsets = (
         ('基本信息', {
             'fields': ('name', 'description', 'category', 'tags_json')
+        }),
+        ('全局变量', {
+            'fields': ('global_parameters',),
+            'classes': ('collapse',)
         }),
         ('统计信息', {
             'fields': ('step_count', 'plan_count'),
@@ -177,6 +190,10 @@ class ExecutionPlanAdmin(GuardedModelAdmin):
         ('基本信息', {
             'fields': ('template', 'name', 'description')
         }),
+        ('全局变量快照', {
+            'fields': ('global_parameters_snapshot',),
+            'classes': ('collapse',)
+        }),
         ('统计信息', {
             'fields': ('step_count',),
             'classes': ('collapse',)
@@ -186,6 +203,10 @@ class ExecutionPlanAdmin(GuardedModelAdmin):
             'classes': ('collapse',)
         })
     )
+    
+    formfield_overrides = {
+        models.JSONField: {'widget': JSONEditorWidget},
+    }
 
     def permission_actions(self, obj):
         """显示权限管理操作"""

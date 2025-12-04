@@ -15,8 +15,13 @@ class ExecutionStepInline(admin.TabularInline):
     """执行步骤内联"""
     model = ExecutionStep
     extra = 0
+    can_delete = False
+    can_add = False
     readonly_fields = ['step_name', 'step_type', 'step_order', 'status', 'started_at', 'finished_at', 'duration_display']
     fields = ['step_order', 'step_name', 'step_type', 'status', 'started_at', 'finished_at', 'duration_display']
+    ordering = ['step_order']
+    verbose_name = "执行步骤"
+    verbose_name_plural = "执行步骤"
 
     def duration_display(self, obj):
         """显示执行时长"""
@@ -35,6 +40,11 @@ class ExecutionStepInline(admin.TabularInline):
             pass
         return "-"
     duration_display.short_description = "执行时长"
+    
+    def get_queryset(self, request):
+        """优化查询，预取关联数据"""
+        qs = super().get_queryset(request)
+        return qs.select_related('execution_record')
 
 
 @admin.register(ExecutionRecord)
