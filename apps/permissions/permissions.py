@@ -1,6 +1,5 @@
 """
 权限系统模块
-
 提供基于Django Guardian的对象级权限控制，支持细粒度的权限管理。
 """
 
@@ -21,7 +20,7 @@ def get_view_action(view, request):
     # 优先使用 ViewSet 的 action 属性
     action = getattr(view, 'action', None)
     
-    # 如果没有 action 属性，根据 HTTP 方法判断
+    # 如果没有action属性，根据http方法判断
     if action is None:
         if request.method == 'GET':
             action = 'list'
@@ -280,6 +279,62 @@ class ServerAccountPermission(permissions.BasePermission, BasePermissionMixin):
 
         # 使用 Guardian 检查对象级权限
         return request.user.has_perm(permission, obj)
+
+
+class ExecutionRecordPermission(permissions.BasePermission, BasePermissionMixin):
+    """执行记录权限
+
+    对列表/查看放宽，对重做/重试/取消等敏感操作使用对象级权限：
+    - 超级管理员始终允许
+    - job_workflow：基于关联 ExecutionPlan / JobTemplate 的 execute_* 对象级权限
+    - quick_script / quick_file_transfer：沿用全局脚本执行权限（execute_scripts）
+    """
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+
+        # 列表 / 详情本身允许，具体敏感操作在 has_object_permission 中判断
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+
+        from apps.executor.models import ExecutionRecord
+        from apps.job_templates.models import ExecutionPlan, JobTemplate
+
+        assert isinstance(obj, ExecutionRecord)
+        action = getattr(view, "action", None)
+
+        # 只读操作：查看详情 / 重试历史
+        if action in ["retrieve", "retry_history"]:
+            return user.has_perm("executor.view_executionrecord", obj)
+
+        # 敏感操作：重做、取消、步骤重试/忽略错误
+        if action in ["retry", "cancel", "retry_step_inplace", "ignore_step_error"]:
+            exec_type = obj.execution_type
+            related = obj.related_object
+
+            if exec_type == "job_workflow":
+                if isinstance(related, ExecutionPlan):
+                    return user.has_perm("job_templates.execute_executionplan", related)
+                if isinstance(related, JobTemplate):
+                    return user.has_perm("job_templates.execute_jobtemplate", related)
+                return False
+
+            if exec_type in ["quick_script", "quick_file_transfer"]:
+                # 快速脚本/文件传输目前仍使用全局脚本执行权限
+                return user.has_perm("permissions.execute_scripts")
+
+            # 其他执行类型暂不支持在执行记录界面发起敏感操作
+            return False
+
+        # 其他未明确定义的操作，默认按“查看执行记录”处理
+        return user.has_perm("executor.view_executionrecord", obj)
 
 class IsSuperUser(permissions.BasePermission):
     """

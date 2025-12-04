@@ -12,6 +12,7 @@ from utils.responses import SycResponse
 from .models import ExecutionRecord, ExecutionStep
 from .serializers import ExecutionRecordSerializer, ExecutionRecordDetailSerializer
 from .filters import ExecutionRecordFilter
+from apps.permissions.permissions import ExecutionRecordPermission
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = ExecutionRecord.objects.all()
     serializer_class = ExecutionRecordSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ExecutionRecordPermission]
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = ExecutionRecordFilter
@@ -244,7 +245,6 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         if retry_type not in ['failed_only', 'all']:
             return SycResponse.error(message='重试类型无效')
 
-        # 检查执行记录状态
         if execution_record.status not in ['failed', 'running']:
             return SycResponse.error(message='只有失败或运行中的执行记录才能进行原地重试')
 
@@ -279,7 +279,6 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         if not step_id:
             return SycResponse.error(message='步骤ID不能为空')
 
-        # 检查执行记录状态
         if execution_record.status != 'failed':
             return SycResponse.error(message='只有失败的执行记录才能忽略错误')
 
