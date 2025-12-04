@@ -15,4 +15,3 @@ def get_user_profile_data(user):
         }
     except UserProfile.DoesNotExist:
         return None
-

@@ -5,7 +5,12 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import AuditLog
+from .models import (
+    AuditLog,
+    PermissionTemplate,
+    UserPermissionProfile,
+    GroupPermissionProfile,
+)
 
 
 @admin.register(AuditLog)
@@ -183,3 +188,60 @@ class AuditLogAdmin(admin.ModelAdmin):
 admin.site.site_header = "运维作业平台"
 admin.site.site_title = "运维作业管理"
 admin.site.index_title = "运维作业管理后台"
+
+
+@admin.register(PermissionTemplate)
+class PermissionTemplateAdmin(admin.ModelAdmin):
+    """权限模板管理"""
+
+    list_display = ("name", "is_active", "permission_count", "created_at", "updated_at")
+    search_fields = ("name", "description")
+    list_filter = ("is_active",)
+    filter_horizontal = ("model_permissions",)
+
+    def permission_count(self, obj):
+        return obj.model_permissions.count()
+
+
+@admin.register(UserPermissionProfile)
+class UserPermissionProfileAdmin(admin.ModelAdmin):
+    """用户权限配置管理
+
+    通过选择模板和自定义权限，自动同步到 user.user_permissions，
+    业务代码继续通过 user.has_perm(...) 使用，无需修改。
+    """
+
+    list_display = (
+        "user",
+        "permission_level",
+        "permission_template",
+        "is_active",
+        "created_at",
+        "updated_at",
+    )
+    list_filter = ("permission_level", "is_active")
+    search_fields = ("user__username",)
+    autocomplete_fields = ("user", "permission_template")
+    filter_horizontal = ("custom_permissions",)
+
+
+@admin.register(GroupPermissionProfile)
+class GroupPermissionProfileAdmin(admin.ModelAdmin):
+    """用户组权限配置管理
+
+    通过选择模板和自定义权限，自动同步到 group.permissions，
+    业务代码继续通过 user.has_perm(...) 使用，无需修改。
+    """
+
+    list_display = (
+        "group",
+        "permission_level",
+        "permission_template",
+        "is_active",
+        "created_at",
+        "updated_at",
+    )
+    list_filter = ("permission_level", "is_active")
+    search_fields = ("group__name",)
+    autocomplete_fields = ("group", "permission_template")
+    filter_horizontal = ("custom_permissions",)

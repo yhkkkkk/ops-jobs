@@ -337,12 +337,16 @@ class UserPermissionProfile(models.Model):
         return self.has_permission(permission_codename, app_label)
     
     def save(self, *args, **kwargs):
-        """保存时同步权限"""
+        """保存时同步权限到django用户权限体系"""
         super().save(*args, **kwargs)
-        
-        # 如果设置了权限模板，应用模板权限
+
+        # 同步模板权限到 user.user_permissions
         if self.permission_template:
             self.permission_template.apply_to_user(self.user)
+
+        # 同步自定义权限到 user.user_permissions
+        if self.custom_permissions.exists():
+            self.user.user_permissions.add(*self.custom_permissions.all())
 
 
 class GroupPermissionProfile(models.Model):
@@ -423,9 +427,13 @@ class GroupPermissionProfile(models.Model):
         return permissions
     
     def save(self, *args, **kwargs):
-        """保存时同步权限"""
+        """保存时同步权限到django组权限体系"""
         super().save(*args, **kwargs)
-        
-        # 如果设置了权限模板，应用模板权限
+
+        # 同步模板权限到 group.permissions
         if self.permission_template:
             self.permission_template.apply_to_group(self.group)
+
+        # 同步自定义权限到 group.permissions
+        if self.custom_permissions.exists():
+            self.group.permissions.add(*self.custom_permissions.all())
