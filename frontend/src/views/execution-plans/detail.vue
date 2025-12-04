@@ -355,12 +355,21 @@ const handleExecute = () => {
 
 // 查看所属模板详情
 const handleViewTemplate = () => {
+  // if (plan.value?.template) {
+  //   router.push(`/job-templates/detail/${plan.value.template}`)
+  // }
   if (plan.value?.template) {
-    router.push(`/job-templates/detail/${plan.value.template}`)
+    // 1. 使用 router.resolve 解析出完整的 URL
+    // 这样做的好处是无论你的路由模式是 history 还是 hash (#)，它都能生成正确的链接
+    const routeUrl = router.resolve({
+      path: `/job-templates/detail/${plan.value.template}`
+    })
+
+    // 2. 使用 window.open 打开新标签页
+    // '_blank' 参数表示在新窗口/标签页打开
+    window.open(routeUrl.href, '_blank')
   }
 }
-
-
 
 // 同步方案
 const handleSync = async () => {

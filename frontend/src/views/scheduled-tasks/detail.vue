@@ -311,13 +311,31 @@ const handleViewExecution = (record) => {
 }
 
 const handleViewPlan = () => {
+  // if (!task.value || !task.value.execution_plan) return
+  // router.push(`/execution-plans/detail/${task.value.execution_plan}`)
   if (!task.value || !task.value.execution_plan) return
-  router.push(`/execution-plans/detail/${task.value.execution_plan}`)
+
+  // 解析路由链接
+  const routeUrl = router.resolve({
+    path: `/execution-plans/detail/${task.value.execution_plan}`
+  })
+
+  // 在新标签页打开
+  window.open(routeUrl.href, '_blank')
 }
 
 const handleViewTemplate = () => {
+  // if (!task.value || !task.value.template_id) return
+  // router.push(`/job-templates/detail/${task.value.template_id}`)
   if (!task.value || !task.value.template_id) return
-  router.push(`/job-templates/detail/${task.value.template_id}`)
+
+  // 解析路由链接
+  const routeUrl = router.resolve({
+    path: `/job-templates/detail/${task.value.template_id}`
+  })
+
+  // 在新标签页打开
+  window.open(routeUrl.href, '_blank')
 }
 
 const handleHistoryPageChange = (page) => {

@@ -40,7 +40,7 @@
                   <template #icon>
                     <icon-file />
                   </template>
-                  基于模板创建
+                  基于作业模板创建
                 </a-doption>
                 <a-doption value="blank">
                   <template #icon>
