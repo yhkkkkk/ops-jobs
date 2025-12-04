@@ -303,6 +303,15 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   /**
+   * 重置整份权限状态（用于切换用户/登出）
+   */
+  const resetPermissions = (): void => {
+    userPermissions.value = null
+    clearCache()
+    pendingRequests.value.clear()
+  }
+
+  /**
    * 清除特定资源的权限缓存
    */
   const clearResourceCache = (resourceType: ResourceType): void => {
@@ -454,6 +463,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     checkResourcePermissions,
     batchCheckResourcePermissions,
     clearCache,
+    resetPermissions,
     clearResourceCache,
     hasPermission,
   }

@@ -23,13 +23,20 @@
               </template>
               刷新
             </a-button>
-            <a-button @click="handleEdit">
+            <a-button
+              @click="handleEdit"
+              v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: plan?.id }"
+            >
               <template #icon>
                 <icon-edit />
               </template>
               编辑方案
             </a-button>
-            <a-button type="primary" @click="handleExecute">
+            <a-button
+              type="primary"
+              @click="handleExecute"
+              v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: plan?.id }"
+            >
               <template #icon>
                 <icon-play-arrow />
               </template>
@@ -120,7 +127,13 @@
               </template>
               去模板同步
             </a-button>
-            <a-button v-if="plan.needs_sync" type="primary" size="small" @click="handleSync">
+            <a-button
+              v-if="plan.needs_sync"
+              type="primary"
+              size="small"
+              @click="handleSync"
+              v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: plan?.id }"
+            >
               <template #icon>
                 <icon-sync />
               </template>

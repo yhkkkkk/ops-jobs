@@ -14,19 +14,31 @@
             </template>
             返回
           </a-button>
-          <a-button @click="handleEdit">
+          <a-button
+            @click="handleEdit"
+            v-permission="{ resourceType: 'host', permission: 'change', resourceId: hostDetail?.id }"
+          >
             <template #icon>
               <icon-edit />
             </template>
             编辑
           </a-button>
-          <a-button @click="handleCollectInfo" :loading="collecting">
+          <a-button
+            @click="handleCollectInfo"
+            :loading="collecting"
+            v-permission="{ resourceType: 'host', permission: 'execute', resourceId: hostDetail?.id }"
+          >
             <template #icon>
               <icon-refresh />
             </template>
             收集系统信息
           </a-button>
-          <a-button type="primary" @click="handleTest" :loading="testing">
+          <a-button
+            type="primary"
+            @click="handleTest"
+            :loading="testing"
+            v-permission="{ resourceType: 'host', permission: 'execute', resourceId: hostDetail?.id }"
+          >
             <template #icon>
               <icon-wifi />
             </template>

@@ -13,6 +13,7 @@
           type="outline"
           status="warning"
           @click="handleToggleStatus"
+          v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
         >
           <template #icon><icon-pause /></template>
           禁用
@@ -22,11 +23,16 @@
           type="outline"
           status="success"
           @click="handleToggleStatus"
+          v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
         >
           <template #icon><icon-play-arrow /></template>
           启用
         </a-button>
-        <a-button type="primary" @click="handleEdit">
+        <a-button
+          type="primary"
+          @click="handleEdit"
+          v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
+        >
           <template #icon><icon-edit /></template>
           编辑
         </a-button>

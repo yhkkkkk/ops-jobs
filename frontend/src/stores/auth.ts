@@ -75,6 +75,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 清空权限相关状态，确保用户切换后不会复用旧权限
+   */
+  const clearPermissionsState = async () => {
+    try {
+      const { usePermissionsStore } = await import('./permissions')
+      const permissionsStore = usePermissionsStore()
+      permissionsStore.resetPermissions()
+    } catch (error) {
+      console.error('清除权限状态失败:', error)
+    }
+  }
+
   // 登录
   const login = async (params: LoginParams & { remember?: boolean }): Promise<void> => {
     loading.value = true
@@ -104,6 +117,8 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.removeItem('user')
       }
 
+      // 切换账户前清除已有权限缓存
+      await clearPermissionsState()
       // 登录成功后初始化权限
       await initPermissions()
     } finally {
@@ -220,6 +235,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     refreshToken.value = ''
     user.value = null
+    clearPermissionsState()
     clearStorage()
   }
 

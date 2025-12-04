@@ -8,7 +8,7 @@ from utils.validators import validate_cron_expression, validate_timezone
 
 class ScheduledJobSerializer(serializers.ModelSerializer):
     """定时作业序列化器"""
-
+    
     template_name = serializers.CharField(read_only=True)
     plan_name = serializers.CharField(read_only=True)
     # 方便前端跳转到模板详情

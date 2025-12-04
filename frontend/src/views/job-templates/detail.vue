@@ -19,19 +19,31 @@
             </template>
             刷新
           </a-button>
-          <a-button type="outline" @click="handleEdit">
+          <a-button
+            type="outline"
+            @click="handleEdit"
+            v-permission="{ resourceType: 'jobtemplate', permission: 'change', resourceId: template?.id }"
+          >
             <template #icon>
               <icon-edit />
             </template>
             编辑
           </a-button>
-          <a-button type="outline" @click="handleCopy">
+          <a-button
+            type="outline"
+            @click="handleCopy"
+            v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
+          >
             <template #icon>
               <icon-copy />
             </template>
             复制
           </a-button>
-          <a-button type="primary" @click="handleDebugExecute">
+          <a-button
+            type="primary"
+            @click="handleDebugExecute"
+            v-permission="{ resourceType: 'jobtemplate', permission: 'execute', resourceId: template?.id }"
+          >
             <template #icon>
               <icon-play-arrow />
             </template>
