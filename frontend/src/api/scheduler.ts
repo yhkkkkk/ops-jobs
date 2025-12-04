@@ -90,7 +90,7 @@ export const executionPlanApi = {
   // 获取执行方案列表（简化版，用于选择器）
   list(params?: any) {
     return request({
-      url: '/templates/plans/',
+      url: '/job-templates/plans/',
       method: 'get',
       params
     })

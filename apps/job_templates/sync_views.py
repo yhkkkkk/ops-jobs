@@ -1,7 +1,6 @@
 """
 作业模板同步相关视图
 """
-from typing import TYPE_CHECKING
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,8 +11,6 @@ from .models import JobTemplate, ExecutionPlan
 from .sync_service import TemplateChangeDetector, TemplateSyncService
 import logging
 
-if TYPE_CHECKING:
-    from rest_framework.viewsets import ModelViewSet
 
 logger = logging.getLogger(__name__)
 

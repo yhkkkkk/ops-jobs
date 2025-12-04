@@ -196,52 +196,52 @@ export const scriptTemplateApi = {
 export const jobTemplateApi = {
   // 获取作业模板列表
   getTemplates(params?: any): Promise<PaginatedResponse<JobTemplate>> {
-    return http.get('/templates/templates/', { params })
+    return http.get('/job-templates/templates/', { params })
   },
   
   // 获取可用标签
   getTags(): Promise<{ tags: string[] }> {
-    return http.get('/templates/templates/tags/')
+    return http.get('/job-templates/templates/tags/')
   },
 
   // 获取作业模板详情
   getTemplate(id: number): Promise<JobTemplate> {
-    return http.get(`/templates/templates/${id}/`)
+    return http.get(`/job-templates/templates/${id}/`)
   },
 
   // 创建作业模板
   createTemplate(data: Partial<JobTemplate>): Promise<JobTemplate> {
-    return http.post('/templates/templates/', data)
+    return http.post('/job-templates/templates/', data)
   },
 
   // 更新作业模板
   updateTemplate(id: number, data: Partial<JobTemplate>): Promise<JobTemplate> {
-    return http.put(`/templates/templates/${id}/`, data)
+    return http.put(`/job-templates/templates/${id}/`, data)
   },
 
   // 删除作业模板
   deleteTemplate(id: number): Promise<void> {
-    return http.delete(`/templates/templates/${id}/`)
+    return http.delete(`/job-templates/templates/${id}/`)
   },
 
   // 复制作业模板
   copyTemplate(id: number): Promise<JobTemplate> {
-    return http.post(`/templates/templates/${id}/copy/`)
+    return http.post(`/job-templates/templates/${id}/copy/`)
   },
 
   // 调试作业模板
   debugTemplate(id: number, params?: any): Promise<{ execution_id: string; task_id: string; is_debug: boolean }> {
-    return http.post(`/templates/templates/${id}/debug/`, params)
+    return http.post(`/job-templates/templates/${id}/debug/`, params)
   },
 
   // 获取同步预览
   getSyncPreview(id: number): Promise<any> {
-    return http.get(`/templates/templates/${id}/sync_preview/`)
+    return http.get(`/job-templates/templates/${id}/sync_preview/`)
   },
 
   // 同步执行方案
   syncPlans(id: number): Promise<void> {
-    return http.post(`/templates/templates/${id}/sync_plans/`)
+    return http.post(`/job-templates/templates/${id}/sync_plans/`)
   },
 }
 
@@ -249,47 +249,47 @@ export const jobTemplateApi = {
 export const executionPlanApi = {
   // 获取执行计划列表
   getPlans(params?: any): Promise<PaginatedResponse<ExecutionPlan>> {
-    return http.get('/templates/plans/', { params })
+    return http.get('/job-templates/plans/', { params })
   },
 
   // 获取执行计划详情
   getPlan(id: number): Promise<ExecutionPlan> {
-    return http.get(`/templates/plans/${id}/`)
+    return http.get(`/job-templates/plans/${id}/`)
   },
 
   // 创建执行计划
   createPlan(data: any): Promise<ExecutionPlan> {
-    return http.post('/templates/plans/', data)
+    return http.post('/job-templates/plans/', data)
   },
 
   // 更新执行计划
   updatePlan(id: number, data: Partial<ExecutionPlan>): Promise<ExecutionPlan> {
-    return http.put(`/templates/plans/${id}/`, data)
+    return http.put(`/job-templates/plans/${id}/`, data)
   },
 
   // 删除执行计划
   deletePlan(id: number): Promise<void> {
-    return http.delete(`/templates/plans/${id}/`)
+    return http.delete(`/job-templates/plans/${id}/`)
   },
 
   // 获取执行计划步骤
   getPlanSteps(id: number): Promise<any[]> {
-    return http.get(`/templates/plans/${id}/steps/`)
+    return http.get(`/job-templates/plans/${id}/steps/`)
   },
 
   // 执行计划
   executePlan(id: number, params?: any): Promise<{ execution_id: string; execution_record_id: number; task_id: string }> {
-    return http.post(`/templates/plans/${id}/execute/`, params)
+    return http.post(`/job-templates/plans/${id}/execute/`, params)
   },
 
   // 同步计划
   syncPlan(id: number): Promise<void> {
-    return http.post(`/templates/plans/${id}/sync/`)
+    return http.post(`/job-templates/plans/${id}/sync/`)
   },
 
   // 获取同步状态详情
   getSyncStatusDetail(id: number): Promise<any> {
-    return http.get(`/templates/plans/${id}/sync_status_detail/`)
+    return http.get(`/job-templates/plans/${id}/sync_status_detail/`)
   },
 }
 
