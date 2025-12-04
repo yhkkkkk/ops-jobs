@@ -194,17 +194,6 @@
               </template>
               查看
             </a-button>
-            <a-button 
-              v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: record.id }"
-              type="text" 
-              size="small" 
-              @click="handleEdit(record)"
-            >
-              <template #icon>
-                <icon-edit />
-              </template>
-              编辑
-            </a-button>
             <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
@@ -320,121 +309,10 @@
             :readonly="true"
           />
         </div>
-
-
       </div>
     </a-modal>
 
-    <!-- 版本管理弹窗 -->
-    <a-modal
-      v-model:visible="versionVisible"
-      title="版本管理"
-      :width="800"
-      :footer="false"
-    >
-      <div v-if="currentTemplate">
-        <div class="mb-4">
-          <a-button type="primary" @click="showCreateVersion = true">
-            <template #icon>
-              <icon-plus />
-            </template>
-            创建新版本
-          </a-button>
-        </div>
-
-        <a-table
-          :columns="versionColumns"
-          :data="versions"
-          :loading="versionLoading"
-          :pagination="false"
-        >
-          <template #is_active="{ record }">
-            <a-tag :color="record.is_active ? 'green' : 'gray'">
-              {{ record.is_active ? '当前版本' : '历史版本' }}
-            </a-tag>
-          </template>
-
-          <template #created_at="{ record }">
-            {{ dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-          </template>
-
-          <template #actions="{ record }">
-            <a-space>
-              <a-button
-                v-if="!record.is_active"
-                type="text"
-                size="small"
-                @click="handleRollback(record)"
-              >
-                回滚
-              </a-button>
-              <a-button type="text" size="small" @click="handleViewVersion(record)">
-                查看
-              </a-button>
-            </a-space>
-          </template>
-        </a-table>
-      </div>
-    </a-modal>
-
-    <!-- 创建版本弹窗 -->
-    <a-modal
-      v-model:visible="showCreateVersion"
-      title="创建新版本"
-      @ok="handleCreateVersion"
-      @cancel="resetVersionForm"
-    >
-      <a-form :model="versionForm" layout="vertical">
-        <a-form-item label="版本号" required>
-          <a-input
-            v-model="versionForm.version"
-            placeholder="请输入版本号，如：1.1.0"
-          />
-        </a-form-item>
-        <a-form-item label="版本描述">
-          <a-textarea
-            v-model="versionForm.description"
-            placeholder="请输入版本描述"
-            :rows="3"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <!-- 版本内容查看弹窗 -->
-    <a-modal
-      v-model:visible="versionContentVisible"
-      title="版本内容"
-      :width="1000"
-      :footer="false"
-    >
-      <div v-if="currentVersion">
-        <a-descriptions :column="2" bordered class="mb-4">
-          <a-descriptions-item label="版本号">
-            {{ currentVersion.version }}
-          </a-descriptions-item>
-          <a-descriptions-item label="创建者">
-            {{ currentVersion.created_by_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="创建时间" :span="2">
-            {{ dayjs(currentVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-          </a-descriptions-item>
-          <a-descriptions-item label="描述" :span="2">
-            {{ currentVersion.description || '暂无描述' }}
-          </a-descriptions-item>
-        </a-descriptions>
-
-        <div>
-          <h4>脚本内容</h4>
-          <simple-monaco-editor
-            :model-value="currentVersion.script_content"
-            :language="currentTemplate?.script_type || 'shell'"
-            :height="400"
-            :readonly="true"
-          />
-        </div>
-      </div>
-    </a-modal>
+    <!-- 版本管理相关 UI 已迁移到独立页面 /script-templates/:id/versions -->
   </div>
 </template>
 
@@ -454,20 +332,6 @@ const templates = ref<ScriptTemplate[]>([])
 const previewVisible = ref(false)
 const currentTemplate = ref<ScriptTemplate | null>(null)
 const permissionsStore = usePermissionsStore()
-
-// 版本管理
-const versionVisible = ref(false)
-const versions = ref<any[]>([])
-const versionLoading = ref(false)
-const showCreateVersion = ref(false)
-const versionForm = reactive({
-  version: '',
-  description: ''
-})
-
-// 版本内容查看
-const versionContentVisible = ref(false)
-const currentVersion = ref<any>(null)
 
 // 搜索表单
 const searchForm = reactive({
@@ -560,50 +424,6 @@ const columns = [
     key: 'actions',
     slotName: 'actions',
     width: 250,
-    fixed: 'right',
-  },
-]
-
-// 版本表格列配置
-const versionColumns = [
-  {
-    title: '版本号',
-    dataIndex: 'version',
-    key: 'version',
-    width: 100,
-  },
-  {
-    title: '状态',
-    dataIndex: 'is_active',
-    key: 'is_active',
-    slotName: 'is_active',
-    width: 100,
-  },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-    width: 200,
-  },
-  {
-    title: '创建者',
-    dataIndex: 'created_by_name',
-    key: 'created_by_name',
-    width: 100,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'created_at',
-    key: 'created_at',
-    slotName: 'created_at',
-    width: 150,
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    slotName: 'actions',
-    width: 120,
     fixed: 'right',
   },
 ]
@@ -729,11 +549,6 @@ const handleView = async (record: ScriptTemplate) => {
   }
 }
 
-// 编辑模板
-const handleEdit = (record: ScriptTemplate) => {
-  router.push(`/script-templates/${record.id}/edit`)
-}
-
 // 复制模板
 const handleCopy = (record: ScriptTemplate) => {
   // 创建复制的模板数据
@@ -842,74 +657,9 @@ const formatTime = (timestamp: string) => {
   return dayjs(timestamp).format('YYYY-MM-DD HH:mm')
 }
 
-// 版本管理相关方法
-const handleVersions = async (record: ScriptTemplate) => {
-  currentTemplate.value = record
-  versionVisible.value = true
-  await fetchVersions()
-}
-
-const fetchVersions = async () => {
-  if (!currentTemplate.value?.id) return
-
-  versionLoading.value = true
-  try {
-    versions.value = await scriptTemplateApi.getVersions(currentTemplate.value.id)
-  } catch (error) {
-    console.error('获取版本列表失败:', error)
-    Message.error('获取版本列表失败')
-  } finally {
-    versionLoading.value = false
-  }
-}
-
-const handleCreateVersion = async () => {
-  if (!currentTemplate.value?.id) return
-
-  if (!versionForm.version.trim()) {
-    Message.error('请输入版本号')
-    return
-  }
-
-  try {
-    await scriptTemplateApi.createVersion(currentTemplate.value.id, {
-      version: versionForm.version,
-      description: versionForm.description
-    })
-    Message.success('创建版本成功')
-    showCreateVersion.value = false
-    resetVersionForm()
-    await fetchVersions()
-    await fetchTemplates() // 刷新列表以更新版本号
-  } catch (error) {
-    console.error('创建版本失败:', error)
-    Message.error('创建版本失败')
-  }
-}
-
-const handleRollback = async (version: any) => {
-  if (!currentTemplate.value?.id) return
-
-  Modal.confirm({
-    title: '确认回滚',
-    content: `确定要回滚到版本 ${version.version} 吗？`,
-    onOk: async () => {
-      try {
-        await scriptTemplateApi.rollbackVersion(currentTemplate.value!.id!, version.id)
-        Message.success('版本回滚成功')
-        await fetchVersions()
-        await fetchTemplates() // 刷新列表
-      } catch (error) {
-        console.error('版本回滚失败:', error)
-        Message.error('版本回滚失败')
-      }
-    }
-  })
-}
-
-const handleViewVersion = (version: any) => {
-  currentVersion.value = version
-  versionContentVisible.value = true
+// 版本管理：跳转到独立页面
+const handleVersions = (record: ScriptTemplate) => {
+  router.push(`/script-templates/${record.id}/versions`)
 }
 
 const handleToggleStatus = async (record: ScriptTemplate) => {
@@ -930,11 +680,6 @@ const handleToggleStatus = async (record: ScriptTemplate) => {
       }
     }
   })
-}
-
-const resetVersionForm = () => {
-  versionForm.version = ''
-  versionForm.description = ''
 }
 
 const canManageVersions = (templateId: number): boolean => {

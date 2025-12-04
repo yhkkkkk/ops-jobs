@@ -1,6 +1,7 @@
 """
 脚本模板序列化器
 """
+from django.db import transaction
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import ScriptTemplate, DefaultScriptTemplate, ScriptTemplateVersion
@@ -62,6 +63,37 @@ class ScriptTemplateCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("您已经有同名的脚本模板")
 
         return value
+
+    def update(self, instance, validated_data):
+        """
+        更新脚本模板时，如果版本号发生变化，同步更新当前激活版本记录的版本号，
+        保证「版本管理」列表中的版本号与模板当前版本保持一致。
+        """
+        old_version = instance.version
+        new_version = validated_data.get('version', old_version)
+
+        active_version = None
+
+        # 只有在显式修改了 version 且存在激活版本记录时才做同步和冲突检查
+        if 'version' in validated_data and new_version != old_version:
+            active_version = instance.versions.filter(is_active=True).first()
+
+            if active_version:
+                # 检查是否与其他版本号冲突
+                if instance.versions.exclude(id=active_version.id).filter(version=new_version).exists():
+                    raise serializers.ValidationError({
+                        'version': ['该模板下已存在相同的版本号']
+                    })
+
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+
+            # 同步更新当前激活版本记录的 version 字段
+            if active_version and new_version != old_version:
+                active_version.version = new_version
+                active_version.save(update_fields=['version'])
+
+        return instance
 
 
 class DefaultScriptTemplateSerializer(serializers.ModelSerializer):

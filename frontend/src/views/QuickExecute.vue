@@ -805,7 +805,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
 import { accountApi, type ServerAccount } from '@/api/account'
@@ -816,6 +816,7 @@ import { getScriptExample } from '@/components/ScriptExamples'
 import type { ScriptValidationResult } from '@/utils/scriptValidator'
 
 const router = useRouter()
+const route = useRoute()
 
 const editorRef = ref()
 const executing = ref(false)
@@ -1581,6 +1582,24 @@ const removeOfflineHosts = () => {
 
 // 生命周期
 onMounted(() => {
+  // 如果从脚本模板版本管理跳转而来，预填脚本内容
+  try {
+    const stored = sessionStorage.getItem('quickExecuteScriptData')
+    if (stored) {
+      const data = JSON.parse(stored)
+      if (data.script_content) {
+        scriptContent.value = data.script_content
+      }
+      if (data.script_type) {
+        scriptType.value = data.script_type
+      }
+      // 清除一次性数据
+      sessionStorage.removeItem('quickExecuteScriptData')
+    }
+  } catch (e) {
+    console.error('预填脚本数据解析失败:', e)
+  }
+
   fetchHosts()
   fetchHostGroups()
   fetchServerAccounts()

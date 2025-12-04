@@ -96,6 +96,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/script-templates/:id/versions',
+        name: 'ScriptTemplateVersions',
+        component: () => import('@/views/script-templates/versions.vue'),
+        meta: {
+          title: '脚本模板版本管理',
+          hideInMenu: true,
+        },
+      },
+      {
         path: '/job-templates',
         name: 'JobTemplates',
         component: () => import('@/views/job-templates/index.vue'),

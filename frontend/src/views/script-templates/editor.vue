@@ -171,6 +171,25 @@ const fetchTemplate = async () => {
   try {
     const templateId = parseInt(route.params.id as string)
     templateData.value = await scriptTemplateApi.getTemplate(templateId)
+
+    // 如果是从版本管理入口编辑指定版本，优先使用版本中的脚本内容等信息
+    try {
+      const stored = sessionStorage.getItem('editTemplateData')
+      if (stored) {
+        const data = JSON.parse(stored)
+        // 只覆盖脚本相关和版本展示相关字段，保留后端返回的其他元数据
+        templateData.value = {
+          ...templateData.value,
+          script_type: data.script_type || templateData.value.script_type,
+          description: data.description ?? templateData.value.description,
+          script_content: data.script_content || templateData.value.script_content,
+          version: data.version || templateData.value.version,
+        }
+        sessionStorage.removeItem('editTemplateData')
+      }
+    } catch (e) {
+      console.error('解析版本编辑数据失败:', e)
+    }
   } catch (error) {
     console.error('获取模板失败:', error)
     Message.error('获取模板失败')
