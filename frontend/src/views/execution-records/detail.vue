@@ -1,5 +1,12 @@
 <template>
-  <div class="execution-detail-container">
+  <div 
+    class="execution-detail-container"
+    v-page-permissions="{ 
+      resourceType: 'executionrecord', 
+      permissions: ['view', 'execute'],
+      resourceIds: executionInfo?.id ? [executionInfo.id] : []
+    }"
+  >
     <!-- 基本信息 -->
     <a-card class="info-card" title="执行信息">
       <template #extra>
@@ -11,6 +18,7 @@
           <a-button
             v-if="executionInfo.status === 'failed'"
             type="primary"
+            v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleRetry"
           >
             <template #icon><icon-refresh /></template>
@@ -19,6 +27,7 @@
           <a-button
             v-if="executionInfo.status === 'success' || executionInfo.status === 'cancelled'"
             type="primary"
+            v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleRetry"
           >
             <template #icon><icon-refresh /></template>
@@ -27,6 +36,7 @@
           <a-button
             v-if="executionInfo.status === 'running'"
             status="danger"
+            v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleCancel"
           >
             <template #icon><icon-close /></template>
@@ -159,18 +169,31 @@
                   
                   <!-- 步骤操作按钮 -->
                   <div class="step-actions">
-                    <a-dropdown v-if="canRetryStep(stepLog)" trigger="click" @click.stop>
+                    <a-dropdown 
+                      v-if="canRetryStep(stepLog)" 
+                      trigger="click" 
+                      @click.stop
+                    >
                       <a-button size="small" type="text" title="步骤操作">
                         <template #icon><icon-settings /></template>
                       </a-button>
                       <template #content>
-                        <a-doption @click="() => handleStepRetry('failed_only', stepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepRetry('failed_only', stepId)"
+                        >
                           <IconExclamation /> 仅重试失败主机
                         </a-doption>
-                        <a-doption @click="() => handleStepRetry('all', stepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepRetry('all', stepId)"
+                        >
                           <IconRefresh /> 重试该步骤
                         </a-doption>
-                        <a-doption @click="() => handleStepIgnoreError(stepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepIgnoreError(stepId)"
+                        >
                           <IconCheck /> 忽略错误继续
                         </a-doption>
                       </template>
@@ -212,18 +235,30 @@
                       {{ showLogsForStep[selectedStepId] ? '隐藏日志' : '查询日志' }}
                     </a-button>
                     
-                    <a-dropdown v-if="canRetryStep(stepLogs[selectedStepId])" trigger="click">
+                    <a-dropdown 
+                      v-if="canRetryStep(stepLogs[selectedStepId])" 
+                      trigger="click"
+                    >
                       <a-button size="small">
                         <IconRefresh /> 步骤操作 <IconDown />
                       </a-button>
                       <template #content>
-                        <a-doption @click="() => handleStepRetry('failed_only', selectedStepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepRetry('failed_only', selectedStepId)"
+                        >
                           <IconExclamation /> 仅重试失败主机
                         </a-doption>
-                        <a-doption @click="() => handleStepRetry('all', selectedStepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepRetry('all', selectedStepId)"
+                        >
                           <IconRefresh /> 重试该步骤
                         </a-doption>
-                        <a-doption @click="() => handleStepIgnoreError(selectedStepId)">
+                        <a-doption 
+                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
+                          @click="() => handleClickStepIgnoreError(selectedStepId)"
+                        >
                           <IconCheck /> 忽略错误继续
                         </a-doption>
                       </template>
@@ -524,9 +559,11 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
+import { usePermissionsStore } from '@/stores/permissions'
 
 const route = useRoute()
 const router = useRouter()
+const permissionsStore = usePermissionsStore()
 
 // 响应式数据
 const loading = ref(false)
@@ -1410,6 +1447,37 @@ const handleStepRetry = async (retryType, stepId) => {
   } catch (error) {
     console.error('步骤重试失败:', error)
   }
+}
+
+// 权限检查函数
+const canExecuteStep = (recordId) => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('executionrecord', 'execute', recordId) ||
+    permissionsStore.hasPermission('executionrecord', 'execute')
+  )
+}
+
+// 显示无权限提示
+const showNoPermissionMessage = () => {
+  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+}
+
+// 点击处理函数（带权限检查）
+const handleClickStepRetry = (retryType, stepId) => {
+  if (!canExecuteStep(executionInfo.value?.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleStepRetry(retryType, stepId)
+}
+
+const handleClickStepIgnoreError = (stepId) => {
+  if (!canExecuteStep(executionInfo.value?.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleStepIgnoreError(stepId)
 }
 
 // 忽略错误继续
@@ -3082,6 +3150,11 @@ onMounted(() => {
   to {
     opacity: 1;
   }
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 日志放大模态框样式 */

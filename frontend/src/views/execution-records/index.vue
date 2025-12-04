@@ -1,5 +1,12 @@
 <template>
-  <div class="execution-records-page">
+  <div 
+    class="execution-records-page"
+    v-page-permissions="{ 
+      resourceType: 'executionrecord', 
+      permissions: ['view'],
+      resourceIds: tableData.map(r => r.id)
+    }"
+  >
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
@@ -178,7 +185,12 @@
 
         <template #actions="{ record }">
           <a-space>
-            <a-button type="text" size="small" @click="handleView(record)">
+            <a-button 
+              type="text" 
+              size="small" 
+              v-permission="{ resourceType: 'executionrecord', permission: 'view', resourceId: record.id }"
+              @click="handleView(record)"
+            >
               <template #icon>
                 <icon-eye />
               </template>
@@ -191,25 +203,41 @@
                 </template>
               </a-button>
               <template #content>
-                <a-doption @click="handleRetry(record)" v-if="record.status === 'failed'">
+                <a-doption 
+                  :class="{ 'disabled-option': !canExecute(record.id) }"
+                  @click="handleClickRetry(record)" 
+                  v-if="record.status === 'failed'"
+                >
                   <template #icon>
                     <icon-refresh />
                   </template>
                   重试
                 </a-doption>
-                <a-doption @click="handleCancel(record)" v-if="record.status === 'pending'">
+                <a-doption 
+                  :class="{ 'disabled-option': !canExecute(record.id) }"
+                  @click="handleClickCancel(record)" 
+                  v-if="record.status === 'pending'"
+                >
                   <template #icon>
                     <icon-close />
                   </template>
                   取消
                 </a-doption>
-                <a-doption @click="handleRetry(record)" v-if="record.status === 'success' || record.status === 'cancelled'">
+                <a-doption 
+                  :class="{ 'disabled-option': !canExecute(record.id) }"
+                  @click="handleClickRetry(record)" 
+                  v-if="record.status === 'success' || record.status === 'cancelled'"
+                >
                   <template #icon>
                     <icon-refresh />
                   </template>
                   重做
                 </a-doption>
-                <a-doption @click="handleShowRetryHistory(record)" v-if="record.has_retries">
+                <a-doption 
+                  :class="{ 'disabled-option': !canView(record.id) }"
+                  @click="handleClickShowRetryHistory(record)" 
+                  v-if="record.has_retries"
+                >
                   <template #icon>
                     <icon-history />
                   </template>
@@ -222,6 +250,7 @@
               type="text"
               size="small"
               status="danger"
+              v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
               @click="handleCancel(record)"
             >
               <template #icon>
@@ -300,7 +329,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
@@ -316,8 +345,10 @@ import {
   IconPause
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
+import { usePermissionsStore } from '@/stores/permissions'
 
 const router = useRouter()
+const permissionsStore = usePermissionsStore()
 
 // 响应式数据
 const loading = ref(false)
@@ -556,6 +587,53 @@ const handleShowRetryHistory = async (record) => {
   }
 }
 
+// 权限检查函数
+const canExecute = (recordId) => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('executionrecord', 'execute', recordId) ||
+    permissionsStore.hasPermission('executionrecord', 'execute')
+  )
+}
+
+const canView = (recordId) => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('executionrecord', 'view', recordId) ||
+    permissionsStore.hasPermission('executionrecord', 'view')
+  )
+}
+
+// 显示无权限提示
+const showNoPermissionMessage = () => {
+  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+}
+
+// 点击处理函数（带权限检查）
+const handleClickRetry = (record) => {
+  if (!canExecute(record.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleRetry(record)
+}
+
+const handleClickCancel = (record) => {
+  if (!canExecute(record.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleCancel(record)
+}
+
+const handleClickShowRetryHistory = (record) => {
+  if (!canView(record.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  handleShowRetryHistory(record)
+}
+
 // 获取时间线颜色
 const getTimelineColor = (status) => {
   const colorMap = {
@@ -791,5 +869,10 @@ onMounted(() => {
 
 .ml-4 {
   margin-left: 16px;
+}
+
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

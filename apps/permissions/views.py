@@ -30,13 +30,14 @@ logger = logging.getLogger(__name__)
 
 # 资源类型到真实 app_label / model 的映射
 RESOURCE_MAP = {
-    # 资源类型   (app_label,      model_name)
-    'host':          ('hosts',          'host'),
-    'jobtemplate':   ('job_templates',  'jobtemplate'),
-    'executionplan': ('job_templates',  'executionplan'),
-    'scripttemplate':('script_templates', 'scripttemplate'),
-    'job':           ('scheduler',      'scheduledjob'),
-    'serveraccount': ('hosts',          'serveraccount'),
+    # 资源类型        (app_label,        model_name)
+    'host':           ('hosts',           'host'),
+    'jobtemplate':    ('job_templates',   'jobtemplate'),
+    'executionplan':  ('job_templates',   'executionplan'),
+    'scripttemplate': ('script_templates','scripttemplate'),
+    'job':            ('scheduler',       'scheduledjob'),
+    'serveraccount':  ('hosts',           'serveraccount'),
+    'executionrecord':('executor',        'executionrecord'),
     # 'script' 可以根据后续业务再单独映射
 }
 
