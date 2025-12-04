@@ -66,9 +66,6 @@ class ExecutionRecordAdmin(GuardedModelAdmin):
         ('执行信息', {
             'fields': ('executed_by', 'trigger_type', 'celery_task_id')
         }),
-        ('目标主机', {
-            'fields': ('total_hosts', 'success_hosts', 'failed_hosts', 'success_rate')
-        }),
         ('执行参数', {
             'fields': ('execution_parameters',),
             'classes': ('collapse',)
@@ -81,7 +78,7 @@ class ExecutionRecordAdmin(GuardedModelAdmin):
             'fields': ('created_at', 'started_at', 'finished_at', 'duration_display')
         }),
         ('其他信息', {
-            'fields': ('retry_count', 'max_retries', 'client_ip', 'user_agent'),
+            'fields': ('retry_count', 'client_ip', 'user_agent'),
             'classes': ('collapse',)
         })
     )
