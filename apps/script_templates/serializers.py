@@ -4,7 +4,7 @@
 from django.db import transaction
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
-from .models import ScriptTemplate, DefaultScriptTemplate, ScriptTemplateVersion
+from .models import ScriptTemplate, ScriptTemplateVersion
 
 
 class ScriptTemplateSerializer(serializers.ModelSerializer):
@@ -94,20 +94,6 @@ class ScriptTemplateCreateSerializer(serializers.ModelSerializer):
                 active_version.save(update_fields=['version'])
 
         return instance
-
-
-class DefaultScriptTemplateSerializer(serializers.ModelSerializer):
-    """默认脚本模板序列化器"""
-    
-    script_type_display = serializers.CharField(source='get_script_type_display', read_only=True)
-    
-    class Meta:
-        model = DefaultScriptTemplate
-        fields = [
-            'id', 'script_type', 'script_type_display', 
-            'template_content', 'description', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class ScriptTemplateVersionSerializer(serializers.ModelSerializer):

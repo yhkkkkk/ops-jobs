@@ -88,30 +88,6 @@ class ScriptTemplate(models.Model):
         self.save(update_fields=['usage_count'])
 
 
-class DefaultScriptTemplate(models.Model):
-    """默认脚本模板 - 用于新建脚本时的默认内容"""
-    
-    SCRIPT_TYPE_CHOICES = [
-        ('shell', 'Shell'),
-        ('python', 'Python'),
-        ('powershell', 'PowerShell'),
-    ]
-    
-    script_type = models.CharField(max_length=20, choices=SCRIPT_TYPE_CHOICES, unique=True, verbose_name="脚本类型")
-    template_content = models.TextField(verbose_name="默认模板内容")
-    description = models.TextField(blank=True, verbose_name="模板说明")
-    
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
-    
-    class Meta:
-        verbose_name = "默认脚本模板"
-        verbose_name_plural = "默认脚本模板"
-    
-    def __str__(self):
-        return f"{self.get_script_type_display()} 默认模板"
-
-
 class ScriptTemplateVersion(models.Model):
     """脚本模板版本历史"""
 

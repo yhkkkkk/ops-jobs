@@ -9,11 +9,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
-from .models import ScriptTemplate, DefaultScriptTemplate, ScriptTemplateVersion
+from .models import ScriptTemplate, ScriptTemplateVersion
 from .serializers import (
     ScriptTemplateSerializer,
     ScriptTemplateCreateSerializer,
-    DefaultScriptTemplateSerializer,
     ScriptTemplateVersionSerializer
 )
 from .services import ScriptTemplateService
