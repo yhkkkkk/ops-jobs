@@ -80,7 +80,8 @@ class JobStepSerializer(serializers.ModelSerializer):
                 'id': group.id,
                 'name': group.name,
                 'description': group.description,
-                'host_count': group.hosts.count()
+                # Host.groups 是 ManyToMany 到 HostGroup，反向关系默认是 host_set
+                'host_count': group.host_set.count()
             }
             for group in obj.target_groups.all()
         ]
@@ -106,8 +107,8 @@ class JobStepSerializer(serializers.ModelSerializer):
 
 
 class JobStepCreateSerializer(serializers.Serializer):
-    """作业步骤创建序列化器"""
-    
+    """作业步骤创建/更新序列化器"""
+
     name = serializers.CharField(max_length=200, help_text="步骤名称")
     description = serializers.CharField(required=False, allow_blank=True, help_text="步骤描述")
     step_type = serializers.ChoiceField(
@@ -123,30 +124,36 @@ class JobStepCreateSerializer(serializers.Serializer):
     )
     timeout = serializers.IntegerField(required=False, min_value=1, default=300, help_text="超时时间(秒)")
     ignore_error = serializers.BooleanField(required=False, default=False, help_text="是否忽略错误")
-    
+
     # 脚本相关字段
     script_type = serializers.CharField(required=False, allow_blank=True, help_text="脚本类型")
     script_content = serializers.CharField(required=False, allow_blank=True, help_text="脚本内容")
     account_id = serializers.IntegerField(required=False, allow_null=True, help_text="执行账号ID")
-    
+
     # 文件传输相关字段
     transfer_type = serializers.CharField(required=False, allow_blank=True, help_text="传输类型")
     local_path = serializers.CharField(required=False, allow_blank=True, help_text="本地路径")
     remote_path = serializers.CharField(required=False, allow_blank=True, help_text="远程路径")
     overwrite_policy = serializers.CharField(required=False, allow_blank=True, help_text="覆盖策略")
-    
-    # 目标选择（统一使用target_host_ids格式）
+
+    # 目标选择：主机ID + 分组ID
     target_host_ids = serializers.ListField(
         child=serializers.IntegerField(),
-        required=True,
-        allow_empty=False,
+        required=False,
+        allow_empty=True,
         help_text="目标主机ID列表"
     )
-    
+    target_group_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+        help_text="目标主机分组ID列表"
+    )
+
     def validate(self, data):
         """验证步骤数据"""
         step_type = data.get('step_type')
-        
+
         if step_type == 'script':
             if not data.get('script_content'):
                 raise serializers.ValidationError({'script_content': '脚本步骤必须包含脚本内容'})
@@ -159,16 +166,22 @@ class JobStepCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'remote_path': '文件传输步骤必须包含远程路径'})
             if not data.get('transfer_type'):
                 raise serializers.ValidationError({'transfer_type': '文件传输步骤必须指定传输类型'})
-        
-        # 验证目标主机ID格式
-        target_host_ids = data.get('target_host_ids', [])
-        if not target_host_ids:
-            raise serializers.ValidationError({'target_host_ids': '必须指定至少一个目标主机'})
-        
+
+        # 验证目标主机/分组ID格式：主机或分组至少要有一个
+        target_host_ids = data.get('target_host_ids') or []
+        target_group_ids = data.get('target_group_ids') or []
+
+        if not target_host_ids and not target_group_ids:
+            raise serializers.ValidationError({'target_host_ids': '必须指定至少一个目标主机或主机分组'})
+
         for host_id in target_host_ids:
             if not isinstance(host_id, int) or host_id <= 0:
                 raise serializers.ValidationError({'target_host_ids': '主机ID必须是正整数'})
-        
+
+        for group_id in target_group_ids:
+            if not isinstance(group_id, int) or group_id <= 0:
+                raise serializers.ValidationError({'target_group_ids': '分组ID必须是正整数'})
+
         return data
 
 
@@ -206,6 +219,8 @@ class PlanStepListSerializer(serializers.ListSerializer):
 class PlanStepSerializer(serializers.ModelSerializer):
     """方案步骤序列化器 - 优化版本，减少重复数据"""
     step_account_name = serializers.CharField(read_only=True, allow_null=True)
+    target_hosts = serializers.SerializerMethodField(read_only=True)
+    target_groups = serializers.SerializerMethodField(read_only=True)
 
     # 基础信息
     template_step_id = serializers.SerializerMethodField()
@@ -226,6 +241,7 @@ class PlanStepSerializer(serializers.ModelSerializer):
             'step_script_content', 'step_script_type',
             'step_parameters', 'step_timeout', 'step_ignore_error',
             'step_target_host_ids', 'step_target_group_ids', 'step_targets',
+            'target_hosts', 'target_groups',
             'step_account_name',
             'step_account_id', 'step_transfer_type', 'step_local_path', 'step_remote_path',
             # 覆盖配置
@@ -266,6 +282,52 @@ class PlanStepSerializer(serializers.ModelSerializer):
         """获取有效的脚本类型（仅在有覆盖时返回）"""
         # 目前脚本类型不支持覆盖，所以总是返回 None
         return None
+
+    def get_target_hosts(self, obj):
+        """根据快照的主机ID列表，返回当前主机详情（名称/IP/状态）"""
+        from apps.hosts.models import Host
+
+        host_ids = obj.step_target_host_ids or []
+        if not host_ids:
+          return []
+
+        hosts = Host.objects.filter(id__in=host_ids)
+        host_map = {h.id: h for h in hosts}
+
+        # 按快照顺序返回
+        result = []
+        for host_id in host_ids:
+            host = host_map.get(host_id)
+            if host:
+                result.append({
+                    'id': host.id,
+                    'name': host.name,
+                    'ip_address': host.ip_address,
+                    'status': host.status,
+                })
+        return result
+
+    def get_target_groups(self, obj):
+        """根据快照的分组ID列表，返回当前分组详情"""
+        from apps.hosts.models import HostGroup
+
+        group_ids = obj.step_target_group_ids or []
+        if not group_ids:
+            return []
+
+        groups = HostGroup.objects.filter(id__in=group_ids)
+        group_map = {g.id: g for g in groups}
+
+        result = []
+        for group_id in group_ids:
+            group = group_map.get(group_id)
+            if group:
+                result.append({
+                    'id': group.id,
+                    'name': group.name,
+                    'description': group.description,
+                })
+        return result
 
     def to_representation(self, instance):
         """自定义序列化输出，动态移除不需要的字段"""

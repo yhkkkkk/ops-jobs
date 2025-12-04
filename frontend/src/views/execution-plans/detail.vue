@@ -204,6 +204,49 @@
             <div v-if="expandedSteps.includes(step.id)" class="step-detail">
               <a-divider />
 
+              <!-- 目标主机信息 -->
+              <div class="step-targets" style="margin-bottom: 16px">
+                <h4>目标主机</h4>
+                <div
+                  v-if="(step.target_hosts && step.target_hosts.length) || (step.target_groups && step.target_groups.length)"
+                  class="parameters"
+                >
+                  <div
+                    v-if="step.target_hosts && step.target_hosts.length"
+                    class="parameter-item"
+                  >
+                    <span class="param-key">主机</span>
+                    <span class="param-value">
+                      <span
+                        v-for="host in step.target_hosts"
+                        :key="host.id"
+                        style="display: inline-block; margin-right: 8px;"
+                      >
+                        {{ host.name }} ({{ host.ip_address }})
+                      </span>
+                    </span>
+                  </div>
+                  <div
+                    v-if="step.target_groups && step.target_groups.length"
+                    class="parameter-item"
+                  >
+                    <span class="param-key">分组</span>
+                    <span class="param-value">
+                      <span
+                        v-for="group in step.target_groups"
+                        :key="group.id"
+                        style="display: inline-block; margin-right: 8px;"
+                      >
+                        {{ group.name }}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                <div v-else class="no-parameters">
+                  <a-empty description="未配置目标主机" :image-style="{ height: '40px' }" />
+                </div>
+              </div>
+
               <!-- 脚本执行步骤 -->
               <div v-if="step.step_type === 'script'" class="step-script">
                 <h4>执行配置</h4>

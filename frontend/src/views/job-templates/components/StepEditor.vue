@@ -266,6 +266,12 @@
                 <icon-computer />
                 目标主机 ({{ allTargetHosts.length }})
                 <div class="section-actions">
+                  <a-button type="text" size="mini" @click="copyAllIPs">
+                    复制所有IP
+                  </a-button>
+                  <a-button type="text" size="mini" @click="copyOfflineIPs">
+                    复制异常IP
+                  </a-button>
                   <a-button type="text" size="mini" @click="clearAllSelections">
                     <template #icon>
                       <icon-close />
@@ -1103,6 +1109,44 @@ const removeOfflineHosts = () => {
   })
 
   Message.success(`已移除 ${offlineHosts.length} 台离线主机`)
+}
+
+// 复制所有目标主机 IP
+const copyAllIPs = async () => {
+  const hosts = allTargetHosts.value
+  if (!hosts.length) {
+    Message.warning('当前没有目标主机可复制')
+    return
+  }
+
+  const ips = hosts.map(host => host.ip_address).join('\n')
+
+  try {
+    await navigator.clipboard.writeText(ips)
+    Message.success(`已复制 ${hosts.length} 个主机 IP 到剪贴板`)
+  } catch (error) {
+    console.error('复制IP失败:', error)
+    Message.error('复制失败，请检查浏览器权限或手动复制')
+  }
+}
+
+// 复制异常（离线）主机 IP
+const copyOfflineIPs = async () => {
+  const offlineHosts = allTargetHosts.value.filter(host => host.status === 'offline')
+  if (!offlineHosts.length) {
+    Message.info('当前没有异常（离线）主机')
+    return
+  }
+
+  const ips = offlineHosts.map(host => host.ip_address).join('\n')
+
+  try {
+    await navigator.clipboard.writeText(ips)
+    Message.success(`已复制 ${offlineHosts.length} 个异常主机 IP 到剪贴板`)
+  } catch (error) {
+    console.error('复制异常IP失败:', error)
+    Message.error('复制失败，请检查浏览器权限或手动复制')
+  }
 }
 
 // 工具函数已移至公共组件

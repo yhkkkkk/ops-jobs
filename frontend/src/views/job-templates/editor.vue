@@ -415,9 +415,12 @@ const handleSave = async () => {
 
     // 统一规范步骤结构，兼容后端 JobTemplateCreate/UpdateSerializer + JobStepCreateSerializer：
     // - 始终提供 target_host_ids（从 target_hosts 中提取）
+    // - 同时提供 target_group_ids，支持分组作为动态集合
     const normalizedSteps = (form.steps || []).map((step: any, index: number) => {
       const targetHosts = step.target_hosts || []
+      const targetGroups = step.target_groups || []
       let targetHostIds: number[] = []
+      let targetGroupIds: number[] = []
 
       if (Array.isArray(targetHosts)) {
         if (targetHosts.length > 0 && typeof targetHosts[0] === 'object') {
@@ -428,6 +431,16 @@ const handleSave = async () => {
         } else {
           // 已经是 ID 数组
           targetHostIds = targetHosts.filter((id: any) => typeof id === 'number')
+        }
+      }
+
+      if (Array.isArray(targetGroups)) {
+        if (targetGroups.length > 0 && typeof targetGroups[0] === 'object') {
+          targetGroupIds = targetGroups
+            .map((g: any) => g.id)
+            .filter((id: any) => typeof id === 'number')
+        } else {
+          targetGroupIds = targetGroups.filter((id: any) => typeof id === 'number')
         }
       }
 
@@ -450,6 +463,8 @@ const handleSave = async () => {
         overwrite_policy: step.overwrite_policy,
         // 关键：提供 target_host_ids 以通过后端校验
         target_host_ids: targetHostIds,
+        // 分组ID列表，用于更新 target_groups
+        target_group_ids: targetGroupIds,
       }
     })
 

@@ -130,10 +130,13 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
                 step = JobStep.objects.create(**step_kwargs)
 
-                # 处理目标主机（统一使用 target_host_ids）
-                target_host_ids = step_data.get('target_host_ids', [])
+                # 处理目标主机和分组
+                target_host_ids = step_data.get('target_host_ids', []) or []
+                target_group_ids = step_data.get('target_group_ids', []) or []
                 if target_host_ids:
                     step.target_hosts.set(target_host_ids)
+                if target_group_ids:
+                    step.target_groups.set(target_group_ids)
 
             # 创建默认执行方案（包含所有步骤）
             default_plan = ExecutionPlan.objects.create(
@@ -260,27 +263,13 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         step_kwargs['template'] = instance
                         step = JobStep.objects.create(**step_kwargs)
 
-                    # 处理目标选择（统一格式）
-                    targets_data = step_data.get('targets', [])
-                    
-                    # 分离主机和分组
-                    target_host_ids = []
-                    target_group_ids = []
-                    
-                    for target in targets_data:
-                        if isinstance(target, dict):
-                            target_type = target.get('type')
-                            target_id = target.get('id')
-                            
-                            if target_type == 'host' and target_id:
-                                target_host_ids.append(target_id)
-                            elif target_type == 'group' and target_id:
-                                target_group_ids.append(target_id)
-                    
-                    if target_host_ids:
-                        step.target_hosts.set(target_host_ids)
-                    if target_group_ids:
-                        step.target_groups.set(target_group_ids)
+                    # 处理目标主机和分组
+                    target_host_ids = step_data.get('target_host_ids', [])
+                    target_group_ids = step_data.get('target_group_ids', [])
+
+                    # 无论是否为空，都显式设置，以便支持“清空目标”
+                    step.target_hosts.set(target_host_ids or [])
+                    step.target_groups.set(target_group_ids or [])
 
                 # 删除多余的步骤（如果新步骤数量少于原有步骤数量）
                 if len(validated_data['steps']) < len(existing_steps):
