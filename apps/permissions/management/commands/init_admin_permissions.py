@@ -8,7 +8,7 @@ from guardian.shortcuts import assign_perm, remove_perm, get_perms
 from apps.job_templates.models import JobTemplate, ExecutionPlan, JobStep
 from apps.hosts.models import Host, HostGroup
 from apps.scheduler.models import ScheduledJob
-from apps.script_templates.models import ScriptTemplate, DefaultScriptTemplate
+from apps.script_templates.models import ScriptTemplate
 from apps.executor.models import ExecutionRecord
 from apps.accounts.models import UserProfile
 
