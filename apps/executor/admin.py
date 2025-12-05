@@ -47,8 +47,20 @@ class ExecutionStepInline(admin.TabularInline):
         return qs.select_related('execution_record')
 
 
+class PermissionActionsMixin:
+    """权限操作混入 - 统一处理 permission_actions 的显示逻辑"""
+    
+    def get_list_display(self, request):
+        """动态调整列表显示字段"""
+        display = list(super().get_list_display(request))
+        # 只有超级管理员才显示 permission_actions
+        if not request.user.is_superuser and 'permission_actions' in display:
+            display.remove('permission_actions')
+        return display
+
+
 @admin.register(ExecutionRecord)
-class ExecutionRecordAdmin(GuardedModelAdmin):
+class ExecutionRecordAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = [
         'execution_id', 'name', 'execution_type', 'status', 'executed_by',
         'success_rate_display', 'duration_display', 'created_at', 'permission_actions'

@@ -1,7 +1,10 @@
 """
 权限管理后台配置
 """
+from django import forms
 from django.contrib import admin
+from django.contrib.auth.models import Permission, Group
+from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
@@ -202,9 +205,9 @@ class PermissionTemplateAdmin(admin.ModelAdmin):
         return obj.model_permissions.count()
 
 
-# 设置 Guardian 模型的中文名称
 UserObjectPermission._meta.verbose_name = '用户对象权限'
 UserObjectPermission._meta.verbose_name_plural = '用户对象权限'
+
 
 @admin.register(UserObjectPermission)
 class UserObjectPermissionAdmin(admin.ModelAdmin):
@@ -213,8 +216,13 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
     list_display = ['user', 'permission', 'content_type', 'object_pk', 'get_object_link']
     list_filter = ['permission', 'content_type', 'user']
     search_fields = ['user__username', 'object_pk', 'permission__codename']
-    readonly_fields = ['user', 'permission', 'content_type', 'object_pk']
     raw_id_fields = ['user', 'permission', 'content_type']
+    
+    fieldsets = (
+        ('基本信息', {
+            'fields': (('user', 'permission'), ('content_type', 'object_pk'))
+        }),
+    )
     
     def __init__(self, model, admin_site):
         super().__init__(model, admin_site)
@@ -223,6 +231,15 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
         self.model._meta.get_field('permission').verbose_name = '权限'
         self.model._meta.get_field('content_type').verbose_name = '内容类型'
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
+
+    def get_readonly_fields(self, request, obj=None):
+        """设置只读字段：添加时可编辑所有字段，编辑时所有字段只读（因为对象权限通常不应该修改）"""
+        if obj is None:
+            # 添加时，所有字段可编辑
+            return []
+        else:
+            # 编辑时，所有字段只读（建议删除后重新添加）
+            return ['user', 'permission', 'content_type', 'object_pk']
     
     def changelist_view(self, request, extra_context=None):
         """重写列表视图，设置页面标题"""
@@ -263,6 +280,10 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
             return f"对象不存在或已删除 (ID: {obj.object_pk})"
         return "-"
     get_object_link.short_description = "关联对象"
+
+    def has_view_permission(self, request, obj=None):
+        """允许所有已登录用户查看（autocomplete 需要）"""
+        return request.user.is_authenticated
     
     def has_add_permission(self, request):
         """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
@@ -271,11 +292,15 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
         return request.user.is_superuser
+    
+    def has_module_permission(self, request):
+        """允许所有已登录用户访问模块"""
+        return request.user.is_authenticated
 
 
-# 设置 Guardian 模型的中文名称
 GroupObjectPermission._meta.verbose_name = '组对象权限'
 GroupObjectPermission._meta.verbose_name_plural = '组对象权限'
+
 
 @admin.register(GroupObjectPermission)
 class GroupObjectPermissionAdmin(admin.ModelAdmin):
@@ -284,8 +309,13 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
     list_display = ['group', 'permission', 'content_type', 'object_pk', 'get_object_link']
     list_filter = ['permission', 'content_type', 'group']
     search_fields = ['group__name', 'object_pk', 'permission__codename']
-    readonly_fields = ['group', 'permission', 'content_type', 'object_pk']
     raw_id_fields = ['group', 'permission', 'content_type']
+    
+    fieldsets = (
+        ('基本信息', {
+            'fields': (('group', 'permission'), ('content_type', 'object_pk'))
+        }),
+    )
     
     def __init__(self, model, admin_site):
         super().__init__(model, admin_site)
@@ -294,6 +324,15 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
         self.model._meta.get_field('permission').verbose_name = '权限'
         self.model._meta.get_field('content_type').verbose_name = '内容类型'
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
+
+    def get_readonly_fields(self, request, obj=None):
+        """设置只读字段：添加时可编辑所有字段，编辑时所有字段只读（因为对象权限通常不应该修改）"""
+        if obj is None:
+            # 添加时，所有字段可编辑
+            return []
+        else:
+            # 编辑时，所有字段只读（建议删除后重新添加）
+            return ['group', 'permission', 'content_type', 'object_pk']
     
     def changelist_view(self, request, extra_context=None):
         """重写列表视图，设置页面标题"""
@@ -335,6 +374,10 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
         return "-"
     get_object_link.short_description = "关联对象"
     
+    def has_view_permission(self, request, obj=None):
+        """允许所有已登录用户查看（autocomplete 需要）"""
+        return request.user.is_authenticated
+    
     def has_add_permission(self, request):
         """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
         return request.user.is_superuser
@@ -342,3 +385,7 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
         return request.user.is_superuser
+    
+    def has_module_permission(self, request):
+        """允许所有已登录用户访问模块"""
+        return request.user.is_authenticated

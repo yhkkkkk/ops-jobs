@@ -12,8 +12,20 @@ from .models import ScheduledJob
 from .services import SchedulerService
 
 
+class PermissionActionsMixin:
+    """权限操作混入 - 统一处理 permission_actions 的显示逻辑"""
+    
+    def get_list_display(self, request):
+        """动态调整列表显示字段"""
+        display = list(super().get_list_display(request))
+        # 只有超级管理员才显示 permission_actions
+        if not request.user.is_superuser and 'permission_actions' in display:
+            display.remove('permission_actions')
+        return display
+
+
 @admin.register(ScheduledJob)
-class ScheduledJobAdmin(GuardedModelAdmin):
+class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = [
         'name', 'execution_plan', 'template_name', 'plan_name', 'cron_expression',
         'is_active', 'success_rate', 'total_runs', 'last_run_time', 'permission_actions'

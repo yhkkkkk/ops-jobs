@@ -4,11 +4,8 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User, Group
 from django.contrib.contenttypes.models import ContentType
-from guardian.shortcuts import assign_perm, remove_perm, get_perms
-from apps.job_templates.models import JobTemplate, ExecutionPlan, JobStep
-from apps.hosts.models import Host, HostGroup
-from apps.scheduler.models import ScheduledJob
-from apps.script_templates.models import ScriptTemplate
+from guardian.shortcuts import assign_perm
+from apps.job_templates.models import JobTemplate
 from apps.executor.models import ExecutionRecord
 from apps.accounts.models import UserProfile
 

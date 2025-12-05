@@ -8,6 +8,18 @@ from guardian.shortcuts import get_objects_for_user, get_perms
 from .models import JobTemplate, JobStep, ExecutionPlan, PlanStep
 
 
+class PermissionActionsMixin:
+    """权限操作混入 - 统一处理 permission_actions 的显示逻辑"""
+    
+    def get_list_display(self, request):
+        """动态调整列表显示字段"""
+        display = list(super().get_list_display(request))
+        # 只有超级管理员才显示 permission_actions
+        if not request.user.is_superuser and 'permission_actions' in display:
+            display.remove('permission_actions')
+        return display
+
+
 class JobStepInline(admin.StackedInline):
     """作业步骤内联编辑 - 使用StackedInline提供更好的布局"""
     model = JobStep
@@ -63,7 +75,7 @@ class PlanStepInline(admin.StackedInline):
 
 
 @admin.register(JobTemplate)
-class JobTemplateAdmin(GuardedModelAdmin):
+class JobTemplateAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = ['name', 'category', 'step_count', 'plan_count', 'created_by', 'created_at', 'permission_actions']
     list_filter = ['category', 'created_at']
     search_fields = ['name', 'description']
@@ -179,7 +191,7 @@ class JobStepAdmin(GuardedModelAdmin):
 
 
 @admin.register(ExecutionPlan)
-class ExecutionPlanAdmin(GuardedModelAdmin):
+class ExecutionPlanAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = ['template', 'name', 'step_count', 'created_by', 'created_at', 'permission_actions']
     list_filter = ['template', 'created_at']
     search_fields = ['name', 'description', 'template__name']

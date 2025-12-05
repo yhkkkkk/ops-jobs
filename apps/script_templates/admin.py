@@ -9,8 +9,20 @@ from guardian.shortcuts import get_objects_for_user, get_perms
 from .models import ScriptTemplate
 
 
+class PermissionActionsMixin:
+    """权限操作混入 - 统一处理 permission_actions 的显示逻辑"""
+    
+    def get_list_display(self, request):
+        """动态调整列表显示字段"""
+        display = list(super().get_list_display(request))
+        # 只有超级管理员才显示 permission_actions
+        if not request.user.is_superuser and 'permission_actions' in display:
+            display.remove('permission_actions')
+        return display
+
+
 @admin.register(ScriptTemplate)
-class ScriptTemplateAdmin(GuardedModelAdmin):
+class ScriptTemplateAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = [
         'name', 'script_type', 'template_type', 'version', 'is_active',
         'usage_count', 'is_public', 'created_by', 'created_at', 'permission_actions'
