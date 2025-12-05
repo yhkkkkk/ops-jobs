@@ -98,3 +98,42 @@ def logout_view(request):
 class UserPagination(LogPagination):
     """用户分页类 - 使用正确的排序字段"""
     ordering = '-date_joined'
+
+class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
+    """用户管理ViewSet"""
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = UserPagination
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserRegistrationSerializer
+        elif self.action in ['update', 'partial_update']:
+            return UserUpdateSerializer
+        return UserSerializer
+
+    def get_permissions(self):
+        """注册接口允许匿名访问"""
+        if self.action == 'create':
+            permission_classes = [AllowAny]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def retrieve(self, request, *args, **kwargs):
+        """获取用户详情"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        # 返回统一格式的响应
+        return SycResponse.success(
+            content=serializer.data,
+            message="获取用户详情成功"
+        )
+
+    @action(detail=False, methods=['get'])
+    def profile(self, request):
+        """获取当前用户信息"""
+        serializer = self.get_serializer(request.user)
+        return SycResponse.success(content=serializer.data, message="获取用户信息成功")

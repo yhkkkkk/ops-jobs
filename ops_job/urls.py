@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -50,5 +51,6 @@ from django.conf import settings
 if settings.DEBUG:
     import debug_toolbar
     urlpatterns += [
+        path('', RedirectView.as_view(url='/admin/', permanent=False)),
         path('__debug__/', include(debug_toolbar.urls)),
     ]
