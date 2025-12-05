@@ -224,6 +224,24 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
         self.model._meta.get_field('content_type').verbose_name = '内容类型'
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
     
+    def changelist_view(self, request, extra_context=None):
+        """重写列表视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '用户对象权限'
+        return super().changelist_view(request, extra_context)
+    
+    def add_view(self, request, form_url='', extra_context=None):
+        """重写添加视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '添加用户对象权限'
+        return super().add_view(request, form_url, extra_context)
+    
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """重写修改视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '修改用户对象权限'
+        return super().change_view(request, object_id, form_url, extra_context)
+    
     def get_object_link(self, obj):
         """获取关联对象的链接"""
         try:
@@ -276,6 +294,24 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
         self.model._meta.get_field('permission').verbose_name = '权限'
         self.model._meta.get_field('content_type').verbose_name = '内容类型'
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
+    
+    def changelist_view(self, request, extra_context=None):
+        """重写列表视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '组对象权限'
+        return super().changelist_view(request, extra_context)
+    
+    def add_view(self, request, form_url='', extra_context=None):
+        """重写添加视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '添加组对象权限'
+        return super().add_view(request, form_url, extra_context)
+    
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """重写修改视图，设置页面标题"""
+        extra_context = extra_context or {}
+        extra_context['title'] = '修改组对象权限'
+        return super().change_view(request, object_id, form_url, extra_context)
     
     def get_object_link(self, obj):
         """获取关联对象的链接"""
