@@ -6,7 +6,7 @@ from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import (
-    AuditLog, PermissionTemplate, UserPermissionProfile, GroupPermissionProfile
+    AuditLog, PermissionTemplate
 )
 
 
@@ -57,52 +57,6 @@ class PermissionTemplateSerializer(serializers.ModelSerializer):
     def get_permission_count(self, obj):
         """获取权限数量"""
         return obj.model_permissions.count()
-
-
-class UserPermissionProfileSerializer(serializers.ModelSerializer):
-    """用户权限配置序列化器"""
-    
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    permission_template = PermissionTemplateSerializer(read_only=True)
-    permission_template_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    custom_permissions = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Permission.objects.all(),
-        required=False
-    )
-    permission_level_display = serializers.CharField(source='get_permission_level_display', read_only=True)
-    
-    class Meta:
-        model = UserPermissionProfile
-        fields = [
-            'id', 'user', 'permission_template', 'permission_template_id',
-            'custom_permissions', 'permission_level', 'permission_level_display',
-            'is_active', 'notes', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at']
-
-
-class GroupPermissionProfileSerializer(serializers.ModelSerializer):
-    """用户组权限配置序列化器"""
-    
-    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all())
-    permission_template = PermissionTemplateSerializer(read_only=True)
-    permission_template_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    custom_permissions = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Permission.objects.all(),
-        required=False
-    )
-    permission_level_display = serializers.CharField(source='get_permission_level_display', read_only=True)
-    
-    class Meta:
-        model = GroupPermissionProfile
-        fields = [
-            'id', 'group', 'permission_template', 'permission_template_id',
-            'custom_permissions', 'permission_level', 'permission_level_display',
-            'is_active', 'notes', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at']
 
 
 class UserPermissionSummarySerializer(serializers.Serializer):

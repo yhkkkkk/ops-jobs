@@ -5,11 +5,10 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
+from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import (
     AuditLog,
     PermissionTemplate,
-    UserPermissionProfile,
-    GroupPermissionProfile,
 )
 
 
@@ -203,45 +202,107 @@ class PermissionTemplateAdmin(admin.ModelAdmin):
         return obj.model_permissions.count()
 
 
-@admin.register(UserPermissionProfile)
-class UserPermissionProfileAdmin(admin.ModelAdmin):
-    """用户权限配置管理
+# 设置 Guardian 模型的中文名称
+UserObjectPermission._meta.verbose_name = '用户对象权限'
+UserObjectPermission._meta.verbose_name_plural = '用户对象权限'
 
-    通过选择模板和自定义权限，自动同步到 user.user_permissions，
-    业务代码继续通过 user.has_perm(...) 使用，无需修改。
-    """
+@admin.register(UserObjectPermission)
+class UserObjectPermissionAdmin(admin.ModelAdmin):
+    """用户对象权限管理 - 全局查看和管理所有用户对象权限"""
+    
+    list_display = ['user', 'permission', 'content_type', 'object_pk', 'get_object_link']
+    list_filter = ['permission', 'content_type', 'user']
+    search_fields = ['user__username', 'object_pk', 'permission__codename']
+    readonly_fields = ['user', 'permission', 'content_type', 'object_pk']
+    raw_id_fields = ['user', 'permission', 'content_type']
+    
+    def __init__(self, model, admin_site):
+        super().__init__(model, admin_site)
+        # 设置字段的中文显示名称
+        self.model._meta.get_field('user').verbose_name = '用户'
+        self.model._meta.get_field('permission').verbose_name = '权限'
+        self.model._meta.get_field('content_type').verbose_name = '内容类型'
+        self.model._meta.get_field('object_pk').verbose_name = '对象ID'
+    
+    def get_object_link(self, obj):
+        """获取关联对象的链接"""
+        try:
+            model_class = obj.content_type.model_class()
+            if model_class:
+                obj_instance = model_class.objects.get(pk=obj.object_pk)
+                app_label = obj.content_type.app_label
+                model_name = obj.content_type.model
+                admin_url = reverse(
+                    f'admin:{app_label}_{model_name}_change',
+                    args=[obj.object_pk]
+                )
+                return format_html(
+                    '<a href="{}" target="_blank">{}</a>',
+                    admin_url,
+                    str(obj_instance)
+                )
+        except Exception as e:
+            return f"对象不存在或已删除 (ID: {obj.object_pk})"
+        return "-"
+    get_object_link.short_description = "关联对象"
+    
+    def has_add_permission(self, request):
+        """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
+        return request.user.is_superuser
+    
+    def has_change_permission(self, request, obj=None):
+        """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
+        return request.user.is_superuser
 
-    list_display = (
-        "user",
-        "permission_level",
-        "permission_template",
-        "is_active",
-        "created_at",
-        "updated_at",
-    )
-    list_filter = ("permission_level", "is_active")
-    search_fields = ("user__username",)
-    autocomplete_fields = ("user", "permission_template")
-    filter_horizontal = ("custom_permissions",)
 
+# 设置 Guardian 模型的中文名称
+GroupObjectPermission._meta.verbose_name = '组对象权限'
+GroupObjectPermission._meta.verbose_name_plural = '组对象权限'
 
-@admin.register(GroupPermissionProfile)
-class GroupPermissionProfileAdmin(admin.ModelAdmin):
-    """用户组权限配置管理
-
-    通过选择模板和自定义权限，自动同步到 group.permissions，
-    业务代码继续通过 user.has_perm(...) 使用，无需修改。
-    """
-
-    list_display = (
-        "group",
-        "permission_level",
-        "permission_template",
-        "is_active",
-        "created_at",
-        "updated_at",
-    )
-    list_filter = ("permission_level", "is_active")
-    search_fields = ("group__name",)
-    autocomplete_fields = ("group", "permission_template")
-    filter_horizontal = ("custom_permissions",)
+@admin.register(GroupObjectPermission)
+class GroupObjectPermissionAdmin(admin.ModelAdmin):
+    """组对象权限管理 - 全局查看和管理所有组对象权限"""
+    
+    list_display = ['group', 'permission', 'content_type', 'object_pk', 'get_object_link']
+    list_filter = ['permission', 'content_type', 'group']
+    search_fields = ['group__name', 'object_pk', 'permission__codename']
+    readonly_fields = ['group', 'permission', 'content_type', 'object_pk']
+    raw_id_fields = ['group', 'permission', 'content_type']
+    
+    def __init__(self, model, admin_site):
+        super().__init__(model, admin_site)
+        # 设置字段的中文显示名称
+        self.model._meta.get_field('group').verbose_name = '用户组'
+        self.model._meta.get_field('permission').verbose_name = '权限'
+        self.model._meta.get_field('content_type').verbose_name = '内容类型'
+        self.model._meta.get_field('object_pk').verbose_name = '对象ID'
+    
+    def get_object_link(self, obj):
+        """获取关联对象的链接"""
+        try:
+            model_class = obj.content_type.model_class()
+            if model_class:
+                obj_instance = model_class.objects.get(pk=obj.object_pk)
+                app_label = obj.content_type.app_label
+                model_name = obj.content_type.model
+                admin_url = reverse(
+                    f'admin:{app_label}_{model_name}_change',
+                    args=[obj.object_pk]
+                )
+                return format_html(
+                    '<a href="{}" target="_blank">{}</a>',
+                    admin_url,
+                    str(obj_instance)
+                )
+        except Exception as e:
+            return f"对象不存在或已删除 (ID: {obj.object_pk})"
+        return "-"
+    get_object_link.short_description = "关联对象"
+    
+    def has_add_permission(self, request):
+        """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
+        return request.user.is_superuser
+    
+    def has_change_permission(self, request, obj=None):
+        """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
+        return request.user.is_superuser
