@@ -26,13 +26,9 @@ class HostService:
 
     RAW_HEADER_ALIASES = {
         'name': ['name', '主机名', '主机名称'],
-        'ip_address': ['ip', 'ip地址', 'ip address', 'ip_address'],
         'port': ['port', '端口', 'ssh_port', 'ssh端口'],
         'os_type': ['os_type', '操作系统', '系统', 'os'],
-        'username': ['username', 'user', '用户', '用户名', 'account'],
-        'auth_type': ['auth_type', '认证方式', '认证', 'auth'],
-        'password': ['password', '密码', 'ssh_password'],
-        'private_key': ['private_key', '私钥', 'key', 'ssh_key'],
+        'account': ['account', '账号', '服务器账号', 'account_name', '账号名称'],
         'description': ['description', '描述', '备注', 'remark'],
         'group_names': ['groups', 'group', '分组', '分组名称', 'group_names'],
         'environment': ['environment', '环境'],
@@ -60,15 +56,6 @@ class HostService:
         for field, aliases in RAW_OS_ALIASES.items()
     }
 
-    RAW_AUTH_ALIASES = {
-        'password': ['password', 'pwd', 'pass', '密码'],
-        'key': ['key', 'ssh-key', 'private_key', '密钥'],
-    }
-    AUTH_ALIASES = {
-        field: [alias.lower() for alias in aliases]
-        for field, aliases in RAW_AUTH_ALIASES.items()
-    }
-
     RAW_ENVIRONMENT_ALIASES = {
         'dev': ['dev', 'development', '开发'],
         'test': ['test', 'testing', '测试'],
@@ -81,7 +68,7 @@ class HostService:
     }
 
     SUPPORTED_OPTIONAL_FIELDS = [
-        'password', 'private_key', 'description',
+        'description',
         'public_ip', 'internal_ip', 'environment',
         'owner', 'department', 'business_system',
         'service_role', 'remarks'
@@ -125,15 +112,6 @@ class HostService:
                 return key
         return None
 
-    @classmethod
-    def _normalize_auth_type(cls, value):
-        text = cls._normalize_header(value)
-        if not text:
-            return None
-        for key, aliases in cls.AUTH_ALIASES.items():
-            if text == key or text in aliases:
-                return key
-        return None
 
     @classmethod
     def _normalize_environment(cls, value):
@@ -221,27 +199,30 @@ class HostService:
         return resolved_ids, missing_names
 
     @classmethod
-    def _build_payload(cls, *, row_data, name: str, ip_address: str, username: str,
+    def _build_payload(cls, *, row_data, name: str, internal_ip: Optional[str], 
+                       public_ip: Optional[str], account_id: Optional[int],
                        port: int, existing: Optional[Host], default_group: Optional[HostGroup],
                        group_cache) -> (Dict[str, Any], List[str]):
         payload: Dict[str, Any] = {
             'name': name,
-            'ip_address': ip_address,
             'port': port,
-            'username': username,
         }
+        
+        # IP地址：至少需要一个
+        if internal_ip:
+            payload['internal_ip'] = internal_ip
+        if public_ip:
+            payload['public_ip'] = public_ip
+        
+        # 账号ID
+        if account_id:
+            payload['account'] = account_id
 
         os_value = cls._normalize_os_type(row_data.get('os_type'))
         if os_value:
             payload['os_type'] = os_value
         elif not existing:
             payload['os_type'] = 'linux'
-
-        auth_value = cls._normalize_auth_type(row_data.get('auth_type'))
-        if auth_value:
-            payload['auth_type'] = auth_value
-        elif not existing:
-            payload['auth_type'] = 'password'
 
         for field in cls.SUPPORTED_OPTIONAL_FIELDS:
             value = row_data.get(field)
@@ -868,7 +849,7 @@ echo "=== SYSTEM_INFO_END ==="
                 return {'success': False, 'message': 'Excel文件缺少表头'}
 
             header_map = cls._build_header_map(header_row)
-            required_fields = ['name', 'ip_address', 'username']
+            required_fields = ['name', 'account']
             missing_columns = [field for field in required_fields if field not in header_map]
             if missing_columns:
                 return {
@@ -876,6 +857,19 @@ echo "=== SYSTEM_INFO_END ==="
                     'message': f"Excel缺少必要列: {', '.join(missing_columns)}",
                     'missing_columns': missing_columns
                 }
+            
+            # 检查至少有一个IP地址字段
+            has_ip = 'internal_ip' in header_map or 'public_ip' in header_map
+            if not has_ip:
+                return {
+                    'success': False,
+                    'message': "Excel缺少IP地址列（至少需要 internal_ip 或 public_ip 之一）",
+                    'missing_columns': ['internal_ip', 'public_ip']
+                }
+
+            # 账号缓存
+            account_cache: Dict[str, Optional[ServerAccount]] = {}
+            from .models import ServerAccount
 
             with transaction.atomic():
                 for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
@@ -886,25 +880,43 @@ echo "=== SYSTEM_INFO_END ==="
                     row_data = {field: row[col_idx] for field, col_idx in header_map.items()}
 
                     name = cls._clean_str(row_data.get('name'))
-                    ip_address = cls._clean_str(row_data.get('ip_address'))
-                    username = cls._clean_str(row_data.get('username'))
+                    internal_ip = cls._clean_str(row_data.get('internal_ip'))
+                    public_ip = cls._clean_str(row_data.get('public_ip'))
+                    account_name = cls._clean_str(row_data.get('account'))
 
                     row_result = {
                         'row': row_idx,
                         'name': name or None,
-                        'ip_address': ip_address or None,
+                        'internal_ip': internal_ip or None,
+                        'public_ip': public_ip or None,
                     }
 
                     try:
                         if not name:
                             raise ValueError('主机名称不能为空')
-                        if not ip_address:
-                            raise ValueError('IP地址不能为空')
-                        if not username:
-                            raise ValueError('登录用户名不能为空')
-
+                        if not internal_ip and not public_ip:
+                            raise ValueError('至少需要配置内网IP或外网IP之一')
+                        if not account_name:
+                            raise ValueError('服务器账号不能为空')
+                        
+                        # 查找账号
+                        account_key = account_name.lower()
+                        if account_key in account_cache:
+                            account = account_cache[account_key]
+                        else:
+                            account = ServerAccount.objects.filter(name__iexact=account_name).first()
+                            account_cache[account_key] = account
+                        
+                        if not account:
+                            raise ValueError(f'服务器账号 "{account_name}" 不存在，请先在服务器账号管理中创建')
+                        
                         port = cls._parse_port(row_data.get('port'))
-                        existing = Host.objects.filter(ip_address=ip_address, port=port).first()
+                        # 查找现有主机：使用内网IP或外网IP+端口
+                        existing = None
+                        if internal_ip:
+                            existing = Host.objects.filter(internal_ip=internal_ip, port=port).first()
+                        if not existing and public_ip:
+                            existing = Host.objects.filter(public_ip=public_ip, port=port).first()
 
                         if existing and not overwrite_existing:
                             summary['skipped'] += 1
@@ -916,8 +928,9 @@ echo "=== SYSTEM_INFO_END ==="
                         payload, missing_groups = cls._build_payload(
                             row_data=row_data,
                             name=name,
-                            ip_address=ip_address,
-                            username=username,
+                            internal_ip=internal_ip,
+                            public_ip=public_ip,
+                            account_id=account.id,
                             port=port,
                             existing=existing,
                             default_group=default_group,
@@ -993,13 +1006,11 @@ echo "=== SYSTEM_INFO_END ==="
 
         headers = [
             "主机名称",
-            "IP地址",
+            "内网IP",
+            "外网IP(可选)",
             "端口(可选, 默认22)",
             "操作系统(可选: linux/windows/aix/solaris)",
-            "用户名",
-            "认证方式(可选: password/key)",
-            "密码",
-            "私钥",
+            "服务器账号",
             "分组(支持多个, 逗号分隔)",
             "描述",
         ]
@@ -1008,12 +1019,10 @@ echo "=== SYSTEM_INFO_END ==="
         sample_row = [
             "demo-host-01",
             "192.168.1.10",
+            "10.0.0.10",
             22,
             "linux",
-            "root",
-            "password",
-            "encrypted-password",
-            "",
+            "root账号",
             "默认分组,数据库",
             "演示主机",
         ]

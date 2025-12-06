@@ -102,21 +102,13 @@ def validate_host_connection_info(host_data: dict) -> dict:
     """验证主机连接信息"""
     errors = {}
     
-    # 检查必需字段
-    if not host_data.get('ip_address'):
-        errors['ip_address'] = '主机IP地址不能为空'
+    # 检查必需字段：至少需要内网IP或外网IP之一
+    if not host_data.get('internal_ip') and not host_data.get('public_ip'):
+        errors['ip'] = '主机至少需要配置内网IP或外网IP之一'
     
-    if not host_data.get('username'):
-        errors['username'] = '用户名不能为空'
-    
-    # 检查认证方式
-    auth_type = host_data.get('auth_type', 'password')
-    if auth_type == 'password':
-        if not host_data.get('password'):
-            errors['password'] = '密码认证方式下密码不能为空'
-    elif auth_type == 'key':
-        if not host_data.get('private_key'):
-            errors['private_key'] = '密钥认证方式下私钥不能为空'
+    # 检查账号
+    if not host_data.get('account'):
+        errors['account'] = '主机必须配置服务器账号'
     
     # 检查端口
     port = host_data.get('port', 22)
@@ -131,14 +123,13 @@ def format_host_info(host) -> dict:
     return {
         'id': host.id,
         'name': host.name,
-        'ip_address': host.ip_address,
+        'ip_address': host.ip_address,  # 使用属性，返回 internal_ip 或 public_ip
+        'internal_ip': host.internal_ip,
+        'public_ip': host.public_ip,
         'port': host.port or 22,
-        'username': host.username,
-        'auth_type': host.auth_type,
-        'password': host.password,  # 已加密
-        'private_key': host.private_key,
+        'account_id': host.account.id if host.account else None,
+        'account_name': host.account.name if host.account else None,
         'description': host.description or '',
-        'tags': host.tags or [],
         'status': host.status
     }
 

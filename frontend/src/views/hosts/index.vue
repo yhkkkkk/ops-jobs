@@ -539,10 +539,36 @@
             @page-change="handlePageChange"
             @page-size-change="handlePageSizeChange"
           >
+        <template #ip_address="{ record }">
+          <div class="ip-address-cell">
+            <div v-if="record.internal_ip" class="ip-display">
+              <span class="ip-label">内网:</span>
+              <span>{{ record.internal_ip }}</span>
+            </div>
+            <div v-if="record.public_ip" class="ip-display">
+              <span class="ip-label">外网:</span>
+              <span>{{ record.public_ip }}</span>
+            </div>
+            <span v-if="!record.internal_ip && !record.public_ip" class="text-gray-400">--</span>
+          </div>
+        </template>
+
         <template #os_type="{ record }">
           <a-tag :class="`os-${record.os_type}`" size="small">
             {{ getOSText(record.os_type) }}
           </a-tag>
+        </template>
+
+        <template #account="{ record }">
+          <div v-if="record.account_info">
+            <a-tag color="blue" size="small">
+              {{ record.account_info.name }}
+            </a-tag>
+            <div class="text-gray-400" style="font-size: 12px; margin-top: 2px;">
+              {{ record.account_info.username }}
+            </div>
+          </div>
+          <span v-else class="text-gray-400">未配置</span>
         </template>
 
         <template #status="{ record }">
@@ -935,12 +961,21 @@ const searchForm = reactive({
   status: '',
 })
 
+// 高级筛选表单
+const advancedForm = reactive({
+  cloud_provider: '',
+  internal_ip: '',
+  public_ip: '',
+  os_version: '',
+  auth_method: '',
+  region: '',
+  zone: '',
+})
+
 // IP地址显示格式化
 const displayIpAddress = ref('')
 const displayInternalIp = ref('')
 const displayPublicIp = ref('')
-
-
 
 // 格式化IP地址显示 - 多行显示策略（粘贴/输入后美化展示）
 const formatIpDisplay = (ipString: string) => {
@@ -1054,17 +1089,6 @@ watch(() => advancedForm.public_ip, (newValue) => {
   }
 })
 
-// 高级筛选表单
-const advancedForm = reactive({
-  cloud_provider: '',
-  internal_ip: '',
-  public_ip: '',
-  os_version: '',
-  auth_method: '',
-  region: '',
-  zone: '',
-})
-
 // 高级筛选显示状态
 const showAdvancedFilter = ref(false)
 
@@ -1088,6 +1112,7 @@ const columns = [
     title: 'IP地址',
     dataIndex: 'ip_address',
     key: 'ip_address',
+    slotName: 'ip_address',
   },
   {
     title: '端口',
@@ -1101,9 +1126,10 @@ const columns = [
     slotName: 'os_type',
   },
   {
-    title: '用户名',
-    dataIndex: 'username',
-    key: 'username',
+    title: '服务器账号',
+    dataIndex: 'account_info',
+    key: 'account',
+    slotName: 'account',
   },
   {
     title: '状态',
@@ -1228,14 +1254,29 @@ const fetchHosts = async () => {
     })
 
     const response = await hostApi.getHosts(params)
-    hosts.value = response.results
-    pagination.total = response.total
-    totalHostCount.value = response.total
-  } catch (error) {
+    // 确保数据格式正确，添加防御性检查
+    if (response && response.results) {
+      hosts.value = response.results.map((host: any) => ({
+        ...host,
+        // 确保 ip_address 属性存在（使用计算属性）
+        ip_address: host.ip_address || host.internal_ip || host.public_ip || '',
+        // 确保 account_info 存在
+        account_info: host.account_info || null,
+      }))
+      pagination.total = response.total || 0
+      totalHostCount.value = response.total || 0
+    } else {
+      hosts.value = []
+      pagination.total = 0
+      totalHostCount.value = 0
+    }
+  } catch (error: any) {
     console.error('获取主机列表失败:', error)
-    Message.error('获取主机列表失败')
+    const errorMsg = error?.response?.data?.message || error?.message || '获取主机列表失败'
+    Message.error(errorMsg)
     hosts.value = []
     pagination.total = 0
+    totalHostCount.value = 0
   } finally {
     loading.value = false
   }
@@ -1667,7 +1708,7 @@ const handleBatchCopy = async (type: string) => {
 
   switch (type) {
     case 'ip':
-      values = selectedHosts.map(h => h.ip_address).filter(Boolean)
+      values = selectedHosts.map(h => h.internal_ip || h.public_ip || h.ip_address || '').filter(Boolean)
       label = 'IP 地址'
       break
     case 'internal_ip':
@@ -2423,5 +2464,27 @@ onMounted(async () => {
 .basic-actions-right {
   display: flex;
   justify-content: flex-end;
+}
+
+/* IP地址显示样式 */
+.ip-address-cell {
+  min-width: 150px;
+}
+
+.ip-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.ip-display:last-child {
+  margin-bottom: 0;
+}
+
+.ip-label {
+  color: #86909c;
+  font-size: 11px;
 }
 </style>

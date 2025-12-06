@@ -268,12 +268,7 @@ class HostViewSet(viewsets.ModelViewSet):
         updated_count = 0
         for host in editable_hosts:
             for field, value in update_data.items():
-                if field == 'password' and value:
-                    # 与单个 HostSerializer 行为保持一致，更新时加密密码
-                    from .utils import encrypt_password
-                    setattr(host, field, encrypt_password(value))
-                else:
-                    setattr(host, field, value)
+                setattr(host, field, value)
             host.save(update_fields=list(update_data.keys()) + ['updated_at'])
             updated_count += 1
 

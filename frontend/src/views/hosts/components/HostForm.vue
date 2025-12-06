@@ -22,16 +22,7 @@
       </a-form-item>
 
       <a-row :gutter="16">
-        <a-col :span="16">
-          <a-form-item label="IP地址" field="ip_address">
-            <a-input
-              v-model="form.ip_address"
-              placeholder="请输入IP地址"
-              allow-clear
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
+        <a-col :span="12">
           <a-form-item label="端口" field="port">
             <a-input-number
               v-model="form.port"
@@ -39,18 +30,6 @@
               :max="65535"
               placeholder="22"
               style="width: 100%"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="用户名" field="username">
-            <a-input
-              v-model="form.username"
-              placeholder="请输入用户名"
-              allow-clear
             />
           </a-form-item>
         </a-col>
@@ -70,42 +49,26 @@
         </a-col>
       </a-row>
 
-      <a-form-item label="认证方式" field="auth_type">
-        <a-radio-group v-model="form.auth_type">
-          <a-radio value="password">密码认证</a-radio>
-          <a-radio value="key">密钥认证</a-radio>
-        </a-radio-group>
-      </a-form-item>
-
-      <a-form-item
-        v-if="form.auth_type === 'password'"
-        label="密码"
-        field="password"
-      >
-        <a-input-password
-          v-model="form.password"
-          :placeholder="isEdit ? '留空则不修改密码' : '请输入密码'"
+      <a-form-item label="服务器账号" field="account">
+        <a-select
+          v-model="form.account"
+          placeholder="请选择服务器账号"
           allow-clear
-        />
-        <div v-if="isEdit" class="form-tip">
+          allow-search
+          :loading="accountsLoading"
+        >
+          <a-option
+            v-for="account in serverAccounts"
+            :key="account.id"
+            :value="account.id"
+            :label="account.name"
+          >
+            {{ account.name }} ({{ account.username }})
+          </a-option>
+        </a-select>
+        <div class="form-tip">
           <icon-info-circle />
-          <span>留空则不修改当前密码</span>
-        </div>
-      </a-form-item>
-
-      <a-form-item
-        v-if="form.auth_type === 'key'"
-        label="私钥"
-        field="private_key"
-      >
-        <a-textarea
-          v-model="form.private_key"
-          :placeholder="isEdit ? '留空则不修改私钥' : '请输入SSH私钥内容'"
-          :rows="6"
-        />
-        <div v-if="isEdit" class="form-tip">
-          <icon-info-circle />
-          <span>留空则不修改当前私钥</span>
+          <span>用于SSH连接的服务器账号，请先在服务器账号管理中创建</span>
         </div>
       </a-form-item>
 
@@ -442,6 +405,7 @@ import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconInfoCircle, IconLink } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi } from '@/api/ops'
+import { accountApi } from '@/api/account'
 import type { Host, HostGroup } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 
@@ -465,18 +429,16 @@ const formRef = ref()
 const loading = ref(false)
 const testLoading = ref(false)
 const groupsLoading = ref(false)
+const accountsLoading = ref(false)
 const hostGroups = ref<HostGroup[]>([])
+const serverAccounts = ref<any[]>([])
 
 // 表单数据
 const form = reactive({
   name: '',
-  ip_address: '',
   port: 22,
-  username: '',
+  account: null as number | null,
   os_type: 'linux',
-  auth_type: 'password' as 'password' | 'key',
-  password: '',
-  private_key: '',
   groups: [] as number[],
   description: '',
   // 网络信息
@@ -511,30 +473,51 @@ const rules = {
     { required: true, message: '请输入主机名称' },
     { minLength: 2, message: '主机名称至少2个字符' },
   ],
-  ip_address: [
-    { required: true, message: '请输入IP地址' },
-    {
-      match: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-      message: '请输入有效的IP地址',
-    },
-  ],
   port: [
     { required: true, message: '请输入端口号' },
     { type: 'number', min: 1, max: 65535, message: '端口号范围：1-65535' },
   ],
-  username: [
-    { required: true, message: '请输入用户名' },
-    { minLength: 1, message: '用户名不能为空' },
+  account: [
+    { required: true, message: '请选择服务器账号' },
   ],
   os_type: [
     { required: true, message: '请选择操作系统' },
   ],
-  // 暂时简化密码和私钥验证，避免复杂的自定义验证器
-  password: [
-    { required: false, message: '请输入密码' },
+  internal_ip: [
+    {
+      validator: (value: string, callback: (error?: string) => void) => {
+        if (!value && !form.public_ip) {
+          callback('至少需要配置内网IP或外网IP之一')
+        } else if (value) {
+          const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+          if (!ipRegex.test(value)) {
+            callback('请输入有效的IP地址')
+          } else {
+            callback()
+          }
+        } else {
+          callback()
+        }
+      },
+    },
   ],
-  private_key: [
-    { required: false, message: '请输入私钥' },
+  public_ip: [
+    {
+      validator: (value: string, callback: (error?: string) => void) => {
+        if (!value && !form.internal_ip) {
+          callback('至少需要配置内网IP或外网IP之一')
+        } else if (value) {
+          const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+          if (!ipRegex.test(value)) {
+            callback('请输入有效的IP地址')
+          } else {
+            callback()
+          }
+        } else {
+          callback()
+        }
+      },
+    },
   ],
 }
 
@@ -548,24 +531,18 @@ const isEdit = computed(() => !!props.host?.id)
 
 // 是否可以进行连接测试
 const canTestConnection = computed(() => {
-  return form.ip_address &&
+  return (form.internal_ip || form.public_ip) &&
          form.port &&
-         form.username &&
-         ((form.auth_type === 'password' && form.password) ||
-          (form.auth_type === 'key' && form.private_key))
+         form.account
 })
 
 // 重置表单
 const resetForm = () => {
   Object.assign(form, {
     name: '',
-    ip_address: '',
     port: 22,
-    username: '',
+    account: null,
     os_type: 'linux',
-    auth_type: 'password',
-    password: '',
-    private_key: '',
     groups: [],
     description: '',
     // 网络信息
@@ -604,15 +581,11 @@ watch(
       // 编辑模式，填充表单数据
       Object.assign(form, {
         name: host.name,
-        ip_address: host.ip_address,
         port: host.port,
-        username: host.username,
+        account: host.account || null,
         os_type: host.os_type || 'linux',
-        auth_type: host.auth_type || 'password',
         groups: host.groups || [],
         description: host.description || '',
-        password: '',
-        private_key: '',
         // 网络信息
         public_ip: host.public_ip || '',
         internal_ip: host.internal_ip || '',
@@ -671,11 +644,9 @@ const handleSubmit = async () => {
 
     const data = {
       name: form.name,
-      ip_address: form.ip_address,
       port: form.port,
-      username: form.username,
+      account: form.account,
       os_type: form.os_type,
-      auth_type: form.auth_type,
       groups: form.groups,
       description: form.description,
       // 网络信息
@@ -702,19 +673,6 @@ const handleSubmit = async () => {
       // 管理信息
       owner: form.owner || null,
       department: form.department || null,
-    }
-
-    // 处理认证信息
-    if (form.auth_type === 'password') {
-      // 新建时必须有密码，编辑时有密码才发送
-      if (!isEdit.value || form.password) {
-        data.password = form.password
-      }
-    } else if (form.auth_type === 'key') {
-      // 新建时必须有私钥，编辑时有私钥才发送
-      if (!isEdit.value || form.private_key) {
-        data.private_key = form.private_key
-      }
     }
 
     console.log('准备调用API，数据:', data)
@@ -836,30 +794,41 @@ const fetchGroups = async () => {
   }
 }
 
+// 获取服务器账号列表
+const fetchAccounts = async () => {
+  accountsLoading.value = true
+  try {
+    const response = await accountApi.getAccounts({ page_size: 1000 })
+    serverAccounts.value = response.results || []
+  } catch (error) {
+    console.error('获取服务器账号列表失败:', error)
+    serverAccounts.value = []
+    Message.warning('获取服务器账号列表失败')
+  } finally {
+    accountsLoading.value = false
+  }
+}
+
 // 连接测试
 const handleConnectionTest = async () => {
   if (!canTestConnection.value) {
-    Message.warning('请先填写完整的连接信息')
+    Message.warning('请先填写完整的连接信息（至少需要IP地址、端口和服务器账号）')
+    return
+  }
+
+  if (!props.host?.id) {
+    Message.warning('请先保存主机后再进行连接测试')
     return
   }
 
   testLoading.value = true
   try {
-    const testData = {
-      ip_address: form.ip_address,
-      port: form.port,
-      username: form.username,
-      auth_type: form.auth_type,
-      ...(form.auth_type === 'password' ? { password: form.password } : { private_key: form.private_key })
+    const result = await hostApi.testConnection(props.host.id)
+    if (result.success) {
+      Message.success('连接测试成功！')
+    } else {
+      Message.error(result.message || '连接测试失败')
     }
-
-    // 这里需要调用连接测试API
-    // const result = await hostApi.testConnection(testData)
-
-    // 暂时模拟测试结果
-    await new Promise(resolve => setTimeout(resolve, 2000))
-
-    Message.success('连接测试成功！')
   } catch (error: any) {
     console.error('连接测试失败:', error)
     let errorMessage = '连接测试失败'
@@ -880,13 +849,13 @@ const handleCancel = () => {
   resetForm()
 }
 
-// 监听模态框显示状态，每次打开时重新获取分组数据
+// 监听模态框显示状态，每次打开时重新获取分组数据和账号列表
 watch(
   () => props.visible,
   async (newVisible) => {
     if (newVisible) {
-      // 模态框打开时重新获取分组数据，确保数据是最新的
-      await fetchGroups()
+      // 模态框打开时重新获取分组数据和账号列表，确保数据是最新的
+      await Promise.all([fetchGroups(), fetchAccounts()])
     }
   },
   { immediate: false }
@@ -904,8 +873,8 @@ onMounted(async () => {
     return
   }
 
-  console.log('用户已登录，开始获取分组数据')
-  fetchGroups()
+  console.log('用户已登录，开始获取分组数据和账号列表')
+  await Promise.all([fetchGroups(), fetchAccounts()])
 })
 
 // 暴露给父组件的方法

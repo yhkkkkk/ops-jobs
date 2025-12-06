@@ -408,90 +408,64 @@ class FabricSSHManager:
         
         Args:
             host: 主机对象
-            account_id: 可选的账号ID，如果提供则使用账号管理的认证信息，否则使用主机配置的认证信息
+            account_id: 可选的账号ID，如果提供则使用该账号，否则使用主机配置的账号
         
         Returns:
             连接信息字典
         """
         from .models import ServerAccount
         
-        # 如果提供了account_id，优先使用账号管理的认证信息
+        # 确定使用哪个账号
+        account = None
         if account_id:
+            # 如果提供了account_id，使用指定的账号
             try:
                 account = ServerAccount.objects.get(id=account_id)
-                username = account.username
-                
-                # 解密密码（如果使用密码认证）
-                password = None
-                if account.password:
-                    try:
-                        password = self._decrypt_password(account.password)
-                    except Exception as e:
-                        logger.warning(f"解密账号 {account.name} 密码失败: {e}")
-                        password = account.password  # 如果解密失败，使用原始值
-                
-                # 处理私钥（如果使用密钥认证）
-                key_filename = None
-                if account.private_key:
-                    # 创建临时私钥文件
-                    try:
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as f:
-                            f.write(account.private_key)
-                            key_filename = f.name
-                        # 设置私钥文件权限
-                        os.chmod(key_filename, 0o600)
-                    except Exception as e:
-                        logger.error(f"创建账号私钥文件失败: {e}")
-                        raise FabricSSHError(f"账号私钥处理失败: {str(e)}")
-                
-                logger.info(f"使用账号管理认证信息: 账号={account.name}, 用户名={username}, 主机={host.name}")
-                
-                return {
-                    'host': host.ip_address,
-                    'port': host.port or 22,
-                    'user': username,
-                    'password': password,
-                    'key_filename': key_filename,
-                }
             except ServerAccount.DoesNotExist:
-                logger.warning(f"账号ID {account_id} 不存在，使用主机配置的认证信息")
-            except Exception as e:
-                logger.error(f"获取账号信息失败: {e}，使用主机配置的认证信息")
+                raise FabricSSHError(f"账号ID {account_id} 不存在")
+        elif host.account:
+            # 使用主机配置的账号
+            account = host.account
+        else:
+            raise FabricSSHError(f"主机 {host.name} 没有配置服务器账号，请在主机设置中指定账号或在执行时提供账号ID")
         
-        # 使用主机配置的认证信息（默认行为）
-        if not host.username:
-            raise FabricSSHError(f"主机 {host.name} 没有配置用户名")
-
+        # 获取IP地址（优先使用内网IP）
+        host_ip = host.internal_ip or host.public_ip
+        if not host_ip:
+            raise FabricSSHError(f"主机 {host.name} 没有配置IP地址（内网IP或外网IP）")
+        
+        username = account.username
+        
         # 解密密码（如果使用密码认证）
         password = None
-        if host.auth_type == 'password' and host.password:
+        if account.password:
             try:
-                # 使用内联的解密函数
-                password = self._decrypt_password(host.password)
+                password = self._decrypt_password(account.password)
             except Exception as e:
-                logger.warning(f"解密主机 {host.name} 密码失败: {e}")
-                password = host.password  # 如果解密失败，使用原始值
-
+                logger.warning(f"解密账号 {account.name} 密码失败: {e}")
+                password = account.password  # 如果解密失败，使用原始值
+        
         # 处理私钥（如果使用密钥认证）
         key_filename = None
-        if host.auth_type == 'key' and host.private_key:
+        if account.private_key:
             # 创建临时私钥文件
             try:
                 import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as f:
-                    f.write(host.private_key)
+                    f.write(account.private_key)
                     key_filename = f.name
                 # 设置私钥文件权限
                 os.chmod(key_filename, 0o600)
             except Exception as e:
-                logger.error(f"创建私钥文件失败: {e}")
-                raise FabricSSHError(f"私钥处理失败: {str(e)}")
-
+                logger.error(f"创建账号私钥文件失败: {e}")
+                raise FabricSSHError(f"账号私钥处理失败: {str(e)}")
+        
+        logger.info(f"使用账号认证信息: 账号={account.name}, 用户名={username}, 主机={host.name}, IP={host_ip}")
+        
         return {
-            'host': host.ip_address,
+            'host': host_ip,
             'port': host.port or 22,
-            'user': host.username,
+            'user': username,
             'password': password,
             'key_filename': key_filename,
         }

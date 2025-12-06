@@ -104,7 +104,6 @@ class HostFilter(django_filters.FilterSet):
         for term in search_terms:
             term_query = (
                 models.Q(name__icontains=term) |
-                models.Q(ip_address__icontains=term) |
                 models.Q(public_ip__icontains=term) |
                 models.Q(internal_ip__icontains=term) |
                 models.Q(hostname__icontains=term) |

@@ -66,18 +66,21 @@ class HostGroupAdmin(PermissionActionsMixin, GuardedModelAdmin):
 
 @admin.register(Host)
 class HostAdmin(PermissionActionsMixin, GuardedModelAdmin):
-    list_display = ['name', 'ip_address', 'port', 'os_type', 'status', 'created_by', 'created_at', 'permission_actions']
-    list_filter = ['os_type', 'status', 'created_at', 'groups']
-    search_fields = ['name', 'ip_address', 'description']
+    list_display = ['name', 'get_ip_display', 'port', 'os_type', 'account', 'status', 'created_by', 'created_at', 'permission_actions']
+    list_filter = ['os_type', 'status', 'created_at', 'groups', 'account']
+    search_fields = ['name', 'internal_ip', 'public_ip', 'description']
     filter_horizontal = ['groups']
     readonly_fields = ['created_at', 'updated_at', 'last_check_time']
     fieldsets = (
         ('基本信息', {
-            'fields': ('name', 'ip_address', 'port', 'os_type', 'description')
+            'fields': ('name', 'port', 'os_type', 'description')
+        }),
+        ('网络信息', {
+            'fields': ('internal_ip', 'public_ip', 'gateway', 'dns_servers')
         }),
         ('认证信息', {
-            'fields': ('username', 'password', 'private_key'),
-            'classes': ('collapse',)
+            'fields': ('account',),
+            'description': '选择用于SSH连接的服务器账号'
         }),
         ('状态信息', {
             'fields': ('status', 'last_check_time')
@@ -90,6 +93,15 @@ class HostAdmin(PermissionActionsMixin, GuardedModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def get_ip_display(self, obj):
+        """显示IP地址（优先内网IP）"""
+        if obj.internal_ip:
+            return f"{obj.internal_ip} (内网)"
+        elif obj.public_ip:
+            return f"{obj.public_ip} (外网)"
+        return "-"
+    get_ip_display.short_description = "IP地址"
 
     def permission_actions(self, obj):
         """显示权限管理操作"""

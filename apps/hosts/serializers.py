@@ -3,7 +3,7 @@
 """
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
-from .models import Host, HostGroup, ServerAccount, ServerAccount
+from .models import Host, HostGroup, ServerAccount
 from .utils import encrypt_password
 
 
@@ -127,17 +127,18 @@ class HostSerializer(serializers.ModelSerializer):
     groups_info = HostGroupSerializer(source='groups', many=True, read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     os_type_display = serializers.CharField(source='get_os_type_display', read_only=True)
-    auth_type_display = serializers.CharField(source='get_auth_type_display', read_only=True)
     cloud_provider_display = serializers.CharField(source='get_cloud_provider_display', read_only=True)
     device_type_display = serializers.CharField(source='get_device_type_display', read_only=True)
     environment_display = serializers.CharField(source='get_environment_display', read_only=True)
+    account_info = serializers.SerializerMethodField()
+    ip_address = serializers.SerializerMethodField()
 
     class Meta:
         model = Host
         fields = [
             # 基本信息
             'id', 'name', 'ip_address', 'port', 'os_type', 'os_type_display',
-            'username', 'auth_type', 'auth_type_display', 'password', 'private_key',
+            'account', 'account_info',
             'status', 'status_display', 'groups', 'groups_info', 'description',
             # 网络信息
             'public_ip', 'internal_ip', 'internal_mac', 'external_mac', 'gateway', 'dns_servers',
@@ -156,24 +157,21 @@ class HostSerializer(serializers.ModelSerializer):
             'created_by', 'created_by_name', 'created_at', 'updated_at', 'last_check_time'
         ]
         read_only_fields = ['created_by', 'created_at', 'updated_at', 'last_check_time', 'status']
-        extra_kwargs = {
-            'password': {'write_only': True},
-            'private_key': {'write_only': True},
-        }
     
-    def create(self, validated_data):
-        # 加密密码
-        if 'password' in validated_data and validated_data['password']:
-            validated_data['password'] = encrypt_password(validated_data['password'])
-        
-        return super().create(validated_data)
+    def get_ip_address(self, obj):
+        """获取IP地址（优先内网IP）"""
+        return obj.ip_address
     
-    def update(self, instance, validated_data):
-        # 如果更新密码，需要加密
-        if 'password' in validated_data and validated_data['password']:
-            validated_data['password'] = encrypt_password(validated_data['password'])
-        
-        return super().update(instance, validated_data)
+    def get_account_info(self, obj):
+        """获取账号信息"""
+        if obj.account:
+            return {
+                'id': obj.account.id,
+                'name': obj.account.name,
+                'username': obj.account.username,
+                'auth_type': 'password' if obj.account.password else ('key' if obj.account.private_key else 'none'),
+            }
+        return None
 
 
 class HostSimpleSerializer(serializers.ModelSerializer):
@@ -440,8 +438,7 @@ class HostBatchUpdateSerializer(serializers.Serializer):
     # 允许批量编辑的字段白名单，避免误改系统字段
     ALLOWED_FIELDS = {
         # 基本信息
-        'name', 'ip_address', 'port', 'os_type', 'username',
-        'auth_type', 'password', 'private_key', 'description',
+        'name', 'port', 'os_type', 'account', 'description',
         # 网络信息
         'public_ip', 'internal_ip', 'internal_mac', 'external_mac',
         'gateway', 'dns_servers',

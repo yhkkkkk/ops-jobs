@@ -87,11 +87,6 @@ class Host(models.Model):
         ('unknown', '未知'),
     ]
 
-    AUTH_TYPE_CHOICES = [
-        ('password', '密码认证'),
-        ('key', '密钥认证'),
-    ]
-
     CLOUD_PROVIDER_CHOICES = [
         ('aliyun', '阿里云'),
         ('tencent', '腾讯云'),
@@ -121,13 +116,11 @@ class Host(models.Model):
 
     # === 基本信息 ===
     name = models.CharField(max_length=100, verbose_name="主机名")
-    ip_address = models.GenericIPAddressField(verbose_name="IP地址")
     port = models.IntegerField(default=22, verbose_name="SSH端口")
     os_type = models.CharField(max_length=20, choices=OS_CHOICES, verbose_name="操作系统")
-    username = models.CharField(max_length=50, verbose_name="用户名")
-    auth_type = models.CharField(max_length=20, choices=AUTH_TYPE_CHOICES, default='password', verbose_name="认证方式")
-    password = models.CharField(max_length=255, blank=True, verbose_name="密码")
-    private_key = models.TextField(blank=True, verbose_name="私钥")
+    account = models.ForeignKey('ServerAccount', on_delete=models.PROTECT, null=True, blank=True, 
+                               verbose_name="服务器账号", related_name='hosts',
+                               help_text="用于SSH连接的服务器账号，如果为空则需要在执行时指定")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unknown', verbose_name="状态")
     groups = models.ManyToManyField(HostGroup, blank=True, verbose_name="所属分组")
     description = models.TextField(blank=True, verbose_name="描述")
@@ -182,13 +175,19 @@ class Host(models.Model):
     class Meta:
         verbose_name = "主机"
         verbose_name_plural = "主机"
-        unique_together = ['ip_address', 'port']
         permissions = [
             ('execute_host', '在主机上执行操作'),
         ]
 
     def __str__(self):
-        return f"{self.name}({self.ip_address})"
+        # 优先显示内网IP，如果没有则显示外网IP
+        display_ip = self.internal_ip or self.public_ip or 'N/A'
+        return f"{self.name}({display_ip})"
+    
+    @property
+    def ip_address(self):
+        """兼容属性：返回内网IP或外网IP（优先内网IP）"""
+        return self.internal_ip or self.public_ip
 
 
 class ServerAccount(models.Model):

@@ -42,15 +42,17 @@ export interface LoginResult {
 export interface Host {
   id: number
   name: string
-  ip_address: string
+  ip_address?: string // 兼容属性，返回 internal_ip 或 public_ip
   port: number
-  username: string
+  account?: number // 服务器账号ID
+  account_info?: {
+    id: number
+    name: string
+    username: string
+    auth_type: 'password' | 'key' | 'both' | 'none'
+  }
   os_type: 'linux' | 'windows' | 'aix' | 'solaris'
   os_type_display?: string
-  auth_type: 'password' | 'key'
-  auth_type_display?: string
-  password?: string
-  private_key?: string
   description?: string
   status: 'online' | 'offline' | 'unknown'
   status_display?: string
