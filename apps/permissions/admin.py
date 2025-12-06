@@ -1,17 +1,12 @@
 """
 权限管理后台配置
 """
-from django import forms
 from django.contrib import admin
-from django.contrib.auth.models import Permission, Group
+from django.contrib.auth.models import Permission, Group, User
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html
 from django.urls import reverse, path
 from django.utils.safestring import mark_safe
-from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import (
     AuditLog,

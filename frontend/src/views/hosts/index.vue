@@ -134,7 +134,7 @@
                   <a-form-item label="IP地址">
                     <a-textarea
                       v-model="displayIpAddress"
-                      placeholder="支持多IP搜索，可直接粘贴多行IP地址"
+                      placeholder="支持多IP(内外网IP混合)，可直接粘贴多行IP地址"
                       allow-clear
                       @press-enter="handleSearch"
                       @paste="handleIpPaste"
