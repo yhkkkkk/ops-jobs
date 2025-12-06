@@ -6,13 +6,15 @@ from datetime import datetime, timedelta
 import io
 import pandas as pd
 import logging
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Permission
 from django.contrib.contenttypes.models import ContentType
 from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import AuditLog
@@ -408,3 +410,118 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:
             logger.error(f"导出审计日志失败: {e}")
             return SycResponse.error(f'导出失败: {str(e)}', code=500)
+
+
+@require_http_methods(["GET"])
+@csrf_exempt
+def get_permissions_by_content_type(request):
+    """
+    AJAX 视图：根据 content_type 获取权限列表
+    用于 GroupObjectPermissionAdmin 中动态更新权限列表
+    """
+    try:
+        content_type_id = request.GET.get('content_type_id')
+        
+        if not content_type_id:
+            return JsonResponse({
+                'success': False,
+                'error': '缺少 content_type_id 参数'
+            }, status=400)
+        
+        try:
+            content_type = ContentType.objects.get(id=content_type_id)
+        except ContentType.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': '内容类型不存在'
+            }, status=404)
+        
+        # 获取该内容类型的所有权限
+        permissions = Permission.objects.filter(
+            content_type=content_type
+        ).select_related('content_type').order_by('codename')
+        
+        # 构建权限列表
+        permissions_list = [
+            {
+                'id': perm.id,
+                'codename': perm.codename,
+                'name': perm.name,
+                'content_type': f"{perm.content_type.app_label}.{perm.content_type.model}"
+            }
+            for perm in permissions
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'permissions': permissions_list,
+            'count': len(permissions_list)
+        })
+        
+    except Exception as e:
+        logger.error(f"获取权限列表失败: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'获取权限列表失败: {str(e)}'
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+@csrf_exempt
+def get_object_name(request):
+    """
+    AJAX 视图：根据 content_type 和 object_pk 获取对象名称
+    用于 GroupObjectPermissionAdmin 中显示对象名称
+    """
+    try:
+        content_type_id = request.GET.get('content_type_id')
+        object_pk = request.GET.get('object_pk')
+        
+        if not content_type_id or not object_pk:
+            return JsonResponse({
+                'success': False,
+                'error': '缺少必要参数'
+            }, status=400)
+        
+        try:
+            content_type = ContentType.objects.get(id=content_type_id)
+        except ContentType.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': '内容类型不存在'
+            }, status=404)
+        
+        # 获取模型类
+        model_class = content_type.model_class()
+        if not model_class:
+            return JsonResponse({
+                'success': False,
+                'error': '无法获取模型类'
+            }, status=404)
+        
+        # 获取对象
+        try:
+            obj = model_class.objects.get(pk=object_pk)
+            object_name = str(obj)
+        except model_class.DoesNotExist:
+            return JsonResponse({
+                'success': True,
+                'object_name': f'对象不存在 (ID: {object_pk})'
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'获取对象失败: {str(e)}'
+            }, status=500)
+        
+        return JsonResponse({
+            'success': True,
+            'object_name': object_name
+        })
+        
+    except Exception as e:
+        logger.error(f"获取对象名称失败: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'获取对象名称失败: {str(e)}'
+        }, status=500)

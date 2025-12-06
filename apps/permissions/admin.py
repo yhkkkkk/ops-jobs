@@ -6,8 +6,12 @@ from django.contrib import admin
 from django.contrib.auth.models import Permission, Group
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html
-from django.urls import reverse
+from django.urls import reverse, path
 from django.utils.safestring import mark_safe
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from guardian.models import UserObjectPermission, GroupObjectPermission
 from .models import (
     AuditLog,
@@ -192,6 +196,87 @@ admin.site.site_title = "运维作业管理"
 admin.site.index_title = "运维作业管理后台"
 
 
+# Group admin - 支持 autocomplete_fields
+try:
+    admin.site.unregister(Group)
+except admin.sites.NotRegistered:
+    pass
+
+class GroupAdmin(admin.ModelAdmin):
+    """用户组管理 - 支持 autocomplete_fields 搜索"""
+    search_fields = ['name']
+    list_display = ['name']
+    
+    def has_view_permission(self, request, obj=None):
+        """允许所有已登录用户查看（autocomplete 需要）"""
+        return request.user.is_authenticated
+    
+    def has_module_permission(self, request):
+        """允许所有已登录用户访问模块"""
+        return request.user.is_authenticated
+
+admin.site.register(Group, GroupAdmin)
+
+
+# Permission admin - 支持 autocomplete_fields
+try:
+    admin.site.unregister(Permission)
+except admin.sites.NotRegistered:
+    pass
+
+class PermissionAdmin(admin.ModelAdmin):
+    """权限管理 - 支持 autocomplete_fields 搜索"""
+    search_fields = ['codename', 'name', 'content_type__app_label', 'content_type__model']
+    list_display = ['codename', 'name', 'content_type']
+    list_filter = ['content_type']
+    
+    def has_view_permission(self, request, obj=None):
+        """允许所有已登录用户查看（autocomplete 需要）"""
+        return request.user.is_authenticated
+    
+    def has_module_permission(self, request):
+        """允许所有已登录用户访问模块"""
+        return request.user.is_authenticated
+    
+    def get_queryset(self, request):
+        """优化查询"""
+        return super().get_queryset(request).select_related('content_type')
+    
+    def get_search_results(self, request, queryset, search_term):
+        """优化搜索"""
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
+        return queryset, use_distinct
+
+admin.site.register(Permission, PermissionAdmin)
+
+
+# ContentType admin - 支持 autocomplete_fields
+try:
+    admin.site.unregister(ContentType)
+except admin.sites.NotRegistered:
+    pass
+
+class ContentTypeAdmin(admin.ModelAdmin):
+    """内容类型管理 - 支持 autocomplete_fields 搜索"""
+    search_fields = ['app_label', 'model']
+    list_display = ['app_label', 'model']
+    list_filter = ['app_label']
+    
+    def has_view_permission(self, request, obj=None):
+        """允许所有已登录用户查看（autocomplete 需要）"""
+        return request.user.is_authenticated
+    
+    def has_module_permission(self, request):
+        """允许所有已登录用户访问模块"""
+        return request.user.is_authenticated
+    
+    def get_queryset(self, request):
+        """优化查询，添加排序以避免警告"""
+        return super().get_queryset(request).order_by('app_label', 'model')
+
+admin.site.register(ContentType, ContentTypeAdmin)
+
+
 @admin.register(PermissionTemplate)
 class PermissionTemplateAdmin(admin.ModelAdmin):
     """权限模板管理"""
@@ -216,7 +301,7 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
     list_display = ['user', 'permission', 'content_type', 'object_pk', 'get_object_link']
     list_filter = ['permission', 'content_type', 'user']
     search_fields = ['user__username', 'object_pk', 'permission__codename']
-    raw_id_fields = ['user', 'permission', 'content_type']
+    autocomplete_fields = ['user', 'permission', 'content_type']
     
     fieldsets = (
         ('基本信息', {
@@ -309,7 +394,7 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
     list_display = ['group', 'permission', 'content_type', 'object_pk', 'get_object_link']
     list_filter = ['permission', 'content_type', 'group']
     search_fields = ['group__name', 'object_pk', 'permission__codename']
-    raw_id_fields = ['group', 'permission', 'content_type']
+    autocomplete_fields = ['group', 'content_type']
     
     fieldsets = (
         ('基本信息', {
@@ -326,13 +411,24 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
 
     def get_readonly_fields(self, request, obj=None):
-        """设置只读字段：添加时可编辑所有字段，编辑时所有字段只读（因为对象权限通常不应该修改）"""
+        """设置只读字段"""
         if obj is None:
-            # 添加时，所有字段可编辑
+            # 添加时，object_display 通过表单 widget 设置为只读，不需要在这里声明
+            # 因为它是表单字段，不是模型字段
             return []
         else:
-            # 编辑时，所有字段只读（建议删除后重新添加）
-            return ['group', 'permission', 'content_type', 'object_pk']
+            # 编辑时，所有模型字段只读（建议删除后重新添加）
+            # 注意：object_display 和 permissions 是表单字段，不需要在这里声明
+            return ['group', 'content_type', 'object_pk']
+    
+    def response_add(self, request, obj, post_url_continue=None):
+        """添加后重定向到列表页"""
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        
+        # 重定向到列表页
+        return redirect(reverse('admin:guardian_groupobjectpermission_changelist'))
     
     def changelist_view(self, request, extra_context=None):
         """重写列表视图，设置页面标题"""
