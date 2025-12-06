@@ -254,6 +254,10 @@ GUARDIAN_AUTO_PREFETCH = True  # 启用权限预加载以提升性能
 SIMPLEUI_HOME_TITLE = "运维作业管理后台"
 SIMPLEUI_HOME_ICON = "fas fa-server"
 SIMPLEUI_LOGO = "https://cdn-icons-png.flaticon.com/512/1087/1087815.png"  # 齿轮图标
+# 隐藏右侧SimpleUI广告链接
+SIMPLEUI_HOME_INFO = False
+# 默认主题
+SIMPLEUI_DEFAULT_THEME = 'element.css'
 
 # SSH 连接配置
 SSH_TIMEOUT = 30
@@ -496,6 +500,3 @@ LOGGING = {
 # ASGI 应用配置
 # Channels 层配置将在具体环境配置中设置 (development.py, production.py)
 ASGI_APPLICATION = 'ops_job.asgi.application'
-
-# 隐藏右侧收藏按钮和GitHub、Gitee链接
-SIMPLEUI_HOME_INFO = False
