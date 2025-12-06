@@ -4,14 +4,21 @@
 from django.contrib import admin
 from django.contrib.auth.models import Permission, Group, User
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.http import JsonResponse
 from django.utils.html import format_html
 from django.urls import reverse, path
 from django.utils.safestring import mark_safe
+from django.core.exceptions import ValidationError
 from guardian.models import UserObjectPermission, GroupObjectPermission
+from guardian.shortcuts import assign_perm
+
 from .models import (
     AuditLog,
     PermissionTemplate,
 )
+from .forms import GroupObjectPermissionForm
 
 
 @admin.register(AuditLog)
@@ -385,98 +392,186 @@ GroupObjectPermission._meta.verbose_name_plural = '组对象权限'
 @admin.register(GroupObjectPermission)
 class GroupObjectPermissionAdmin(admin.ModelAdmin):
     """组对象权限管理 - 全局查看和管理所有组对象权限"""
-    
-    list_display = ['group', 'permission', 'content_type', 'object_pk', 'get_object_link']
-    list_filter = ['permission', 'content_type', 'group']
-    search_fields = ['group__name', 'object_pk', 'permission__codename']
-    autocomplete_fields = ['group', 'content_type']
-    
-    fieldsets = (
-        ('基本信息', {
-            'fields': (('group', 'permission'), ('content_type', 'object_pk'))
-        }),
-    )
-    
+
+    form = GroupObjectPermissionForm
+    list_display = ['group', 'permission_name', 'content_type', 'object_name', 'get_object_link']
+    list_filter = ['content_type', 'group']
+    search_fields = ['group__name']
+
+    def get_fieldsets(self, request, obj=None):
+        """根据模式返回不同的字段集"""
+        if obj is None:
+            # 创建模式：使用表单字段
+            return (
+                ('授权配置', {
+                    'fields': ('group', 'content_type', 'object_selection', 'permissions'),
+                    'classes': ('wide', 'extrapretty'),
+                }),
+            )
+        else:
+            # 查看模式：对象使用自定义显示方法，权限保持原样
+            return (
+                ('授权配置', {
+                    'fields': ('group', 'content_type', 'object_display', 'permission'),
+                    'classes': ('wide', 'extrapretty'),
+                }),
+            )
+
+    class Media:
+        css = {
+            'all': ('admin/css/vendor/select2/select2.css', 'admin/css/autocomplete.css')
+        }
+        js = (
+            'admin/js/vendor/select2/select2.full.js',
+            'admin/js/jquery.init.js',
+            'admin/js/group_perm_admin.js',
+        )
+
     def __init__(self, model, admin_site):
         super().__init__(model, admin_site)
-        # 设置字段的中文显示名称
+        # 这种修改 Meta 的方式在多线程环境下可能不安全，但在 Admin 中通常可以接受
+        # 更好的方式是在 Model 定义中修改 verbose_name
         self.model._meta.get_field('group').verbose_name = '用户组'
         self.model._meta.get_field('permission').verbose_name = '权限'
         self.model._meta.get_field('content_type').verbose_name = '内容类型'
         self.model._meta.get_field('object_pk').verbose_name = '对象ID'
 
     def get_readonly_fields(self, request, obj=None):
-        """设置只读字段"""
         if obj is None:
-            # 添加时，object_display 通过表单 widget 设置为只读，不需要在这里声明
-            # 因为它是表单字段，不是模型字段
             return []
         else:
-            # 编辑时，所有模型字段只读（建议删除后重新添加）
-            # 注意：object_display 和 permissions 是表单字段，不需要在这里声明
-            return ['group', 'content_type', 'object_pk']
-    
+            # 查看模式下，使用自定义显示方法显示对象名称，权限保持原样
+            return ['group', 'content_type', 'object_display', 'permission']
+
+    def object_display(self, obj):
+        """显示对象名称（查看模式）"""
+        if not obj:
+            return "-"
+        try:
+            if obj.content_type and obj.object_pk:
+                model_class = obj.content_type.model_class()
+                if model_class:
+                    target_obj = model_class.objects.get(pk=obj.object_pk)
+                    return str(target_obj)
+        except Exception:
+            pass
+        return f"对象ID: {obj.object_pk}" if obj.object_pk else "-"
+    object_display.short_description = "目标对象"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('get-content-type-data/',
+                 self.admin_site.admin_view(self.get_content_type_data),
+                 name='guardian_groupobjectpermission_get_data'),
+        ]
+        return custom_urls + urls
+
+    def get_content_type_data(self, request):
+        ct_id = request.GET.get('ct_id')
+        if not ct_id:
+            return JsonResponse({'objects': [], 'permissions': []})
+
+        try:
+            ct = ContentType.objects.get(id=ct_id)
+            model_class = ct.model_class()
+            objects = []
+            queryset = model_class.objects.all()
+            if hasattr(model_class, 'name'):
+                queryset = queryset.only('pk', 'name')
+
+            for obj in queryset[:200]:
+                objects.append({'id': str(obj.pk), 'text': str(obj)})
+
+            permissions = list(Permission.objects.filter(content_type=ct).values('id', 'name', 'codename'))
+
+            return JsonResponse({
+                'objects': objects,
+                'permissions': permissions
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e), 'objects': [], 'permissions': []})
+
+    def save_model(self, request, obj, form, change):
+        """
+        核心逻辑：拦截保存，批量分配权限
+        
+        注意：我们没有保存传入的 obj 对象，而是使用 assign_perm 批量创建权限记录。
+        这是因为：
+        1. 表单允许选择多个权限，需要为每个权限创建一个 GroupObjectPermission 记录
+        2. 如果保存 obj，只能创建一个记录（因为 obj.permission 只能是一个值）
+        3. 使用 assign_perm 可以批量创建多个权限记录
+        """
+        # 验证表单数据
+        if not form.is_valid():
+            raise ValidationError("表单验证失败，请检查输入。")
+        
+        group = form.cleaned_data.get('group')
+        object_pk = form.cleaned_data.get('object_selection')
+        content_type = form.cleaned_data.get('content_type')
+        perms = form.cleaned_data.get('permissions')
+
+        # 使用事务，确保要么全成功，要么全失败
+        try:
+            with transaction.atomic():
+                model_class = content_type.model_class()
+                if not model_class:
+                    raise ValidationError(f"无法获取内容类型 {content_type} 对应的模型类。")
+                
+                target_obj = model_class.objects.get(pk=object_pk)
+
+                # 为每个权限创建一个 GroupObjectPermission 记录
+                for perm in perms:
+                    assign_perm(perm, group, target_obj)
+
+        except ObjectDoesNotExist:
+            raise ValidationError(f"对象不存在 (ID: {object_pk})。")
+        except Exception as e:
+            raise ValidationError(f"授权失败: {str(e)}")
+
+    def log_addition(self, request, obj, message):
+        """重写日志记录，避免访问 obj.__str__() 时出错"""
+        # 说明：
+        # 1. 我们没有保存传入的 obj 对象（没有调用 super().save_model() 或 obj.save()）
+        # 2. 而是通过 assign_perm 批量创建了多个 GroupObjectPermission 记录
+        # 3. 由于 obj 没有被保存，它的属性可能不完整（比如 object_pk 可能还是空字符串）
+        # 4. Django admin 的 log_addition 会访问 obj.__str__()，如果属性不完整可能会出错
+        # 5. 所以我们跳过这个未保存对象的日志记录
+        # 注意：实际的权限记录已经通过 assign_perm 创建并保存了，新增功能是成功的
+        pass
+
     def response_add(self, request, obj, post_url_continue=None):
-        """添加后重定向到列表页"""
-        from django.contrib import messages
         from django.shortcuts import redirect
         from django.urls import reverse
-        
-        # 重定向到列表页
         return redirect(reverse('admin:guardian_groupobjectpermission_changelist'))
-    
-    def changelist_view(self, request, extra_context=None):
-        """重写列表视图，设置页面标题"""
-        extra_context = extra_context or {}
-        extra_context['title'] = '组对象权限'
-        return super().changelist_view(request, extra_context)
-    
-    def add_view(self, request, form_url='', extra_context=None):
-        """重写添加视图，设置页面标题"""
-        extra_context = extra_context or {}
-        extra_context['title'] = '添加组对象权限'
-        return super().add_view(request, form_url, extra_context)
-    
-    def change_view(self, request, object_id, form_url='', extra_context=None):
-        """重写修改视图，设置页面标题"""
-        extra_context = extra_context or {}
-        extra_context['title'] = '修改组对象权限'
-        return super().change_view(request, object_id, form_url, extra_context)
-    
+
+    def permission_name(self, obj):
+        return f"{obj.permission.name} ({obj.permission.codename})"
+
+    permission_name.short_description = '权限名称'
+
+    def object_name(self, obj):
+        try:
+            return str(obj.content_object)
+        except:
+            return "-"
+
+    object_name.short_description = '对象名称'
+
     def get_object_link(self, obj):
-        """获取关联对象的链接"""
         try:
             model_class = obj.content_type.model_class()
             if model_class:
-                obj_instance = model_class.objects.get(pk=obj.object_pk)
+                # 尝试构建编辑链接
                 app_label = obj.content_type.app_label
                 model_name = obj.content_type.model
-                admin_url = reverse(
-                    f'admin:{app_label}_{model_name}_change',
-                    args=[obj.object_pk]
-                )
-                return format_html(
-                    '<a href="{}" target="_blank">{}</a>',
-                    admin_url,
-                    str(obj_instance)
-                )
-        except Exception as e:
-            return f"对象不存在或已删除 (ID: {obj.object_pk})"
-        return "-"
+                admin_url = reverse(f'admin:{app_label}_{model_name}_change', args=[obj.object_pk])
+                return format_html('<a href="{}" target="_blank">查看对象</a>', admin_url)
+        except Exception:
+            pass
+        return format_html('<span style="color:#999;">{}: {}</span>', obj.content_type, obj.object_pk)
+
     get_object_link.short_description = "关联对象"
-    
-    def has_view_permission(self, request, obj=None):
-        """允许所有已登录用户查看（autocomplete 需要）"""
-        return request.user.is_authenticated
-    
-    def has_add_permission(self, request):
-        """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
-        return request.user.is_superuser
-    
+
     def has_change_permission(self, request, obj=None):
-        """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
-        return request.user.is_superuser
-    
-    def has_module_permission(self, request):
-        """允许所有已登录用户访问模块"""
-        return request.user.is_authenticated
+        return False
