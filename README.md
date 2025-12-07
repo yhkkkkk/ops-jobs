@@ -91,6 +91,19 @@
 - **心跳机制**: 自动心跳检测和连接管理
 - **连接恢复**: 自动重连和状态恢复机制
 
+### 🤖 Agent 系统
+
+- **双模式支持**: 支持直连控制面（Direct）和通过 Agent-Server 两种连接模式
+- **跨云跨网络**: Agent-Server 模式支持跨云、跨网络的 Agent 管理
+- **WebSocket 通信**: Agent-Server 模式下使用 WebSocket 实现实时双向通信
+- **任务分发**: Agent-Server 自动从控制面拉取任务并推送给 Agent
+- **日志聚合**: Agent-Server 批量聚合 Agent 日志并推送到控制面
+- **心跳代理**: Agent-Server 管理 Agent 心跳并可选转发到控制面
+- **资源监控**: 实时收集和上报 Agent 系统资源使用情况（CPU、内存、磁盘、网络）
+- **性能指标**: 内置性能监控和指标收集（任务统计、执行时间、网络传输等）
+- **统一错误码**: 完善的错误码体系，便于问题定位和错误处理
+- **带宽限制**: 支持文件传输的带宽限制，避免网络拥塞
+
 ## 🏗️ 技术架构
 
 ### 后端技术栈
@@ -103,6 +116,17 @@
 - **API 文档**: drf-spectacular (OpenAPI 3.0)
 - **权限**: django-guardian 3.0+
 - **管理后台**: django-simpleui 2025.6.24+
+
+### Agent 技术栈
+
+- **语言**: Go 1.24+
+- **Web 框架**: Gin 1.10+ (Agent 本地 HTTP 服务)
+- **HTTP 客户端**: Resty 2.13+ (与控制面通信)
+- **WebSocket**: Gorilla WebSocket 1.5+ (Agent-Server 模式)
+- **配置管理**: Viper 1.21+ (配置文件和环境变量)
+- **日志系统**: Logrus + Lumberjack (结构化日志和轮转)
+- **系统监控**: gopsutil 3.24+ (跨平台系统信息收集)
+- **并发控制**: Semaphore (任务并发限制)
 
 ### 前端技术栈
 
@@ -128,6 +152,8 @@
 - **API 文档**: drf-spectacular OpenAPI 3.0 文档
 - **代码编辑器**: Monaco Editor 0.45+ 代码编辑和语法高亮
 - **图表组件**: ECharts 5.6+ 数据可视化和趋势分析
+- **Agent 系统**: Go 语言实现的轻量级 Agent，支持脚本执行、文件传输等
+- **Agent-Server**: Go 语言实现的 Agent 管理服务器，支持跨云跨网络部署
 
 ## 🎯 核心特性
 
@@ -255,12 +281,53 @@ cd frontend
 npm run dev
 ```
 
-7. **访问应用**
+8. **启动 Agent (可选)**
+
+```bash
+# 进入 Agent 目录
+cd agent/agent-go
+
+# 编译 Agent
+go build -o ops-job-agent cmd/agent/main.go
+
+# 运行 Agent (Direct 模式)
+./ops-job-agent --config configs/config.yaml
+
+# 或使用环境变量
+AGENT_MODE=direct \
+AGENT_CONTROL_PLANE_URL=http://localhost:8000 \
+AGENT_TOKEN=your-token \
+./ops-job-agent
+```
+
+9. **启动 Agent-Server (可选，用于跨云跨网络场景)**
+
+```bash
+# 进入 Agent-Server 目录
+cd agent/agent-server-go
+
+# 编译 Agent-Server
+go build -o ops-job-agent-server cmd/server/main.go
+
+# 运行 Agent-Server
+./ops-job-agent-server --config configs/config.yaml
+
+# Agent 使用 Agent-Server 模式
+cd agent/agent-go
+AGENT_MODE=agent-server \
+AGENT_AGENT_SERVER_URL=ws://localhost:8080 \
+AGENT_TOKEN=your-token \
+./ops-job-agent
+```
+
+10. **访问应用**
 
 - 前端应用: http://localhost:5173/
 - API 文档: http://localhost:8000/api/docs/
 - 管理后台: http://localhost:8000/admin/
 - 健康检查: http://localhost:8000/health/
+- Agent 本地服务: http://localhost:8080/ (Agent HTTP 服务)
+- Agent-Server: http://localhost:8080/ (Agent-Server HTTP 服务)
 
 ## 📖 API 文档
 
@@ -282,6 +349,11 @@ npm run dev
 - **系统配置**: `/api/system/` - 系统配置管理
 - **实时通信**: `/api/realtime/sse/` - SSE 实时日志推送
 - **健康检查**: `/health/` - 系统健康状态检查
+- **Agent 注册**: `/api/agents/register/` - Agent 注册接口
+- **Agent 心跳**: `/api/agents/{id}/heartbeat/` - Agent 心跳上报
+- **任务拉取**: `/api/agents/{id}/tasks/pull/` - Agent 拉取任务
+- **任务结果**: `/api/agents/{id}/tasks/{task_id}/result/` - Agent 上报任务结果
+- **日志推送**: `/api/agents/{id}/logs/push/` - Agent 推送日志
 
 ### 认证方式
 
@@ -342,6 +414,33 @@ CLOUD_ALIYUN_ACCESS_KEY=your-access-key
 CLOUD_ALIYUN_SECRET_KEY=your-secret-key
 CLOUD_TENCENT_SECRET_ID=your-secret-id
 CLOUD_TENCENT_SECRET_KEY=your-secret-key
+
+# Agent 配置 (Direct 模式)
+AGENT_MODE=direct
+AGENT_CONTROL_PLANE_URL=http://localhost:8000
+AGENT_TOKEN=your-agent-token
+AGENT_NAME=agent-01
+AGENT_HTTP_ADDR=:8080
+AGENT_HEARTBEAT_INTERVAL=10
+AGENT_TASK_POLL_INTERVAL=5
+AGENT_MAX_CONCURRENT_TASKS=5
+
+# Agent 配置 (Agent-Server 模式)
+AGENT_MODE=agent-server
+AGENT_AGENT_SERVER_URL=ws://localhost:8080
+AGENT_TOKEN=your-agent-token
+AGENT_NAME=agent-01
+AGENT_HTTP_ADDR=:8080
+AGENT_HEARTBEAT_INTERVAL=10
+
+# Agent-Server 配置
+AGENT_SERVER_HOST=0.0.0.0
+AGENT_SERVER_PORT=8080
+AGENT_SERVER_CONTROL_PLANE_URL=http://localhost:8000
+AGENT_SERVER_CONTROL_PLANE_TOKEN=your-token
+AGENT_SERVER_MAX_CONNECTIONS=1000
+AGENT_SERVER_HEARTBEAT_TIMEOUT=60
+AGENT_SERVER_TASK_POLL_INTERVAL=5
 ```
 
 ### 功能开关
@@ -377,6 +476,34 @@ ops-job/
 │   ├── dashboard/           # 仪表盘模块
 │   ├── permissions/         # 权限管理模块
 │   └── system_config/       # 系统配置模块
+├── agent/                     # Agent 相关代码
+│   ├── agent-go/            # Go Agent 实现
+│   │   ├── cmd/             # 命令行入口
+│   │   ├── internal/        # 内部包
+│   │   │   ├── api/        # API 类型定义
+│   │   │   ├── config/     # 配置管理
+│   │   │   ├── core/       # Agent 核心逻辑
+│   │   │   ├── errors/     # 错误码体系
+│   │   │   ├── executor/   # 任务执行器
+│   │   │   ├── httpclient/ # HTTP 客户端
+│   │   │   ├── logger/     # 日志系统
+│   │   │   ├── metrics/    # 性能指标
+│   │   │   ├── resource/   # 资源限制
+│   │   │   ├── server/     # 本地 HTTP 服务
+│   │   │   ├── system/     # 系统信息收集
+│   │   │   └── websocket/  # WebSocket 客户端
+│   │   └── configs/        # 配置文件示例
+│   └── agent-server-go/    # Agent-Server 实现
+│       ├── cmd/             # 命令行入口
+│       ├── internal/        # 内部包
+│       │   ├── agent/       # Agent 连接管理
+│       │   ├── config/     # 配置管理
+│       │   ├── controlplane/ # 控制面客户端
+│       │   ├── logger/     # 日志系统
+│       │   ├── server/     # HTTP/WebSocket 服务器
+│       │   └── task/       # 任务分发器
+│       └── pkg/            # 公共包
+│           └── api/        # API 类型定义
 ├── frontend/                 # 前端 Vue 应用
 │   ├── src/
 │   │   ├── views/           # 页面组件
@@ -592,6 +719,104 @@ GET /api/executor/execution-records/{id}/
 GET /api/dashboard/stats/
 ```
 
+## 🤖 Agent 使用指南
+
+### Agent 连接模式
+
+#### Direct 模式（直连控制面）
+
+适用于 Agent 和控制面在同一网络环境，可以直接访问的场景。
+
+**配置示例** (`agent/agent-go/configs/config.yaml`):
+```yaml
+mode: "direct"
+control_plane_url: "http://localhost:8000"
+agent_token: "your-token"
+agent_name: "agent-01"
+http_addr: ":8080"
+heartbeat_interval: 10
+task_poll_interval: 5
+max_concurrent_tasks: 5
+```
+
+**特点**:
+- Agent 直接通过 HTTP 与控制面通信
+- 使用轮询方式拉取任务（默认 5 秒间隔）
+- 日志通过 HTTP 批量推送到控制面
+- 适合内网环境或 VPN 连接
+
+#### Agent-Server 模式（通过 Agent-Server）
+
+适用于跨云、跨网络、NAT 等复杂网络环境。
+
+**配置示例** (`agent/agent-go/configs/config.yaml`):
+```yaml
+mode: "agent-server"
+agent_server_url: "ws://agent-server.example.com:8080"
+agent_token: "your-token"
+agent_name: "agent-01"
+http_addr: ":8080"
+heartbeat_interval: 10
+```
+
+**特点**:
+- Agent 通过 WebSocket 连接到 Agent-Server
+- Agent-Server 从控制面拉取任务并推送给 Agent（实时）
+- Agent-Server 批量聚合日志并推送到控制面
+- 支持跨云、跨网络部署
+- 减少控制面连接压力
+
+### Agent-Server 部署
+
+**配置示例** (`agent/agent-server-go/configs/config.yaml`):
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+control_plane:
+  url: "http://localhost:8000"
+  token: "your-token"
+  timeout: 30s
+  task_poll_interval: 5s
+  forward_heartbeat: true
+
+agent:
+  max_connections: 1000
+  heartbeat_timeout: 60s
+  cleanup_interval: 30s
+
+logging:
+  level: "info"
+  file: "logs/agent-server.log"
+```
+
+### Agent 功能特性
+
+- **脚本执行**: 支持 Shell、Python、PowerShell 等脚本执行
+- **文件传输**: 支持文件上传和下载，支持带宽限制
+- **实时日志**: 实时日志推送和查看
+- **系统监控**: 自动收集和上报系统资源使用情况
+- **性能指标**: 内置性能监控和指标收集
+- **错误处理**: 统一的错误码体系
+- **资源限制**: 支持带宽、CPU、内存限制
+- **并发控制**: 可配置的最大并发任务数
+
+### Agent 本地 HTTP 服务
+
+Agent 提供本地 HTTP 服务，可用于健康检查、指标查询等：
+
+```bash
+# 健康检查
+curl http://localhost:8080/health
+
+# 查询性能指标
+curl http://localhost:8080/metrics
+
+# 查询系统信息
+curl http://localhost:8080/system
+```
+
 ## 🔧 故障排查
 
 ### 常见问题
@@ -662,6 +887,41 @@ curl -N -H "Accept: text/event-stream" http://localhost:8000/api/realtime/sse/co
 python manage.py shell -c "from utils.realtime_logs import realtime_log_service; print(realtime_log_service.redis_client.ping())"
 ```
 
+**6. Agent 连接问题**
+
+```bash
+# 检查 Agent 状态
+curl http://localhost:8080/health
+
+# 查看 Agent 日志
+tail -f agent/agent-go/logs/agent.log
+
+# 检查 Agent 配置
+cat agent/agent-go/configs/config.yaml
+
+# 测试控制面连接 (Direct 模式)
+curl -H "Authorization: Bearer your-token" http://localhost:8000/api/agents/register/
+
+# 测试 Agent-Server 连接 (Agent-Server 模式)
+curl http://agent-server:8080/health
+```
+
+**7. Agent-Server 问题**
+
+```bash
+# 检查 Agent-Server 状态
+curl http://localhost:8080/health
+
+# 查看 Agent-Server 日志
+tail -f agent/agent-server-go/logs/agent-server.log
+
+# 查看连接的 Agent 列表
+curl http://localhost:8080/api/agents
+
+# 检查控制面连接
+curl -H "Authorization: Bearer your-token" http://localhost:8000/api/agents/register/
+```
+
 ### 监控指标
 
 - 系统资源使用率 (CPU、内存、磁盘)
@@ -672,6 +932,9 @@ python manage.py shell -c "from utils.realtime_logs import realtime_log_service;
 - 前端页面加载性能
 - SSE 连接数和实时日志推送性能
 - Redis Stream 数据量和处理延迟
+- Agent 连接数和任务执行性能
+- Agent-Server 连接数和消息处理延迟
+- WebSocket 连接稳定性和重连次数
 
 ## 🤝 贡献指南
 
