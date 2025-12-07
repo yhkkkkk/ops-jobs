@@ -721,8 +721,33 @@
               </a-button>
             </template>
           </a-upload>
-          <div v-if="importFileList.length > 0" class="selected-file">
-            已选择：{{ importFileList[0].name }}
+          <!-- 自定义文件列表，包含删除按钮 -->
+          <div v-if="importFileList.length > 0" class="custom-import-file-list">
+            <div
+              v-for="(fileItem, index) in importFileList"
+              :key="fileItem.uid || index"
+              class="custom-import-file-item"
+            >
+              <div class="import-file-info">
+                <icon-file class="import-file-icon" />
+                <div class="import-file-details">
+                  <div class="import-file-name">{{ fileItem.name }}</div>
+                  <div class="import-file-size">{{ formatFileSize(fileItem.file?.size || 0) }}</div>
+                </div>
+              </div>
+              <div class="import-file-actions">
+                <a-button
+                  type="text"
+                  size="small"
+                  @click="handleImportFileRemove"
+                  class="import-remove-btn"
+                >
+                  <template #icon>
+                    <icon-close />
+                  </template>
+                </a-button>
+              </div>
+            </div>
           </div>
         </a-form-item>
 
@@ -1470,6 +1495,17 @@ const closeImportModal = () => {
   if (importing.value) return
   importModalVisible.value = false
   resetImportState()
+}
+
+// 文件大小格式化函数
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 const handleImportFileChange = (files: any[]) => {
@@ -2513,5 +2549,62 @@ onMounted(async () => {
 
 .ip-display :deep(.arco-typography-copy) {
   margin-left: 4px;
+}
+
+/* 导入文件列表样式 */
+.custom-import-file-list {
+  margin-top: 12px;
+}
+
+.custom-import-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background-color: var(--color-fill-1);
+}
+
+.import-file-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.import-file-icon {
+  font-size: 16px;
+  color: var(--color-text-3);
+  margin-right: 8px;
+}
+
+.import-file-details {
+  flex: 1;
+}
+
+.import-file-name {
+  font-size: 14px;
+  color: var(--color-text-1);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.import-file-size {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.import-file-actions {
+  display: flex;
+  align-items: center;
+}
+
+.import-remove-btn {
+  color: var(--color-text-3);
+  transition: color 0.3s;
+}
+
+.import-remove-btn:hover {
+  color: var(--color-danger-6);
 }
 </style>
