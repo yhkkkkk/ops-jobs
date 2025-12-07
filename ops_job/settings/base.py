@@ -233,6 +233,96 @@ AUTHENTICATION_BACKENDS = [
     'guardian.backends.ObjectPermissionBackend',  # Guardian对象级权限后端
 ]
 
+# LDAP 认证配置
+LDAP_ENABLED = os.getenv('LDAP_ENABLED', 'False').lower() == 'true'
+
+if LDAP_ENABLED:
+    import ldap
+    from django_auth_ldap.config import LDAPSearch, GroupOfUniqueNamesType
+
+    # 添加 LDAP backend 到认证后端列表
+    axes_backend_index = AUTHENTICATION_BACKENDS.index('axes.backends.AxesStandaloneBackend')
+    AUTHENTICATION_BACKENDS.insert(axes_backend_index + 1, 'django_auth_ldap.backend.LDAPBackend')
+    
+    # LDAP 服务器配置
+    AUTH_LDAP_SERVER_URI = os.getenv('LDAP_SERVER_URI', 'ldap://localhost:389')
+    
+    # LDAP 绑定配置（用于搜索用户）
+    AUTH_LDAP_BIND_DN = os.getenv('LDAP_BIND_DN', '')
+    AUTH_LDAP_BIND_PASSWORD = os.getenv('LDAP_BIND_PASSWORD', '')
+    
+    # LDAP 基础配置
+    AUTH_LDAP_USER_SEARCH = LDAPSearch(
+        os.getenv('LDAP_USER_SEARCH_BASE', 'ou=users,dc=example,dc=com'),
+        ldap.SCOPE_SUBTREE,
+        os.getenv('LDAP_USER_SEARCH_FILTER', '(uid=%(user)s)')
+    )
+    
+    # 用户DN模板（如果使用固定模板而不是搜索）
+    # AUTH_LDAP_USER_DN_TEMPLATE = os.getenv('LDAP_USER_DN_TEMPLATE', 'uid=%(user)s,ou=users,dc=example,dc=com')
+    
+    # 用户属性映射
+    AUTH_LDAP_USER_ATTR_MAP = {
+        'first_name': os.getenv('LDAP_ATTR_FIRST_NAME', 'givenName'),
+        'last_name': os.getenv('LDAP_ATTR_LAST_NAME', 'sn'),
+        'email': os.getenv('LDAP_ATTR_EMAIL', 'mail'),
+    }
+    
+    # LDAP 连接选项
+    AUTH_LDAP_CONNECTION_OPTIONS = {
+        ldap.OPT_REFERRALS: 0,
+        ldap.OPT_PROTOCOL_VERSION: 3,
+    }
+    
+    # 如果启用 TLS
+    if os.getenv('LDAP_START_TLS', 'False').lower() == 'true':
+        AUTH_LDAP_START_TLS = True
+    
+    # 组配置（可选）
+    if os.getenv('LDAP_REQUIRE_GROUP', ''):
+        AUTH_LDAP_REQUIRE_GROUP = os.getenv('LDAP_REQUIRE_GROUP')
+        AUTH_LDAP_GROUP_SEARCH = LDAPSearch(
+            os.getenv('LDAP_GROUP_SEARCH_BASE', 'ou=groups,dc=example,dc=com'),
+            ldap.SCOPE_SUBTREE,
+            os.getenv('LDAP_GROUP_SEARCH_FILTER', '(objectClass=groupOfNames)')
+        )
+        AUTH_LDAP_GROUP_TYPE = GroupOfUniqueNamesType()
+        AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+            'is_active': os.getenv('LDAP_GROUP_ACTIVE', ''),
+            'is_staff': os.getenv('LDAP_GROUP_STAFF', ''),
+            'is_superuser': os.getenv('LDAP_GROUP_SUPERUSER', ''),
+        }
+    
+    # 用户同步配置
+    # 如果设置为True，则Django将为用户创建本地账户，即使用户之前未在Django中创建过账户
+    AUTH_LDAP_ALWAYS_UPDATE_USER = True  # 每次登录时同步用户信息
+    AUTH_LDAP_USER_ATTRLIST_BY_GROUP = {}
+    
+    # 缓存配置（可选，提升性能）
+    # AUTH_LDAP_CACHE_TIMEOUT = 3600
+
+# 双因子认证（2FA）配置
+TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'False').lower() == 'true'
+
+if TWO_FACTOR_ENABLED:
+    # 添加 2FA 应用到 INSTALLED_APPS
+    # 使用 django-two-factor-auth 提供更完整的功能（备份码、设备管理等）
+    # 注意：我们仍然在登录序列化器中手动验证OTP，所以不需要添加认证后端
+    INSTALLED_APPS.extend([
+        'django_otp',                        # OTP支持（two_factor的依赖）
+        'django_otp.plugins.otp_totp',       # TOTP插件（基于时间的一次性密码）
+        'django_otp.plugins.otp_static',     # 静态令牌（备份码）支持
+        'two_factor',                        # 完整的2FA支持（提供更多功能）
+    ])
+    
+    # 添加 OTP 中间件（必须在 AuthenticationMiddleware 之后）
+    auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
+    MIDDLEWARE.insert(auth_middleware_index + 1, 'django_otp.middleware.OTPMiddleware')
+    
+    # OTP 配置
+    OTP_TOTP_ISSUER = os.getenv('OTP_TOTP_ISSUER', 'OPS Job Platform')  # 在认证器应用中显示的名称
+    OTP_LOGIN_URL = '/api/accounts/login/'  # 登录URL
+
 AXES_ENABLED = True
 AXES_FAILURE_LIMIT = 5  # 允许的最大失败次数
 AXES_LOCK_OUT_AT_FAILURE = True  # 达到限制后锁定

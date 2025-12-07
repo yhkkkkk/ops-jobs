@@ -27,7 +27,13 @@ const showUniqueErrorMessage = (message: string, type: 'error' | 'warning' = 'er
   }
 }
 
-
+// 判断是否是公共接口（不需要认证的接口）
+const isPublicEndpoint = (url?: string): boolean => {
+  if (!url) return false
+  return url.includes('/auth/login/') ||
+         url.includes('/auth/users/auth_config/') ||
+         url.includes('/captcha/')
+}
 
 // 创建axios实例
 const request: AxiosInstance = axios.create({
@@ -39,18 +45,14 @@ const request: AxiosInstance = axios.create({
   },
 })
 
-
-
 // 请求拦截器
 request.interceptors.request.use(
   async (config) => {
     const authStore = useAuthStore()
 
-    // 添加认证jwt token
-    if (authStore.token) {
+    // 添加认证jwt token（仅对需要认证的接口）
+    if (!isPublicEndpoint(config.url) && authStore.token) {
       config.headers.Authorization = `Bearer ${authStore.token}`
-    } else {
-      console.warn('请求时没有找到认证token:', config.url)
     }
 
     return config
@@ -91,6 +93,16 @@ request.interceptors.response.use(
       
       switch (status) {
         case 401:
+          // 如果是公共认证接口，直接返回错误，不触发跳转
+          if (isPublicEndpoint(error.config?.url)) {
+            return Promise.reject(error)
+          }
+          
+          // 如果当前在登录页面，不触发跳转逻辑
+          if (window.location.pathname === '/login') {
+            return Promise.reject(error)
+          }
+          
           // 如果是刷新token失败，提供更详细的错误信息
           if (isRefreshTokenRequest) {
             if (data?.detail) {

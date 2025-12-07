@@ -543,11 +543,15 @@
           <div class="ip-address-cell">
             <div v-if="record.internal_ip" class="ip-display">
               <span class="ip-label">内网:</span>
-              <span>{{ record.internal_ip }}</span>
+              <a-typography-text :copyable="{ text: record.internal_ip }" style="font-size: 12px;">
+                {{ record.internal_ip }}
+              </a-typography-text>
             </div>
             <div v-if="record.public_ip" class="ip-display">
               <span class="ip-label">外网:</span>
-              <span>{{ record.public_ip }}</span>
+              <a-typography-text :copyable="{ text: record.public_ip }" style="font-size: 12px;">
+                {{ record.public_ip }}
+              </a-typography-text>
             </div>
             <span v-if="!record.internal_ip && !record.public_ip" class="text-gray-400">--</span>
           </div>
@@ -1107,55 +1111,75 @@ const columns = [
     title: '主机名',
     dataIndex: 'name',
     key: 'name',
+    width: 150,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: 'IP地址',
     dataIndex: 'ip_address',
     key: 'ip_address',
     slotName: 'ip_address',
+    width: 150,
   },
   {
     title: '端口',
     dataIndex: 'port',
     key: 'port',
+    width: 80,
+    align: 'center',
   },
   {
     title: '操作系统',
     dataIndex: 'os_type',
     key: 'os_type',
     slotName: 'os_type',
+    width: 120,
+    align: 'center',
   },
   {
     title: '服务器账号',
     dataIndex: 'account_info',
     key: 'account',
     slotName: 'account',
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: '状态',
     dataIndex: 'status',
     key: 'status',
     slotName: 'status',
+    width: 100,
+    align: 'center',
   },
   {
     title: '所属分组',
     dataIndex: 'groups_info',
     key: 'groups_info',
     slotName: 'groups',
+    width: 150,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: '云厂商',
     dataIndex: 'cloud_provider_display',
     key: 'cloud_provider_display',
     slotName: 'cloud_provider',
+    width: 100,
+    align: 'center',
   },
   {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
+    width: 300,
+    fixed: 'right',
+    align: 'center',
   },
 ]
-
 
 
 // 获取主机列表
@@ -2072,18 +2096,9 @@ onMounted(async () => {
 
 /* 表格样式优化 */
 :deep(.arco-table) {
+  /* 普通表头背景色 */
   .arco-table-th {
     background-color: #fff !important;
-    font-weight: 600;
-  }
-
-  /* 固定列样式优化 - 不使用!important避免影响动态样式 */
-  .arco-table-col-fixed-right .arco-table-td {
-    background-color: inherit;
-  }
-
-  .arco-table-col-fixed-right .arco-table-cell {
-    background-color: inherit;
   }
 }
 
@@ -2486,5 +2501,17 @@ onMounted(async () => {
 .ip-label {
   color: #86909c;
   font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* IP地址复制按钮样式优化 */
+.ip-display :deep(.arco-typography) {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ip-display :deep(.arco-typography-copy) {
+  margin-left: 4px;
 }
 </style>

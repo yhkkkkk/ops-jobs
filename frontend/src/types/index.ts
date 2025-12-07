@@ -26,10 +26,21 @@ export interface User {
   profile: any
 }
 
+// 认证配置类型
+export interface AuthConfig {
+  captcha_enabled: boolean
+  ldap_enabled: boolean
+  two_factor_enabled: boolean
+}
+
 // 登录相关类型
 export interface LoginParams {
   username: string
   password: string
+  captcha_key?: string
+  captcha_value?: string
+  otp_token?: string
+  remember?: boolean
 }
 
 export interface LoginResult {
