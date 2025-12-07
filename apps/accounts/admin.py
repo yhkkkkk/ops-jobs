@@ -81,6 +81,13 @@ admin.site.register(User, UserAdmin)
 
 # 注册2FA相关模型到admin
 if TWO_FACTOR_ENABLED:
+    # 设置模型的中文名称
+    TOTPDevice._meta.verbose_name = 'TOTP设备'
+    TOTPDevice._meta.verbose_name_plural = 'TOTP设备'
+    
+    StaticDevice._meta.verbose_name = '静态备份令牌设备'
+    StaticDevice._meta.verbose_name_plural = '静态备份令牌设备'
+    
     @admin.register(TOTPDevice)
     class TOTPDeviceAdmin(admin.ModelAdmin):
         """TOTP设备管理"""
@@ -89,6 +96,16 @@ if TWO_FACTOR_ENABLED:
         search_fields = ['user__username', 'user__email', 'name']
         readonly_fields = ['key', 'qr_code_display', 'config_url_display', 'secret_display', 'created_at', 'last_used_at']
         raw_id_fields = ['user']
+        
+        def __init__(self, model, admin_site):
+            super().__init__(model, admin_site)
+            # 设置字段的中文显示名称
+            self.model._meta.get_field('user').verbose_name = '用户'
+            self.model._meta.get_field('name').verbose_name = '设备名称'
+            self.model._meta.get_field('key').verbose_name = '密钥'
+            self.model._meta.get_field('confirmed').verbose_name = '已确认'
+            self.model._meta.get_field('created_at').verbose_name = '创建时间'
+            self.model._meta.get_field('last_used_at').verbose_name = '最后使用时间'
         
         fieldsets = (
             ('基本信息', {
@@ -238,6 +255,13 @@ if TWO_FACTOR_ENABLED:
         readonly_fields = ['created_at']
         raw_id_fields = ['user']
         
+        def __init__(self, model, admin_site):
+            super().__init__(model, admin_site)
+            # 设置字段的中文显示名称
+            self.model._meta.get_field('user').verbose_name = '用户'
+            self.model._meta.get_field('name').verbose_name = '设备名称'
+            self.model._meta.get_field('created_at').verbose_name = '创建时间'
+        
         fieldsets = (
             ('基本信息', {
                 'fields': ('user', 'name')
@@ -251,3 +275,11 @@ if TWO_FACTOR_ENABLED:
         def has_add_permission(self, request):
             """禁止在admin中直接添加，应该通过API设置"""
             return False
+        
+        def has_change_permission(self, request, obj=None):
+            """允许编辑已有的静态备份令牌设备"""
+            return True
+        
+        def has_delete_permission(self, request, obj=None):
+            """允许删除静态备份令牌设备"""
+            return True

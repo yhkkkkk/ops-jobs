@@ -9,7 +9,6 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework_extensions.cache.mixins import CacheResponseMixin
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, logout, login
@@ -21,7 +20,6 @@ from .serializers import (
     UserSerializer,
     UserRegistrationSerializer,
     UserUpdateSerializer,
-    ChangePasswordSerializer,
     CustomTokenObtainPairSerializer
 )
 from .utils import get_user_profile_data
