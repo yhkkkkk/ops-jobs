@@ -272,6 +272,18 @@ class ContentTypeAdmin(admin.ModelAdmin):
         """允许所有已登录用户访问模块"""
         return request.user.is_authenticated
     
+    def has_add_permission(self, request):
+        """禁止在admin中直接添加内容类型"""
+        return False
+        
+    def has_change_permission(self, request, obj=None):
+        """允许编辑已有的内容类型"""
+        return False
+        
+    def has_delete_permission(self, request, obj=None):
+        """允许删除已有的内容类型"""
+        return False
+    
     def get_queryset(self, request):
         """优化查询，添加排序以避免警告"""
         return super().get_queryset(request).order_by('app_label', 'model')
