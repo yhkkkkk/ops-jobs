@@ -1,0 +1,31 @@
+# Agent-Server 配置文件示例
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+control_plane:
+  url: "https://control-plane.example.com"
+  token: "server-auth-token"
+  timeout: 30s
+
+agent:
+  heartbeat_timeout: 60s
+  max_connections: 1000
+  task_queue_size: 100
+
+logging:
+  level: "info"
+  dir: "/var/log/agent-server"
+  max_size: 100  # MB
+  max_files: 10
+  max_age: 7     # days
+
+redis:
+  enabled: false
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+

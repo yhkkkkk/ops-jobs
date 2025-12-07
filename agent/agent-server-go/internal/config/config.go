@@ -1,0 +1,116 @@
+package config
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+// Config Agent-Server 配置
+type Config struct {
+	Server       ServerConfig       `mapstructure:"server"`
+	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
+	Agent        AgentConfig        `mapstructure:"agent"`
+	Logging      LoggingConfig      `mapstructure:"logging"`
+	Redis        RedisConfig        `mapstructure:"redis"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	Host         string        `mapstructure:"host"`
+	Port         int           `mapstructure:"port"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+}
+
+// ControlPlaneConfig 控制面配置
+type ControlPlaneConfig struct {
+	URL     string        `mapstructure:"url"`
+	Token   string        `mapstructure:"token"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// AgentConfig Agent 配置
+type AgentConfig struct {
+	HeartbeatTimeout time.Duration `mapstructure:"heartbeat_timeout"`
+	MaxConnections   int           `mapstructure:"max_connections"`
+	TaskQueueSize    int           `mapstructure:"task_queue_size"`
+}
+
+// LoggingConfig 日志配置
+type LoggingConfig struct {
+	Level    string `mapstructure:"level"`
+	Dir      string `mapstructure:"dir"`
+	MaxSize  int    `mapstructure:"max_size"`  // MB
+	MaxFiles int    `mapstructure:"max_files"`
+	MaxAge   int    `mapstructure:"max_age"`   // days
+}
+
+// RedisConfig Redis 配置
+type RedisConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+}
+
+// Load 加载配置
+func Load() (*Config, error) {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("./configs")
+	viper.AddConfigPath("/etc/agent-server")
+
+	// 设置默认值
+	setDefaults()
+
+	// 读取环境变量
+	viper.SetEnvPrefix("AGENT_SERVER")
+	viper.AutomaticEnv()
+
+	// 读取配置文件
+	if err := viper.ReadInConfig(); err != nil {
+		// 配置文件不存在时使用默认值
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, fmt.Errorf("read config file: %w", err)
+		}
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+func setDefaults() {
+	// Server 默认值
+	viper.SetDefault("server.host", "0.0.0.0")
+	viper.SetDefault("server.port", 8080)
+	viper.SetDefault("server.read_timeout", "30s")
+	viper.SetDefault("server.write_timeout", "30s")
+
+	// ControlPlane 默认值
+	viper.SetDefault("control_plane.timeout", "30s")
+
+	// Agent 默认值
+	viper.SetDefault("agent.heartbeat_timeout", "60s")
+	viper.SetDefault("agent.max_connections", 1000)
+	viper.SetDefault("agent.task_queue_size", 100)
+
+	// Logging 默认值
+	viper.SetDefault("logging.level", "info")
+	viper.SetDefault("logging.dir", "/var/log/agent-server")
+	viper.SetDefault("logging.max_size", 100)
+	viper.SetDefault("logging.max_files", 10)
+	viper.SetDefault("logging.max_age", 7)
+
+	// Redis 默认值
+	viper.SetDefault("redis.enabled", false)
+	viper.SetDefault("redis.addr", "localhost:6379")
+	viper.SetDefault("redis.db", 0)
+}
+
