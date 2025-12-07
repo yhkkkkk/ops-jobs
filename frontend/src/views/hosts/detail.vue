@@ -74,12 +74,18 @@
             </span>
           </div>
           <div class="info-item">
-            <span class="label">用户名：</span>
-            <span class="value">{{ hostDetail.username }}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">认证方式：</span>
-            <span class="value">{{ hostDetail.auth_type === 'password' ? '密码认证' : '密钥认证' }}</span>
+            <span class="label">服务器账号：</span>
+            <span class="value">
+              <div v-if="hostDetail.account_info">
+                <a-tag color="blue" size="small">
+                  {{ hostDetail.account_info.name }}
+                </a-tag>
+                <div class="text-gray-500" style="font-size: 12px; margin-top: 4px;">
+                  {{ hostDetail.account_info.username }}
+                </div>
+              </div>
+              <span v-else class="text-gray-500">未配置</span>
+            </span>
           </div>
           <div class="info-item">
             <span class="label">状态：</span>
