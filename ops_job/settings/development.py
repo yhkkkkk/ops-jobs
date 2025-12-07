@@ -147,6 +147,12 @@ CSRF_COOKIE_HTTPONLY = False  # CSRF token需要JavaScript访问，不能设为T
 CSRF_COOKIE_SAMESITE = 'Lax'  # 与Session保持一致
 CSRF_COOKIE_AGE = None  # None表示会话Cookie（浏览器关闭时删除）
 CSRF_USE_SESSIONS = False  # 不使用Session存储CSRF token，使用Cookie
+# CSRF 信任的源 - 开发环境允许前端开发服务器
+CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1:5173',  # Vite 开发服务器
+    'http://localhost:5173',
+]
+
 
 # CORS 配置 - 开发环境允许所有来源
 CORS_ALLOW_ALL_ORIGINS = True
@@ -193,7 +199,7 @@ LOGGING['loggers']['django']['level'] = 'INFO'
 AXES_ENABLED = False  # 开发环境禁用登录限制
 
 # 开发环境验证码配置
-CAPTCHA_ENABLED = False  # 开发环境禁用验证码
+CAPTCHA_ENABLED = True  # 开发环境禁用验证码
 
 # 开发环境调试工具
 if DEBUG:

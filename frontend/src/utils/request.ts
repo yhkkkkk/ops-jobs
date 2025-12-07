@@ -27,7 +27,13 @@ const showUniqueErrorMessage = (message: string, type: 'error' | 'warning' = 'er
   }
 }
 
-
+// 判断是否是公共接口（不需要认证的接口）
+const isPublicEndpoint = (url?: string): boolean => {
+  if (!url) return false
+  return url.includes('/auth/login/') ||
+         url.includes('/auth/users/auth_config/') ||
+         url.includes('/captcha/')
+}
 
 // 创建axios实例
 const request: AxiosInstance = axios.create({
@@ -39,18 +45,14 @@ const request: AxiosInstance = axios.create({
   },
 })
 
-
-
 // 请求拦截器
 request.interceptors.request.use(
   async (config) => {
     const authStore = useAuthStore()
 
-    // 添加认证jwt token
-    if (authStore.token) {
+    // 添加认证jwt token（仅对需要认证的接口）
+    if (!isPublicEndpoint(config.url) && authStore.token) {
       config.headers.Authorization = `Bearer ${authStore.token}`
-    } else {
-      console.warn('请求时没有找到认证token:', config.url)
     }
 
     return config
@@ -85,12 +87,22 @@ request.interceptors.response.use(
 
     if (error.response) {
       const { status, data } = error.response
-      
+
       // 检查是否是刷新token的请求
       const isRefreshTokenRequest = error.config?.url?.includes('/auth/refresh/')
-      
+
       switch (status) {
         case 401:
+          // 如果是公共认证接口，直接返回错误，不触发跳转
+          if (isPublicEndpoint(error.config?.url)) {
+            return Promise.reject(error)
+          }
+
+          // 如果当前在登录页面，不触发跳转逻辑
+          if (window.location.pathname === '/login') {
+            return Promise.reject(error)
+          }
+
           // 如果是刷新token失败，提供更详细的错误信息
           if (isRefreshTokenRequest) {
             if (data?.detail) {
@@ -101,32 +113,32 @@ request.interceptors.response.use(
               return Promise.reject(new Error('Token已过期或无效，请重新登录'))
             }
           }
-          
+
           // 尝试自动刷新token
           const authStore = useAuthStore()
           if (authStore.refreshToken && !isRedirecting) {
             isRedirecting = true
-            
+
             try {
               console.log('API请求401错误，尝试自动刷新token...')
               const newToken = await authStore.refreshAccessToken()
               console.log('token刷新成功，重试原请求')
-              
+
               // 更新请求头并重试原请求
               if (error.config) {
                 error.config.headers.Authorization = `Bearer ${newToken}`
                 isRedirecting = false
                 return request(error.config)  // 重试原请求
               }
-              
+
               isRedirecting = false
               return Promise.reject(error)
             } catch (refreshError) {
               console.warn('自动刷新token失败:', refreshError)
-              
+
               // 刷新失败，显示错误信息并跳转登录页面
               showUniqueErrorMessage('登录已过期，正在跳转到登录页面...', 'warning')
-              
+
               authStore.logout().then(() => {
                 // 跳转到登录页面，保存当前路径用于登录后重定向
                 const currentPath = window.location.pathname + window.location.search
@@ -144,7 +156,7 @@ request.interceptors.response.use(
             // 没有refresh token或已经在处理中，直接跳转登录
             isRedirecting = true
             showUniqueErrorMessage('登录已过期，正在跳转到登录页面...', 'warning')
-            
+
             authStore.logout().then(() => {
               const currentPath = window.location.pathname + window.location.search
               if (currentPath !== '/login') {
@@ -184,7 +196,7 @@ request.interceptors.response.use(
       showUniqueErrorMessage(errorMsg)
       return Promise.reject(new Error(errorMsg))
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -194,19 +206,19 @@ export const http = {
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return request.get(url, config)
   },
-  
+
   post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     return request.post(url, data, config)
   },
-  
+
   put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     return request.put(url, data, config)
   },
-  
+
   patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     return request.patch(url, data, config)
   },
-  
+
   delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return request.delete(url, config)
   },

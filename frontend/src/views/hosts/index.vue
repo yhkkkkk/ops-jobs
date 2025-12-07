@@ -543,11 +543,15 @@
           <div class="ip-address-cell">
             <div v-if="record.internal_ip" class="ip-display">
               <span class="ip-label">内网:</span>
-              <span>{{ record.internal_ip }}</span>
+              <a-typography-text :copyable="{ text: record.internal_ip }" style="font-size: 12px;">
+                {{ record.internal_ip }}
+              </a-typography-text>
             </div>
             <div v-if="record.public_ip" class="ip-display">
               <span class="ip-label">外网:</span>
-              <span>{{ record.public_ip }}</span>
+              <a-typography-text :copyable="{ text: record.public_ip }" style="font-size: 12px;">
+                {{ record.public_ip }}
+              </a-typography-text>
             </div>
             <span v-if="!record.internal_ip && !record.public_ip" class="text-gray-400">--</span>
           </div>
@@ -717,8 +721,33 @@
               </a-button>
             </template>
           </a-upload>
-          <div v-if="importFileList.length > 0" class="selected-file">
-            已选择：{{ importFileList[0].name }}
+          <!-- 自定义文件列表，包含删除按钮 -->
+          <div v-if="importFileList.length > 0" class="custom-import-file-list">
+            <div
+              v-for="(fileItem, index) in importFileList"
+              :key="fileItem.uid || index"
+              class="custom-import-file-item"
+            >
+              <div class="import-file-info">
+                <icon-file class="import-file-icon" />
+                <div class="import-file-details">
+                  <div class="import-file-name">{{ fileItem.name }}</div>
+                  <div class="import-file-size">{{ formatFileSize(fileItem.file?.size || 0) }}</div>
+                </div>
+              </div>
+              <div class="import-file-actions">
+                <a-button
+                  type="text"
+                  size="small"
+                  @click="handleImportFileRemove"
+                  class="import-remove-btn"
+                >
+                  <template #icon>
+                    <icon-close />
+                  </template>
+                </a-button>
+              </div>
+            </div>
           </div>
         </a-form-item>
 
@@ -1107,55 +1136,75 @@ const columns = [
     title: '主机名',
     dataIndex: 'name',
     key: 'name',
+    width: 150,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: 'IP地址',
     dataIndex: 'ip_address',
     key: 'ip_address',
     slotName: 'ip_address',
+    width: 150,
   },
   {
     title: '端口',
     dataIndex: 'port',
     key: 'port',
+    width: 80,
+    align: 'center',
   },
   {
     title: '操作系统',
     dataIndex: 'os_type',
     key: 'os_type',
     slotName: 'os_type',
+    width: 120,
+    align: 'center',
   },
   {
     title: '服务器账号',
     dataIndex: 'account_info',
     key: 'account',
     slotName: 'account',
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: '状态',
     dataIndex: 'status',
     key: 'status',
     slotName: 'status',
+    width: 100,
+    align: 'center',
   },
   {
     title: '所属分组',
     dataIndex: 'groups_info',
     key: 'groups_info',
     slotName: 'groups',
+    width: 150,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: '云厂商',
     dataIndex: 'cloud_provider_display',
     key: 'cloud_provider_display',
     slotName: 'cloud_provider',
+    width: 100,
+    align: 'center',
   },
   {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
+    width: 300,
+    fixed: 'right',
+    align: 'center',
   },
 ]
-
 
 
 // 获取主机列表
@@ -1423,7 +1472,7 @@ const handleDelete = async (record: Host) => {
         fetchHosts()
       }
     })
-    
+
   } catch (error) {
     Message.error('主机删除失败')
     console.error('删除主机失败:', error)
@@ -1446,6 +1495,17 @@ const closeImportModal = () => {
   if (importing.value) return
   importModalVisible.value = false
   resetImportState()
+}
+
+// 文件大小格式化函数
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 const handleImportFileChange = (files: any[]) => {
@@ -2072,18 +2132,9 @@ onMounted(async () => {
 
 /* 表格样式优化 */
 :deep(.arco-table) {
+  /* 普通表头背景色 */
   .arco-table-th {
     background-color: #fff !important;
-    font-weight: 600;
-  }
-
-  /* 固定列样式优化 - 不使用!important避免影响动态样式 */
-  .arco-table-col-fixed-right .arco-table-td {
-    background-color: inherit;
-  }
-
-  .arco-table-col-fixed-right .arco-table-cell {
-    background-color: inherit;
   }
 }
 
@@ -2486,5 +2537,74 @@ onMounted(async () => {
 .ip-label {
   color: #86909c;
   font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* IP地址复制按钮样式优化 */
+.ip-display :deep(.arco-typography) {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ip-display :deep(.arco-typography-copy) {
+  margin-left: 4px;
+}
+
+/* 导入文件列表样式 */
+.custom-import-file-list {
+  margin-top: 12px;
+}
+
+.custom-import-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background-color: var(--color-fill-1);
+}
+
+.import-file-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.import-file-icon {
+  font-size: 16px;
+  color: var(--color-text-3);
+  margin-right: 8px;
+}
+
+.import-file-details {
+  flex: 1;
+}
+
+.import-file-name {
+  font-size: 14px;
+  color: var(--color-text-1);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.import-file-size {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.import-file-actions {
+  display: flex;
+  align-items: center;
+}
+
+.import-remove-btn {
+  color: var(--color-text-3);
+  transition: color 0.3s;
+}
+
+.import-remove-btn:hover {
+  color: var(--color-danger-6);
 }
 </style>

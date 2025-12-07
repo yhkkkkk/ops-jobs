@@ -12,6 +12,12 @@ from utils.captcha_serializers import CaptchaValidationSerializer
 from .models import UserProfile
 from .utils import get_user_profile_data
 
+# 条件导入 2FA 相关模块
+TWO_FACTOR_ENABLED = getattr(settings, 'TWO_FACTOR_ENABLED', False)
+if TWO_FACTOR_ENABLED:
+    from django_otp import devices_for_user
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """用户扩展信息序列化器"""
@@ -150,6 +156,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             self.fields['captcha_key'] = serializers.CharField(required=False, allow_blank=True)  # pyright: ignore[reportIndexIssue]
             self.fields['captcha_value'] = serializers.CharField(required=False, allow_blank=True)  # pyright: ignore[reportIndexIssue]
 
+        # 如果启用2FA，动态添加OTP字段
+        if TWO_FACTOR_ENABLED:
+            self.fields['otp_token'] = serializers.CharField(required=False, allow_blank=True, help_text='双因子认证码')  # pyright: ignore[reportIndexIssue]
+
     def validate(self, attrs):
         # 如果启用验证码，先验证验证码
         captcha_enabled = getattr(settings, 'CAPTCHA_ENABLED', True)
@@ -193,6 +203,38 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if not self.user.is_active:
             raise serializers.ValidationError({
                 'non_field_errors': ['账户已被禁用']
+            })
+
+        # 如果启用2FA，验证OTP码
+        if TWO_FACTOR_ENABLED:
+            otp_token = attrs.get('otp_token', '')
+            # 检查用户是否启用了2FA
+            user_devices = list(devices_for_user(self.user))
+            if user_devices:
+                # 用户已启用2FA，必须提供OTP码
+                if not otp_token:
+                    raise serializers.ValidationError({
+                        'otp_token': ['已启用双因子认证，请输入验证码']
+                    })
+
+                # 验证OTP码
+                verified = False
+                for device in user_devices:
+                    if device.verify_token(otp_token):
+                        verified = True
+                        break
+
+                if not verified:
+                    # 记录登录失败日志
+                    request = self.context.get('request')
+                    if request:
+                        AuditLogService.log_login(
+                            user=self.user,
+                            request=request,
+                            success=False
+                        )
+                    raise serializers.ValidationError({
+                        'otp_token': ['验证码错误']
             })
 
         # 添加用户信息到响应
