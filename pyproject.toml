@@ -53,6 +53,5 @@ dependencies = [
     "django-auth-ldap>=5.0.0",
     "python-ldap @ file:///${PROJECT_ROOT}/wheels/python_ldap-3.4.5-cp312-cp312-win_amd64.whl",
     "django-otp>=1.6.3",
-    "django-two-factor-auth>=1.18.1",
-    "qrcode>=8.2"
+    "qrcode[pil]>=8.2"
 ]

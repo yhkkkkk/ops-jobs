@@ -5,6 +5,26 @@
         <h1>运维作业平台</h1>
       </div>
       
+      <!-- 登录方式选择标签页 -->
+      <a-tabs 
+        v-model:active-key="loginType" 
+        type="line"
+        :justify="true"
+        class="login-tabs"
+        v-if="authConfig.ldap_enabled"
+      >
+        <a-tab-pane key="normal" title="普通登录">
+          <template #title>
+            <span>普通登录</span>
+          </template>
+        </a-tab-pane>
+        <a-tab-pane key="ldap" title="LDAP登录">
+          <template #title>
+            <span>LDAP登录</span>
+          </template>
+        </a-tab-pane>
+      </a-tabs>
+      
       <a-form
         ref="formRef"
         :model="form"
@@ -38,9 +58,9 @@
           </a-input-password>
         </a-form-item>
 
-        <!-- 验证码 -->
+        <!-- 验证码（与2FA互斥，如果启用了2FA则不显示验证码） -->
         <a-form-item 
-          v-if="authConfig.captcha_enabled" 
+          v-if="authConfig.captcha_enabled && !authConfig.two_factor_enabled" 
           field="captcha_value" 
           label="验证码"
         >
@@ -152,6 +172,7 @@ const authConfig = ref<AuthConfig>({
 const captchaImage = ref<string>('')
 const showOtpInput = ref(false)
 const showOtpHelp = ref(false)
+const loginType = ref<'normal' | 'ldap'>('normal')
 
 // 表单数据
 const form = reactive<LoginParams & { remember: boolean }>({
@@ -234,27 +255,49 @@ const refreshCaptcha = async () => {
   }
 }
 
-// 提交登录
+    // 提交登录
 const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
   if (data.errors) return
   
   loading.value = true
   try {
-    // 第一次尝试登录（不包含OTP）
+    // 如果还没有显示OTP输入框，且启用了2FA，先检查用户是否需要2FA
+    if (!showOtpInput.value && authConfig.value.two_factor_enabled) {
+      try {
+        const checkResult = await authApi.check2FARequired({
+          username: form.username,
+          password: form.password,
+        })
+        
+        if (checkResult.requires_2fa) {
+          // 用户启用了2FA，显示OTP输入框
+          showOtpInput.value = true
+          Message.warning('该账户已启用双因子认证，请输入验证码')
+          loading.value = false
+          return
+        }
+      } catch (error: any) {
+        // 如果检查失败（可能是用户名或密码错误），继续尝试登录
+        // 让登录接口返回具体错误信息
+        console.warn('检查2FA状态失败:', error)
+      }
+    }
+
+    // 构建登录数据
     const loginData: LoginParams = {
       username: form.username,
       password: form.password,
       remember: form.remember,
     }
 
-    // 如果启用验证码，添加验证码字段
-    if (authConfig.value.captcha_enabled) {
+    // 验证码和2FA互斥：如果启用了2FA，就不使用验证码
+    if (authConfig.value.captcha_enabled && !authConfig.value.two_factor_enabled) {
       loginData.captcha_key = form.captcha_key
       loginData.captcha_value = form.captcha_value
     }
 
     // 如果显示OTP输入框，添加OTP字段
-    if (showOtpInput.value) {
+    if (showOtpInput.value && authConfig.value.two_factor_enabled) {
       loginData.otp_token = form.otp_token
     }
 
@@ -274,16 +317,13 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
         if (authConfig.value.two_factor_enabled) {
           showOtpInput.value = true
           Message.warning('请输入双因子验证码')
-          // 刷新验证码（如果启用）
-          if (authConfig.value.captcha_enabled) {
-            await refreshCaptcha()
-          }
+          loading.value = false
           return
         }
       }
       
-      // 其他错误，刷新验证码
-      if (authConfig.value.captcha_enabled) {
+      // 其他错误，刷新验证码（仅当启用验证码且未启用2FA时）
+      if (authConfig.value.captcha_enabled && !authConfig.value.two_factor_enabled) {
         await refreshCaptcha()
       }
       throw error
@@ -335,6 +375,10 @@ onMounted(() => {
 .login-header p {
   font-size: 14px;
   color: #86909c;
+}
+
+.login-tabs {
+  margin-bottom: 24px;
 }
 
 .login-options {

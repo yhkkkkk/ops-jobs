@@ -301,27 +301,37 @@ if LDAP_ENABLED:
     # 缓存配置（可选，提升性能）
     # AUTH_LDAP_CACHE_TIMEOUT = 3600
 
-# 双因子认证（2FA）配置
-TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'False').lower() == 'true'
 
+# 双因子认证（2FA）配置
+TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'True').lower() == 'true'
+
+# 双因子认证（2FA/TOTP）配置
 if TWO_FACTOR_ENABLED:
-    # 添加 2FA 应用到 INSTALLED_APPS
-    # 使用 django-two-factor-auth 提供更完整的功能（备份码、设备管理等）
-    # 注意：我们仍然在登录序列化器中手动验证OTP，所以不需要添加认证后端
+    # 添加 django-otp 相关应用
     INSTALLED_APPS.extend([
-        'django_otp',                        # OTP支持（two_factor的依赖）
-        'django_otp.plugins.otp_totp',       # TOTP插件（基于时间的一次性密码）
-        'django_otp.plugins.otp_static',     # 静态令牌（备份码）支持
-        'two_factor',                        # 完整的2FA支持（提供更多功能）
+        'django_otp',
+        'django_otp.plugins.otp_totp',      # TOTP设备支持
+        'django_otp.plugins.otp_static',    # 静态备份令牌支持
     ])
-    
-    # 添加 OTP 中间件（必须在 AuthenticationMiddleware 之后）
+
     auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
     MIDDLEWARE.insert(auth_middleware_index + 1, 'django_otp.middleware.OTPMiddleware')
+
+    # TOTP配置
+    OTP_TOTP_ISSUER = os.getenv('OTP_TOTP_ISSUER', 'Ops Job Platform')  # 在验证器APP中显示的名称
     
-    # OTP 配置
-    OTP_TOTP_ISSUER = os.getenv('OTP_TOTP_ISSUER', 'OPS Job Platform')  # 在认证器应用中显示的名称
-    OTP_LOGIN_URL = '/api/accounts/login/'  # 登录URL
+    # TOTP设备配置
+    OTP_TOTP_THROTTLE_FACTOR = int(os.getenv('OTP_TOTP_THROTTLE_FACTOR', '1'))  # 节流因子，防止暴力破解
+    
+    # 静态备份令牌配置（可选，用于紧急情况）
+    # 如果用户丢失了TOTP设备，可以使用备份令牌登录
+    OTP_STATIC_THROTTLE_FACTOR = int(os.getenv('OTP_STATIC_THROTTLE_FACTOR', '1'))
+    
+    # 是否要求所有用户启用2FA（False表示可选）
+    TWO_FACTOR_REQUIRED = os.getenv('TWO_FACTOR_REQUIRED', 'False').lower() == 'true'
+    
+    # 2FA验证超时时间（秒），0表示不超时
+    TWO_FACTOR_LOGIN_TIMEOUT = int(os.getenv('TWO_FACTOR_LOGIN_TIMEOUT', '600'))  # 默认10分钟
 
 AXES_ENABLED = True
 AXES_FAILURE_LIMIT = 5  # 允许的最大失败次数
@@ -366,7 +376,14 @@ HEALTHCHECK_CELERY_RESULT_TIMEOUT = 5.0
 HEALTHCHECK_CELERY_QUEUE_TIMEOUT = 5.0
 
 # 验证码配置
-CAPTCHA_ENABLED = False  # 是否启用验证码
+CAPTCHA_ENABLED = os.getenv('CAPTCHA_ENABLED', 'False').lower() == 'true'
+
+# 验证码和2FA互斥检查：两者不能同时启用
+if CAPTCHA_ENABLED and TWO_FACTOR_ENABLED:
+    raise ValueError(
+        "CAPTCHA_ENABLED 和 TWO_FACTOR_ENABLED 不能同时启用。"
+        "请只启用其中一个：验证码（CAPTCHA）或双因子认证（2FA）。"
+    )
 CAPTCHA_IMAGE_SIZE = (120, 40)  # 验证码图片大小
 CAPTCHA_LENGTH = 4  # 验证码长度
 CAPTCHA_TIMEOUT = 5  # 验证码超时时间（分钟）
