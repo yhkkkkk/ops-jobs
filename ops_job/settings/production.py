@@ -23,7 +23,7 @@ if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
 # Database - 生产环境使用PostgreSQL
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'dj_db_conn_pool.backends.postgresql',
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
@@ -32,7 +32,12 @@ DATABASES = {
         'OPTIONS': {
             'connect_timeout': 10,
         },
-        'CONN_MAX_AGE': 600,  # 连接池
+        'POOL': {
+            'POOL_SIZE': 20,        # 连接池大小（建议 = Workers × 2）
+            'MAX_OVERFLOW': 10,     # 最大溢出连接数
+            'RECYCLE': 3600,        # 连接回收时间（秒）
+            'PRE_PING': True,       # 连接前检查健康状态
+        }
     }
 }
 
@@ -62,14 +67,19 @@ CACHES = {
             'CONNECTION_POOL_KWARGS': {
                 'max_connections': 100,  # 生产环境增加连接数
                 'retry_on_timeout': True,
+                'socket_keepalive': True,  # 启用 TCP keepalive
+                'socket_keepalive_options': {},
+                'health_check_interval': 30,  # 健康检查间隔
             },
-            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',  # 压缩大值
             'IGNORE_EXCEPTIONS': False,  # 生产环境不忽略异常
         },
         'KEY_PREFIX': 'ops_job_prod',
         'TIMEOUT': 300,  # 5分钟默认超时
     }
 }
+
+# REDIS_DB_CACHE 已在 base.py 中定义，通过 from .base import * 已导入
 
 # JWT 配置 - 设置SIGNING_KEY
 SIMPLE_JWT['SIGNING_KEY'] = SECRET_KEY
