@@ -2,12 +2,14 @@
 用户认证相关视图 - 支持Session + JWT混合认证
 """
 from rest_framework import viewsets, serializers
-from rest_framework.decorators import api_view, action, permission_classes
+from rest_framework.decorators import api_view, action, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import BasicAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework_extensions.cache.mixins import CacheResponseMixin
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, logout, login
@@ -168,6 +170,7 @@ if TWO_FACTOR_ENABLED:
         tags=["双因子认证"]
     )
     @api_view(['POST'])
+    @authentication_classes([])  # 不使用任何认证，避免CSRF检查
     @permission_classes([AllowAny])
     def check_2fa_required(request):
         """检查用户是否需要2FA验证"""

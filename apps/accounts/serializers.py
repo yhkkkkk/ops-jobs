@@ -245,7 +245,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                         )
                     raise serializers.ValidationError({
                         'otp_token': ['验证码错误，请重试']
-                    })
+            })
 
         # 添加用户信息到响应
         data['user'] = {
