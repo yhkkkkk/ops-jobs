@@ -272,6 +272,18 @@ class ContentTypeAdmin(admin.ModelAdmin):
         """允许所有已登录用户访问模块"""
         return request.user.is_authenticated
     
+    def has_add_permission(self, request):
+        """禁止在admin中直接添加内容类型"""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """允许编辑已有的内容类型"""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """允许删除已有的内容类型"""
+        return False
+
     def get_queryset(self, request):
         """优化查询，添加排序以避免警告"""
         return super().get_queryset(request).order_by('app_label', 'model')
@@ -299,18 +311,18 @@ UserObjectPermission._meta.verbose_name_plural = '用户对象权限'
 @admin.register(UserObjectPermission)
 class UserObjectPermissionAdmin(admin.ModelAdmin):
     """用户对象权限管理 - 全局查看和管理所有用户对象权限"""
-    
+
     list_display = ['user', 'permission', 'content_type', 'object_pk', 'get_object_link']
     list_filter = ['permission', 'content_type', 'user']
     search_fields = ['user__username', 'object_pk', 'permission__codename']
     autocomplete_fields = ['user', 'permission', 'content_type']
-    
+
     fieldsets = (
         ('基本信息', {
             'fields': (('user', 'permission'), ('content_type', 'object_pk'))
         }),
     )
-    
+
     def __init__(self, model, admin_site):
         super().__init__(model, admin_site)
         # 设置字段的中文显示名称
@@ -327,25 +339,25 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
         else:
             # 编辑时，所有字段只读（建议删除后重新添加）
             return ['user', 'permission', 'content_type', 'object_pk']
-    
+
     def changelist_view(self, request, extra_context=None):
         """重写列表视图，设置页面标题"""
         extra_context = extra_context or {}
         extra_context['title'] = '用户对象权限'
         return super().changelist_view(request, extra_context)
-    
+
     def add_view(self, request, form_url='', extra_context=None):
         """重写添加视图，设置页面标题"""
         extra_context = extra_context or {}
         extra_context['title'] = '添加用户对象权限'
         return super().add_view(request, form_url, extra_context)
-    
+
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """重写修改视图，设置页面标题"""
         extra_context = extra_context or {}
         extra_context['title'] = '修改用户对象权限'
         return super().change_view(request, object_id, form_url, extra_context)
-    
+
     def get_object_link(self, obj):
         """获取关联对象的链接"""
         try:
@@ -371,15 +383,15 @@ class UserObjectPermissionAdmin(admin.ModelAdmin):
     def has_view_permission(self, request, obj=None):
         """允许所有已登录用户查看（autocomplete 需要）"""
         return request.user.is_authenticated
-    
+
     def has_add_permission(self, request):
         """建议通过 GuardedModelAdmin 或服务层添加对象权限"""
         return request.user.is_superuser
-    
+
     def has_change_permission(self, request, obj=None):
         """建议通过 GuardedModelAdmin 或服务层修改对象权限"""
         return request.user.is_superuser
-    
+
     def has_module_permission(self, request):
         """允许所有已登录用户访问模块"""
         return request.user.is_authenticated
@@ -495,7 +507,7 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """
         核心逻辑：拦截保存，批量分配权限
-        
+
         注意：我们没有保存传入的 obj 对象，而是使用 assign_perm 批量创建权限记录。
         这是因为：
         1. 表单允许选择多个权限，需要为每个权限创建一个 GroupObjectPermission 记录
@@ -505,7 +517,7 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
         # 验证表单数据
         if not form.is_valid():
             raise ValidationError("表单验证失败，请检查输入。")
-        
+
         group = form.cleaned_data.get('group')
         object_pk = form.cleaned_data.get('object_selection')
         content_type = form.cleaned_data.get('content_type')
@@ -517,7 +529,7 @@ class GroupObjectPermissionAdmin(admin.ModelAdmin):
                 model_class = content_type.model_class()
                 if not model_class:
                     raise ValidationError(f"无法获取内容类型 {content_type} 对应的模型类。")
-                
+
                 target_obj = model_class.objects.get(pk=object_pk)
 
                 # 为每个权限创建一个 GroupObjectPermission 记录

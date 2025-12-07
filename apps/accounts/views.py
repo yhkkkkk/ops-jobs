@@ -2,8 +2,9 @@
 用户认证相关视图 - 支持Session + JWT混合认证
 """
 from rest_framework import viewsets, serializers
-from rest_framework.decorators import api_view, action
+from rest_framework.decorators import api_view, action, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import BasicAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -19,7 +20,6 @@ from .serializers import (
     UserSerializer,
     UserRegistrationSerializer,
     UserUpdateSerializer,
-    ChangePasswordSerializer,
     CustomTokenObtainPairSerializer
 )
 from .utils import get_user_profile_data
@@ -106,7 +106,6 @@ def logout_view(request):
     except Exception as e:
         return SycResponse.error(message=f"登出失败: {str(e)}")
 
-
 class UserPagination(LogPagination):
     """用户分页类 - 使用正确的排序字段"""
     ordering = '-date_joined'
@@ -161,147 +160,194 @@ class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
         return SycResponse.success(content=config, message="获取认证配置成功")
 
 
-# 2FA 相关视图（仅在启用时可用）
+# 2FA相关视图
 if TWO_FACTOR_ENABLED:
-    from rest_framework.views import APIView
+    @extend_schema(
+        summary="检查用户是否需要2FA验证",
+        description="登录前检查用户是否启用了2FA",
+        tags=["双因子认证"]
+    )
+    @api_view(['POST'])
+    @authentication_classes([])  # 不使用任何认证，避免CSRF检查
+    @permission_classes([AllowAny])
+    def check_2fa_required(request):
+        """检查用户是否需要2FA验证"""
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not username or not password:
+            return SycResponse.validation_error(
+                errors={'non_field_errors': ['用户名和密码不能为空']},
+                message="参数错误"
+            )
+
+        # 验证用户名密码
+        user = authenticate(username=username, password=password)
+        if not user:
+            # 不暴露用户是否存在的信息，统一返回不需要2FA
+            return SycResponse.success(content={'requires_2fa': False}, message="检查完成")
+
+        # 检查用户是否启用了2FA
+        devices = list(devices_for_user(user))
+        requires_2fa = len(devices) > 0
+
+        return SycResponse.success(
+            content={'requires_2fa': requires_2fa},
+            message="检查完成"
+        )
 
     @extend_schema(
         summary="获取2FA设置信息",
-        description="获取双因子认证设置信息，包括二维码和密钥",
+        description="获取TOTP的secret和QR码，用于绑定验证器APP",
         tags=["双因子认证"]
     )
-    class TwoFactorSetupView(APIView):
-        """2FA设置视图 - 生成二维码和密钥"""
-        permission_classes = [IsAuthenticated]
+    @api_view(['GET'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_setup(request):
+        """获取2FA设置信息（生成QR码）"""
+        user = request.user
 
-        def get(self, request):
-            """获取2FA设置信息"""
-            user = request.user
+        # 检查是否已经启用2FA
+        existing_devices = list(devices_for_user(user))
+        if existing_devices:
+            return SycResponse.error(message="您已经启用了双因子认证，如需重新设置请先禁用")
 
-            # 检查是否已启用2FA
-            existing_devices = list(devices_for_user(user))
-            if existing_devices:
-                return SycResponse.error(message="您已启用双因子认证，如需重新设置请先禁用")
+        # 生成新的TOTP设备（未确认状态）
+        device = TOTPDevice.objects.create(
+            user=user,
+            name='default',
+            confirmed=False
+        )
 
-            # 生成新的TOTP设备
-            device = TOTPDevice.objects.create(
-                user=user,
-                name='default',
-                confirmed=False
-            )
+        # 生成QR码
+        otp_issuer = getattr(settings, 'OTP_TOTP_ISSUER', 'OPS Job Platform')
+        config_url = device.config_url.replace('otpauth://totp/', f'otpauth://totp/{otp_issuer}:')
 
-            # 生成配置URL
-            config_url = device.config_url
+        # 生成QR码图片（SVG格式）
+        img = qrcode.make(config_url, image_factory=qrcode.image.svg.SvgImage)
+        buffer = BytesIO()
+        img.save(buffer)
+        qr_code_svg = buffer.getvalue().decode('utf-8')
 
-            # 生成二维码
-            qr = qrcode.QRCode(version=1, box_size=10, border=5)
-            qr.add_data(config_url)
-            qr.make(fit=True)
-
-            img = qr.make_image(fill_color="black", back_color="white")
-            buffer = BytesIO()
-            img.save(buffer, format='PNG')
-            qr_code_base64 = base64.b64encode(buffer.getvalue()).decode()
-
-            return SycResponse.success(content={
-                'secret': device.key,
-                'qr_code': f'data:image/png;base64,{qr_code_base64}',
+        return SycResponse.success(
+            content={
+                'secret': device.bin_key.hex(),
+                'qr_code': qr_code_svg,
                 'config_url': config_url
-            }, message="获取2FA设置信息成功")
+            },
+            message="获取2FA设置信息成功"
+        )
 
     @extend_schema(
         summary="验证并启用2FA",
-        description="验证OTP码并启用双因子认证",
+        description="验证用户输入的OTP码，验证成功后启用2FA",
         tags=["双因子认证"]
     )
-    class TwoFactorVerifyView(APIView):
-        """2FA验证视图 - 验证OTP码并启用2FA"""
-        permission_classes = [IsAuthenticated]
+    @api_view(['POST'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_verify(request):
+        """验证并启用2FA"""
+        user = request.user
+        otp_token = request.data.get('otp_token')
 
-        def post(self, request):
-            """验证OTP码并启用2FA"""
-            otp_token = request.data.get('otp_token', '')
-            if not otp_token:
-                return SycResponse.validation_error(
-                    errors={'otp_token': ['请输入验证码']},
-                    message="验证失败"
-                )
+        if not otp_token:
+            return SycResponse.validation_error(
+                errors={'otp_token': ['验证码不能为空']},
+                message="参数错误"
+            )
 
-            user = request.user
+        # 查找未确认的TOTP设备
+        devices = TOTPDevice.objects.filter(user=user, confirmed=False)
+        if not devices.exists():
+            return SycResponse.error(message="未找到待激活的2FA设备，请先获取设置信息")
 
-            # 查找未确认的设备
-            devices = TOTPDevice.objects.filter(user=user, confirmed=False)
-            if not devices.exists():
-                return SycResponse.error(message="未找到待确认的设备，请先获取设置信息")
+        device = devices.first()
 
-            device = devices.first()
+        # 验证OTP
+        if not device.verify_token(otp_token):
+            return SycResponse.error(message="验证码错误，请重试")
 
-            # 验证OTP码
-            if device.verify_token(otp_token):
-                device.confirmed = True
-                device.save()
+        # 验证成功，确认设备
+        device.confirmed = True
+        device.save()
 
-                # 生成备份码（静态令牌）
-                static_device, created = StaticDevice.objects.get_or_create(
-                    user=user,
-                    name='backup'
-                )
-                if created:
-                    # 生成10个备份码
-                    for _ in range(10):
-                        StaticToken.objects.create(device=static_device)
+        # 生成备份令牌（可选）
+        backup_tokens = []
+        # 如果需要备份令牌，可以在这里生成StaticDevice和StaticToken
 
-                # 获取备份码
-                backup_tokens = list(static_device.token_set.values_list('token', flat=True))
-
-                return SycResponse.success(content={
-                    'backup_tokens': backup_tokens
-                }, message="双因子认证已启用，请妥善保管备份码")
-            else:
-                return SycResponse.validation_error(
-                    errors={'otp_token': ['验证码错误']},
-                    message="验证失败"
-                )
+        return SycResponse.success(
+            content={
+                'backup_tokens': backup_tokens,
+                'message': '双因子认证已成功启用'
+            },
+            message="2FA启用成功"
+        )
 
     @extend_schema(
-        summary="检查2FA状态",
-        description="检查当前用户的2FA启用状态",
+        summary="获取2FA状态",
+        description="查询当前用户的2FA启用状态",
         tags=["双因子认证"]
     )
-    class TwoFactorStatusView(APIView):
-        """2FA状态视图"""
-        permission_classes = [IsAuthenticated]
+    @api_view(['GET'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_status(request):
+        """获取2FA状态"""
+        user = request.user
+        devices = list(devices_for_user(user))
 
-        def get(self, request):
-            """获取2FA状态"""
-            user = request.user
-            devices = list(devices_for_user(user))
-            enabled = len(devices) > 0 and any(device.confirmed for device in devices)
+        # 只统计已确认的设备
+        confirmed_devices = [d for d in devices if d.confirmed]
 
-            return SycResponse.success(content={
-                'enabled': enabled,
-                'device_count': len(devices)
-            }, message="获取2FA状态成功")
+        return SycResponse.success(
+            content={
+                'enabled': len(confirmed_devices) > 0,
+                'device_count': len(confirmed_devices)
+            },
+            message="获取2FA状态成功"
+        )
 
     @extend_schema(
         summary="禁用2FA",
-        description="禁用当前用户的双因子认证",
+        description="禁用当前用户的2FA",
         tags=["双因子认证"]
     )
-    class TwoFactorDisableView(APIView):
-        """2FA禁用视图"""
-        permission_classes = [IsAuthenticated]
+    @api_view(['POST'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_disable(request):
+        """禁用2FA"""
+        user = request.user
 
-        def post(self, request):
-            """禁用2FA"""
-            user = request.user
-            devices = list(devices_for_user(user))
+        # 删除所有TOTP设备
+        TOTPDevice.objects.filter(user=user).delete()
 
-            if not devices:
-                return SycResponse.error(message="您尚未启用双因子认证")
+        # 删除所有静态备份令牌设备（如果有）
+        if 'django_otp.plugins.otp_static' in settings.INSTALLED_APPS:
+            StaticDevice.objects.filter(user=user).delete()
 
-            # 删除所有设备
-            for device in devices:
-                device.delete()
+        return SycResponse.success(message="2FA已成功禁用")
+else:
+    # 如果未启用2FA，提供占位函数返回错误
+    @api_view(['POST'])
+    @permission_classes([AllowAny])
+    def check_2fa_required(request):
+        return SycResponse.error(message="2FA功能未启用", status_code=501)
 
-            return SycResponse.success(message="双因子认证已禁用")
+    @api_view(['GET'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_setup(request):
+        return SycResponse.error(message="2FA功能未启用", status_code=501)
+
+    @api_view(['POST'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_verify(request):
+        return SycResponse.error(message="2FA功能未启用", status_code=501)
+
+    @api_view(['GET'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_status(request):
+        return SycResponse.error(message="2FA功能未启用", status_code=501)
+
+    @api_view(['POST'])
+    @permission_classes([IsAuthenticated])
+    def two_factor_disable(request):
+        return SycResponse.error(message="2FA功能未启用", status_code=501)

@@ -146,24 +146,29 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """自定义JWT Token序列化器 - 支持验证码验证"""
+    """自定义JWT Token序列化器 - 支持验证码和2FA验证"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # 如果启用验证码，动态添加验证码字段
-        captcha_enabled = getattr(settings, 'CAPTCHA_ENABLED', True)
-        if captcha_enabled:
-            self.fields['captcha_key'] = serializers.CharField(required=False, allow_blank=True)  # pyright: ignore[reportIndexIssue]
-            self.fields['captcha_value'] = serializers.CharField(required=False, allow_blank=True)  # pyright: ignore[reportIndexIssue]
+        captcha_enabled = getattr(settings, 'CAPTCHA_ENABLED', False)
+        two_factor_enabled = getattr(settings, 'TWO_FACTOR_ENABLED', False)
+
+        # 验证码和2FA互斥：如果启用了2FA，就不添加验证码字段
+        if captcha_enabled and not two_factor_enabled:
+            self.fields['captcha_key'] = serializers.CharField(required=False, allow_blank=True)
+            self.fields['captcha_value'] = serializers.CharField(required=False, allow_blank=True)
 
         # 如果启用2FA，动态添加OTP字段
-        if TWO_FACTOR_ENABLED:
-            self.fields['otp_token'] = serializers.CharField(required=False, allow_blank=True, help_text='双因子认证码')  # pyright: ignore[reportIndexIssue]
+        if two_factor_enabled:
+            self.fields['otp_token'] = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
-        # 如果启用验证码，先验证验证码
-        captcha_enabled = getattr(settings, 'CAPTCHA_ENABLED', True)
-        if captcha_enabled:
+        # 验证码和2FA互斥：如果启用了2FA，就不验证验证码
+        captcha_enabled = getattr(settings, 'CAPTCHA_ENABLED', False)
+        two_factor_enabled = getattr(settings, 'TWO_FACTOR_ENABLED', False)
+
+        # 如果启用验证码且未启用2FA，验证验证码
+        if captcha_enabled and not two_factor_enabled:
             # 提取验证码字段
             captcha_key = attrs.pop('captcha_key', None)
             captcha_value = attrs.pop('captcha_value', None)
@@ -205,27 +210,32 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'non_field_errors': ['账户已被禁用']
             })
 
-        # 如果启用2FA，验证OTP码
-        if TWO_FACTOR_ENABLED:
-            otp_token = attrs.get('otp_token', '')
+        # 如果启用2FA，检查用户是否启用了2FA并验证OTP
+        two_factor_enabled = getattr(settings, 'TWO_FACTOR_ENABLED', False)
+        if two_factor_enabled and TWO_FACTOR_ENABLED:
+            otp_token = attrs.pop('otp_token', None)
+
             # 检查用户是否启用了2FA
-            user_devices = list(devices_for_user(self.user))
-            if user_devices:
-                # 用户已启用2FA，必须提供OTP码
+            devices = list(devices_for_user(self.user))
+            if devices:
+                # 用户启用了2FA，必须提供OTP
                 if not otp_token:
                     raise serializers.ValidationError({
-                        'otp_token': ['已启用双因子认证，请输入验证码']
+                        'otp_token': ['该账户已启用双因子认证，请输入验证码']
                     })
 
-                # 验证OTP码
+                # 验证OTP
                 verified = False
-                for device in user_devices:
+                for device in devices:
                     if device.verify_token(otp_token):
                         verified = True
+                        # 验证成功后，标记设备为已验证
+                        device.confirmed = True
+                        device.save()
                         break
 
                 if not verified:
-                    # 记录登录失败日志
+                    # 记录2FA验证失败
                     request = self.context.get('request')
                     if request:
                         AuditLogService.log_login(
@@ -234,7 +244,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                             success=False
                         )
                     raise serializers.ValidationError({
-                        'otp_token': ['验证码错误']
+                        'otp_token': ['验证码错误，请重试']
             })
 
         # 添加用户信息到响应
