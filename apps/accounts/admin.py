@@ -91,10 +91,11 @@ if TWO_FACTOR_ENABLED:
     @admin.register(TOTPDevice)
     class TOTPDeviceAdmin(admin.ModelAdmin):
         """TOTP设备管理"""
-        list_display = ['user', 'name', 'confirmed', 'qr_code_display', 'created_at', 'last_used_at']
-        list_filter = ['confirmed', 'created_at', 'last_used_at']
+        list_display = ['user', 'name', 'confirmed', 'step', 't0', 'digits', 'created_at', 'last_used_at']
+        list_filter = ['confirmed', 'created_at', 'last_used_at', 'step', 'digits']
         search_fields = ['user__username', 'user__email', 'name']
-        readonly_fields = ['key', 'qr_code_display', 'config_url_display', 'secret_display', 'created_at', 'last_used_at']
+        readonly_fields = ['key', 'qr_code_display', 'config_url_display', 'secret_display',
+                          'step', 't0', 'digits', 'created_at', 'last_used_at']
         raw_id_fields = ['user']
         
         def __init__(self, model, admin_site):
@@ -110,6 +111,10 @@ if TWO_FACTOR_ENABLED:
         fieldsets = (
             ('基本信息', {
                 'fields': ('user', 'name', 'confirmed')
+            }),
+            ('参数', {
+                'fields': ('step', 't0', 'digits'),
+                'description': 'step=时间步长(秒)，t0=初始时间戳，digits=验证码位数'
             }),
             ('二维码信息', {
                 'fields': ('qr_code_display', 'config_url_display', 'secret_display'),
@@ -127,7 +132,7 @@ if TWO_FACTOR_ENABLED:
         )
         
         def qr_code_display(self, obj):
-            """显示二维码"""
+            """显示二维码（仅详情页显示，不在列表展示）"""
             if not obj or not obj.user:
                 return "请先选择用户并保存"
             
