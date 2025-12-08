@@ -296,15 +296,144 @@ class RealTimeOutputHandler:
             logger.error(f"RealTimeOutputHandler.close失败: {e}")
 
 
+class ConnectionPool:
+    """SSH连接池管理器"""
+    
+    def __init__(self, max_size: int = 10):
+        self.max_size = max_size
+        self.pool: Dict[str, list] = {}  # key: connection_key, value: list of connections
+        self.lock = threading.Lock()
+        self._enabled = False
+    
+    def enable(self):
+        """启用连接池"""
+        self._enabled = True
+    
+    def disable(self):
+        """禁用连接池"""
+        self._enabled = False
+    
+    def is_enabled(self) -> bool:
+        """检查连接池是否启用"""
+        return self._enabled
+    
+    def _get_connection_key(self, conn_info: Dict[str, Any]) -> str:
+        """生成连接键"""
+        return f"{conn_info['host']}:{conn_info['port']}:{conn_info['user']}"
+    
+    def get_connection(self, conn_info: Dict[str, Any], create_func):
+        """从连接池获取连接，如果没有则创建"""
+        if not self._enabled:
+            return None
+        
+        connection_key = self._get_connection_key(conn_info)
+        
+        with self.lock:
+            if connection_key not in self.pool:
+                self.pool[connection_key] = []
+            
+            pool = self.pool[connection_key]
+            
+            # 尝试从池中获取可用连接
+            while pool:
+                conn = pool.pop()
+                try:
+                    # 检查连接是否仍然有效（通过检查底层transport）
+                    if hasattr(conn, 'client') and conn.client and hasattr(conn.client, 'get_transport'):
+                        transport = conn.client.get_transport()
+                        if transport and transport.is_active():
+                            return conn
+                    # 连接无效，关闭它
+                    try:
+                        conn.close()
+                    except:
+                        pass
+                except:
+                    # 连接无效，继续尝试下一个
+                    try:
+                        conn.close()
+                    except:
+                        pass
+                    continue
+            
+            # 池中没有可用连接，返回None让调用者创建新连接
+            return None
+    
+    def return_connection(self, conn_info: Dict[str, Any], conn):
+        """归还连接到池中"""
+        if not self._enabled or not conn:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+            return
+        
+        connection_key = self._get_connection_key(conn_info)
+        
+        with self.lock:
+            if connection_key not in self.pool:
+                self.pool[connection_key] = []
+            
+            pool = self.pool[connection_key]
+            
+            # 检查池是否已满
+            if len(pool) < self.max_size:
+                try:
+                    # 检查连接是否仍然有效（通过检查底层transport）
+                    if hasattr(conn, 'client') and conn.client and hasattr(conn.client, 'get_transport'):
+                        transport = conn.client.get_transport()
+                        if transport and transport.is_active():
+                            pool.append(conn)
+                            return
+                except:
+                    pass
+            
+            # 池已满或连接无效，关闭连接
+            try:
+                conn.close()
+            except:
+                pass
+    
+    def clear(self):
+        """清空连接池"""
+        with self.lock:
+            for pool in self.pool.values():
+                for conn in pool:
+                    try:
+                        conn.close()
+                    except:
+                        pass
+            self.pool.clear()
+
+
 class FabricSSHManager:
     """基于Fabric的SSH管理器"""
     
     def __init__(self):
         if not FABRIC_AVAILABLE:
             raise ImportError("Fabric未安装，请运行: uv add fabric")
+        
+        # 初始化连接池
+        self.connection_pool = ConnectionPool(max_size=10)
+        self._init_connection_pool()
+    
+    def _init_connection_pool(self):
+        """初始化连接池配置"""
+        try:
+            from apps.system_config.models import ConfigManager
+            enable_pool = ConfigManager.get('fabric.enable_connection_pool', False)
+            if enable_pool:
+                self.connection_pool.enable()
+                logger.info("SSH连接池已启用")
+            else:
+                self.connection_pool.disable()
+        except Exception as e:
+            logger.warning(f"初始化连接池配置失败: {e}，默认禁用连接池")
+            self.connection_pool.disable()
     
     def execute_script(self, host, script_content: str, script_type: str = 'shell', 
-                      timeout: int = 300, task_id: Optional[str] = None, 
+                      timeout: int = None, task_id: Optional[str] = None, 
                       account_id: Optional[int] = None) -> Dict[str, Any]:
         """
         在远程主机上执行脚本
@@ -313,7 +442,7 @@ class FabricSSHManager:
             host: 主机对象
             script_content: 脚本内容
             script_type: 脚本类型 (shell, python, powershell等)
-            timeout: 超时时间(秒)
+            timeout: 超时时间(秒)，如果为None则使用配置的默认值
             task_id: 任务ID，用于实时日志
             account_id: 可选的账号ID，如果提供则使用账号管理的认证信息
             
@@ -324,6 +453,11 @@ class FabricSSHManager:
         start_datetime = datetime.now()
 
         try:
+            # 如果没有指定超时时间，使用系统配置的默认值
+            if timeout is None:
+                from apps.system_config.models import ConfigManager
+                timeout = ConfigManager.get('fabric.command_timeout', 300)
+            
             # 获取主机连接信息（支持使用账号管理的认证信息）
             conn_info = self._get_connection_info(host, account_id=account_id)
             
@@ -475,17 +609,21 @@ class FabricSSHManager:
         from .utils import decrypt_password
         return decrypt_password(encrypted_password)
 
-    @contextmanager
-    def _create_connection(self, conn_info: Dict[str, Any], timeout: int):
-        """创建Fabric连接"""
-        config = Config(overrides={
+    def _create_connection_config(self, conn_info: Dict[str, Any], timeout: int) -> Config:
+        """创建Fabric连接配置"""
+        from apps.system_config.models import ConfigManager
+        
+        # 获取连接超时配置
+        connection_timeout = ConfigManager.get('fabric.connection_timeout', 30)
+        
+        return Config(overrides={
             'connect_kwargs': {
-                'timeout': min(timeout, 30),  # 连接超时不超过30秒
-                'auth_timeout': 30,
-                'banner_timeout': 30,
+                'timeout': connection_timeout,  # 使用配置的连接超时时间
+                'auth_timeout': connection_timeout,
+                'banner_timeout': connection_timeout,
             },
             'timeouts': {
-                'connect': 30,
+                'connect': connection_timeout,
             },
             'run': {
                 'warn': True,  # 不要因为非零退出码抛异常
@@ -498,7 +636,9 @@ class FabricSSHManager:
                 }
             }
         })
-        
+    
+    def _create_new_connection(self, conn_info: Dict[str, Any], config: Config) -> Connection:
+        """创建新的Fabric连接"""
         # 准备连接参数
         connect_kwargs = {}
         if conn_info['password']:
@@ -506,32 +646,73 @@ class FabricSSHManager:
         if conn_info['key_filename']:
             connect_kwargs['key_filename'] = conn_info['key_filename']
         
-        conn = None
+        conn = Connection(
+            host=conn_info['host'],
+            port=conn_info['port'],
+            user=conn_info['user'],
+            config=config,
+            connect_kwargs=connect_kwargs
+        )
+        
+        # 测试连接
+        conn.open()
+        logger.info(f"Fabric SSH连接成功: {conn_info['host']}:{conn_info['port']}")
+        
+        return conn
+    
+    def _is_connection_pool_enabled(self) -> bool:
+        """动态检查连接池是否启用"""
         try:
-            conn = Connection(
-                host=conn_info['host'],
-                port=conn_info['port'],
-                user=conn_info['user'],
-                config=config,
-                connect_kwargs=connect_kwargs
-            )
-            
-            # 测试连接
-            conn.open()
-            logger.info(f"Fabric SSH连接成功: {conn_info['host']}:{conn_info['port']}")
-            
-            yield conn
-            
-        except (AuthenticationException, NoValidConnectionsError) as e:
-            raise FabricSSHError(f"SSH认证失败: {str(e)}")
+            from apps.system_config.models import ConfigManager
+            return ConfigManager.get('fabric.enable_connection_pool', False)
         except Exception as e:
-            raise FabricSSHError(f"SSH连接失败: {str(e)}")
-        finally:
+            logger.warning(f"检查连接池配置失败: {e}，默认禁用连接池")
+            return False
+    
+    @contextmanager
+    def _create_connection(self, conn_info: Dict[str, Any], timeout: int):
+        """创建Fabric连接（支持连接池）"""
+        config = self._create_connection_config(conn_info, timeout)
+        
+        # 动态检查连接池是否启用
+        pool_enabled = self._is_connection_pool_enabled()
+        
+        # 尝试从连接池获取连接
+        conn = None
+        from_pool = False
+        
+        if pool_enabled:
+            conn = self.connection_pool.get_connection(conn_info, self._create_new_connection)
             if conn:
-                try:
-                    conn.close()
-                except:
-                    pass
+                from_pool = True
+                logger.debug(f"从连接池获取连接: {conn_info['host']}:{conn_info['port']}")
+        
+        # 如果连接池中没有可用连接，创建新连接
+        if not conn:
+            try:
+                conn = self._create_new_connection(conn_info, config)
+            except (AuthenticationException, NoValidConnectionsError) as e:
+                raise FabricSSHError(f"SSH认证失败: {str(e)}")
+            except Exception as e:
+                raise FabricSSHError(f"SSH连接失败: {str(e)}")
+        
+        try:
+            yield conn
+        finally:
+            # 归还连接到池中或关闭连接
+            if pool_enabled and from_pool:
+                # 从池中获取的连接，归还到池中
+                self.connection_pool.return_connection(conn_info, conn)
+            else:
+                # 新创建的连接，如果连接池启用则归还，否则关闭
+                if pool_enabled:
+                    self.connection_pool.return_connection(conn_info, conn)
+                else:
+                    if conn:
+                        try:
+                            conn.close()
+                        except:
+                            pass
     
     def _execute_shell_script(self, conn, script_content: str, timeout: int,
                              host, task_id: Optional[str]) -> Dict[str, Any]:
@@ -707,7 +888,7 @@ class FabricSSHManager:
             raise FabricSSHError(f"PowerShell脚本执行失败: {str(e)}")
 
     def transfer_file(self, host, transfer_type: str, local_path: str, remote_path: str,
-                     timeout: int = 300, task_id: Optional[str] = None,
+                     timeout: int = None, task_id: Optional[str] = None,
                      source_server_host: Optional[str] = None, source_server_user: Optional[str] = None,
                      source_server_path: Optional[str] = None, account_id: Optional[int] = None, **kwargs) -> Dict[str, Any]:
         """
@@ -718,7 +899,7 @@ class FabricSSHManager:
             transfer_type: 传输类型 ('local_upload', 'server_upload')
             local_path: 本地路径（local_upload时使用）
             remote_path: 远程路径
-            timeout: 超时时间(秒)
+            timeout: 超时时间(秒)，如果为None则使用配置的默认值
             task_id: 任务ID，用于实时日志
             source_server_host: 源服务器地址（server_upload时使用）
             source_server_user: 源服务器用户名（server_upload时使用）
@@ -733,6 +914,11 @@ class FabricSSHManager:
         start_datetime = datetime.now()
 
         try:
+            # 如果没有指定超时时间，使用系统配置的默认值
+            if timeout is None:
+                from apps.system_config.models import ConfigManager
+                timeout = ConfigManager.get('fabric.command_timeout', 300)
+            
             # 获取主机连接信息（支持使用账号管理的认证信息）
             conn_info = self._get_connection_info(host, account_id=account_id)
 

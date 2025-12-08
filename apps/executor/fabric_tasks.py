@@ -69,45 +69,94 @@ def execute_script_on_hosts_fabric(script_content, script_type, target_hosts, ti
 
         if execution_mode == 'parallel':
             from celery import group
+            from apps.system_config.models import ConfigManager
 
-            logger.info(f"[Fabric] 开始并行执行，目标主机数: {len(target_hosts)}")
+            # 获取最大并发主机数配置
+            max_concurrent_hosts = ConfigManager.get('fabric.max_concurrent_hosts', 20)
             
-            # 使用celery并行执行
-            job = group(
-                execute_script_on_single_host_fabric.s(
-                    script_content, script_type, host_info, timeout, task_id,
-                    global_variables, positional_args, ignore_error
-                ) for host_info in target_hosts
-            )
+            logger.info(f"[Fabric] 开始并行执行，目标主机数: {len(target_hosts)}, 最大并发数: {max_concurrent_hosts}")
+            
+            # 如果主机数超过最大并发数，分批执行
+            if len(target_hosts) > max_concurrent_hosts:
+                logger.info(f"[Fabric] 主机数({len(target_hosts)})超过最大并发数({max_concurrent_hosts})，将分批执行")
+                all_results = []
+                
+                for i in range(0, len(target_hosts), max_concurrent_hosts):
+                    batch = target_hosts[i:i + max_concurrent_hosts]
+                    batch_num = i // max_concurrent_hosts + 1
+                    total_batches = (len(target_hosts) + max_concurrent_hosts - 1) // max_concurrent_hosts
+                    
+                    logger.info(f"[Fabric] 执行批次 {batch_num}/{total_batches}, 主机数: {len(batch)}")
+                    
+                    # 每批次开始前检查取消状态
+                    raise_if_cancelled(execution_id)
+                    
+                    job = group(
+                        execute_script_on_single_host_fabric.s(
+                            script_content, script_type, host_info, timeout, task_id,
+                            global_variables, positional_args, ignore_error
+                        ) for host_info in batch
+                    )
+                    
+                    try:
+                        with allow_join_result():
+                            group_result = job.apply_async()
+                            for result in group_result.iterate():
+                                all_results.append(result)
+                                logger.info(
+                                    f"[Fabric] 主机 {result.get('host_name')} 并行执行完成: {result.get('success')}"
+                                )
+                    except SoftTimeLimitExceeded:
+                        logger.info(f"任务被取消，已处理 {len(all_results)}/{len(target_hosts)} 个主机")
+                        return {
+                            'success': False,
+                            'message': '任务已被用户取消',
+                            'cancelled': True,
+                            'partial_results': all_results
+                        }
+                    except Exception as e:
+                        logger.error(f"[Fabric] 批次 {batch_num} 执行异常: {e}")
+                        # 继续执行下一批次
+                        continue
+                
+                results = all_results
+            else:
+                # 使用celery并行执行（主机数不超过最大并发数）
+                job = group(
+                    execute_script_on_single_host_fabric.s(
+                        script_content, script_type, host_info, timeout, task_id,
+                        global_variables, positional_args, ignore_error
+                    ) for host_info in target_hosts
+                )
 
-            try:
-                completed_count = 0
-                with allow_join_result():
-                    group_result = job.apply_async()
-                    for result in group_result.iterate():
-                        if completed_count % 3 == 0:
-                            raise_if_cancelled(execution_id)
-                        results.append(result)
-                        completed_count += 1
-                        logger.info(
-                            f"[Fabric] 主机 {result.get('host_name')} 并行执行完成: {result.get('success')}"
-                        )
-            except SoftTimeLimitExceeded:
-                logger.info(f"任务被取消，已处理 {len(results)}/{len(target_hosts)} 个主机")
-                return {
-                    'success': False,
-                    'message': '任务已被用户取消',
-                    'cancelled': True,
-                    'partial_results': results
-                }
-            except Exception as e:
-                logger.error(f"[Fabric] 并行执行异常: {e}")
-                return {
-                    'success': False,
-                    'message': f'并行执行异常: {e}',
-                    'results': results,
-                    'engine': 'fabric'
-                }
+                try:
+                    completed_count = 0
+                    with allow_join_result():
+                        group_result = job.apply_async()
+                        for result in group_result.iterate():
+                            if completed_count % 3 == 0:
+                                raise_if_cancelled(execution_id)
+                            results.append(result)
+                            completed_count += 1
+                            logger.info(
+                                f"[Fabric] 主机 {result.get('host_name')} 并行执行完成: {result.get('success')}"
+                            )
+                except SoftTimeLimitExceeded:
+                    logger.info(f"任务被取消，已处理 {len(results)}/{len(target_hosts)} 个主机")
+                    return {
+                        'success': False,
+                        'message': '任务已被用户取消',
+                        'cancelled': True,
+                        'partial_results': results
+                    }
+                except Exception as e:
+                    logger.error(f"[Fabric] 并行执行异常: {e}")
+                    return {
+                        'success': False,
+                        'message': f'并行执行异常: {e}',
+                        'results': results,
+                        'engine': 'fabric'
+                    }
 
         elif execution_mode == 'serial':
             # 串行执行
@@ -710,24 +759,53 @@ def execute_file_transfer_on_hosts(transfer_type, local_path, remote_path, targe
 
         if execution_mode == 'parallel':
             from celery import group
+            from apps.system_config.models import ConfigManager
 
-            logger.info(f"[Fabric] 开始并行文件传输，目标主机数: {len(target_hosts)}")
+            # 获取最大并发主机数配置
+            max_concurrent_hosts = ConfigManager.get('fabric.max_concurrent_hosts', 20)
+            
+            logger.info(f"[Fabric] 开始并行文件传输，目标主机数: {len(target_hosts)}, 最大并发数: {max_concurrent_hosts}")
             
             # 从kwargs中提取account_id
             account_id = kwargs.pop('account_id', None)
             
-            job = group(
-                execute_file_transfer_on_single_host.s(
-                    transfer_type, local_path, remote_path, host_info, timeout, task_id,
-                    source_server_host, source_server_user, source_server_path, account_id, **kwargs
-                ) for host_info in target_hosts
-            )
+            # 如果主机数超过最大并发数，分批执行
+            if len(target_hosts) > max_concurrent_hosts:
+                logger.info(f"[Fabric] 主机数({len(target_hosts)})超过最大并发数({max_concurrent_hosts})，将分批传输")
+                
+                for i in range(0, len(target_hosts), max_concurrent_hosts):
+                    batch = target_hosts[i:i + max_concurrent_hosts]
+                    batch_num = i // max_concurrent_hosts + 1
+                    total_batches = (len(target_hosts) + max_concurrent_hosts - 1) // max_concurrent_hosts
+                    
+                    logger.info(f"[Fabric] 传输批次 {batch_num}/{total_batches}, 主机数: {len(batch)}")
+                    
+                    job = group(
+                        execute_file_transfer_on_single_host.s(
+                            transfer_type, local_path, remote_path, host_info, timeout, task_id,
+                            source_server_host, source_server_user, source_server_path, account_id, **kwargs
+                        ) for host_info in batch
+                    )
 
-            with allow_join_result():
-                group_result = job.apply_async()
-                for result in group_result.iterate():
-                    results.append(result)
-                    logger.info(f"[Fabric] 主机 {result.get('host_name')} 并行传输完成: {result.get('success')}")
+                    with allow_join_result():
+                        group_result = job.apply_async()
+                        for result in group_result.iterate():
+                            results.append(result)
+                            logger.info(f"[Fabric] 主机 {result.get('host_name')} 并行传输完成: {result.get('success')}")
+            else:
+                # 使用celery并行执行（主机数不超过最大并发数）
+                job = group(
+                    execute_file_transfer_on_single_host.s(
+                        transfer_type, local_path, remote_path, host_info, timeout, task_id,
+                        source_server_host, source_server_user, source_server_path, account_id, **kwargs
+                    ) for host_info in target_hosts
+                )
+
+                with allow_join_result():
+                    group_result = job.apply_async()
+                    for result in group_result.iterate():
+                        results.append(result)
+                        logger.info(f"[Fabric] 主机 {result.get('host_name')} 并行传输完成: {result.get('success')}")
 
         elif execution_mode == 'serial':
             # 串行执行
