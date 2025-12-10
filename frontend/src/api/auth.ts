@@ -13,8 +13,8 @@ export const authApi = {
   },
 
   // 刷新访问令牌
-  refreshToken() {
-    return http.post('/auth/refresh/')
+  refreshToken(refreshToken: string) {
+    return http.post('/auth/refresh/', { refresh: refreshToken })
   },
 
   // 获取当前用户信息

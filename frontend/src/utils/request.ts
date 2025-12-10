@@ -73,6 +73,11 @@ request.interceptors.response.use(
       return data
     }
 
+    // 特殊处理：SimpleJWT 刷新接口不返回标准 {success, content}
+    if (config.url?.includes('/auth/refresh/')) {
+      return data
+    }
+
     // 检查业务状态码
     if (data.success) {
       return data.content

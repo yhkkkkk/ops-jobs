@@ -141,6 +141,30 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 刷新token
   const refreshAccessToken = async (): Promise<string> => {
+    const handleRefreshResult = (result: any) => {
+      const newAccess = result?.access_token || result?.access
+      const newRefresh = result?.refresh_token || result?.refresh
+
+      if (!newAccess) {
+        throw new Error('刷新响应缺少 access token')
+      }
+
+      token.value = newAccess
+      sessionStorage.setItem('access_token', newAccess)
+
+      if (newRefresh) {
+        refreshToken.value = newRefresh
+        sessionStorage.setItem('refresh_token', newRefresh)
+      }
+
+      if (localStorage.getItem('remember_login') === 'true') {
+        localStorage.setItem('access_token', newAccess)
+        if (newRefresh) {
+          localStorage.setItem('refresh_token', newRefresh)
+        }
+      }
+    }
+
     // 防止并发刷新
     if (refreshing.value) {
       // 等待正在进行的刷新完成
@@ -174,15 +198,9 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       const result = await authApi.refreshToken(refreshToken.value)
-      token.value = result.access_token
-      sessionStorage.setItem('access_token', result.access_token)
+      handleRefreshResult(result)
 
-      // 如果记住登录，也更新localStorage
-      if (localStorage.getItem('remember_login') === 'true') {
-        localStorage.setItem('access_token', result.access_token)
-      }
-
-      return result.access_token
+      return token.value
     } catch (error: any) {
       console.error('刷新token失败:', error)
       
@@ -195,14 +213,9 @@ export const useAuthStore = defineStore('auth', () => {
           console.warn('网络错误，尝试重试刷新token...')
           await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
           const result = await authApi.refreshToken(refreshToken.value!)
-          token.value = result.access_token
-          sessionStorage.setItem('access_token', result.access_token)
+          handleRefreshResult(result)
           
-          if (localStorage.getItem('remember_login') === 'true') {
-            localStorage.setItem('access_token', result.access_token)
-          }
-          
-          return result.access_token
+          return token.value
         } catch (retryError) {
           console.error('重试刷新token失败:', retryError)
           clearState()

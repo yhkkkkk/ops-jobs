@@ -8,6 +8,7 @@ from rest_framework.authentication import BasicAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from django.conf import settings
 from rest_framework_extensions.cache.mixins import CacheResponseMixin
 from django.contrib.auth.models import User
@@ -98,8 +99,11 @@ def logout_view(request):
         # JWT token加入黑名单
         refresh_token = request.data.get('refresh')
         if refresh_token:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except TokenError:
+                pass
 
         return SycResponse.success(message="登出成功")
 
@@ -168,7 +172,7 @@ if TWO_FACTOR_ENABLED:
         tags=["双因子认证"]
     )
     @api_view(['POST'])
-    @authentication_classes([])  # 不使用任何认证，避免CSRF检查
+    @authentication_classes([])  # 不使用任何认证，避免csrf检查
     @permission_classes([AllowAny])
     def check_2fa_required(request):
         """检查用户是否需要2FA验证"""
@@ -220,7 +224,7 @@ if TWO_FACTOR_ENABLED:
         )
         
         # 生成QR码
-        otp_issuer = getattr(settings, 'OTP_TOTP_ISSUER', 'OPS Job Platform')
+        otp_issuer = getattr(settings, 'OTP_TOTP_ISSUER', 'Ops Job Platform')
         config_url = device.config_url.replace('otpauth://totp/', f'otpauth://totp/{otp_issuer}:')
         
         # 生成QR码图片（SVG格式）
