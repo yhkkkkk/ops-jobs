@@ -169,7 +169,7 @@ REDIS_DB_REALTIME = 3  # 用于实时日志 (Redis Stream)
 
 # JWT 配置 (SECRET_KEY 将在具体环境中设置)
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=4),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -195,7 +195,7 @@ SIMPLE_JWT = {
     'JTI_CLAIM': 'jti',
 
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(hours=24),
+    'SLIDING_TOKEN_LIFETIME': timedelta(hours=4),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
 

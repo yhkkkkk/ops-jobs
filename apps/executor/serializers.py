@@ -59,7 +59,8 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
             'celery_task_id', 'execution_parameters',
-            'execution_results', 'error_message', 'created_at', 'started_at',
+            # 列表场景不返回完整 execution_results，避免大日志膨胀
+            'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'client_ip', 'user_agent', 'is_completed', 'is_running',
             'related_object_info', 'total_retry_count', 'has_retries',
@@ -189,6 +190,12 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
         if not isinstance(step_logs, dict):
             step_logs = {}
 
+        def _merge_log(log_value):
+            """将列表日志合并为字符串，避免大数组膨胀"""
+            if isinstance(log_value, list):
+                return "\n".join([str(item) for item in log_value])
+            return log_value or ''
+
         # 3. 将 step_logs 统一转换为前端友好的 steps 结构
         steps = []
         for idx, (step_id, step_data) in enumerate(step_logs.items(), start=1):
@@ -215,8 +222,8 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
                 host_status = host_data.get('status') or 'unknown'
 
                 # 统一 stdout/stderr 字段，兼容 logs / error_logs
-                stdout = host_data.get('stdout') or host_data.get('logs') or ''
-                stderr = host_data.get('stderr') or host_data.get('error_logs') or ''
+                stdout = _merge_log(host_data.get('stdout') or host_data.get('logs'))
+                stderr = _merge_log(host_data.get('stderr') or host_data.get('error_logs'))
 
                 hosts.append({
                     'id': host_id,
