@@ -249,8 +249,9 @@ class ExecutionRecordService:
                 'success_rate': 0
             }
 
+    @staticmethod
     def retry_step_inplace(execution_record, step_id, retry_type='failed_only', user=None):
-        """步骤原地重试服务 - 不创建新的执行记录，在原记录上重试"""
+        """步骤原地重试服务 - 不创建新的执行记录，在原记录上重试（只支持Agent方式）"""
         try:
             # 获取要重试的步骤
             try:
@@ -300,21 +301,24 @@ class ExecutionRecordService:
             # 记录重试日志
             logger.info(f"开始原地重试步骤: {step.step_name}, 执行记录: {execution_record.execution_id}")
 
-            # 根据执行类型启动原地重试
+            # 只支持Agent方式执行
+            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+
+            # 根据执行类型启动原地重试（只支持Agent方式）
             if execution_record.execution_type == 'job_workflow':
                 # 工作流执行 - 从指定步骤开始
-                result = ExecutionRecordService._retry_job_workflow_from_step_inplace(
-                    execution_record, step, target_hosts, user
+                result = ExecutionRecordService._retry_job_workflow_from_step_inplace_agent(
+                    execution_record, step, target_hosts, user, agent_server_url
                 )
             elif execution_record.execution_type == 'quick_script':
                 # 快速脚本执行
-                result = ExecutionRecordService._retry_quick_script_step_inplace(
-                    execution_record, step, target_hosts, user
+                result = ExecutionRecordService._retry_quick_script_step_inplace_agent(
+                    execution_record, step, target_hosts, user, agent_server_url
                 )
             elif execution_record.execution_type == 'quick_file_transfer':
                 # 快速文件传输
-                result = ExecutionRecordService._retry_file_transfer_step_inplace(
-                    execution_record, step, target_hosts, user
+                result = ExecutionRecordService._retry_file_transfer_step_inplace_agent(
+                    execution_record, step, target_hosts, user, agent_server_url
                 )
             else:
                 result = {'success': False, 'error': '不支持的执行类型'}
@@ -406,7 +410,7 @@ class ExecutionRecordService:
 
     @staticmethod
     def _continue_execution_from_step(execution_record, step, user):
-        """从指定步骤继续执行"""
+        """从指定步骤继续执行（只支持Agent方式）"""
         try:
             # 根据执行类型继续执行
             if execution_record.execution_type == 'job_workflow':
@@ -430,24 +434,29 @@ class ExecutionRecordService:
 
     @staticmethod
     def _continue_job_workflow_from_step(execution_record, step, user):
-        """从指定步骤继续工作流执行"""
+        """从指定步骤继续工作流执行（只支持Agent方式）"""
         try:
-            # 启动异步工作流执行 - 使用ExecutionPlanService
             from apps.job_templates.services import ExecutionPlanService
+
+            # 获取Agent-Server地址
+            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+
+            # 启动异步工作流执行 - 使用ExecutionPlanService（Agent方式）
             result = ExecutionPlanService.execute_plan(
-                execution_plan=execution_record.execution_plan,
+                execution_plan=execution_record.related_object,
                 user=user,
                 trigger_type='retry',
                 name=f"重试: {execution_record.name}",
-                description=f"从步骤 {step.step_order} 重试执行"
+                description=f"从步骤 {step.step_order} 重试执行",
+                execution_mode='agent',  # 只支持Agent方式
+                agent_server_url=agent_server_url,
+                start_step_order=step.step_order,  # 从指定步骤开始
             )
 
             if not result.get('success'):
-                return {'success': False, 'error': result.get('message', '工作流重试失败')}
+                return {'success': False, 'error': result.get('error', '工作流重试失败')}
 
-            task_id = result.get('celery_task_id')
-
-            return {'success': True, 'task_id': task_id}
+            return result
 
         except Exception as e:
             logger.error(f"继续工作流执行失败: {str(e)}", exc_info=True)
@@ -455,29 +464,41 @@ class ExecutionRecordService:
 
     @staticmethod
     def _continue_quick_script_from_step(execution_record, step, user):
-        """从指定步骤继续脚本执行"""
+        """从指定步骤继续脚本执行（只支持Agent方式）"""
         try:
-            # 启动脚本执行 - 使用Fabric任务
-            from apps.executor.fabric_tasks import start_script_execution
-            task = start_script_execution(
+            from apps.agents.execution_service import AgentExecutionService
+            from apps.hosts.models import Host
+
+            # 从execution_parameters获取目标主机ID列表
+            target_host_ids = execution_record.execution_parameters.get('target_host_ids', [])
+            if not target_host_ids:
+                return {'success': False, 'error': '没有目标主机'}
+
+            # 获取主机对象
+            target_hosts = Host.objects.filter(id__in=target_host_ids)
+
+            # 获取Agent-Server地址
+            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+
+            # 通过Agent执行脚本
+            result = AgentExecutionService.execute_script_via_agent(
+                execution_record=execution_record,
                 script_content=step.step_parameters.get('script_content', ''),
                 script_type=step.step_parameters.get('script_type', 'shell'),
-                target_hosts=execution_record.target_hosts,
+                target_hosts=list(target_hosts),
                 timeout=step.step_parameters.get('timeout', 300),
-                execution_mode='parallel',
-                global_variables={},
-                positional_args=[],
-                execution_id=execution_record.execution_id,
-                step_name='脚本执行'  # 继续执行时使用统一的步骤名称
+                global_variables=execution_record.execution_parameters.get('global_variables', {}),
+                step_id=str(step.id),
+                agent_server_url=agent_server_url,
             )
 
-            # 更新执行记录状态
-            execution_record.celery_task_id = task.id
-            execution_record.status = 'running'
-            execution_record.started_at = timezone.now()
-            execution_record.save()
+            if result['success']:
+                # 更新执行记录状态
+                execution_record.status = 'running'
+                execution_record.started_at = timezone.now()
+                execution_record.save()
 
-            return {'success': True, 'task_id': task.id}
+            return result
 
         except Exception as e:
             logger.error(f"继续脚本执行失败: {str(e)}", exc_info=True)
@@ -485,17 +506,211 @@ class ExecutionRecordService:
 
     @staticmethod
     def _continue_file_transfer_from_step(execution_record, step, user):
-        """从指定步骤继续文件传输"""
+        """从指定步骤继续文件传输（只支持Agent方式）"""
         try:
-            # TODO: 文件传输功能需要在Fabric中实现
-            # 暂时返回错误，提示功能未实现
-            return {
-                'success': False,
-                'error': '文件传输功能暂未在Fabric中实现，请使用快速执行的文件传输功能'
-            }
+            from apps.agents.execution_service import AgentExecutionService
+            from apps.hosts.models import Host
 
+            # 从execution_parameters获取目标主机ID列表
+            target_host_ids = execution_record.execution_parameters.get('target_host_ids', [])
+            if not target_host_ids:
+                return {'success': False, 'error': '没有目标主机'}
 
+            # 获取主机对象
+            target_hosts = Host.objects.filter(id__in=target_host_ids)
+
+            # 获取Agent-Server地址
+            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+
+            # 获取步骤参数
+            step_params = step.step_parameters or {}
+            transfer_type = step_params.get('transfer_type', 'upload')
+            local_path = step_params.get('local_path', '')
+            remote_path = step_params.get('remote_path', '')
+            timeout = step_params.get('timeout', 300)
+            bandwidth_limit = step_params.get('bandwidth_limit', 0)
+
+            # 读取文件内容（如果是上传）
+            file_content = None
+            if transfer_type == 'upload' and local_path:
+                try:
+                    with open(local_path, 'rb') as f:
+                        file_content = f.read()
+                except Exception as e:
+                    logger.error(f"读取文件失败: {str(e)}")
+                    return {
+                        'success': False,
+                        'error': f'读取文件失败: {str(e)}'
+                    }
+
+            # 通过Agent执行文件传输
+            result = AgentExecutionService.execute_file_transfer_via_agent(
+                execution_record=execution_record,
+                transfer_type=transfer_type,
+                local_path=local_path,
+                remote_path=remote_path,
+                target_hosts=list(target_hosts),
+                file_content=file_content,
+                timeout=timeout,
+                bandwidth_limit=bandwidth_limit,
+                step_id=str(step.id),
+                agent_server_url=agent_server_url,
+            )
+
+            if result['success']:
+                # 更新执行记录状态
+                execution_record.status = 'running'
+                execution_record.started_at = timezone.now()
+                execution_record.save()
+
+            return result
 
         except Exception as e:
             logger.error(f"继续文件传输失败: {str(e)}", exc_info=True)
             return {'success': False, 'error': f'继续文件传输失败: {str(e)}'}
+
+    @staticmethod
+    def _retry_job_workflow_from_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+        """工作流步骤原地重试（Agent方式）"""
+        try:
+            from apps.agents.execution_service import AgentExecutionService
+            from apps.hosts.models import Host
+
+            # target_hosts是字典列表，需要转换为Host对象
+            host_ids = [h.get('id') for h in target_hosts if isinstance(h, dict) and h.get('id')]
+            if not host_ids:
+                # 如果target_hosts是Host对象列表
+                host_ids = [h.id if hasattr(h, 'id') else h for h in target_hosts]
+
+            target_host_objs = Host.objects.filter(id__in=host_ids)
+
+            # 获取步骤参数
+            script_content = step.step_parameters.get('script_content', '')
+            script_type = step.step_parameters.get('script_type', 'shell')
+            timeout = step.step_parameters.get('timeout', 300)
+            global_variables = execution_record.execution_parameters.get('global_variables', {})
+
+            # 通过Agent执行脚本
+            result = AgentExecutionService.execute_script_via_agent(
+                execution_record=execution_record,
+                script_content=script_content,
+                script_type=script_type,
+                target_hosts=list(target_host_objs),
+                timeout=timeout,
+                global_variables=global_variables,
+                step_id=str(step.id),
+                agent_server_url=agent_server_url,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"工作流步骤原地重试失败: {str(e)}", exc_info=True)
+            return {'success': False, 'error': f'工作流步骤重试失败: {str(e)}'}
+
+    @staticmethod
+    def _retry_quick_script_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+        """快速脚本步骤原地重试（Agent方式）"""
+        try:
+            from apps.agents.execution_service import AgentExecutionService
+            from apps.hosts.models import Host
+
+            # target_hosts是字典列表，需要转换为Host对象
+            host_ids = [h.get('id') for h in target_hosts if isinstance(h, dict) and h.get('id')]
+            if not host_ids:
+                # 如果target_hosts是Host对象列表
+                host_ids = [h.id if hasattr(h, 'id') else h for h in target_hosts]
+
+            target_host_objs = Host.objects.filter(id__in=host_ids)
+
+            # 获取步骤参数
+            script_content = step.step_parameters.get('script_content', '')
+            script_type = step.step_parameters.get('script_type', 'shell')
+            timeout = step.step_parameters.get('timeout', 300)
+            global_variables = execution_record.execution_parameters.get('global_variables', {})
+
+            # 通过Agent执行脚本
+            result = AgentExecutionService.execute_script_via_agent(
+                execution_record=execution_record,
+                script_content=script_content,
+                script_type=script_type,
+                target_hosts=list(target_host_objs),
+                timeout=timeout,
+                global_variables=global_variables,
+                step_id=str(step.id),
+                agent_server_url=agent_server_url,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"快速脚本步骤原地重试失败: {str(e)}", exc_info=True)
+            return {'success': False, 'error': f'快速脚本步骤重试失败: {str(e)}'}
+
+    @staticmethod
+    def _retry_file_transfer_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+        """文件传输步骤原地重试（Agent方式）"""
+        try:
+            from apps.agents.execution_service import AgentExecutionService
+            from apps.hosts.models import Host
+
+            # target_hosts是字典列表，需要转换为Host对象
+            host_ids = [h.get('host_id') for h in target_hosts if isinstance(h, dict) and h.get('host_id')]
+            if not host_ids:
+                # 如果target_hosts是Host对象列表
+                host_ids = [h.id if hasattr(h, 'id') else h for h in target_hosts]
+
+            target_host_objs = Host.objects.filter(id__in=host_ids)
+
+            # 获取步骤参数
+            step_params = step.step_parameters or {}
+            transfer_type = step_params.get('transfer_type', 'upload')
+            local_path = step_params.get('local_path', '')
+            remote_path = step_params.get('remote_path', '')
+            timeout = step_params.get('timeout', 300)
+            bandwidth_limit = step_params.get('bandwidth_limit', 0)
+
+            # 读取文件内容（如果是上传）
+            file_content = None
+            if transfer_type == 'upload':
+                if local_path:
+                    try:
+                        with open(local_path, 'rb') as f:
+                            file_content = f.read()
+                    except Exception as e:
+                        logger.error(f"读取文件失败: {str(e)}")
+                        return {
+                            'success': False,
+                            'error': f'读取文件失败: {str(e)}'
+                        }
+                # 如果step_params中有file_content（base64编码），也需要处理
+                elif step_params.get('file_content'):
+                    import base64
+                    try:
+                        file_content = base64.b64decode(step_params['file_content'])
+                    except Exception as e:
+                        logger.error(f"解码文件内容失败: {str(e)}")
+                        return {
+                            'success': False,
+                            'error': f'解码文件内容失败: {str(e)}'
+                        }
+
+            # 通过Agent执行文件传输
+            result = AgentExecutionService.execute_file_transfer_via_agent(
+                execution_record=execution_record,
+                transfer_type=transfer_type,
+                local_path=local_path,
+                remote_path=remote_path,
+                target_hosts=list(target_host_objs),
+                file_content=file_content,
+                timeout=timeout,
+                bandwidth_limit=bandwidth_limit,
+                step_id=str(step.id),
+                agent_server_url=agent_server_url,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"文件传输步骤原地重试失败: {str(e)}", exc_info=True)
+            return {'success': False, 'error': f'文件传输步骤重试失败: {str(e)}'}

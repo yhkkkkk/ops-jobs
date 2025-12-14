@@ -84,6 +84,18 @@
             </a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="业务系统">
+          <a-select
+            v-model="searchForm.business_system"
+            placeholder="请选择业务系统"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 150px"
+            :options="businessSystems"
+            :field-names="{ value: 'id', label: 'name' }"
+          />
+        </a-form-item>
         <a-form-item>
           <a-space>
             <a-button type="primary" @click="handleSearch">
@@ -138,6 +150,11 @@
             </a-space>
             <span v-else class="text-gray-400">无标签</span>
           </div>
+        </template>
+
+        <template #business_system="{ record }">
+          <span v-if="record.business_system_name">{{ record.business_system_name }}</span>
+          <span v-else class="text-gray-400">-</span>
         </template>
 
         <template #step_count="{ record }">
@@ -257,7 +274,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { jobTemplateApi } from '@/api/ops'
+import { jobTemplateApi, businessSystemApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
@@ -280,10 +297,13 @@ const searchForm = reactive({
   search: '',
   category: '',
   tags: [] as string[],
+  business_system: undefined as number | undefined,
 })
 
 // 可用标签列表
 const availableTags = ref<string[]>([])
+// 业务系统列表
+const businessSystems = ref<Array<{ id: number; name: string }>>([])
 
 // 分页配置
 const pagination = reactive({
@@ -318,6 +338,13 @@ const columns = [
     key: 'tags',
     slotName: 'tags',
     width: 200
+  },
+  {
+    title: '业务系统',
+    dataIndex: 'business_system',
+    key: 'business_system',
+    slotName: 'business_system',
+    width: 150
   },
   {
     title: '步骤数',
@@ -370,6 +397,16 @@ const fetchAvailableTags = async () => {
   }
 }
 
+// 获取业务系统列表
+const fetchBusinessSystems = async () => {
+  try {
+    const response = await businessSystemApi.getBusinessSystems()
+    businessSystems.value = response.results || []
+  } catch (error) {
+    console.error('获取业务系统列表失败:', error)
+  }
+}
+
 // 获取作业模板列表
 const fetchTemplates = async () => {
   try {
@@ -380,6 +417,7 @@ const fetchTemplates = async () => {
       search: searchForm.search || undefined,
       category: searchForm.category || undefined,
       tags: searchForm.tags.length > 0 ? searchForm.tags.join(',') : undefined,
+      business_system: searchForm.business_system || undefined,
     }
 
     // 过滤空值
@@ -415,6 +453,7 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.category = ''
   searchForm.tags = []
+  searchForm.business_system = undefined
   pagination.current = 1
   fetchTemplates()
 }
@@ -610,6 +649,7 @@ const canDeleteTemplate = (templateId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
+  fetchBusinessSystems()
   fetchTemplates()
 })
 </script>

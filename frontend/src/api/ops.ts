@@ -84,6 +84,14 @@ export const hostApi = {
   },
 }
 
+// 业务系统API
+export const businessSystemApi = {
+  // 获取业务系统列表（用于下拉选择）
+  getBusinessSystems(): Promise<{ results: Array<{ id: number; name: string }> }> {
+    return http.get('/hosts/business-systems/')
+  },
+}
+
 // 主机分组API
 export const hostGroupApi = {
   // 获取分组列表

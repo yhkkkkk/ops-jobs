@@ -45,6 +45,16 @@
               </a-select>
             </a-form-item>
 
+            <a-form-item label="业务系统" field="business_system">
+              <a-select
+                v-model="form.business_system"
+                placeholder="请选择业务系统（可选）"
+                allow-clear
+                :options="businessSystems"
+                :field-names="{ value: 'id', label: 'name' }"
+              />
+            </a-form-item>
+
             <a-form-item label="标签" field="tags_json">
               <div class="tags-kv-editor">
                 <div v-if="Object.keys(form.tags_json || {}).length === 0" class="empty-tags">
@@ -181,10 +191,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, nextTick } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import ScriptEditorWithValidation from '@/components/ScriptEditorWithValidation.vue'
 import type { ScriptTemplate } from '@/types'
 import type { ScriptValidationResult } from '@/utils/scriptValidator'
+import { businessSystemApi } from '@/api/ops'
 
 interface Props {
   template?: ScriptTemplate | null
@@ -210,6 +221,7 @@ const form = reactive<Partial<ScriptTemplate>>({
   name: '',
   script_type: 'shell',
   category: '',
+  business_system: undefined as number | undefined,
   tags_json: {},
   description: '',
   content: '',
@@ -217,6 +229,9 @@ const form = reactive<Partial<ScriptTemplate>>({
   is_active: true,
   is_public: false,
 })
+
+// 业务系统列表
+const businessSystems = ref<Array<{ id: number; name: string }>>([])
 
 // 用于跟踪标签键的变化
 const tagKeys = ref<Record<string, string>>({})
@@ -386,6 +401,7 @@ const initForm = () => {
       name: props.template.name || '',
       script_type: props.template.script_type || 'shell',
       category: props.template.category || '',
+      business_system: props.template.business_system || undefined,
       tags_json: props.template.tags_json || {},
       description: props.template.description || '',
       content: props.template.script_content || props.template.content || '',
@@ -406,6 +422,7 @@ const initForm = () => {
       name: '',
       script_type: 'shell',
       category: '',
+      business_system: undefined,
       tags_json: {},
       description: '',
       content: '',
@@ -637,6 +654,21 @@ watch(
   },
   { deep: true }
 )
+
+// 获取业务系统列表
+const fetchBusinessSystems = async () => {
+  try {
+    const response = await businessSystemApi.getBusinessSystems()
+    businessSystems.value = response.results || []
+  } catch (error) {
+    console.error('获取业务系统列表失败:', error)
+  }
+}
+
+// 初始化
+onMounted(() => {
+  fetchBusinessSystems()
+})
 </script>
 
 <style scoped>

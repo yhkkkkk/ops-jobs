@@ -37,13 +37,27 @@ class JobTemplateFilter(django_filters.FilterSet):
         label='创建人ID'
     )
 
+    # 按业务系统过滤
+    business_system = django_filters.ModelChoiceFilter(
+        field_name='business_system',
+        queryset=None,  # 将在 __init__ 中设置
+        label='业务系统'
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 动态设置业务系统的查询集
+        from apps.hosts.models import BusinessSystem
+        self.filters['business_system'].queryset = BusinessSystem.objects.filter(is_active=True)
+
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""
         if value:
             return queryset.filter(
                 models.Q(name__icontains=value) |
                 models.Q(description__icontains=value) |
-                models.Q(category__icontains=value)
+                models.Q(category__icontains=value) |
+                models.Q(business_system__name__icontains=value)
             )
         return queryset
 
@@ -96,7 +110,7 @@ class JobTemplateFilter(django_filters.FilterSet):
 
     class Meta:
         model = JobTemplate
-        fields = ['search', 'category', 'tag', 'tags', 'created_by']
+        fields = ['search', 'category', 'tag', 'tags', 'created_by', 'business_system']
 
 
 class ExecutionPlanFilter(django_filters.FilterSet):

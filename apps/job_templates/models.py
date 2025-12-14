@@ -17,6 +17,16 @@ class JobTemplate(models.Model):
     tags_json = models.JSONField(default=dict, blank=True, verbose_name="标签",
                                help_text="键值对格式的标签，如 {'env': 'prod', 'team': 'ops'}")
 
+    # 业务系统
+    business_system = models.ForeignKey(
+        'hosts.BusinessSystem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="业务系统",
+        help_text="可选，如果设置则执行时只允许匹配该业务系统的主机"
+    )
+
     # 全局变量（模板级别的参数）
     # 支持两种格式：
     # 1. 简单格式（向后兼容）: {"key": "value"}

@@ -19,14 +19,16 @@ import (
 	"ops-job-agent/internal/logstream"
 	"ops-job-agent/internal/metrics"
 	"ops-job-agent/internal/system"
+	"ops-job-agent/internal/taskqueue"
 	wsclient "ops-job-agent/internal/websocket"
 )
 
 // Agent 是 Agent 进程的核心对象，负责注册、心跳、拉任务等
 type Agent struct {
 	cfg            *config.Config
-	client         *httpclient.Client // HTTP 客户端（direct 模式）
-	wsClient       *wsclient.Client   // WebSocket 客户端（agent-server 模式）
+	client         *httpclient.Client   // HTTP 客户端（direct 模式）
+	wsClient       *wsclient.Client     // WebSocket 客户端（agent-server 模式）
+	taskQueue      *taskqueue.TaskQueue // asynq任务队列（可选）
 	info           *AgentInfo
 	system         SystemInfo
 	ctx            context.Context
@@ -71,9 +73,22 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	logStream := logstream.NewLogStream(httpClient, "", batchSize, flushInterval)
 
+	// 创建asynq任务队列（如果启用）
+	var taskQueue *taskqueue.TaskQueue
+	if cfg.Asynq.Enabled && cfg.Redis.Enabled {
+		var err error
+		taskQueue, err = taskqueue.NewTaskQueue(cfg)
+		if err != nil {
+			logger.GetLogger().WithError(err).Warn("create task queue failed, continuing without asynq")
+		} else {
+			logger.GetLogger().Info("asynq task queue initialized for agent")
+		}
+	}
+
 	return &Agent{
 		cfg:            cfg,
 		client:         httpClient,
+		taskQueue:      taskQueue,
 		system:         collectSystemInfo(),
 		ctx:            ctx,
 		cancel:         cancel,
@@ -96,6 +111,28 @@ func (a *Agent) Start() error {
 		return err
 	}
 
+	// 启动asynq任务队列服务器（如果启用）
+	if a.taskQueue != nil {
+		// 注册任务处理器
+		a.taskQueue.RegisterHandler(func(ctx context.Context, task *api.TaskSpec) error {
+			// 从队列中取出任务后，直接执行
+			go a.executeTask(task)
+			return nil
+		})
+
+		// 启动asynq服务器
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			if err := a.taskQueue.Start(); err != nil {
+				logger.GetLogger().WithError(err).Error("asynq server error")
+			}
+		}()
+
+		// Agent上线时，处理待处理任务
+		go a.processPendingTasksFromQueue()
+	}
+
 	a.wg.Add(2)
 	go a.heartbeatLoop()
 	go a.taskLoop()
@@ -113,6 +150,10 @@ func (a *Agent) Stop() {
 	// 断开 WebSocket 连接（agent-server 模式）
 	if a.wsClient != nil {
 		a.wsClient.Disconnect()
+	}
+	// 停止asynq任务队列（如果启用）
+	if a.taskQueue != nil {
+		a.taskQueue.Stop()
 	}
 	a.wg.Wait()
 }
@@ -479,6 +520,40 @@ func (a *Agent) trackTaskStatus(taskID string, stopCh chan struct{}) {
 				return
 			}
 		}
+	}
+}
+
+// processPendingTasksFromQueue 从asynq队列拉取待处理任务并执行
+// 在Agent上线时调用，处理离线期间积累的任务
+func (a *Agent) processPendingTasksFromQueue() {
+	if a.taskQueue == nil || a.info == nil {
+		return
+	}
+
+	// 等待Agent注册完成
+	time.Sleep(2 * time.Second)
+
+	// 从队列中拉取待处理任务（最多100个）
+	tasks, err := a.taskQueue.ListPendingTasks(a.info.ID, 100)
+	if err != nil {
+		logger.GetLogger().WithError(err).Error("list pending tasks from queue failed")
+		return
+	}
+
+	if len(tasks) == 0 {
+		return
+	}
+
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id":   a.info.ID,
+		"task_count": len(tasks),
+	}).Info("processing pending tasks from asynq queue")
+
+	// 执行每个任务
+	for _, task := range tasks {
+		go a.executeTask(task)
+		// 避免同时启动太多任务，稍微延迟
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

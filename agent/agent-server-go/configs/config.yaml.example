@@ -24,8 +24,15 @@ logging:
   max_age: 7     # days
 
 redis:
-  enabled: false
+  enabled: true
   addr: "localhost:6379"
   password: ""
   db: 0
+
+asynq:
+  enabled: true
+  concurrency: 10
+  retry_max: 3
+  retry_delay: "1s"
+  task_timeout: "5m"
 

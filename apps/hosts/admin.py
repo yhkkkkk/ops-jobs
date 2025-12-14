@@ -3,7 +3,27 @@ from django.utils.html import format_html
 from django.urls import reverse
 from guardian.admin import GuardedModelAdmin
 from guardian.shortcuts import get_objects_for_user, get_perms
-from .models import Host, HostGroup
+from .models import Host, HostGroup, BusinessSystem
+
+
+@admin.register(BusinessSystem)
+class BusinessSystemAdmin(admin.ModelAdmin):
+    """业务系统管理"""
+    list_display = ['name', 'description', 'is_active', 'created_at', 'updated_at']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['name', 'description']
+    ordering = ['name']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('name', 'description', 'is_active')
+        }),
+        ('时间信息', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 class PermissionActionsMixin:

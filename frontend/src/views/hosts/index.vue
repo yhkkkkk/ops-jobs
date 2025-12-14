@@ -907,7 +907,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import type { Host, HostGroup, HostImportResult } from '@/types'
@@ -918,6 +918,7 @@ import HostGroupTree from './components/HostGroupTree.vue'
 import HostGroupForm from './components/HostGroupForm.vue'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const hosts = ref<Host[]>([])
 const formVisible = ref(false)
@@ -1440,10 +1441,22 @@ const handleEdit = (record: Host) => {
 // 查看主机详情
 const handleView = (record: Host) => {
   console.log('查看主机详情:', record)
-  router.push({
-    name: 'HostDetail',
-    params: { id: record.id.toString() }
-  })
+  // 判断当前是否在运维台
+  const isOpsPlatform = route.path.startsWith('/ops')
+  
+  if (isOpsPlatform) {
+    // 运维台使用 OpsHostDetail 路由
+    router.push({
+      name: 'OpsHostDetail',
+      params: { id: record.id.toString() }
+    })
+  } else {
+    // 作业平台使用 HostDetail 路由
+    router.push({
+      name: 'HostDetail',
+      params: { id: record.id.toString() }
+    })
+  }
 }
 
 // 测试连接

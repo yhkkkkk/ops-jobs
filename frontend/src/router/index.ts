@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { Message } from '@arco-design/web-vue'
 import type { RouteRecordRaw } from 'vue-router'
 import NProgress from 'nprogress'
 import '@/styles/nprogress.css'
@@ -30,6 +31,7 @@ const routes: RouteRecordRaw[] = [
     redirect: '/dashboard',
     meta: {
       requiresAuth: true,
+      platform: 'job', // 标记为作业平台
     },
     children: [
       {
@@ -281,6 +283,73 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/ops',
+    name: 'OpsLayout',
+    component: () => import('@/views/OpsLayout.vue'),
+    redirect: '/ops/agents',
+    meta: {
+      requiresAuth: true,
+      requiresSuperUser: true, // 只有超级管理员才能访问运维台
+      platform: 'ops', // 标记为运维台
+    },
+    children: [
+      {
+        path: 'agents',
+        name: 'OpsAgents',
+        component: () => import('@/views/ops/agents/index.vue'),
+        meta: {
+          title: 'Agent 管理',
+          icon: 'icon-server',
+        },
+      },
+      {
+        path: 'agents/:id',
+        name: 'OpsAgentDetail',
+        component: () => import('@/views/ops/agents/detail.vue'),
+        meta: {
+          title: 'Agent 详情',
+          hideInMenu: true,
+        },
+      },
+      {
+        path: 'agents/install-records',
+        name: 'OpsAgentInstallRecords',
+        component: () => import('@/views/ops/agents/install-records.vue'),
+        meta: {
+          title: 'Agent 安装记录',
+          icon: 'icon-history',
+        },
+      },
+      {
+        path: 'agents/packages',
+        name: 'OpsAgentPackages',
+        component: () => import('@/views/ops/agents/packages.vue'),
+        meta: {
+          title: 'Agent 安装包管理',
+          icon: 'icon-archive',
+        },
+      },
+      {
+        path: 'hosts',
+        name: 'OpsHosts',
+        component: () => import('@/views/hosts/index.vue'),
+        meta: {
+          title: '主机管理',
+          icon: 'icon-computer',
+        },
+      },
+      {
+        path: 'hosts/:id',
+        name: 'OpsHostDetail',
+        component: () => import('@/views/hosts/detail.vue'),
+        meta: {
+          title: '主机详情',
+          hideInMenu: true,
+        },
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFound.vue'),
@@ -381,6 +450,7 @@ router.beforeEach(async (to, from, next) => {
     // 检查是否需要超级用户权限
     if (to.meta.requiresSuperUser && !authStore.user?.is_superuser) {
       NProgress.done()
+      Message.warning('您没有权限访问该页面，仅超级管理员可访问')
       next({ name: 'Dashboard' })
       return
     }

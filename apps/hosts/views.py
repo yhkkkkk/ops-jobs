@@ -8,7 +8,7 @@ from apps.permissions.permissions import HostManagementPermission, ServerAccount
 
 from utils.responses import SycResponse
 from utils.pagination import HostPagination
-from .models import Host, HostGroup, ServerAccount
+from .models import Host, HostGroup, ServerAccount, BusinessSystem
 from .services import HostService, HostGroupService
 from .cloud_sync_service import CloudSyncService
 from .serializers import (
@@ -25,6 +25,8 @@ from .serializers import (
     HostExcelImportSerializer,
     HostBatchUpdateSerializer,
     HostToHostTransferSerializer,
+    BusinessSystemSerializer,
+    BusinessSystemSimpleSerializer,
 )
 from .filters import HostFilter, HostGroupFilter, ServerAccountFilter
 
@@ -786,4 +788,23 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
         return SycResponse.success(
             content=None,
             message="账号删除成功"
+        )
+
+
+class BusinessSystemViewSet(viewsets.ReadOnlyModelViewSet):
+    """业务系统API（只读，用于前端下拉选择）"""
+    queryset = BusinessSystem.objects.filter(is_active=True).order_by('name')
+    serializer_class = BusinessSystemSimpleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        """获取业务系统列表（用于下拉选择）"""
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return SycResponse.success(
+            content={
+                'results': serializer.data,
+                'total': len(serializer.data),
+            },
+            message="获取业务系统列表成功"
         )

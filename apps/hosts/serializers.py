@@ -3,8 +3,25 @@
 """
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
-from .models import Host, HostGroup, ServerAccount
+from .models import Host, HostGroup, ServerAccount, BusinessSystem
 from .utils import encrypt_password
+
+
+class BusinessSystemSerializer(serializers.ModelSerializer):
+    """业务系统序列化器"""
+    
+    class Meta:
+        model = BusinessSystem
+        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class BusinessSystemSimpleSerializer(serializers.ModelSerializer):
+    """业务系统简单序列化器（用于下拉选择）"""
+    
+    class Meta:
+        model = BusinessSystem
+        fields = ['id', 'name']
 
 
 class HostGroupSerializer(serializers.ModelSerializer):
@@ -130,6 +147,7 @@ class HostSerializer(serializers.ModelSerializer):
     cloud_provider_display = serializers.CharField(source='get_cloud_provider_display', read_only=True)
     device_type_display = serializers.CharField(source='get_device_type_display', read_only=True)
     environment_display = serializers.CharField(source='get_environment_display', read_only=True)
+    business_system_name = serializers.CharField(source='business_system.name', read_only=True)
     account_info = serializers.SerializerMethodField()
     ip_address = serializers.SerializerMethodField()
 
@@ -150,7 +168,7 @@ class HostSerializer(serializers.ModelSerializer):
             # 系统详细信息
             'os_version', 'kernel_version', 'hostname', 'cpu_model', 'os_arch', 'cpu_arch', 'boot_time',
             # 业务信息
-            'environment', 'environment_display', 'business_system', 'service_role', 'remarks',
+            'environment', 'environment_display', 'business_system', 'business_system_name', 'service_role', 'remarks',
             # 管理信息
             'owner', 'department',
             # 时间信息
@@ -178,11 +196,12 @@ class HostSimpleSerializer(serializers.ModelSerializer):
     """主机简单序列化器（用于列表显示）"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     os_type_display = serializers.CharField(source='get_os_type_display', read_only=True)
+    business_system_name = serializers.CharField(source='business_system.name', read_only=True)
     
     class Meta:
         model = Host
         fields = ['id', 'name', 'ip_address', 'port', 'os_type', 'os_type_display',
-                 'status', 'status_display', 'last_check_time']
+                 'status', 'status_display', 'business_system', 'business_system_name', 'last_check_time']
 
 
 class HostConnectionTestSerializer(serializers.Serializer):

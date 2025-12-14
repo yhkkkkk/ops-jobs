@@ -114,7 +114,8 @@ export interface Host {
   // === 业务信息 ===
   environment?: 'dev' | 'test' | 'staging' | 'prod'
   environment_display?: string
-  business_system?: string
+  business_system?: number
+  business_system_name?: string
   service_role?: string
   remarks?: string
 
@@ -195,6 +196,8 @@ export interface ScriptTemplate {
   description?: string
   script_type: 'shell' | 'python' | 'powershell'
   category?: string
+  business_system?: number
+  business_system_name?: string
   tags_json?: Record<string, string>  // 键值对格式的标签
   tag_list?: string[]  // 后端返回的标签列表（用于显示）
   content?: string     // 前端使用的字段
@@ -224,6 +227,8 @@ export interface JobTemplate {
   name: string
   description: string
   category: string
+  business_system?: number
+  business_system_name?: string
   // 用于创建/编辑时的标签结构
   tags: { key: string; value: string }[]
   global_parameters: Record<string, any>

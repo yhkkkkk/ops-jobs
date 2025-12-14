@@ -64,7 +64,7 @@ class SSEBaseView(View):
         if request.user.is_authenticated:
             return request.user
 
-        # 2. 尝试JWT Token认证（从URL参数）
+        # 2. 尝试JWT Token认证
         token = request.GET.get('token')
         if token:
             try:

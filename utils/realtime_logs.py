@@ -119,21 +119,25 @@ class RealtimeLogService:
             try:
                 # 确保连接可用
                 if not self._ensure_connection():
-                    logger.error(f"Redis连接不可用，跳过状态推送: {task_id}")
+                    logger.error(f"redis连接不可用，跳过状态推送: {task_id}")
                     return
 
                 stream_key = f"{self.status_stream_prefix}{task_id}"
 
-                # 构建状态消息
+                # 构建状态消息（支持作业执行和Agent安装两种格式）
                 message = {
                     'timestamp': datetime.now().isoformat(),
                     'status': status_data.get('status', ''),
                     'progress': status_data.get('progress', 0),
                     'current_step': status_data.get('current_step', ''),
-                    'total_hosts': status_data.get('total_hosts', 0),
-                    'success_hosts': status_data.get('success_hosts', 0),
-                    'failed_hosts': status_data.get('failed_hosts', 0),
+                    'total_hosts': status_data.get('total_hosts', status_data.get('total', 0)),
+                    'success_hosts': status_data.get('success_hosts', status_data.get('success_count', 0)),
+                    'failed_hosts': status_data.get('failed_hosts', status_data.get('failed_count', 0)),
                     'running_hosts': status_data.get('running_hosts', 0),
+                    'completed': status_data.get('completed', 0),
+                    'total': status_data.get('total', status_data.get('total_hosts', 0)),
+                    'success_count': status_data.get('success_count', status_data.get('success_hosts', 0)),
+                    'failed_count': status_data.get('failed_count', status_data.get('failed_hosts', 0)),
                     'message': status_data.get('message', '')
                 }
 

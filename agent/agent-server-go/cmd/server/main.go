@@ -43,7 +43,11 @@ var startCmd = &cobra.Command{
 		}).Info("starting agent-server")
 
 		// 创建服务器
-		srv := server.New(cfg)
+		srv, err := server.New(cfg)
+		if err != nil {
+			log.WithError(err).Fatal("create server failed")
+		}
+
 		if err := srv.Start(); err != nil {
 			log.WithError(err).Error("start server failed")
 			return err

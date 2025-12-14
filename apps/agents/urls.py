@@ -1,0 +1,20 @@
+"""
+Agent 管理 API
+"""
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+
+from .views import AgentViewSet
+from .package_views import AgentPackageViewSet
+
+router = DefaultRouter()
+# 先注册具体路径，避免被空路径匹配
+router.register(r'packages', AgentPackageViewSet, basename='package')
+router.register(r'', AgentViewSet, basename='agent')
+
+app_name = 'agents'
+
+urlpatterns = [
+    path('', include(router.urls)),
+]
+

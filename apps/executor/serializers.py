@@ -59,7 +59,6 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
             'celery_task_id', 'execution_parameters',
-            # 列表场景不返回完整 execution_results，避免大日志膨胀
             'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'client_ip', 'user_agent', 'is_completed', 'is_running',

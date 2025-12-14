@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'apps.permissions',     # 权限管理
     'apps.dashboard',       # 仪表盘
     'apps.system_config',   # 系统配置
+    'apps.agents',          # Agent 管理
 ]
 
 MIDDLEWARE = [
@@ -218,7 +219,7 @@ SPECTACULAR_SETTINGS = {
     'POSTPROCESSING_HOOKS': [
         'drf_spectacular.hooks.postprocess_schema_enums',
     ],
-    # 排除sse接口（非标准REST API）
+    # 排除sse接口
     'SCHEMA_PATH_PREFIX_TRIM': True,
     'SCHEMA_PATH_PREFIX_INSERT': '/api/',
     'EXCLUDE_PATH_FORMAT': [

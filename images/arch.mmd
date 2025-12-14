@@ -1,0 +1,52 @@
+flowchart TB
+    subgraph CP["【控制面 (Django)】"]
+        direction TB
+        FE["前端/运维台<br/>RBAC/作用域"]
+        APIJobs["/api/jobs/*<br/>下发任务"]
+        APIAgents["/api/agents/*<br/>管控: 发/吊销Token 启停"]
+        Auth["JWT + RBAC + 作用域"]
+        Audit["审计服务"]
+        DB["数据库<br/>Host/Agent/Token"]
+    end
+
+    subgraph AS["【Agent-Server (Go)】"]
+        direction TB
+        WSHub["WS 连接管理<br/>心跳/指令/日志聚合"]
+        Dispatch["任务分发器<br/>内存队列/限流/优先级<br/>按连接推送"]
+        PushJob["推送任务 -> Agent (WS)"]
+        PushCtrl["推送取消/控制 -> Agent (WS)"]
+        UpLog["上行日志/结果 -> 控制面(HTTP)"]
+    end
+
+    subgraph AG["【Agent (Go)】"]
+        direction TB
+        RegHB["注册/心跳"]
+        QTask["本地任务队列<br/>semaphore 并发控制"]
+        Exec["执行器<br/>脚本/文件/命令"]
+        LogBuf["日志缓冲/节流上报"]
+    end
+
+    FE --> APIJobs
+    FE --> APIAgents
+    APIJobs -->|"HTTP 直接下发任务"| AS
+    APIAgents --> DB
+    Auth -.鉴权/作用域.-> APIJobs
+    Auth -.鉴权/作用域.-> APIAgents
+    Audit -.记录.-> DB
+
+    AS <-. "WebSocket 长连接" .-> AG
+    APIAgents -.可选直查状态/管控.-> AS
+    Dispatch --> PushJob
+    Dispatch --> PushCtrl
+    PushJob --> WSHub
+    PushCtrl --> WSHub
+    WSHub --> RegHB
+    WSHub --> QTask
+    QTask --> Exec
+    Exec --> LogBuf
+    LogBuf --> WSHub
+    UpLog --> CP
+
+    style CP fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#000
+    style AS fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#000
+    style AG fill:#fffde7,stroke:#f57f17,stroke-width:3px,color:#000

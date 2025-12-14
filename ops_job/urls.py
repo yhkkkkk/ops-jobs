@@ -30,6 +30,7 @@ urlpatterns = [
     # 路由
     path('api/dashboard/', include('apps.dashboard.urls')),  # 仪表盘接口
     path('api/hosts/', include('apps.hosts.urls')),
+    path('api/agents/', include('apps.agents.urls')),
     path('api/auth/', include('apps.accounts.urls')),
     path('api/job-templates/', include('apps.job_templates.urls')),
     path('api/quick/', include('apps.quick_execute.urls')),

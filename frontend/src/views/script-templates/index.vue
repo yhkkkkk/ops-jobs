@@ -100,6 +100,18 @@
             </a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="业务系统">
+          <a-select
+            v-model="searchForm.business_system"
+            placeholder="请选择业务系统"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 150px"
+            :options="businessSystems"
+            :field-names="{ value: 'id', label: 'name' }"
+          />
+        </a-form-item>
         <a-form-item>
           <a-space>
             <a-button type="primary" @click="handleSearch">
@@ -175,6 +187,11 @@
             </a-tooltip>
           </div>
           <span v-else>-</span>
+        </template>
+
+        <template #business_system="{ record }">
+          <span v-if="record.business_system_name">{{ record.business_system_name }}</span>
+          <span v-else class="text-gray">-</span>
         </template>
 
         <template #created_at="{ record }">
@@ -320,7 +337,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { scriptTemplateApi } from '@/api/ops'
+import { scriptTemplateApi, businessSystemApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import dayjs from 'dayjs'
@@ -339,10 +356,13 @@ const searchForm = reactive({
   script_type: '',
   category: '',
   tags: [] as string[],
+  business_system: undefined as number | undefined,
 })
 
 // 可用标签列表
 const availableTags = ref<string[]>([])
+// 业务系统列表
+const businessSystems = ref<Array<{ id: number; name: string }>>([])
 
 // 分页配置
 const pagination = reactive({
@@ -399,6 +419,13 @@ const columns = [
     width: 110,
   },
   {
+    title: '业务系统',
+    dataIndex: 'business_system',
+    key: 'business_system',
+    slotName: 'business_system',
+    width: 150,
+  },
+  {
     title: '描述',
     dataIndex: 'description',
     key: 'description',
@@ -436,6 +463,16 @@ const fetchAvailableTags = async () => {
     availableTags.value = tags.sort()
   } catch (error) {
     console.error('获取标签列表失败:', error)
+  }
+}
+
+// 获取业务系统列表
+const fetchBusinessSystems = async () => {
+  try {
+    const response = await businessSystemApi.getBusinessSystems()
+    businessSystems.value = response.results || []
+  } catch (error) {
+    console.error('获取业务系统列表失败:', error)
   }
 }
 
@@ -495,6 +532,7 @@ const handleReset = () => {
     script_type: '',
     category: '',
     tags: [],
+    business_system: undefined,
   })
   pagination.current = 1
   fetchTemplates()
@@ -709,6 +747,7 @@ const canDeleteTemplate = (templateId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
+  fetchBusinessSystems()
   fetchTemplates()
 })
 </script>

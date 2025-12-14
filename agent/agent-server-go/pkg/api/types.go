@@ -2,12 +2,12 @@ package api
 
 // AgentInfo Agent 信息
 type AgentInfo struct {
-	ID      string            `json:"id,omitempty"`
-	Name    string            `json:"name"`
-	Token   string            `json:"token,omitempty"`
-	Labels  map[string]string `json:"labels,omitempty"`
-	System  *SystemInfo       `json:"system,omitempty"`
-	Status  string            `json:"status,omitempty"` // active/inactive
+	ID     string            `json:"id,omitempty"`
+	Name   string            `json:"name"`
+	Token  string            `json:"token,omitempty"`
+	Labels map[string]string `json:"labels,omitempty"`
+	System *SystemInfo       `json:"system,omitempty"`
+	Status string            `json:"status,omitempty"` // active/inactive
 }
 
 // SystemInfo 系统信息
@@ -25,25 +25,32 @@ type SystemInfo struct {
 
 // TaskSpec 任务定义
 type TaskSpec struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type,omitempty"`        // script/file_transfer/command
-	Command    string            `json:"command,omitempty"`     // 要执行的命令或脚本内容
-	ScriptType string            `json:"script_type,omitempty"` // shell/python/powershell
-	Args       []string          `json:"args,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	TimeoutSec int               `json:"timeout_sec,omitempty"`
-	WorkDir    string            `json:"work_dir,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Type         string            `json:"type,omitempty"`        // script/file_transfer/command
+	Command      string            `json:"command,omitempty"`     // 要执行的命令或脚本内容
+	ScriptType   string            `json:"script_type,omitempty"` // shell/python/powershell
+	Args         []string          `json:"args,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	TimeoutSec   int               `json:"timeout_sec,omitempty"`
+	WorkDir      string            `json:"work_dir,omitempty"`
 	FileTransfer *FileTransferSpec `json:"file_transfer,omitempty"`
+	// ExecutionRecord 关联信息（用于重试和状态跟踪）
+	ExecutionID  string `json:"execution_id,omitempty"`   // ExecutionRecord的execution_id
+	StepID       string `json:"step_id,omitempty"`        // ExecutionStep的ID（如果是工作流）
+	HostID       int    `json:"host_id,omitempty"`        // 目标主机ID
+	IsRetry      bool   `json:"is_retry,omitempty"`       // 是否为重试任务
+	RetryCount   int    `json:"retry_count,omitempty"`    // 当前重试次数
+	ParentTaskID string `json:"parent_task_id,omitempty"` // 父任务ID（用于重试链）
 }
 
 // FileTransferSpec 文件传输规范
 type FileTransferSpec struct {
-	Type          string `json:"type"` // upload/download
-	LocalPath     string `json:"local_path"`
-	RemotePath    string `json:"remote_path"`
-	Content       []byte `json:"content,omitempty"`
-	BandwidthLimit int   `json:"bandwidth_limit,omitempty"`
+	Type           string `json:"type"` // upload/download
+	LocalPath      string `json:"local_path"`
+	RemotePath     string `json:"remote_path"`
+	Content        []byte `json:"content,omitempty"`
+	BandwidthLimit int    `json:"bandwidth_limit,omitempty"`
 }
 
 // TaskResult 任务执行结果
@@ -69,7 +76,7 @@ type HeartbeatPayload struct {
 type LogEntry struct {
 	Timestamp int64  `json:"timestamp"`
 	Content   string `json:"content"`
-	Stream    string `json:"stream"` // stdout/stderr
+	Stream    string `json:"stream"`            // stdout/stderr
 	TaskID    string `json:"task_id,omitempty"` // 任务 ID（用于日志聚合）
 }
 
@@ -104,4 +111,3 @@ type RegisterResponse struct {
 	Status string `json:"status"`
 	WSURL  string `json:"ws_url,omitempty"`
 }
-

@@ -14,6 +14,7 @@ type Config struct {
 	Agent        AgentConfig        `mapstructure:"agent"`
 	Logging      LoggingConfig      `mapstructure:"logging"`
 	Redis        RedisConfig        `mapstructure:"redis"`
+	Asynq        AsynqConfig        `mapstructure:"asynq"`
 }
 
 // ServerConfig 服务器配置
@@ -53,6 +54,15 @@ type RedisConfig struct {
 	Addr     string `mapstructure:"addr"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+// AsynqConfig Asynq 配置
+type AsynqConfig struct {
+	Enabled      bool          `mapstructure:"enabled"`
+	Concurrency  int           `mapstructure:"concurrency"`
+	RetryMax     int           `mapstructure:"retry_max"`
+	RetryDelay   time.Duration `mapstructure:"retry_delay"`
+	TaskTimeout  time.Duration `mapstructure:"task_timeout"`
 }
 
 // Load 加载配置
@@ -112,5 +122,12 @@ func setDefaults() {
 	viper.SetDefault("redis.enabled", false)
 	viper.SetDefault("redis.addr", "localhost:6379")
 	viper.SetDefault("redis.db", 0)
+
+	// Asynq 默认值
+	viper.SetDefault("asynq.enabled", true)
+	viper.SetDefault("asynq.concurrency", 10)
+	viper.SetDefault("asynq.retry_max", 3)
+	viper.SetDefault("asynq.retry_delay", "1s")
+	viper.SetDefault("asynq.task_timeout", "5m")
 }
 

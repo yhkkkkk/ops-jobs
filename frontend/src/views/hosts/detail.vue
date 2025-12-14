@@ -337,7 +337,6 @@ const formVisible = ref(false)
 const hostDetail = ref<Host | null>(null)
 
 
-
 // 获取主机详情
 const fetchHostDetail = async () => {
   loading.value = true
@@ -352,11 +351,18 @@ const fetchHostDetail = async () => {
   }
 }
 
-
-
 // 事件处理
 const goBack = () => {
-  router.push('/hosts')
+  // 判断当前是否在运维台
+  const isOpsPlatform = route.path.startsWith('/ops')
+  
+  if (isOpsPlatform) {
+    // 运维台返回到 /ops/hosts
+    router.push('/ops/hosts')
+  } else {
+    // 作业平台返回到 /hosts
+    router.push('/hosts')
+  }
 }
 
 const handleEdit = () => {
@@ -425,12 +431,9 @@ const getStatusText = (status: string) => {
 }
 
 
-
 const formatTime = (timestamp: string) => {
   return dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss')
 }
-
-
 
 const getOSColor = (osType: string) => {
   const colors = {

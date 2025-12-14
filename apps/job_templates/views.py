@@ -94,6 +94,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 name=data['name'],
                 description=data.get('description', ''),
                 category=data.get('category', ''),
+                business_system=data.get('business_system'),
                 tags_json=tags_json,
                 global_parameters=data.get('global_parameters', {}),
                 created_by=request.user
@@ -207,6 +208,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 instance.name = validated_data.get('name', instance.name)
                 instance.description = validated_data.get('description', instance.description)
                 instance.category = validated_data.get('category', instance.category)
+                if 'business_system' in validated_data:
+                    instance.business_system = validated_data.get('business_system')
                 instance.global_parameters = validated_data.get('global_parameters', instance.global_parameters)
 
                 # 处理标签

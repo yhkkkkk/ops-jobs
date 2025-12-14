@@ -2,6 +2,24 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class BusinessSystem(models.Model):
+    """业务系统"""
+    name = models.CharField(max_length=100, unique=True, verbose_name="业务系统名称")
+    description = models.TextField(blank=True, verbose_name="描述")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "业务系统"
+        verbose_name_plural = "业务系统"
+        ordering = ['name']
+        db_table = 'hosts_business_system'
+
+    def __str__(self):
+        return self.name
+
+
 class HostGroup(models.Model):
     """主机分组"""
     name = models.CharField(max_length=100, verbose_name="分组名称")
@@ -158,7 +176,13 @@ class Host(models.Model):
 
     # === 业务信息 ===
     environment = models.CharField(max_length=20, choices=ENVIRONMENT_CHOICES, null=True, blank=True, verbose_name="环境类型")
-    business_system = models.CharField(max_length=100, null=True, blank=True, verbose_name="业务系统")
+    business_system = models.ForeignKey(
+        BusinessSystem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="业务系统"
+    )
     service_role = models.CharField(max_length=100, null=True, blank=True, verbose_name="服务角色")
     remarks = models.TextField(blank=True, verbose_name="备注")
 

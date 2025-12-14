@@ -35,6 +35,26 @@ type Config struct {
 	BandwidthLimit int     `mapstructure:"bandwidth_limit"` // 带宽限制（KB/s），0表示不限制
 	CPULimit       float64 `mapstructure:"cpu_limit"`       // CPU 使用率限制（百分比），0表示不限制
 	MemoryLimit    int     `mapstructure:"memory_limit"`    // 内存限制（MB），0表示不限制
+
+	// Redis配置（用于asynq）
+	Redis RedisConfig `mapstructure:"redis"`
+
+	// Asynq配置
+	Asynq AsynqConfig `mapstructure:"asynq"`
+}
+
+// RedisConfig Redis配置
+type RedisConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+}
+
+// AsynqConfig Asynq配置
+type AsynqConfig struct {
+	Enabled     bool `mapstructure:"enabled"`
+	Concurrency int  `mapstructure:"concurrency"`
 }
 
 // Load 加载配置（使用 viper）
@@ -111,6 +131,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("bandwidth_limit", 0) // 0表示不限制
 	v.SetDefault("cpu_limit", 0.0)     // 0表示不限制
 	v.SetDefault("memory_limit", 0)    // 0表示不限制
+
+	// Redis默认值
+	v.SetDefault("redis.enabled", false)
+	v.SetDefault("redis.addr", "localhost:6379")
+	v.SetDefault("redis.db", 0)
+
+	// Asynq默认值
+	v.SetDefault("asynq.enabled", false)
+	v.SetDefault("asynq.concurrency", 5)
 }
 
 // bindEnvVars 绑定环境变量

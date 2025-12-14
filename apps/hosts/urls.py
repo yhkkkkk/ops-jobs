@@ -9,6 +9,7 @@ router = DefaultRouter()
 router.register(r'groups', views.HostGroupViewSet, basename='hostgroup')
 router.register(r'hosts', views.HostViewSet, basename='host')
 router.register(r'accounts', views.ServerAccountViewSet, basename='serveraccount')
+router.register(r'business-systems', views.BusinessSystemViewSet, basename='businesssystem')
 
 app_name = 'hosts'
 

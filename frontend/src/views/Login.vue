@@ -9,20 +9,11 @@
       <a-tabs 
         v-model:active-key="loginType" 
         type="line"
-        :justify="true"
         class="login-tabs"
         v-if="authConfig.ldap_enabled"
       >
-        <a-tab-pane key="normal" title="普通登录">
-          <template #title>
-            <span>普通登录</span>
-          </template>
-        </a-tab-pane>
-        <a-tab-pane key="ldap" title="LDAP登录">
-          <template #title>
-            <span>LDAP登录</span>
-          </template>
-        </a-tab-pane>
+        <a-tab-pane key="normal" title="普通登录" />
+        <a-tab-pane key="ldap" title="LDAP登录" />
       </a-tabs>
       
       <a-form
@@ -40,7 +31,7 @@
             allow-clear
           >
             <template #prefix>
-              <icon-user />
+              <IconUser />
             </template>
           </a-input>
         </a-form-item>
@@ -53,7 +44,7 @@
             allow-clear
           >
             <template #prefix>
-              <icon-lock />
+              <IconLock />
             </template>
           </a-input-password>
         </a-form-item>
@@ -72,7 +63,7 @@
               style="flex: 1"
             >
               <template #prefix>
-                <icon-safe />
+                <IconSafe />
               </template>
             </a-input>
             <div class="captcha-image" @click="refreshCaptcha">
@@ -83,7 +74,7 @@
                 style="width: 100%; height: 100%; cursor: pointer;"
               />
               <div v-else class="captcha-placeholder">
-                <icon-refresh :size="20" />
+                <IconRefresh :size="20" />
               </div>
             </div>
           </div>
@@ -103,7 +94,7 @@
             :max-length="6"
           >
             <template #prefix>
-              <icon-lock />
+              <IconLock />
             </template>
           </a-input>
           <template #extra>
@@ -116,6 +107,22 @@
             <a-checkbox v-model="form.remember">
               记住登录状态
             </a-checkbox>
+            <div class="platform-selector-inline">
+              <a-radio-group v-model="selectedPlatform" type="button" size="small">
+                <a-radio value="job" class="platform-radio">
+                  <span class="platform-radio-content">
+                    <IconApps :size="14" />
+                    <span>作业平台</span>
+                  </span>
+                </a-radio>
+                <a-radio value="ops" class="platform-radio">
+                  <span class="platform-radio-content">
+                    <IconTool :size="14" />
+                    <span>运维台</span>
+                  </span>
+                </a-radio>
+              </a-radio-group>
+            </div>
           </div>
         </a-form-item>
 
@@ -154,6 +161,7 @@
 import { reactive, ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
+import { IconApps, IconTool, IconUser, IconLock, IconSafe, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, captchaApi } from '@/api/auth'
 import type { LoginParams, AuthConfig } from '@/types'
@@ -173,6 +181,7 @@ const captchaImage = ref<string>('')
 const showOtpInput = ref(false)
 const showOtpHelp = ref(false)
 const loginType = ref<'normal' | 'ldap'>('normal')
+const selectedPlatform = ref<'job' | 'ops'>('job')
 
 // 表单数据
 const form = reactive<LoginParams & { remember: boolean }>({
@@ -305,9 +314,27 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
       await authStore.login(loginData)
       Message.success('登录成功')
       
-      // 跳转到目标页面或首页
+      // 记住用户选择的平台
+      // 检查用户权限
+      const user = authStore.user
+      if (selectedPlatform.value === 'ops' && !user?.is_superuser) {
+        // 非超级管理员不能访问运维台
+        Message.warning('您没有权限访问运维台，仅超级管理员可访问')
+        selectedPlatform.value = 'job'
+      }
+      
+      localStorage.setItem('selected_platform', selectedPlatform.value)
+      sessionStorage.setItem('selected_platform', selectedPlatform.value)
+      
+      // 根据选择的平台跳转
       const redirect = route.query.redirect as string
+      if (selectedPlatform.value === 'ops') {
+        // 运维台（仅超级管理员）
+        router.push(redirect || '/ops/agents')
+      } else {
+        // 作业平台
       router.push(redirect || '/dashboard')
+      }
     } catch (error: any) {
       // 检查是否是2FA错误
       if (error.response?.data?.errors?.otp_token || 
@@ -340,6 +367,12 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
 // 初始化
 onMounted(() => {
   fetchAuthConfig()
+  
+  // 恢复上次选择的平台
+  const savedPlatform = localStorage.getItem('selected_platform') || sessionStorage.getItem('selected_platform')
+  if (savedPlatform === 'ops' || savedPlatform === 'job') {
+    selectedPlatform.value = savedPlatform
+  }
 })
 </script>
 
@@ -377,15 +410,63 @@ onMounted(() => {
   color: #86909c;
 }
 
-.login-tabs {
-  margin-bottom: 24px;
-}
-
 .login-options {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   margin-bottom: 16px;
+  gap: 16px;
+}
+
+.login-options :deep(.arco-checkbox) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.platform-selector-inline {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.platform-selector-inline :deep(.arco-radio-group) {
+  display: inline-flex;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.platform-selector-inline :deep(.arco-radio-button) {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 8px;
+  height: 24px;
+  line-height: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.platform-selector-inline :deep(.arco-radio-button-content) {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.platform-radio-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.login-tabs {
+  margin-bottom: 24px;
+}
+
+.login-tabs :deep(.arco-tabs-nav) {
+  margin-bottom: 0;
 }
 
 .captcha-container {

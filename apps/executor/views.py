@@ -301,32 +301,28 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
             return SycResponse.error(message=f'忽略步骤错误失败: {str(e)}')
 
     def _retry_job_workflow(self, execution_record, user):
-        """重做ExecutionPlan工作流（混合模式）"""
+        """重做ExecutionPlan工作流（混合模式：支持SSH和Agent）"""
         logger.info(f"开始重做工作流: {execution_record.execution_id}")
 
         if not execution_record.related_object:
             logger.error("找不到关联的ExecutionPlan对象")
             return {'success': False, 'error': '找不到关联的ExecutionPlan对象'}
 
-        from apps.job_templates.services import ExecutionPlanService
+        from apps.agents.execution_service import AgentExecutionService
         from django.db import transaction
 
+        # 只支持Agent方式执行
+        agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+
+        logger.info(f"使用Agent方式重试工作流: {execution_record.execution_id}")
         try:
             with transaction.atomic():
-                # 获取根执行记录
-                root_execution = execution_record.get_root_execution()
-                logger.info(f"根执行记录: {root_execution.execution_id}")
-
-                result = ExecutionPlanService.execute_plan(
-                    execution_plan=execution_record.related_object,
+                result = AgentExecutionService.retry_execution_record(
+                    execution_record=execution_record,
                     user=user,
-                    trigger_type='retry',
-                    name=f"重试: {root_execution.name}",
-                    description=f"重试执行记录 {root_execution.execution_id}",
-                    execution_parameters=execution_record.execution_parameters
+                    retry_type='full',
+                    agent_server_url=agent_server_url,
                 )
-
-                logger.info(f"ExecutionPlanService.execute_plan 结果: {result}")
 
                 if result['success']:
                     # 获取新的执行记录
@@ -334,10 +330,14 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                     new_execution = ExecutionRecord.objects.get(id=result['execution_record_id'])
                     logger.info(f"新执行记录: {new_execution.execution_id}")
 
+                    # 获取根执行记录
+                    root_execution = execution_record.get_root_execution()
+                    logger.info(f"根执行记录: {root_execution.execution_id}")
+
                     # 设置重试关系
                     new_execution.parent_execution = root_execution
                     new_execution.is_latest = True
-                    new_execution.retry_reason = "手动重试"
+                    new_execution.retry_reason = "手动重试（Agent方式）"
                     new_execution.save()
                     logger.info("重试关系设置完成")
 
@@ -354,12 +354,12 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                     root_execution.save()
                     logger.info("根记录重试次数更新完成")
 
-            logger.info(f"工作流重做完成，返回结果: {result}")
-            return result
+                logger.info(f"工作流重做完成，返回结果: {result}")
+                return result
 
         except Exception as e:
-            logger.error(f"工作流重做失败: {str(e)}", exc_info=True)
-            return {'success': False, 'error': f'工作流重做失败: {str(e)}'}
+            logger.error(f"Agent方式重试工作流失败: {str(e)}", exc_info=True)
+            return {'success': False, 'error': f'Agent方式重试失败: {str(e)}'}
 
     def _retry_quick_script(self, execution_record, user):
         """重做快速脚本执行"""

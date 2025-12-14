@@ -3,7 +3,7 @@
 """
 import django_filters
 from django.db import models
-from .models import Host, HostGroup, ServerAccount
+from .models import Host, HostGroup, ServerAccount, BusinessSystem
 
 
 class HostFilter(django_filters.FilterSet):
@@ -40,6 +40,13 @@ class HostFilter(django_filters.FilterSet):
     environment = django_filters.ChoiceFilter(
         choices=Host.ENVIRONMENT_CHOICES,
         label='环境类型'
+    )
+
+    # 业务系统过滤器
+    business_system = django_filters.ModelChoiceFilter(
+        field_name='business_system',
+        queryset=BusinessSystem.objects.filter(is_active=True),
+        label='业务系统'
     )
 
     # 分组过滤器（仅匹配当前分组）
@@ -83,7 +90,7 @@ class HostFilter(django_filters.FilterSet):
         model = Host
         fields = [
             'search', 'status', 'os_type', 'cloud_provider', 'device_type',
-            'environment', 'group', 'group_id', 'cpu_cores_min', 'cpu_cores_max',
+            'environment', 'business_system', 'group', 'group_id', 'cpu_cores_min', 'cpu_cores_max',
             'memory_gb_min', 'memory_gb_max'
         ]
 
@@ -107,7 +114,7 @@ class HostFilter(django_filters.FilterSet):
                 models.Q(public_ip__icontains=term) |
                 models.Q(internal_ip__icontains=term) |
                 models.Q(hostname__icontains=term) |
-                models.Q(business_system__icontains=term) |
+                models.Q(business_system__name__icontains=term) |
                 models.Q(service_role__icontains=term) |
                 models.Q(owner__icontains=term) |
                 models.Q(department__icontains=term) |

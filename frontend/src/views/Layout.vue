@@ -152,6 +152,18 @@
         
         <div class="header-right">
           <a-space>
+            <!-- 平台切换（仅超级管理员可见） -->
+            <a-button 
+              v-if="authStore.user?.is_superuser"
+              type="text" 
+              @click="switchToOpsPlatform"
+            >
+              <template #icon>
+                <icon-tool />
+              </template>
+              切换到运维台
+            </a-button>
+            
             <!-- 用户信息 -->
             <a-dropdown>
               <a-button type="text">
@@ -310,11 +322,25 @@ const onSubMenuClick = (key: string) => {
   }
 }
 
+// 切换到运维台
+const switchToOpsPlatform = () => {
+  // 记住用户选择了运维台
+  localStorage.setItem('selected_platform', 'ops')
+  sessionStorage.setItem('selected_platform', 'ops')
+  
+  // 跳转到运维台
+  router.push('/ops/agents')
+}
+
 // 退出登录
 const handleLogout = async () => {
   try {
     await authStore.logout()
     Message.success('退出登录成功')
+
+    // 清除平台选择
+    localStorage.removeItem('selected_platform')
+    sessionStorage.removeItem('selected_platform')
 
     // 使用replace而不是push避免历史记录问题
     await router.replace('/login')

@@ -137,9 +137,8 @@ class ExecutionPlanService:
                 'success': True,
                 'execution_id': execution_record.execution_id,
                 'execution_record_id': execution_record.id,
-                'task_id': celery_task.id,
-                'celery_task_id': celery_task.id,
-                'message': '模板调试执行已启动',
+                'task_id': str(execution_record.execution_id),  # 使用execution_id作为task_id
+                'message': '模板调试执行已启动（Agent方式）',
                 'target_host_count': len(all_target_hosts),
                 'step_count': len(template_steps)
             }
@@ -157,7 +156,6 @@ class ExecutionPlanService:
         """执行执行方案 - 创建ExecutionRecord并执行"""
         try:
             # 并发控制已在系统配置中处理，无需额外检查
-
             if not execution_plan:
                 return {
                     'success': False,
@@ -191,6 +189,18 @@ class ExecutionPlanService:
                         'success': False,
                         'error': '执行方案的步骤没有配置目标主机'
                     }
+
+                # 校验业务系统匹配（如果模板设置了 business_system）
+                template = execution_plan.template
+                if template.business_system:
+                    valid_hosts = [h for h in all_target_hosts if h.business_system_id == template.business_system_id]
+                    if not valid_hosts:
+                        return {
+                            'success': False,
+                            'error': f'没有匹配业务系统 "{template.business_system.name}" 的主机。请检查目标主机的业务系统设置。'
+                        }
+                    # 过滤掉不匹配的主机
+                    all_target_hosts = valid_hosts
 
                 # 合并全局变量和执行参数
                 global_parameters = execution_parameters or {}
@@ -253,27 +263,55 @@ class ExecutionPlanService:
                         step_data['account_id'] = plan_step.step_account_id
                     serializable_plan_steps.append(step_data)
 
-                # 启动异步工作流执行 - 使用Fabric版本
-                from apps.executor.fabric_tasks import start_workflow_execution
-                celery_task = start_workflow_execution(
-                    plan_steps=serializable_plan_steps,
-                    target_hosts=[{
-                        'id': host.id,
-                        'name': host.name,
-                        'ip_address': host.ip_address
-                    } for host in all_target_hosts],
-                    global_parameters=global_parameters,
-                    execution_mode=kwargs.get('execution_mode', 'parallel'),
-                    rolling_batch_size=kwargs.get('rolling_batch_size', 1),
-                    rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
-                    execution_id=execution_record.execution_id  # 传递执行ID用于SSE日志
-                )
+                # 只支持Agent方式执行
+                agent_server_url = kwargs.get('agent_server_url')
+                execution_mode = kwargs.get('execution_mode', 'agent')
 
-                # 更新执行记录
+                # 更新执行参数，添加执行方式标识
+                execution_record.execution_parameters.update({
+                    'execution_mode': execution_mode,
+                    'agent_server_url': agent_server_url,
+                })
+                execution_record.save()
+
+                # 启动异步工作流执行 - 使用Agent方式
+                from apps.agents.execution_service import AgentExecutionService
+                from concurrent.futures import ThreadPoolExecutor
+
+                # 在后台线程中执行工作流
+                def execute_workflow():
+                    try:
+                        result = AgentExecutionService.execute_workflow_via_agent(
+                            execution_record=execution_record,
+                            plan_steps=serializable_plan_steps,
+                            target_hosts=all_target_hosts,
+                            global_parameters=global_parameters,
+                            execution_mode=kwargs.get('execution_mode', 'parallel'),
+                            rolling_batch_size=kwargs.get('rolling_batch_size', 1),
+                            rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
+                            start_step_order=kwargs.get('start_step_order', 1),
+                            agent_server_url=agent_server_url,
+                        )
+                        return result
+                    except Exception as e:
+                        logger.error(f"工作流执行异常: {str(e)}", exc_info=True)
+                        ExecutionRecordService.update_execution_status(
+                            execution_record=execution_record,
+                            status='failed',
+                            error_message=f'工作流执行异常: {str(e)}'
+                        )
+                        return {'success': False, 'error': str(e)}
+
+                # 使用线程池执行
+                executor = ThreadPoolExecutor(max_workers=1)
+                executor.submit(execute_workflow)
+                executor.shutdown(wait=False)
+
+                # 更新执行记录状态
                 ExecutionRecordService.update_execution_status(
                     execution_record=execution_record,
                     status='running',
-                    celery_task_id=celery_task.id
+                    celery_task_id=str(execution_record.execution_id)  # 使用execution_id作为task_id
                 )
 
                 # 更新执行方案统计
@@ -287,9 +325,8 @@ class ExecutionPlanService:
                     'success': True,
                     'execution_id': execution_record.execution_id,
                     'execution_record_id': execution_record.id,
-                    'task_id': celery_task.id,
-                    'celery_task_id': celery_task.id,
-                    'message': '执行方案执行已启动',
+                    'task_id': str(execution_record.execution_id),  # 使用execution_id作为task_id
+                    'message': '执行方案执行已启动（Agent方式）',
                     'target_host_count': len(all_target_hosts),
                     'step_count': len(plan_steps)
                 }

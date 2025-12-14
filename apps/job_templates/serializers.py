@@ -378,6 +378,7 @@ class JobTemplateSerializer(serializers.ModelSerializer):
     """作业模板序列化器"""
 
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    business_system_name = serializers.CharField(source='business_system.name', read_only=True)
     step_count = serializers.ReadOnlyField()
     plan_count = serializers.ReadOnlyField()
     has_unsync_plans = serializers.ReadOnlyField()
@@ -389,7 +390,7 @@ class JobTemplateSerializer(serializers.ModelSerializer):
         model = JobTemplate
         fields = [
             'id', 'name', 'description', 'category', 'tags_json', 'tag_list',
-            'global_parameters', 'step_count', 'plan_count', 'has_unsync_plans',
+            'business_system', 'business_system_name', 'global_parameters', 'step_count', 'plan_count', 'has_unsync_plans',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
             'steps', 'plans'
         ]
@@ -402,6 +403,8 @@ class JobTemplateCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
     category = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    business_system = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True,
+                                           help_text="业务系统，如果设置则执行时只允许匹配该业务系统的主机")
     tags = serializers.ListField(
         child=serializers.DictField(),
         required=False,
@@ -460,6 +463,8 @@ class JobTemplateUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200, required=False, help_text="模板名称")
     description = serializers.CharField(required=False, allow_blank=True, help_text="模板描述")
     category = serializers.CharField(max_length=50, required=False, allow_blank=True, help_text="分类")
+    business_system = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True,
+                                          help_text="业务系统，如果设置则执行时只允许匹配该业务系统的主机")
     tags = serializers.ListField(
         child=serializers.DictField(),
         required=False,

@@ -1,0 +1,584 @@
+"""
+Agent 管理服务
+"""
+import hashlib
+import secrets
+from typing import Any, Dict, Optional
+
+from django.db import transaction
+from django.utils import timezone
+from django.contrib.contenttypes.models import ContentType
+
+from utils.audit_service import AuditLogService
+from apps.hosts.models import Host
+from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
+from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
+from utils.realtime_logs import realtime_log_service
+import uuid
+
+
+class AgentService:
+    """Agent 相关服务"""
+
+    @staticmethod
+    def _hash_token(raw: str) -> str:
+        return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+    @classmethod
+    def issue_token(cls, agent: Agent, user, expired_at=None, note: str = '') -> Dict[str, Any]:
+        """签发新 token，吊销旧 token，返回明文（仅此一次）"""
+        raw = secrets.token_urlsafe(32)
+        token_hash = cls._hash_token(raw)
+        token_last4 = raw[-4:]
+        now = timezone.now()
+        with transaction.atomic():
+            AgentToken.objects.filter(agent=agent, revoked_at__isnull=True).update(revoked_at=now)
+            AgentToken.objects.create(
+                agent=agent,
+                token_hash=token_hash,
+                token_last4=token_last4,
+                issued_by=user,
+                expired_at=expired_at,
+                note=note,
+            )
+            agent.active_token_hash = token_hash
+            if agent.status == 'disabled':
+                agent.status = 'offline'
+            agent.save(update_fields=['active_token_hash', 'status', 'updated_at'])
+        return {'token': raw, 'expired_at': expired_at, 'token_last4': token_last4}
+
+    @staticmethod
+    def revoke_active_token(agent: Agent) -> bool:
+        """吊销当前有效 token"""
+        now = timezone.now()
+        active = AgentToken.objects.filter(agent=agent, revoked_at__isnull=True)
+        if not active.exists():
+            return False
+        active.update(revoked_at=now)
+        agent.active_token_hash = ''
+        agent.save(update_fields=['active_token_hash', 'updated_at'])
+        return True
+
+    @staticmethod
+    def enable_agent(agent: Agent) -> None:
+        if agent.status == 'disabled':
+            agent.status = 'offline'
+            agent.save(update_fields=['status', 'updated_at'])
+
+    @staticmethod
+    def disable_agent(agent: Agent) -> None:
+        if agent.status != 'disabled':
+            agent.status = 'disabled'
+            agent.save(update_fields=['status', 'updated_at'])
+
+    @staticmethod
+    def audit(user, action: str, agent: Agent, request=None, success: bool = True, error_message: str = '', extra: Optional[Dict[str, Any]] = None):
+        """写审计日志"""
+        AuditLogService.log_action(
+            user=user,
+            action=action,
+            description=f"{action} agent {agent.host_id}",
+            request=request,
+            success=success,
+            error_message=error_message,
+            resource_type=ContentType.objects.get_for_model(agent),
+            resource_id=agent.id,
+            resource_name=str(agent),
+            extra_data=extra or {},
+        )
+
+    @staticmethod
+    def get_download_url(host: Host, package_version: str = None, package_id: int = None) -> str:
+        """
+        获取 Agent 安装包下载地址
+        Args:
+            host: 主机对象
+            package_version: 安装包版本号（可选，不指定则使用默认版本）
+            package_id: 安装包ID（可选，优先级最高）
+        Returns:
+            str: 下载地址
+        """
+        from .models import AgentPackage
+        
+        # 确定操作系统和架构
+        os_type = host.os_type.lower() if host.os_type else 'linux'
+        if 'windows' in os_type:
+            os_type = 'windows'
+        elif 'darwin' in os_type or 'macos' in os_type:
+            os_type = 'darwin'
+        else:
+            os_type = 'linux'
+        
+        # 默认架构为 amd64
+        arch = 'amd64'
+        
+        # 优先使用 package_id
+        if package_id:
+            try:
+                package = AgentPackage.objects.get(id=package_id, is_active=True)
+                return package.get_download_url()
+            except AgentPackage.DoesNotExist:
+                pass
+        
+        # 其次使用 package_version
+        if package_version:
+            try:
+                package = AgentPackage.objects.get(
+                    version=package_version,
+                    os_type=os_type,
+                    arch=arch,
+                    is_active=True
+                )
+                return package.get_download_url()
+            except AgentPackage.DoesNotExist:
+                pass
+        
+        # 使用默认版本
+        try:
+            package = AgentPackage.objects.filter(
+                is_default=True,
+                is_active=True,
+                os_type=os_type,
+                arch=arch
+            ).first()
+            if package:
+                return package.get_download_url()
+        except AgentPackage.DoesNotExist:
+            pass
+        
+        # 如果都没有，使用配置中的默认地址
+        from apps.system_config.models import ConfigManager
+        base_url = ConfigManager.get('agent.download_url', 'http://localhost:8000/static/agent/')
+        if os_type == 'windows':
+            return f"{base_url}ops-job-agent-windows-amd64.exe"
+        else:
+            return f"{base_url}ops-job-agent-linux-amd64"
+
+    @staticmethod
+    def generate_install_script(host: Host, token: str, install_mode: str = 'agent-server',
+                                agent_server_url: str = '', download_url: str = '', 
+                                package_version: str = None, package_id: int = None) -> Dict[str, str]:
+        """
+        生成 Agent 安装脚本
+        Args:
+            host: 主机对象
+            token: Agent Token
+            install_mode: 安装模式 ('direct' 或 'agent-server')
+            agent_server_url: Agent-Server 地址（agent-server 模式需要）
+            download_url: Agent 二进制下载地址
+        Returns:
+            Dict[str, str]: 包含不同操作系统的安装脚本
+        """
+        scripts = {}
+        
+        # 从配置获取默认值（如果未提供）
+        if not agent_server_url:
+            from apps.system_config.models import ConfigManager
+            agent_server_url = ConfigManager.get('agent.agent_server_url', 'ws://localhost:8080')
+        
+        if not download_url:
+            # 使用版本管理获取下载地址
+            download_url = cls.get_download_url(host, package_version=package_version, package_id=package_id)
+        
+        # Linux 安装脚本
+        linux_script = f"""#!/bin/bash
+set -e
+
+# 配置
+AGENT_SERVER_URL="{agent_server_url}"
+TOKEN="{token}"
+INSTALL_DIR="/opt/ops-job-agent"
+BINARY_NAME="ops-job-agent"
+SERVICE_NAME="ops-job-agent"
+DOWNLOAD_URL="{download_url}"
+
+# 检查是否已安装
+if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
+    echo "Agent 服务已在运行，请先停止服务"
+    exit 1
+fi
+
+# 创建安装目录
+mkdir -p $INSTALL_DIR
+cd $INSTALL_DIR
+
+# 下载二进制
+echo "正在下载 Agent 二进制..."
+curl -L -o $BINARY_NAME "$DOWNLOAD_URL" || wget -O $BINARY_NAME "$DOWNLOAD_URL"
+chmod +x $BINARY_NAME
+
+# 创建配置文件
+cat > config.yaml <<EOF
+mode: {install_mode}
+"""
+        if install_mode == 'agent-server':
+            linux_script += f"""agent_server_url: $AGENT_SERVER_URL
+"""
+        else:
+            linux_script += f"""control_plane_url: {agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')}
+"""
+        linux_script += f"""token: $TOKEN
+log_level: info
+EOF
+
+# 创建 systemd 服务
+cat > /etc/systemd/system/$SERVICE_NAME.service <<EOF
+[Unit]
+Description=Ops Job Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/$BINARY_NAME
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动服务
+systemctl daemon-reload
+systemctl enable $SERVICE_NAME
+systemctl start $SERVICE_NAME
+
+echo "Agent 安装成功！"
+echo "服务状态: systemctl status $SERVICE_NAME"
+echo "查看日志: journalctl -u $SERVICE_NAME -f"
+"""
+        scripts['linux'] = linux_script
+
+        # Windows 安装脚本（PowerShell）
+        windows_script = f"""# PowerShell 安装脚本
+# 配置
+$AGENT_SERVER_URL = "{agent_server_url}"
+$TOKEN = "{token}"
+$INSTALL_DIR = "C:\\Program Files\\ops-job-agent"
+$BINARY_NAME = "ops-job-agent.exe"
+$SERVICE_NAME = "OpsJobAgent"
+$DOWNLOAD_URL = "{download_url}"
+
+# 检查管理员权限
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {{
+    Write-Host "错误: 需要管理员权限运行此脚本" -ForegroundColor Red
+    exit 1
+}}
+
+# 检查服务是否已存在
+$service = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
+if ($service) {{
+    Write-Host "Agent 服务已存在，请先停止并删除服务" -ForegroundColor Yellow
+    Stop-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
+    sc.exe delete $SERVICE_NAME
+    Start-Sleep -Seconds 2
+}}
+
+# 创建目录
+New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
+Set-Location $INSTALL_DIR
+
+# 下载二进制
+Write-Host "正在下载 Agent 二进制..." -ForegroundColor Green
+Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile "$INSTALL_DIR\\$BINARY_NAME"
+
+# 创建配置文件
+$configContent = @"
+mode: {install_mode}
+"""
+        if install_mode == 'agent-server':
+            windows_script += f"""agent_server_url: $AGENT_SERVER_URL
+"""
+        else:
+            control_plane_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
+            windows_script += f"""control_plane_url: {control_plane_url}
+"""
+        windows_script += f"""token: $TOKEN
+log_level: info
+"@
+$configContent | Out-File -FilePath "$INSTALL_DIR\\config.yaml" -Encoding utf8
+
+# 创建 Windows 服务
+New-Service -Name $SERVICE_NAME `
+    -BinaryPathName "$INSTALL_DIR\\$BINARY_NAME" `
+    -DisplayName "Ops Job Agent" `
+    -Description "Ops Job Platform Agent Service" `
+    -StartupType Automatic | Out-Null
+
+# 启动服务
+Start-Service -Name $SERVICE_NAME
+
+Write-Host "Agent 安装成功！" -ForegroundColor Green
+Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
+"""
+        scripts['windows'] = windows_script
+
+        return scripts
+
+    @classmethod
+    def batch_install_agents(cls, host_ids: list, user, account_id: int = None,
+                             install_mode: str = 'agent-server', agent_server_url: str = '',
+                             download_url: str = '', install_task_id: str = None,
+                             package_version: str = None, package_id: int = None) -> Dict[str, Any]:
+        """
+        批量安装 Agent（通过 SSH）
+        
+        Args:
+            host_ids: 主机ID列表
+            user: 执行用户
+            account_id: 用于SSH的账号ID（可选）
+            install_mode: 安装模式
+            agent_server_url: Agent-Server 地址
+            download_url: Agent 二进制下载地址
+            install_task_id: 安装任务ID（用于SSE进度推送）
+        
+        Returns:
+            Dict[str, Any]: 安装结果
+        """
+        if not install_task_id:
+            install_task_id = str(uuid.uuid4())
+        
+        results = []
+        total = len(host_ids)
+        completed = 0
+        success_count = 0
+        failed_count = 0
+        
+        # 推送初始状态
+        realtime_log_service.push_status(install_task_id, {
+            'status': 'running',
+            'total': total,
+            'completed': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'message': '开始批量安装 Agent'
+        })
+        
+        # 获取主机列表
+        hosts = Host.objects.filter(id__in=host_ids)
+        
+        for host in hosts:
+            try:
+                # 检查是否已有 Agent
+                if hasattr(host, 'agent') and host.agent:
+                    results.append({
+                        'host_id': host.id,
+                        'host_name': host.name,
+                        'success': False,
+                        'message': '该主机已安装 Agent'
+                    })
+                    continue
+                
+                # 为每个主机签发 Token
+                # 先创建 Agent 对象（如果不存在）
+                agent, created = Agent.objects.get_or_create(
+                    host=host,
+                    defaults={'status': 'pending'}
+                )
+                
+                # 签发 Token
+                token_data = cls.issue_token(agent, user, note='批量安装')
+                token = token_data['token']
+                
+                # 保存 agent_id 用于后续审计日志
+                agent_id = agent.id
+                
+                # 生成安装脚本
+                scripts = cls.generate_install_script(
+                    host=host,
+                    token=token,
+                    install_mode=install_mode,
+                    agent_server_url=agent_server_url,
+                    download_url=download_url,
+                    package_version=package_version,
+                    package_id=package_id
+                )
+                
+                # 根据操作系统选择脚本
+                os_type = host.os_type.lower() if host.os_type else 'linux'
+                if 'windows' in os_type:
+                    script_content = scripts.get('windows', '')
+                    script_type = 'powershell'
+                else:
+                    script_content = scripts.get('linux', '')
+                    script_type = 'shell'
+                
+                # 创建安装记录
+                install_record = AgentInstallRecord.objects.create(
+                    host=host,
+                    agent=agent,
+                    install_mode=install_mode,
+                    status='pending',
+                    agent_server_url=agent_server_url,
+                    installed_by=user,
+                    install_task_id=install_task_id
+                )
+                
+                # 推送开始安装日志
+                realtime_log_service.push_log(install_task_id, str(host.id), {
+                    'host_name': host.name,
+                    'host_ip': host.ip_address,
+                    'log_type': 'info',
+                    'content': f'开始安装 Agent 到主机 {host.name} ({host.ip_address})',
+                    'step_name': '安装 Agent',
+                    'step_order': 1
+                })
+                
+                # 通过 SSH 执行安装脚本
+                try:
+                    result = fabric_ssh_manager.execute_script(
+                        host=host,
+                        script_content=script_content,
+                        script_type=script_type,
+                        timeout=300,  # 5分钟超时
+                        account_id=account_id
+                    )
+                    
+                    if result['success']:
+                        install_record.status = 'success'
+                        install_record.message = '安装成功'
+                        success_count += 1
+                        results.append({
+                            'host_id': host.id,
+                            'host_name': host.name,
+                            'agent_id': agent.id,
+                            'success': True,
+                            'message': '安装成功'
+                        })
+                        # 推送成功日志
+                        realtime_log_service.push_log(install_task_id, str(host.id), {
+                            'host_name': host.name,
+                            'host_ip': host.ip_address,
+                            'log_type': 'info',
+                            'content': f'主机 {host.name} Agent 安装成功',
+                            'step_name': '安装 Agent',
+                            'step_order': 1
+                        })
+                    else:
+                        install_record.status = 'failed'
+                        error_msg = result.get('stderr', '安装失败')
+                        install_record.message = error_msg
+                        install_record.error_message = error_msg
+                        install_record.error_detail = result.get('stderr', '')
+                        failed_count += 1
+                        results.append({
+                            'host_id': host.id,
+                            'host_name': host.name,
+                            'success': False,
+                            'message': error_msg
+                        })
+                        # 推送失败日志
+                        realtime_log_service.push_log(install_task_id, str(host.id), {
+                            'host_name': host.name,
+                            'host_ip': host.ip_address,
+                            'log_type': 'error',
+                            'content': f'主机 {host.name} Agent 安装失败: {error_msg}',
+                            'step_name': '安装 Agent',
+                            'step_order': 1
+                        })
+                    
+                    install_record.save()
+                    completed += 1
+                    
+                    # 推送进度更新
+                    realtime_log_service.push_status(install_task_id, {
+                        'status': 'running',
+                        'total': total,
+                        'completed': completed,
+                        'success_count': success_count,
+                        'failed_count': failed_count,
+                        'message': f'已完成 {completed}/{total} 个主机的安装'
+                    })
+                    
+                except Exception as e:
+                    error_msg = f'SSH 执行失败: {str(e)}'
+                    install_record.status = 'failed'
+                    install_record.message = error_msg
+                    install_record.error_message = error_msg
+                    install_record.error_detail = str(e)
+                    install_record.save()
+                    failed_count += 1
+                    
+                    results.append({
+                        'host_id': host.id,
+                        'host_name': host.name,
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+                    # 推送失败日志
+                    realtime_log_service.push_log(install_task_id, str(host.id), {
+                        'host_name': host.name,
+                        'host_ip': host.ip_address,
+                        'log_type': 'error',
+                        'content': f'主机 {host.name} SSH 执行失败: {str(e)}',
+                        'step_name': '安装 Agent',
+                        'step_order': 1
+                    })
+                    
+                    completed += 1
+                    
+                    # 推送进度更新
+                    realtime_log_service.push_status(install_task_id, {
+                        'status': 'running',
+                        'total': total,
+                        'completed': completed,
+                        'success_count': success_count,
+                        'failed_count': failed_count,
+                        'message': f'已完成 {completed}/{total} 个主机的安装'
+                    })
+                
+            except Exception as e:
+                failed_count += 1
+                host_name = host.name if hasattr(host, 'name') else 'Unknown'
+                error_msg = f'安装失败: {str(e)}'
+                results.append({
+                    'host_id': host.id,
+                    'host_name': host_name,
+                    'success': False,
+                    'message': error_msg
+                })
+                
+                # 推送失败日志
+                realtime_log_service.push_log(install_task_id, str(host.id), {
+                    'host_name': host_name,
+                    'host_ip': getattr(host, 'ip_address', ''),
+                    'log_type': 'error',
+                    'content': f'主机 {host_name} 安装失败: {error_msg}',
+                    'step_name': '安装 Agent',
+                    'step_order': 1
+                })
+                
+                completed += 1
+                
+                # 推送进度更新
+                realtime_log_service.push_status(install_task_id, {
+                    'status': 'running',
+                    'total': total,
+                    'completed': completed,
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'message': f'已完成 {completed}/{total} 个主机的安装'
+                })
+        
+        # 推送最终状态
+        final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
+        realtime_log_service.push_status(install_task_id, {
+            'status': final_status,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': f'批量安装完成：成功 {success_count} 个，失败 {failed_count} 个'
+        })
+        
+        return {
+            'results': results,
+            'total': len(results),
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'install_task_id': install_task_id
+        }
+

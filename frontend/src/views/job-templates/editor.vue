@@ -58,6 +58,17 @@
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
+            <a-form-item label="业务系统">
+              <a-select
+                v-model="form.business_system"
+                placeholder="请选择业务系统（可选）"
+                allow-clear
+                :options="businessSystems"
+                :field-names="{ value: 'id', label: 'name' }"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="标签">
               <TagEditor
                 v-model="form.tags"
@@ -288,7 +299,7 @@
 import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { jobTemplateApi } from '@/api/ops'
+import { jobTemplateApi, businessSystemApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
 import StepEditor from './components/StepEditor.vue'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
@@ -333,11 +344,15 @@ const form = reactive<Partial<JobTemplate>>({
   name: '',
   description: '',
   category: '',
+  business_system: undefined as number | undefined,
   // 标签在前后端都使用 { key, value } 结构
   tags: [] as any[],
   steps: [],
   global_parameters: {}
 })
+
+// 业务系统列表
+const businessSystems = ref<Array<{ id: number; name: string }>>([])
 
 // 全局变量管理
 const parameterKeys = ref<Record<string, string>>({})
@@ -359,6 +374,7 @@ const fetchTemplate = async () => {
       name: template.name,
       description: template.description,
       category: template.category,
+      business_system: template.business_system || undefined,
       tags: template.tag_list || [],
       steps: template.steps || [],
       global_parameters: template.global_parameters || {}
@@ -409,6 +425,7 @@ const handleSave = async () => {
       name: form.name,
       description: form.description || '',
       category: form.category || '',
+      business_system: form.business_system || undefined,
       tags: form.tags || [],
       global_parameters: form.global_parameters || {}
     }
@@ -1037,7 +1054,18 @@ const handleFormChange = () => {
 }
 
 // 生命周期
+// 获取业务系统列表
+const fetchBusinessSystems = async () => {
+  try {
+    const response = await businessSystemApi.getBusinessSystems()
+    businessSystems.value = response.results || []
+  } catch (error) {
+    console.error('获取业务系统列表失败:', error)
+  }
+}
+
 onMounted(() => {
+  fetchBusinessSystems()
   setupLifecycle()
   
   if (isEdit.value) {

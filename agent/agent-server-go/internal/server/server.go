@@ -31,10 +31,11 @@ type Server struct {
 	agentManager   *agent.Manager
 	cpClient       *controlplane.Client
 	taskDispatcher *task.Dispatcher
+	taskQueue      *task.TaskQueue
 }
 
 // New 创建服务器
-func New(cfg *config.Config) *Server {
+func New(cfg *config.Config) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
@@ -49,8 +50,20 @@ func New(cfg *config.Config) *Server {
 	// 创建控制面客户端
 	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Timeout)
 
+	// 创建任务队列（如果启用）
+	var taskQueue *task.TaskQueue
+	asynqEnabled := cfg.Asynq.Enabled && cfg.Redis.Enabled
+	if asynqEnabled {
+		var err error
+		taskQueue, err = task.NewTaskQueue(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+		if err != nil {
+			return nil, fmt.Errorf("create task queue: %w", err)
+		}
+		logger.GetLogger().Info("asynq task queue initialized")
+	}
+
 	// 创建任务分发器
-	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, 5*time.Second)
+	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, taskQueue, 5*time.Second, asynqEnabled)
 
 	s := &Server{
 		cfg:            cfg,
@@ -58,11 +71,12 @@ func New(cfg *config.Config) *Server {
 		agentManager:   agentMgr,
 		cpClient:       cpClient,
 		taskDispatcher: taskDispatcher,
+		taskQueue:      taskQueue,
 	}
 
 	s.setupRoutes()
 
-	return s
+	return s, nil
 }
 
 // setupRoutes 设置路由
@@ -77,6 +91,10 @@ func (s *Server) setupRoutes() {
 		api.GET("/agents/:id", s.handleGetAgent)
 		// 控制面推送任务到指定 Agent
 		api.POST("/agents/:id/tasks", s.handlePushTask)
+		// 取消指定 Agent 的任务
+		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
+		// 任务队列统计信息
+		api.GET("/stats/queues", s.handleGetStats)
 	}
 
 	// WebSocket 连接
@@ -87,6 +105,16 @@ func (s *Server) setupRoutes() {
 func (s *Server) Start() error {
 	// 启动任务分发器
 	s.taskDispatcher.Start()
+
+	// 启动asynq服务器（如果启用）
+	if s.taskQueue != nil {
+		go func() {
+			if err := s.taskQueue.Start(); err != nil {
+				logger.GetLogger().WithError(err).Error("asynq server error")
+			}
+		}()
+		logger.GetLogger().Info("asynq server started")
+	}
 
 	// 启动清理非活跃连接的 goroutine
 	go s.cleanupLoop()
@@ -107,6 +135,11 @@ func (s *Server) Start() error {
 func (s *Server) Stop() {
 	// 停止任务分发器
 	s.taskDispatcher.Stop()
+
+	// 停止asynq服务器（如果启用）
+	if s.taskQueue != nil {
+		s.taskQueue.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -236,6 +269,44 @@ func (s *Server) handlePushTask(c *gin.Context) {
 	})
 }
 
+// handleCancelTask 处理取消任务请求
+func (s *Server) handleCancelTask(c *gin.Context) {
+	agentID := c.Param("id")
+	taskID := c.Param("task_id")
+
+	conn, exists := s.agentManager.Get(agentID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		return
+	}
+
+	if conn.Status != "active" || conn.Conn == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active"})
+		return
+	}
+
+	// 通过 WebSocket 发送取消任务消息
+	if err := conn.SendCancelTask(taskID); err != nil {
+		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+			"agent_id": agentID,
+			"task_id":  taskID,
+		}).Error("send cancel task message failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id": agentID,
+		"task_id":  taskID,
+	}).Info("cancel task request sent to agent")
+
+	c.JSON(http.StatusOK, gin.H{
+		"task_id":  taskID,
+		"agent_id": agentID,
+		"status":   "cancelled",
+	})
+}
+
 // handleWebSocket 处理 WebSocket 连接
 func (s *Server) handleWebSocket(c *gin.Context) {
 	agentID := c.Param("id")
@@ -272,6 +343,15 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 	logger.GetLogger().WithFields(map[string]interface{}{
 		"agent_id": agentID,
 	}).Info("websocket connected")
+
+	// Agent上线时，处理待处理任务
+	if s.taskDispatcher != nil {
+		go func() {
+			if err := s.taskDispatcher.ProcessPendingTasksForAgent(agentID); err != nil {
+				logger.GetLogger().WithError(err).WithField("agent_id", agentID).Error("process pending tasks failed")
+			}
+		}()
+	}
 
 	// 启动消息处理
 	s.handleWebSocketMessages(agentConn)

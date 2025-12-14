@@ -37,9 +37,22 @@ class ScriptTemplateFilter(django_filters.FilterSet):
     # 按标签过滤（使用新的tags_json字段）
     tags = django_filters.CharFilter(method='filter_tags', label='标签')
 
+    # 按业务系统过滤
+    business_system = django_filters.ModelChoiceFilter(
+        field_name='business_system',
+        queryset=None,  # 将在 __init__ 中设置
+        label='业务系统'
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 动态设置业务系统的查询集
+        from apps.hosts.models import BusinessSystem
+        self.filters['business_system'].queryset = BusinessSystem.objects.filter(is_active=True)
+
     class Meta:
         model = ScriptTemplate
-        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags']
+        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags', 'business_system']
 
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""
