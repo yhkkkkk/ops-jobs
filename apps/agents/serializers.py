@@ -224,6 +224,31 @@ class AgentPackageCreateSerializer(serializers.ModelSerializer):
         model = AgentPackage
         fields = ['version', 'description', 'os_type', 'arch', 'file', 'download_url', 'is_default', 'is_active']
 
+    def validate(self, attrs):
+        """验证唯一性约束"""
+        version = attrs.get('version')
+        os_type = attrs.get('os_type')
+        arch = attrs.get('arch')
+
+        if version and os_type and arch:
+            # 检查是否已存在相同的组合
+            query = AgentPackage.objects.filter(
+                version=version,
+                os_type=os_type,
+                arch=arch
+            )
+            
+            # 如果是更新操作，排除当前记录
+            if self.instance:
+                query = query.exclude(pk=self.instance.pk)
+            
+            if query.exists():
+                raise serializers.ValidationError({
+                    'non_field_errors': ['字段 version, os_type, arch 必须能构成唯一集合。']
+                })
+        
+        return attrs
+
 
 class GenerateInstallScriptSerializer(serializers.Serializer):
     host_ids = serializers.ListField(

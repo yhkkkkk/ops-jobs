@@ -243,16 +243,6 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/system-config',
-        name: 'SystemConfig',
-        component: () => import('@/views/system-config/index.vue'),
-        meta: {
-          title: '系统配置',
-          icon: 'icon-settings',
-          requiresSuperUser: true,
-        },
-      },
-      {
         path: '/audit-logs',
         name: 'AuditLogs',
         component: () => import('@/views/audit-logs/index.vue'),
@@ -336,6 +326,15 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '主机管理',
           icon: 'icon-computer',
+        },
+      },
+      {
+        path: 'system-config',
+        name: 'OpsSystemConfig',
+        component: () => import('@/views/system-config/index.vue'),
+        meta: {
+          title: '系统配置',
+          icon: 'icon-settings',
         },
       },
       {

@@ -55,6 +55,20 @@
             主机管理
           </a-menu-item>
         </a-sub-menu>
+
+        <a-sub-menu key="system" v-if="authStore.user?.is_superuser">
+          <template #icon>
+            <icon-settings />
+          </template>
+          <template #title>系统管理</template>
+
+          <a-menu-item key="/ops/system-config">
+            <template #icon>
+              <icon-tool />
+            </template>
+            系统配置
+          </a-menu-item>
+        </a-sub-menu>
       </a-menu>
     </a-layout-sider>
     
@@ -113,6 +127,17 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
+import {
+  IconTool,
+  IconDesktop,
+  IconArchive,
+  IconStorage,
+  IconComputer,
+  IconSettings,
+  IconApps,
+  IconUser,
+  IconExport,
+} from '@arco-design/web-vue/es/icon'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -130,6 +155,7 @@ const menuConfig = {
   '/ops/agents/install-records': { key: '/ops/agents/install-records', parent: 'ops' },
   '/ops/agents/detail': { key: '/ops/agents', parent: 'ops' },
   '/ops/hosts': { key: '/ops/hosts', parent: 'resource' },
+  '/ops/system-config': { key: '/ops/system-config', parent: 'system' },
 }
 
 // 查找菜单键和父菜单

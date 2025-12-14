@@ -191,12 +191,28 @@
           </a-select>
         </a-form-item>
 
+        <a-form-item label="存储方式" field="storage_type" v-if="!isEdit">
+          <a-radio-group v-model="packageForm.storage_type">
+            <a-radio value="local">本地存储</a-radio>
+            <a-radio value="oss">阿里云OSS</a-radio>
+            <a-radio value="s3">AWS S3</a-radio>
+            <a-radio value="cos">腾讯云COS</a-radio>
+            <a-radio value="minio">MinIO</a-radio>
+            <a-radio value="rustfs">RustFS</a-radio>
+          </a-radio-group>
+          <template #extra>
+            <div style="color: #86909c; font-size: 12px;">
+              选择文件存储方式，对象存储需要在系统配置中设置相关参数
+            </div>
+          </template>
+        </a-form-item>
+
         <a-form-item label="安装包文件" field="file" :required="!isEdit">
           <a-upload
             :file-list="fileList"
             :auto-upload="false"
             :limit="1"
-            accept=".tar.gz,.zip,.exe,.bin"
+            accept=".tar.gz,.zip,.tgz,.exe"
             :show-file-list="false"
             @change="handleFileChange"
             @remove="handleFileRemove"
@@ -339,6 +355,7 @@ const packageForm = reactive({
   os_type: '' as 'linux' | 'windows' | 'darwin' | '',
   arch: '' as 'amd64' | 'arm64' | '386' | '',
   file: null as File | null,
+  storage_type: 'local' as 'local' | 'oss' | 's3' | 'cos' | 'minio' | 'rustfs',
   download_url: '',
   description: '',
   is_active: true,
@@ -528,6 +545,7 @@ const resetPackageForm = () => {
   packageForm.os_type = ''
   packageForm.arch = ''
   packageForm.file = null
+  packageForm.storage_type = 'local'
   packageForm.download_url = ''
   packageForm.description = ''
   packageForm.is_active = true
@@ -584,6 +602,7 @@ const handleSubmitPackage = async () => {
     if (packageForm.file) {
       formData.append('file', packageForm.file)
     }
+    formData.append('storage_type', packageForm.storage_type)
     if (packageForm.download_url) {
       formData.append('download_url', packageForm.download_url)
     }
@@ -620,8 +639,21 @@ const handleModalCancel = () => {
 // 下载安装包
 const handleDownload = async (record: AgentPackage) => {
   try {
-    const downloadUrl = record.download_url || `/api/agents/packages/${record.id}/download/`
-    window.open(downloadUrl, '_blank')
+    // 如果设置了外部下载地址，直接打开
+    if (record.download_url) {
+      window.open(record.download_url, '_blank')
+      return
+    }
+    
+    // 否则通过API下载
+    const downloadUrl = `/api/agents/packages/${record.id}/download/`
+    // 创建一个隐藏的a标签来触发下载
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   } catch (error: any) {
     Message.error(error.message || '下载失败')
   }

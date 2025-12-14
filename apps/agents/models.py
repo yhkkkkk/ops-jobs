@@ -179,15 +179,41 @@ class AgentPackage(models.Model):
         ('386', 'i386'),
     ]
 
+    STORAGE_TYPE_CHOICES = [
+        ('local', '本地存储'),
+        ('oss', '阿里云OSS'),
+        ('s3', 'AWS S3'),
+        ('cos', '腾讯云COS'),
+        ('minio', 'MinIO'),
+        ('rustfs', 'RustFS'),
+    ]
+
     version = models.CharField(max_length=50, verbose_name="版本号", help_text="例如: 1.0.0, v1.0.0")
     description = models.TextField(blank=True, verbose_name="版本描述")
     os_type = models.CharField(max_length=20, choices=OS_TYPE_CHOICES, verbose_name="操作系统")
     arch = models.CharField(max_length=20, choices=ARCH_CHOICES, verbose_name="架构")
-    file = models.FileField(upload_to=agent_package_upload_path, verbose_name="文件")
+    storage_type = models.CharField(
+        max_length=20,
+        choices=STORAGE_TYPE_CHOICES,
+        default='local',
+        verbose_name="存储类型"
+    )
+    storage_path = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name="存储路径",
+        help_text="文件在存储中的路径，用于动态生成下载URL"
+    )
+    file = models.FileField(
+        upload_to=agent_package_upload_path,
+        blank=True,
+        null=True,
+        verbose_name="文件",
+        help_text="本地存储文件，如果使用对象存储则留空"
+    )
     file_size = models.BigIntegerField(verbose_name="文件大小（字节）")
     md5_hash = models.CharField(max_length=32, blank=True, verbose_name="MD5哈希值")
     sha256_hash = models.CharField(max_length=64, blank=True, verbose_name="SHA256哈希值")
-    download_url = models.URLField(blank=True, verbose_name="下载地址", help_text="如果使用对象存储，可以设置公开URL")
     is_default = models.BooleanField(default=False, verbose_name="是否默认版本", help_text="该版本+操作系统+架构组合是否为默认")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="创建人")
@@ -208,14 +234,35 @@ class AgentPackage(models.Model):
     def __str__(self):
         return f"Agent {self.version} - {self.get_os_type_display()} - {self.get_arch_display()}"
 
-    def get_download_url(self):
-        """获取下载地址"""
-        if self.download_url:
-            return self.download_url
-        # 如果使用本地存储，返回文件URL
-        if self.file:
-            return self.file.url
-        return ''
+    def get_download_url(self, expires_in: int = 3600):
+        """
+        根据存储类型和路径动态生成下载地址
+        
+        Args:
+            expires_in: URL过期时间（秒），用于私有存储的预签名URL
+        
+        Returns:
+            下载URL
+        """
+        from apps.agents.storage_service import StorageService
+        
+        # 如果没有存储路径，尝试从file字段获取
+        if not self.storage_path:
+            if self.file:
+                # 本地存储，使用Django的file.url
+                return self.file.url
+            return ''
+        
+        # 根据存储类型生成URL
+        import logging
+        logger_instance = logging.getLogger(__name__)
+        backend = StorageService.get_backend(self.storage_type)
+        if backend is None:
+            logger_instance.error(f"无法获取存储后端: {self.storage_type}")
+            return ''
+        
+        url = backend.generate_url(self.storage_path, expires_in=expires_in)
+        return url or ''
 
     def save(self, *args, **kwargs):
         # 如果设置为默认版本，取消同版本其他组合的默认状态

@@ -120,21 +120,6 @@
             审计日志
           </a-menu-item>
         </a-sub-menu>
-
-        <!-- 系统管理分组 - 只对超级用户显示 -->
-        <a-sub-menu key="system" v-if="authStore.user?.is_superuser">
-          <template #icon>
-            <icon-settings />
-          </template>
-          <template #title>系统管理</template>
-
-          <a-menu-item key="/system-config">
-            <template #icon>
-              <icon-tool />
-            </template>
-            系统配置
-          </a-menu-item>
-        </a-sub-menu>
       </a-menu>
     </a-layout-sider>
     
@@ -219,7 +204,6 @@ const menuConfig = {
   '/scheduled-tasks': { key: '/scheduled-tasks', parent: 'schedule' },
   '/execution-records': { key: '/execution-records', parent: 'monitor' },
   '/audit-logs': { key: '/audit-logs', parent: 'monitor' },
-  '/system-config': { key: '/system-config', parent: 'system' },
 }
 
 // 查找菜单键和父菜单

@@ -236,6 +236,139 @@ def init_default_configs():
             'category': 'cloud',
             'description': 'AWS默认地域'
         },
+        # 对象存储配置
+        {
+            'key': 'storage.type',
+            'value': 'local',
+            'category': 'cloud',
+            'description': '存储类型：local(本地), oss(阿里云OSS), s3(AWS S3), cos(腾讯云COS)'
+        },
+        {
+            'key': 'storage.oss.endpoint',
+            'value': '',
+            'category': 'cloud',
+            'description': '阿里云OSS Endpoint'
+        },
+        {
+            'key': 'storage.oss.bucket',
+            'value': '',
+            'category': 'cloud',
+            'description': '阿里云OSS Bucket名称'
+        },
+        {
+            'key': 'storage.oss.access_key_id',
+            'value': '',
+            'category': 'cloud',
+            'description': '阿里云OSS AccessKey ID'
+        },
+        {
+            'key': 'storage.oss.access_key_secret',
+            'value': '',
+            'category': 'cloud',
+            'description': '阿里云OSS AccessKey Secret（加密存储）'
+        },
+        {
+            'key': 'storage.s3.endpoint',
+            'value': '',
+            'category': 'cloud',
+            'description': 'AWS S3 Endpoint（可选，默认使用AWS标准端点）'
+        },
+        {
+            'key': 'storage.s3.bucket',
+            'value': '',
+            'category': 'cloud',
+            'description': 'AWS S3 Bucket名称'
+        },
+        {
+            'key': 'storage.s3.region',
+            'value': 'us-east-1',
+            'category': 'cloud',
+            'description': 'AWS S3 地域'
+        },
+        {
+            'key': 'storage.cos.region',
+            'value': 'ap-guangzhou',
+            'category': 'cloud',
+            'description': '腾讯云COS 地域'
+        },
+        {
+            'key': 'storage.cos.bucket',
+            'value': '',
+            'category': 'cloud',
+            'description': '腾讯云COS Bucket名称'
+        },
+        {
+            'key': 'storage.cos.secret_id',
+            'value': '',
+            'category': 'cloud',
+            'description': '腾讯云COS SecretId'
+        },
+        {
+            'key': 'storage.cos.secret_key',
+            'value': '',
+            'category': 'cloud',
+            'description': '腾讯云COS SecretKey（加密存储）'
+        },
+        {
+            'key': 'storage.minio.endpoint',
+            'value': '',
+            'category': 'cloud',
+            'description': 'MinIO服务端点（如: minio.example.com:9000）'
+        },
+        {
+            'key': 'storage.minio.bucket',
+            'value': '',
+            'category': 'cloud',
+            'description': 'MinIO Bucket名称'
+        },
+        {
+            'key': 'storage.minio.access_key',
+            'value': '',
+            'category': 'cloud',
+            'description': 'MinIO Access Key'
+        },
+        {
+            'key': 'storage.minio.secret_key',
+            'value': '',
+            'category': 'cloud',
+            'description': 'MinIO Secret Key（加密存储）'
+        },
+        {
+            'key': 'storage.minio.secure',
+            'value': True,
+            'category': 'cloud',
+            'description': 'MinIO是否使用HTTPS'
+        },
+        {
+            'key': 'storage.rustfs.endpoint',
+            'value': '',
+            'category': 'cloud',
+            'description': 'RustFS服务端点（如: http://rustfs.example.com:9000）'
+        },
+        {
+            'key': 'storage.rustfs.bucket',
+            'value': '',
+            'category': 'cloud',
+            'description': 'RustFS Bucket名称'
+        },
+        {
+            'key': 'storage.rustfs.access_key',
+            'value': '',
+            'category': 'cloud',
+            'description': 'RustFS Access Key'
+        },
+        {
+            'key': 'storage.rustfs.secret_key',
+            'value': '',
+            'category': 'cloud',
+            'description': 'RustFS Secret Key（加密存储）'
+        },
+        {
+            'key': 'storage.rustfs.region',
+            'value': 'us-east-1',
+            'category': 'cloud',
+            'description': 'RustFS区域（兼容S3协议，默认us-east-1）'
+        },
     ]
 
     for config_data in default_configs:
