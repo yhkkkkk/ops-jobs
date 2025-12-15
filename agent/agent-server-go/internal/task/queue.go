@@ -156,6 +156,61 @@ func (q *TaskQueue) EnqueueTask(agentID string, task *api.TaskSpec, opts ...asyn
 	return info, nil
 }
 
+// EnqueueWithPolicy 基于任务特征选择队列、幂等键和超时/重试策略
+func (q *TaskQueue) EnqueueWithPolicy(agentID string, task *api.TaskSpec) (*asynq.TaskInfo, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is nil")
+	}
+
+	queue := selectQueue(task)
+	timeout := selectTimeout(task)
+	maxRetry := selectMaxRetry(task)
+	uniqueKey := selectUniqueKey(task)
+
+	opts := []asynq.Option{
+		asynq.Queue(queue),
+		asynq.Timeout(timeout),
+		asynq.MaxRetry(maxRetry),
+	}
+
+	if uniqueKey != "" {
+		opts = append(opts, asynq.Unique(24*time.Hour))
+	}
+
+	return q.EnqueueTask(agentID, task, opts...)
+}
+
+func selectQueue(task *api.TaskSpec) string {
+	if task.TimeoutSec >= 900 {
+		return QueueLow // 超长任务放低优先级队列，避免阻塞
+	}
+	if task.TimeoutSec >= 300 {
+		return QueueDefault
+	}
+	return QueueCritical
+}
+
+func selectTimeout(task *api.TaskSpec) time.Duration {
+	if task.TimeoutSec > 0 {
+		return time.Duration(task.TimeoutSec) * time.Second
+	}
+	return 5 * time.Minute
+}
+
+func selectMaxRetry(task *api.TaskSpec) int {
+	if task.RetryCount > 0 {
+		return task.RetryCount
+	}
+	return 3
+}
+
+func selectUniqueKey(task *api.TaskSpec) string {
+	if task.ExecutionID != "" {
+		return task.ExecutionID
+	}
+	return task.ID
+}
+
 // EnqueueTaskWithPriority 将任务入队（带优先级）
 func (q *TaskQueue) EnqueueTaskWithPriority(agentID string, task *api.TaskSpec, priority string) (*asynq.TaskInfo, error) {
 	var queue string

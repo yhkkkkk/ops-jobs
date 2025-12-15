@@ -16,6 +16,7 @@ import (
 type RedisLogStream struct {
 	client        *redis.Client
 	streamPrefix  string
+	maxLen        int64
 	buffer        map[string]*LogBuffer // task_id -> buffer
 	bufferLock    sync.RWMutex
 	batchSize     int           // 批量大小
@@ -24,24 +25,36 @@ type RedisLogStream struct {
 	wg            sync.WaitGroup
 }
 
+// RedisLogStreamOptions 可选参数
+type RedisLogStreamOptions struct {
+	StreamPrefix  string
+	BatchSize     int
+	FlushInterval time.Duration
+	MaxLen        int64 // 单个 task stream 最大长度，0 表示不裁剪
+}
+
 // NewRedisLogStream 创建基于 Redis Stream 的日志流管理器
-func NewRedisLogStream(redisClient *redis.Client, streamPrefix string, batchSize int, flushInterval time.Duration) *RedisLogStream {
-	if streamPrefix == "" {
-		streamPrefix = "job_logs:"
+func NewRedisLogStream(redisClient *redis.Client, opts RedisLogStreamOptions) *RedisLogStream {
+	if opts.StreamPrefix == "" {
+		opts.StreamPrefix = "job_logs:"
 	}
-	if batchSize <= 0 {
-		batchSize = 10
+	if opts.BatchSize <= 0 {
+		opts.BatchSize = 10
 	}
-	if flushInterval <= 0 {
-		flushInterval = 200 * time.Millisecond
+	if opts.FlushInterval <= 0 {
+		opts.FlushInterval = 200 * time.Millisecond
+	}
+	if opts.MaxLen < 0 {
+		opts.MaxLen = 0
 	}
 
 	ls := &RedisLogStream{
 		client:        redisClient,
-		streamPrefix:  streamPrefix,
+		streamPrefix:  opts.StreamPrefix,
+		maxLen:        opts.MaxLen,
 		buffer:        make(map[string]*LogBuffer),
-		batchSize:     batchSize,
-		flushInterval: flushInterval,
+		batchSize:     opts.BatchSize,
+		flushInterval: opts.FlushInterval,
 		stopCh:        make(chan struct{}),
 	}
 
@@ -180,10 +193,14 @@ func (ls *RedisLogStream) flushBuffer(taskID string, buf *LogBuffer) {
 				redisMsg[k] = val
 			}
 
-			pipe.XAdd(ctx, &redis.XAddArgs{
+			addArgs := &redis.XAddArgs{
 				Stream: streamKey,
 				Values: redisMsg,
-			})
+			}
+			if ls.maxLen > 0 {
+				addArgs.MaxLenApprox = ls.maxLen
+			}
+			pipe.XAdd(ctx, addArgs)
 		}
 
 		// 设置过期时间（12小时）

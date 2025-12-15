@@ -132,7 +132,12 @@ export const agentsApi = {
     host_ids: number[]
     install_mode?: 'direct' | 'agent-server'
     agent_server_url?: string
-    download_url?: string
+    agent_server_backup_url?: string
+    ws_backoff_initial_ms?: number
+    ws_backoff_max_ms?: number
+    ws_max_retries?: number
+    package_id?: number
+    package_version?: string
   }): Promise<{
     scripts: Record<string, Array<{
       host_id: number
@@ -143,7 +148,6 @@ export const agentsApi = {
     }>>
     install_mode: string
     agent_server_url: string
-    download_url: string
   }> {
     return http.post('/agents/generate_install_script/', data)
   },
@@ -154,7 +158,12 @@ export const agentsApi = {
     account_id?: number
     install_mode?: 'direct' | 'agent-server'
     agent_server_url?: string
-    download_url?: string
+    agent_server_backup_url?: string
+    ws_backoff_initial_ms?: number
+    ws_backoff_max_ms?: number
+    ws_max_retries?: number
+    ssh_timeout?: number
+    allow_reinstall?: boolean
     package_id?: number
     package_version?: string
     confirmed: boolean

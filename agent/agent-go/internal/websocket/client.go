@@ -16,14 +16,15 @@ import (
 
 // Client WebSocket 客户端，用于连接 Agent-Server
 type Client struct {
-	url       string
-	token     string
-	conn      *websocket.Conn
-	connMu    sync.RWMutex
-	connected bool
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	url         string
+	token       string
+	overrideURL string
+	conn        *websocket.Conn
+	connMu      sync.RWMutex
+	connected   bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 	// 消息通道
 	taskChan   chan *api.TaskSpec
 	resultChan chan *api.TaskResult
@@ -49,24 +50,17 @@ func NewClient(serverURL, token string) *Client {
 
 // Connect 连接到 Agent-Server
 func (c *Client) Connect(agentID string) error {
-	// 构建 WebSocket URL
-	u, err := url.Parse(c.url)
+	wsURL, err := c.connectionURL(agentID)
 	if err != nil {
-		return fmt.Errorf("parse url failed: %w", err)
+		return err
 	}
-
-	// 设置路径和查询参数
-	u.Path = fmt.Sprintf("/ws/agent/%s", agentID)
-	q := u.Query()
-	q.Set("token", c.token)
-	u.RawQuery = q.Encode()
 
 	// 连接 WebSocket
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(u.String(), nil)
+	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial websocket failed: %w", err)
 	}
@@ -77,7 +71,7 @@ func (c *Client) Connect(agentID string) error {
 	c.connMu.Unlock()
 
 	logger.GetLogger().WithFields(map[string]interface{}{
-		"url": u.String(),
+		"url": wsURL,
 	}).Info("websocket connected")
 
 	// 启动消息处理
@@ -119,6 +113,13 @@ func (c *Client) SetOnTask(fn func(*api.TaskSpec)) {
 // SetOnCancel 设置任务取消回调
 func (c *Client) SetOnCancel(fn func(string)) {
 	c.onCancel = fn
+}
+
+// SetOverrideURL 指定完整的 WebSocket 连接地址（用于 Agent-Server 返回的 ws_url）
+func (c *Client) SetOverrideURL(u string) {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	c.overrideURL = u
 }
 
 // SendHeartbeat 发送心跳
@@ -272,4 +273,35 @@ func (c *Client) writeMessage(msg interface{}) error {
 
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return conn.WriteJSON(msg)
+}
+
+func (c *Client) connectionURL(agentID string) (string, error) {
+	c.connMu.RLock()
+	override := c.overrideURL
+	c.connMu.RUnlock()
+
+	if override != "" {
+		return override, nil
+	}
+
+	u, err := url.Parse(c.url)
+	if err != nil {
+		return "", fmt.Errorf("parse url failed: %w", err)
+	}
+
+	switch u.Scheme {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	case "ws", "wss":
+	default:
+		return "", fmt.Errorf("unsupported websocket scheme %q", u.Scheme)
+	}
+
+	u.Path = fmt.Sprintf("/ws/agent/%s", agentID)
+	q := u.Query()
+	q.Set("token", c.token)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }

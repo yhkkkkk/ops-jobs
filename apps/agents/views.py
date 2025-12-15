@@ -24,6 +24,7 @@ from .serializers import (
     BatchInstallSerializer,
     AgentUninstallRecordSerializer,
     BatchUninstallSerializer,
+    AgentControlSerializer,
 )
 from .filters import AgentFilter
 from .services import AgentService
@@ -197,6 +198,91 @@ class AgentViewSet(viewsets.ModelViewSet):
         AgentService.audit(request.user, "disable_agent", agent, request=request)
         return SycResponse.success(message="禁用 Agent 成功")
 
+    # 辅助方法：构造Agent-Server基础url
+    def _normalize_server_url(self, raw_url: str) -> str:
+        if not raw_url:
+            return ""
+        url = raw_url.replace("ws://", "http://").replace("wss://", "https://")
+        if "://" in url:
+            scheme_end = url.find("://") + 3
+            slash_idx = url.find("/", scheme_end)
+            if slash_idx != -1:
+                url = url[:slash_idx]
+        return url.rstrip("/")
+
+    def _get_agent_server_base(self, agent, override_url: str = "") -> str:
+        from django.conf import settings
+        if override_url:
+            return self._normalize_server_url(override_url)
+        if agent.endpoint:
+            return self._normalize_server_url(agent.endpoint)
+        return self._normalize_server_url(getattr(settings, "AGENT_SERVER_URL", ""))
+
+    @action(detail=True, methods=["get"], url_path="status")
+    def status(self, request, pk=None):
+        """获取 Agent 运行状态，只返回 Agent-Server 实时数据"""
+        agent = self.get_object()
+        server_base = self._get_agent_server_base(agent, request.query_params.get("agent_server_url", ""))
+
+        if not server_base:
+            return SycResponse.error(message="未配置 Agent-Server，无法查询实时状态")
+
+        import requests
+        from django.conf import settings
+
+        api_url = f"{server_base}/api/agents/{agent.host_id}"
+        headers = {"Content-Type": "application/json"}
+        token = getattr(settings, "AGENT_SERVER_TOKEN", None)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        try:
+            resp = requests.get(api_url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                return SycResponse.success(content=resp.json(), message="获取 Agent 状态成功")
+            logger.warning("查询 Agent 状态失败 %s %s", resp.status_code, resp.text)
+            return SycResponse.error(message=f"Agent-Server 返回异常: HTTP {resp.status_code}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("查询 Agent 状态异常: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"查询 Agent 状态异常: {exc}")
+
+    @action(detail=True, methods=["post"], url_path="control")
+    def control(self, request, pk=None):
+        """管控 Agent（start/stop/restart），调用 Agent-Server 控制接口"""
+        agent = self.get_object()
+        serializer = AgentControlSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
+        if not server_base:
+            return SycResponse.error(message="未配置 Agent-Server，无法下发管控指令")
+
+        import requests
+        from django.conf import settings
+
+        api_url = f"{server_base}/api/agents/{agent.host_id}/control"
+        headers = {"Content-Type": "application/json"}
+        token = getattr(settings, "AGENT_SERVER_TOKEN", None)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        payload = {
+            "action": serializer.validated_data["action"],
+            "reason": serializer.validated_data.get("reason", ""),
+        }
+
+        try:
+            resp = requests.post(api_url, json=payload, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                AgentService.audit(request.user, f"control_agent_{payload['action']}", agent, request=request)
+                return SycResponse.success(content=resp.json(), message="管控指令已下发")
+            logger.error("管控 Agent 失败 %s %s", resp.status_code, resp.text)
+            return SycResponse.error(message=f"管控失败: HTTP {resp.status_code}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("管控 Agent 异常: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"管控异常: {exc}")
+
     @action(detail=False, methods=["post"], url_path="batch_disable")
     def batch_disable(self, request):
         """批量禁用 Agent（带限流）"""
@@ -254,9 +340,15 @@ class AgentViewSet(viewsets.ModelViewSet):
         host_ids = data['host_ids']
         install_mode = data.get('install_mode', 'agent-server')
         agent_server_url = data.get('agent_server_url', '')
-        download_url = data.get('download_url', '')
+        agent_server_backup_url = data.get('agent_server_backup_url', '')
+        ws_backoff_initial_ms = data.get('ws_backoff_initial_ms', 1000)
+        ws_backoff_max_ms = data.get('ws_backoff_max_ms', 30000)
+        ws_max_retries = data.get('ws_max_retries', 6)
         package_version = data.get('package_version')
         package_id = data.get('package_id')
+
+        if install_mode == 'agent-server' and not agent_server_url:
+            return SycResponse.error(message="agent_server_url 不能为空（agent-server 模式）", code=400)
 
         # 获取主机列表
         from apps.hosts.models import Host
@@ -295,7 +387,10 @@ class AgentViewSet(viewsets.ModelViewSet):
                 token=token,
                 install_mode=install_mode,
                 agent_server_url=agent_server_url,
-                download_url=download_url,
+                agent_server_backup_url=agent_server_backup_url,
+                ws_backoff_initial_ms=ws_backoff_initial_ms,
+                ws_backoff_max_ms=ws_backoff_max_ms,
+                ws_max_retries=ws_max_retries,
                 package_version=package_version,
                 package_id=package_id
             )
@@ -316,8 +411,7 @@ class AgentViewSet(viewsets.ModelViewSet):
             content={
                 'scripts': scripts,
                 'install_mode': install_mode,
-                'agent_server_url': agent_server_url,
-                'download_url': download_url
+                'agent_server_url': agent_server_url
             },
             message="生成安装脚本成功"
         )
@@ -334,13 +428,20 @@ class AgentViewSet(viewsets.ModelViewSet):
         account_id = data.get('account_id')
         install_mode = data.get('install_mode', 'agent-server')
         agent_server_url = data.get('agent_server_url', '')
-        download_url = data.get('download_url', '')
+        agent_server_backup_url = data.get('agent_server_backup_url', '')
         package_version = data.get('package_version')
         package_id = data.get('package_id')
         confirmed = data.get('confirmed', False)
+        ws_backoff_initial_ms = data.get('ws_backoff_initial_ms', 1000)
+        ws_backoff_max_ms = data.get('ws_backoff_max_ms', 30000)
+        ws_max_retries = data.get('ws_max_retries', 6)
+        ssh_timeout = data.get('ssh_timeout', 300)
+        allow_reinstall = data.get('allow_reinstall', False)
 
         if not confirmed:
             return SycResponse.error(message="请勾选确认框以执行批量安装操作", code=400)
+        if install_mode == 'agent-server' and not agent_server_url:
+            return SycResponse.error(message="agent_server_url 不能为空（agent-server 模式）", code=400)
 
         # 批量操作限流
         MAX_BATCH_SIZE = 50
@@ -379,10 +480,15 @@ class AgentViewSet(viewsets.ModelViewSet):
                     account_id=account_id,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
-                    download_url=download_url,
+                    agent_server_backup_url=agent_server_backup_url,
                     install_task_id=install_task_id,
                     package_version=package_version,
-                    package_id=package_id
+                    package_id=package_id,
+                    ws_backoff_initial_ms=ws_backoff_initial_ms,
+                    ws_backoff_max_ms=ws_backoff_max_ms,
+                    ws_max_retries=ws_max_retries,
+                    ssh_timeout=ssh_timeout,
+                    allow_reinstall=allow_reinstall
                 )
                 
                 # 记录审计日志
@@ -489,7 +595,7 @@ class AgentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="download_urls")
     def download_urls(self, request):
-        """获取 Agent 二进制下载地址（兼容旧接口，优先使用版本管理）"""
+        """获取 Agent 二进制下载地址"""
         from .models import AgentPackage
         from apps.system_config.models import ConfigManager
 
@@ -516,28 +622,5 @@ class AgentViewSet(viewsets.ModelViewSet):
                 },
                 message="获取下载地址成功"
             )
-        else:
-            # 回退到配置
-            base_url = ConfigManager.get('agent.download_url', 'http://localhost:8000/static/agent/')
-            version = ConfigManager.get('agent.version', 'latest')
-
-            download_urls = {
-                'linux': {
-                    'amd64': f"{base_url}ops-job-agent-linux-amd64",
-                    'arm64': f"{base_url}ops-job-agent-linux-arm64",
-                },
-                'windows': {
-                    'amd64': f"{base_url}ops-job-agent-windows-amd64.exe",
-                }
-            }
-
-            return SycResponse.success(
-                content={
-                    'download_urls': download_urls,
-                    'version': version,
-                    'base_url': base_url,
-                    'from_package_version': False
-                },
-                message="获取下载地址成功"
-            )
-
+        
+        return SycResponse.error(message="未找到可用的 Agent 包", code=404)

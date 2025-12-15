@@ -175,7 +175,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """取消执行 - 混合方案（redis标志 + SIGUSR1信号）"""
+        """取消执行 - 支持SSH（Celery）和Agent两种方式"""
         execution_record = self.get_object()
 
         if execution_record.status not in ['pending', 'running']:
@@ -184,29 +184,63 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
             )
 
         try:
-            if execution_record.celery_task_id:
-                from celery import current_app
-                from django.core.cache import cache
-                import signal
+            from django.utils import timezone
+            from django.core.cache import cache
+            
+            # 检查执行方式
+            execution_mode = execution_record.execution_parameters.get('execution_mode', 'ssh')
+            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            
+            if execution_mode == 'agent' or agent_server_url:
+                # Agent方式：调用Agent取消服务
+                from apps.agents.execution_service import AgentExecutionService
                 
-                # 第一层：设置redis取消标志（优雅取消）
-                cache.set(f"cancel:{execution_record.execution_id}", "1", timeout=3600)
-                logger.info(f"设置取消标志: {execution_record.execution_id}")
+                cancel_result = AgentExecutionService.cancel_task_via_agent(
+                    execution_record=execution_record,
+                    agent_server_url=agent_server_url,
+                )
                 
-                # 第二层：发送SIGUSR1信号（强制取消）
-                try:
-                    current_app.control.revoke(
-                        execution_record.celery_task_id, 
-                        terminate=True, 
-                        signal='SIGUSR1'
+                if cancel_result['success']:
+                    # 更新执行记录状态
+                    execution_record.status = 'cancelled'
+                    execution_record.finished_at = timezone.now()
+                    execution_record.save()
+                    
+                    return SycResponse.success(
+                        content={
+                            'cancelled_count': cancel_result.get('cancelled_count', 0),
+                            'failed_count': cancel_result.get('failed_count', 0),
+                            'total_count': cancel_result.get('total_count', 0),
+                        },
+                        message=cancel_result.get('message', '任务已取消')
                     )
-                    logger.info(f"发送取消信号: {execution_record.celery_task_id}")
-                except Exception as e:
-                    logger.warning(f"发送取消信号失败: {e}")
-                    pass
+                else:
+                    return SycResponse.error(
+                        message=cancel_result.get('error', '取消任务失败')
+                    )
+            else:
+                # SSH方式：使用Celery取消方案
+                if execution_record.celery_task_id:
+                    from celery import current_app
+                    import signal
+
+                    # 第一层：设置redis取消标志（优雅取消）
+                    cache.set(f"cancel:{execution_record.execution_id}", "1", timeout=3600)
+                    logger.info(f"设置取消标志: {execution_record.execution_id}")
+
+                    # 第二层：发送SIGUSR1信号（强制取消）
+                    try:
+                        current_app.control.revoke(
+                            execution_record.celery_task_id,
+                            terminate=True,
+                            signal='SIGUSR1'
+                        )
+                        logger.info(f"发送取消信号: {execution_record.celery_task_id}")
+                    except Exception as e:
+                        logger.warning(f"发送取消信号失败: {e}")
+                        pass
 
             # 更新执行记录状态
-            from django.utils import timezone
             execution_record.status = 'cancelled'
             execution_record.finished_at = timezone.now()
             execution_record.save()
@@ -354,8 +388,8 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                     root_execution.save()
                     logger.info("根记录重试次数更新完成")
 
-                logger.info(f"工作流重做完成，返回结果: {result}")
-                return result
+            logger.info(f"工作流重做完成，返回结果: {result}")
+            return result
 
         except Exception as e:
             logger.error(f"Agent方式重试工作流失败: {str(e)}", exc_info=True)

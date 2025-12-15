@@ -305,6 +305,41 @@
                   placeholder="例如: ws://agent-server:8080"
                 />
               </a-form-item>
+              <a-form-item v-if="installForm.install_mode === 'agent-server'" label="Agent-Server 备用地址（可选）">
+                <a-input
+                  v-model="installForm.agent_server_backup_url"
+                  placeholder="例如: ws://agent-server-backup:8080"
+                />
+              </a-form-item>
+              <a-row v-if="installForm.install_mode === 'agent-server'" :gutter="12">
+                <a-col :span="8">
+                  <a-form-item label="WS 初始退避(ms)">
+                    <a-input-number v-model="installForm.ws_backoff_initial_ms" :min="100" :max="60000" style="width: 100%" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="WS 最大退避(ms)">
+                    <a-input-number v-model="installForm.ws_backoff_max_ms" :min="1000" :max="600000" style="width: 100%" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="WS 最大重试">
+                    <a-input-number v-model="installForm.ws_max_retries" :min="1" :max="20" style="width: 100%" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+              <a-row :gutter="12">
+                <a-col :span="12">
+                  <a-form-item label="SSH 超时(秒)">
+                    <a-input-number v-model="installForm.ssh_timeout" :min="60" :max="900" style="width: 100%" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="允许覆盖已安装">
+                    <a-switch v-model="installForm.allow_reinstall" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
               <a-form-item label="安装包版本">
                 <a-select
                   v-model="installForm.package_id"
@@ -327,12 +362,6 @@
                 <template #extra>
                   <a-link @click="fetchAvailablePackages">刷新安装包列表</a-link>
                 </template>
-              </a-form-item>
-              <a-form-item label="Agent 下载地址（可选，优先级低于版本选择）">
-                <a-input
-                  v-model="installForm.download_url"
-                  placeholder="留空则使用系统默认地址或选择的版本"
-                />
               </a-form-item>
               <a-form-item>
                 <a-space>
@@ -527,7 +556,12 @@ const installForm = reactive({
   host_ids: [] as number[],
   install_mode: 'agent-server' as 'direct' | 'agent-server',
   agent_server_url: '',
-  download_url: '',
+  agent_server_backup_url: '',
+  ws_backoff_initial_ms: 1000,
+  ws_backoff_max_ms: 30000,
+  ws_max_retries: 6,
+  ssh_timeout: 300,
+  allow_reinstall: false,
   package_id: undefined as number | undefined,
   package_version: undefined as string | undefined,
 })
@@ -1031,7 +1065,12 @@ const handleInstallAgent = () => {
   installForm.host_ids = []
   installForm.install_mode = 'agent-server'
   installForm.agent_server_url = ''
-  installForm.download_url = ''
+  installForm.agent_server_backup_url = ''
+  installForm.ws_backoff_initial_ms = 1000
+  installForm.ws_backoff_max_ms = 30000
+  installForm.ws_max_retries = 6
+  installForm.ssh_timeout = 300
+  installForm.allow_reinstall = false
   installForm.package_id = undefined
   installForm.package_version = undefined
   installScripts.value = null
@@ -1105,6 +1144,10 @@ const handleGenerateScript = async () => {
     Message.warning('请至少选择一个主机')
     return
   }
+  if (installForm.install_mode === 'agent-server' && !installForm.agent_server_url) {
+    Message.warning('Agent-Server 模式需要填写主地址')
+    return
+  }
 
   generatingScript.value = true
   try {
@@ -1112,7 +1155,10 @@ const handleGenerateScript = async () => {
       host_ids: installForm.host_ids,
       install_mode: installForm.install_mode,
       agent_server_url: installForm.agent_server_url,
-      download_url: installForm.download_url,
+      agent_server_backup_url: installForm.agent_server_backup_url,
+      ws_backoff_initial_ms: installForm.ws_backoff_initial_ms,
+      ws_backoff_max_ms: installForm.ws_backoff_max_ms,
+      ws_max_retries: installForm.ws_max_retries,
       package_id: installForm.package_id,
       package_version: installForm.package_version,
     })
@@ -1218,6 +1264,10 @@ const handleBatchInstall = async () => {
     Message.warning('请至少选择一个主机')
     return
   }
+  if (installForm.install_mode === 'agent-server' && !installForm.agent_server_url) {
+    Message.warning('Agent-Server 模式需要填写主地址')
+    return
+  }
 
   Modal.confirm({
     title: '确认批量安装',
@@ -1229,7 +1279,12 @@ const handleBatchInstall = async () => {
           host_ids: installForm.host_ids,
           install_mode: installForm.install_mode,
           agent_server_url: installForm.agent_server_url,
-          download_url: installForm.download_url,
+          agent_server_backup_url: installForm.agent_server_backup_url,
+          ws_backoff_initial_ms: installForm.ws_backoff_initial_ms,
+          ws_backoff_max_ms: installForm.ws_backoff_max_ms,
+          ws_max_retries: installForm.ws_max_retries,
+          ssh_timeout: installForm.ssh_timeout,
+          allow_reinstall: installForm.allow_reinstall,
           package_id: installForm.package_id,
           package_version: installForm.package_version,
           confirmed: true,

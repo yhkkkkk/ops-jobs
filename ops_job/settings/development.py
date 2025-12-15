@@ -198,7 +198,7 @@ LOGGING['loggers']['django']['level'] = 'INFO'
 AXES_ENABLED = False  # 开发环境禁用登录限制
 
 # 开发环境验证码配置
-CAPTCHA_ENABLED = False  # 开发环境禁用验证码
+CAPTCHA_ENABLED = True  # 开发环境禁用验证码
 
 # 开发环境调试工具
 if DEBUG:

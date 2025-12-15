@@ -104,7 +104,7 @@ func (d *Dispatcher) dispatchTasks() {
 		default:
 			// 任务队列满，如果启用了asynq，入队
 			if d.asynqEnabled && d.taskQueue != nil {
-				_, err := d.taskQueue.EnqueueTask(agentConn.ID, task)
+				_, err := d.taskQueue.EnqueueWithPolicy(agentConn.ID, task)
 				if err != nil {
 					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 						"agent_id": agentConn.ID,
@@ -134,7 +134,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 	if !exists {
 		// Agent不存在，如果启用了asynq，入队
 		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueTask(agentID, task)
+			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
 			if err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
@@ -155,7 +155,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 	if agentConn.Status != "active" || agentConn.Conn == nil {
 		// Agent离线，如果启用了asynq，入队
 		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueTask(agentID, task)
+			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
 			if err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
@@ -183,7 +183,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 	default:
 		// 任务队列满，如果启用了asynq，入队
 		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueTask(agentID, task)
+			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
 			if err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,

@@ -63,7 +63,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 message="登录失败"
             )
 
-        # 获取校验的数据（提取特定字段）
+        # 获取校验的数据
         validated_data = serializer.validated_data
 
         # 同时设置Session和JWT Token - 支持混合认证

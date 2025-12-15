@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/marusama/semaphore/v2"
 
 	"ops-job-agent/internal/api"
@@ -42,6 +44,7 @@ type Agent struct {
 	logStream      *logstream.LogStream             // 日志流管理器（direct 模式）
 	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
 	tasksLock      sync.RWMutex                     // 任务映射锁
+	wsURL          string
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -85,7 +88,7 @@ func NewAgent(cfg *config.Config) *Agent {
 		}
 	}
 
-	return &Agent{
+	agent := &Agent{
 		cfg:            cfg,
 		client:         httpClient,
 		taskQueue:      taskQueue,
@@ -99,6 +102,15 @@ func NewAgent(cfg *config.Config) *Agent {
 		logStream:      logStream,
 		runningTasks:   make(map[string]*executor.RunningTask),
 	}
+
+	if cfg.Mode == "agent-server" {
+		wsClient := wsclient.NewClient(cfg.AgentServerURL, cfg.AgentToken)
+		wsClient.SetOnTask(agent.handleWebSocketTask)
+		wsClient.SetOnCancel(agent.handleWebSocketCancel)
+		agent.wsClient = wsClient
+	}
+
+	return agent
 }
 
 // Start 注册自身，并启动后台协程
@@ -133,9 +145,18 @@ func (a *Agent) Start() error {
 		go a.processPendingTasksFromQueue()
 	}
 
-	a.wg.Add(2)
+	a.wg.Add(1)
 	go a.heartbeatLoop()
+
+	if a.cfg.Mode == "direct" {
+		a.wg.Add(1)
 	go a.taskLoop()
+	} else {
+		if err := a.ensureWebSocketConnection(); err != nil {
+			return err
+		}
+	}
+
 	a.started = true
 	return nil
 }
@@ -396,29 +417,23 @@ func (a *Agent) register() error {
 
 	if a.cfg.Mode == "agent-server" {
 		// Agent-Server 模式：向 Agent-Server 注册
-		// 需要创建一个临时的 HTTP 客户端用于注册
-		// 从 Agent-Server URL 提取 HTTP URL
-		serverURL := a.cfg.AgentServerURL
-		if len(serverURL) > 2 && serverURL[0:2] == "ws" {
-			serverURL = "http" + serverURL[2:]
+		httpURL, err := deriveAgentServerHTTPURL(a.cfg.AgentServerURL)
+		if err != nil {
+			return err
 		}
-		// 移除路径部分
-		if idx := len(serverURL); idx > 0 {
-			for i := len(serverURL) - 1; i >= 0; i-- {
-				if serverURL[i] == '/' {
-					idx = i
-					break
-				}
-			}
-			serverURL = serverURL[:idx]
-		}
-
-		tempClient := httpclient.NewClient(serverURL, a.cfg.AgentToken)
+		tempClient := httpclient.NewClient(httpURL, a.cfg.AgentToken)
 		registered, err := tempClient.Register(a.ctx, info)
 		if err != nil {
 			return fmt.Errorf("register to agent-server failed: %w", err)
 		}
 		a.info = registered
+		a.wsURL = registered.WSURL
+		if a.wsURL == "" {
+			a.wsURL = a.cfg.AgentServerURL
+		}
+		if a.wsClient != nil {
+			a.wsClient.SetOverrideURL(a.wsURL)
+		}
 		logger.GetLogger().WithFields(map[string]interface{}{
 			"agent_id":   a.info.ID,
 			"agent_name": a.info.Name,
@@ -452,6 +467,16 @@ func (a *Agent) register() error {
 		}).Info("agent registered to control plane")
 	}
 	return nil
+}
+
+func (a *Agent) ensureWebSocketConnection() error {
+	if a.wsClient == nil {
+		return fmt.Errorf("websocket client not initialized")
+	}
+	if a.info == nil {
+		return fmt.Errorf("agent info missing, register before connecting websocket")
+	}
+	return a.connectWithBackoff()
 }
 
 // updateSystemMetrics 更新系统指标
@@ -560,6 +585,81 @@ func (a *Agent) processPendingTasksFromQueue() {
 func collectSystemInfo() SystemInfo {
 	// 使用 system 包收集更详细的系统信息
 	return system.CollectSystemInfo()
+}
+
+func deriveAgentServerHTTPURL(raw string) (string, error) {
+	if raw == "" {
+		return "", fmt.Errorf("agent_server_url is empty")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse agent_server_url: %w", err)
+	}
+	switch u.Scheme {
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	case "http", "https":
+	default:
+		return "", fmt.Errorf("unsupported scheme %q for agent_server_url", u.Scheme)
+	}
+	u.Path = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func (a *Agent) connectWithBackoff() error {
+	primary := a.wsURL
+	if primary == "" {
+		primary = a.cfg.AgentServerURL
+	}
+	endpoints := []string{}
+	if primary != "" {
+		endpoints = append(endpoints, primary)
+	}
+	if a.cfg.AgentServerBackup != "" {
+		endpoints = append(endpoints, a.cfg.AgentServerBackup)
+	}
+	if len(endpoints) == 0 {
+		return fmt.Errorf("no agent server endpoints configured")
+	}
+
+	initial := time.Duration(a.cfg.WSBackoffInitialMs) * time.Millisecond
+	if initial <= 0 {
+		initial = time.Second
+	}
+	max := time.Duration(a.cfg.WSBackoffMaxMs) * time.Millisecond
+	if max <= 0 {
+		max = 30 * time.Second
+	}
+	attempts := a.cfg.WSMaxRetries
+	if attempts <= 0 {
+		attempts = 6
+	}
+
+	var idx int
+	return retry.Do(
+		func() error {
+			ep := endpoints[idx%len(endpoints)]
+			idx++
+			a.wsClient.SetOverrideURL(ep)
+			if err := a.wsClient.Connect(a.info.ID); err != nil {
+				logger.GetLogger().WithFields(map[string]interface{}{
+					"endpoint": ep,
+				}).Warn("websocket connect failed")
+				return err
+			}
+			return nil
+		},
+		retry.Attempts(uint(attempts)),
+		retry.Delay(initial),
+		retry.MaxDelay(max),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.Context(a.ctx),
+	)
 }
 
 func listIPs() []string {

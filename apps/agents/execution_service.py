@@ -536,6 +536,7 @@ class AgentExecutionService:
                         host_results.append({
                             'host_id': r.get('host_id'),
                             'host_name': r.get('host_name'),
+                            'task_id': r.get('task_id'),  # 存储task_id用于取消任务
                             'status': 'success' if r.get('success') else 'failed',
                             'error': r.get('error'),
                         })
@@ -631,6 +632,7 @@ class AgentExecutionService:
                         host_results.append({
                             'host_id': r.get('host_id'),
                             'host_name': r.get('host_name'),
+                            'task_id': r.get('task_id'),  # 存储task_id用于取消任务
                             'status': 'success' if r.get('success') else 'failed',
                             'error': r.get('error'),
                         })
@@ -1171,4 +1173,231 @@ class AgentExecutionService:
                 'error': f'重试异常: {str(e)}'
             }
 
+    @staticmethod
+    def cancel_task_via_agent(
+        execution_record: ExecutionRecord,
+        agent_server_url: str = None,
+    ) -> Dict[str, Any]:
+        """
+        通过Agent取消任务（支持直连和Agent-Server两种模式）
+        
+        Args:
+            execution_record: 执行记录
+            agent_server_url: Agent-Server地址（如果使用Agent-Server模式）
+        
+        Returns:
+            Dict: 取消结果
+        """
+        try:
+            # 收集所有需要取消的task_id
+            task_ids = []
+            agent_task_map = {}  # {agent_id: [task_ids]}
+            
+            # 从ExecutionStep的host_results中收集task_id
+            steps = ExecutionStep.objects.filter(execution_record=execution_record)
+            for step in steps:
+                host_results = step.host_results or []
+                for hr in host_results:
+                    task_id = hr.get('task_id')
+                    host_id = hr.get('host_id')
+                    if task_id and host_id:
+                        # 获取Agent
+                        try:
+                            host = Host.objects.get(id=host_id)
+                            if hasattr(host, 'agent') and host.agent:
+                                agent_id = host.agent.host_id
+                                if agent_id not in agent_task_map:
+                                    agent_task_map[agent_id] = {
+                                        'agent': host.agent,
+                                        'tasks': []
+                                    }
+                                agent_task_map[agent_id]['tasks'].append({
+                                    'task_id': task_id,
+                                    'host_id': host_id,
+                                })
+                                task_ids.append(task_id)
+                        except Host.DoesNotExist:
+                            logger.warning(f"主机不存在: {host_id}")
+            
+            if not task_ids:
+                logger.warning(f"执行记录 {execution_record.execution_id} 没有找到需要取消的任务")
+                return {
+                    'success': True,
+                    'message': '没有找到需要取消的任务',
+                    'cancelled_count': 0
+                }
+            
+            # 确定执行模式
+            if agent_server_url or (execution_record.execution_parameters.get('agent_server_url')):
+                # Agent-Server模式
+                server_url = agent_server_url or execution_record.execution_parameters.get('agent_server_url')
+                return AgentExecutionService._cancel_tasks_via_agent_server(
+                    agent_task_map=agent_task_map,
+                    server_url=server_url,
+                )
+            else:
+                # Direct模式（直连控制面）
+                return AgentExecutionService._cancel_tasks_via_direct(
+                    agent_task_map=agent_task_map,
+                )
+        
+        except Exception as e:
+            logger.error(f"取消Agent任务异常: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'取消任务异常: {str(e)}'
+            }
 
+    @staticmethod
+    def _cancel_tasks_via_agent_server(
+        agent_task_map: Dict[int, Dict],
+        server_url: str,
+    ) -> Dict[str, Any]:
+        """
+        通过Agent-Server取消任务
+        
+        Args:
+            agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
+            server_url: Agent-Server地址
+        
+        Returns:
+            Dict: 取消结果
+        """
+        try:
+            import requests
+            from django.conf import settings
+            
+            # 确保URL格式正确
+            if server_url.startswith('ws://') or server_url.startswith('wss://'):
+                server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
+            
+            # 移除路径部分，只保留基础URL
+            if '/' in server_url[8:]:  # 跳过 http:// 或 https://
+                server_url = server_url[:server_url.find('/', 8)]
+            
+            # 获取Agent-Server的认证Token（如果需要）
+            agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
+            
+            headers = {
+                'Content-Type': 'application/json',
+            }
+            if agent_server_token:
+                headers['Authorization'] = f'Bearer {agent_server_token}'
+            
+            cancelled_count = 0
+            failed_count = 0
+            errors = []
+            
+            # 为每个Agent取消任务
+            for agent_id, agent_info in agent_task_map.items():
+                agent = agent_info['agent']
+                tasks = agent_info['tasks']
+                
+                for task_info in tasks:
+                    task_id = task_info['task_id']
+                    host_id = task_info['host_id']
+                    
+                    # 调用Agent-Server的取消任务API
+                    api_url = f"{server_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
+                    
+                    try:
+                        response = requests.post(
+                            api_url,
+                            headers=headers,
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            cancelled_count += 1
+                            logger.info(f"成功取消任务: task_id={task_id}, agent_id={agent_id}, host_id={host_id}")
+                        else:
+                            failed_count += 1
+                            error_msg = response.text or f"HTTP {response.status_code}"
+                            errors.append(f"取消任务失败 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
+                            logger.error(f"取消任务失败: task_id={task_id}, agent_id={agent_id}, 状态码={response.status_code}, 错误={error_msg}")
+                    
+                    except Exception as e:
+                        failed_count += 1
+                        error_msg = f"请求异常: {str(e)}"
+                        errors.append(f"取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
+                        logger.error(f"取消任务异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}", exc_info=True)
+            
+            return {
+                'success': cancelled_count > 0,
+                'cancelled_count': cancelled_count,
+                'failed_count': failed_count,
+                'total_count': cancelled_count + failed_count,
+                'errors': errors if errors else None,
+                'message': f'成功取消 {cancelled_count} 个任务，失败 {failed_count} 个'
+            }
+        
+        except Exception as e:
+            logger.error(f"通过Agent-Server取消任务异常: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'取消任务异常: {str(e)}'
+            }
+
+    @staticmethod
+    def _cancel_tasks_via_direct(
+        agent_task_map: Dict[int, Dict],
+    ) -> Dict[str, Any]:
+        """
+        通过直连模式取消任务（调用控制面的取消任务API）
+        
+        Args:
+            agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
+        
+        Returns:
+            Dict: 取消结果
+        """
+        try:
+            # 在直连模式下，Agent会轮询拉取任务
+            # 控制面需要提供一个取消任务的API，Agent在下次轮询时会收到取消指令
+            # 或者，控制面可以维护一个取消任务列表，Agent轮询时检查
+            
+            # 方案：在控制面维护一个取消任务列表（使用Redis），Agent轮询时检查
+            from django.core.cache import cache
+            
+            cancelled_count = 0
+            failed_count = 0
+            errors = []
+            
+            # 为每个任务设置取消标志
+            for agent_id, agent_info in agent_task_map.items():
+                agent = agent_info['agent']
+                tasks = agent_info['tasks']
+                
+                for task_info in tasks:
+                    task_id = task_info['task_id']
+                    host_id = task_info['host_id']
+                    
+                    try:
+                        # 设置取消标志，Agent轮询时会检查
+                        cache_key = f"agent:cancel:{agent_id}:{task_id}"
+                        cache.set(cache_key, "1", timeout=3600)  # 1小时过期
+                        
+                        cancelled_count += 1
+                        logger.info(f"设置取消标志: task_id={task_id}, agent_id={agent_id}, host_id={host_id}")
+                    
+                    except Exception as e:
+                        failed_count += 1
+                        error_msg = f"设置取消标志异常: {str(e)}"
+                        errors.append(f"取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
+                        logger.error(f"设置取消标志异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}", exc_info=True)
+            
+            return {
+                'success': cancelled_count > 0,
+                'cancelled_count': cancelled_count,
+                'failed_count': failed_count,
+                'total_count': cancelled_count + failed_count,
+                'errors': errors if errors else None,
+                'message': f'成功设置 {cancelled_count} 个任务的取消标志，失败 {failed_count} 个（直连模式下，Agent会在下次轮询时检查取消标志）'
+            }
+        
+        except Exception as e:
+            logger.error(f"通过直连模式取消任务异常: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'取消任务异常: {str(e)}'
+            }

@@ -84,11 +84,11 @@ class QuickExecuteService:
             # 通过Agent执行脚本
             result = AgentExecutionService.execute_script_via_agent(
                 execution_record=execution_record,
-                script_content=script_data.get('script_content'),
+                    script_content=script_data.get('script_content'),
                 script_type=script_data.get('script_type', 'shell'),
                 target_hosts=target_hosts,
-                timeout=script_data['timeout'],
-                global_variables=global_variables,
+                    timeout=script_data['timeout'],
+                    global_variables=global_variables,
                 step_id=None,  # 快速执行没有步骤ID
                 agent_server_url=agent_server_url,
             )
@@ -98,7 +98,7 @@ class QuickExecuteService:
                 ExecutionRecordService.update_execution_status(
                     execution_record=execution_record,
                     status='running',
-                    celery_task_id=str(execution_record.execution_id)  # 使用execution_id作为task_id
+                        celery_task_id=str(execution_record.execution_id)  # 使用execution_id作为task_id
                 )
 
                 logger.info(f"快速脚本执行已启动: {execution_record.execution_id}")
@@ -107,12 +107,12 @@ class QuickExecuteService:
                     'success': True,
                     'execution_id': execution_record.execution_id,
                     'execution_record_id': execution_record.id,
-                    'task_id': str(execution_record.execution_id),  # 用于实时日志的task_id
-                    'message': '脚本执行已启动（Agent方式）',
-                    'target_host_count': len(target_hosts),
-                    'success_count': result.get('success_count', 0),
-                    'failed_count': result.get('failed_count', 0)
-                }
+                        'task_id': str(execution_record.execution_id),  # 用于实时日志的task_id
+                        'message': '脚本执行已启动（Agent方式）',
+                        'target_host_count': len(target_hosts),
+                        'success_count': result.get('success_count', 0),
+                        'failed_count': result.get('failed_count', 0)
+                    }
             else:
                 # 执行失败
                 ExecutionRecordService.update_execution_status(
@@ -124,7 +124,7 @@ class QuickExecuteService:
                 return {
                     'success': False,
                     'error': result.get('error', '脚本执行启动失败')
-                }
+            }
 
         except Exception as e:
             logger.error(f"快速脚本执行启动失败: {e}")

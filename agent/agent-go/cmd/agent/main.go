@@ -31,10 +31,17 @@ var startCmd = &cobra.Command{
 		logger.InitLogger(cfg.LogDir, cfg.LogMaxSize, cfg.LogMaxFiles, cfg.LogMaxAge)
 		log := logger.GetLogger()
 
-		log.WithFields(map[string]interface{}{
-			"agent_name":        cfg.AgentName,
-			"control_plane_url": cfg.ControlPlaneURL,
-		}).Info("starting agent")
+		logFields := map[string]interface{}{
+			"agent_name": cfg.AgentName,
+			"mode":       cfg.Mode,
+		}
+		if cfg.Mode == "direct" {
+			logFields["control_plane_url"] = cfg.ControlPlaneURL
+		} else {
+			logFields["agent_server_url"] = cfg.AgentServerURL
+		}
+
+		log.WithFields(logFields).Info("starting agent")
 
 		ag := core.NewAgent(cfg)
 		if err := ag.Start(); err != nil {

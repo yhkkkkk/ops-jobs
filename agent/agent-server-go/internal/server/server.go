@@ -1,9 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"ops-job-agent-server/internal/agent"
@@ -48,7 +54,7 @@ func New(cfg *config.Config) (*Server, error) {
 	)
 
 	// 创建控制面客户端
-	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Timeout)
+	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Scope, cfg.ControlPlane.Timeout)
 
 	// 创建任务队列（如果启用）
 	var taskQueue *task.TaskQueue
@@ -82,19 +88,22 @@ func New(cfg *config.Config) (*Server, error) {
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
 	api := s.engine.Group("/api")
+	if s.cfg.Auth.RequireSignature && s.cfg.Auth.SharedSecret != "" {
+		api.Use(s.requireSignature())
+	}
 	{
 		// Agent 注册
 		api.POST("/agents/register", s.handleRegister)
 		// Agent 列表
-		api.GET("/agents", s.handleListAgents)
+		api.GET("/agents", s.requireScope(), s.handleListAgents)
 		// Agent 详情
-		api.GET("/agents/:id", s.handleGetAgent)
+		api.GET("/agents/:id", s.requireScope(), s.handleGetAgent)
 		// 控制面推送任务到指定 Agent
-		api.POST("/agents/:id/tasks", s.handlePushTask)
+		api.POST("/agents/:id/tasks", s.requireScope(), s.handlePushTask)
 		// 取消指定 Agent 的任务
-		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
+		api.POST("/agents/:id/tasks/:task_id/cancel", s.requireScope(), s.handleCancelTask)
 		// 任务队列统计信息
-		api.GET("/stats/queues", s.handleGetStats)
+		api.GET("/stats/queues", s.requireScope(), s.handleGetStats)
 	}
 
 	// WebSocket 连接
@@ -355,6 +364,99 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 
 	// 启动消息处理
 	s.handleWebSocketMessages(agentConn)
+}
+
+// requireScope 校验来自控制面的请求是否符合配置的 scope，用于多租户/作用域隔离
+func (s *Server) requireScope() gin.HandlerFunc {
+	expected := s.cfg.ControlPlane.Scope
+	return func(c *gin.Context) {
+		if expected == "" {
+			c.Next()
+			return
+		}
+		scope := c.GetHeader("X-Scope")
+		if scope == "" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing X-Scope"})
+			return
+		}
+		if scope != expected {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid scope"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// requireSignature 校验 HMAC 时间窗签名：X-Timestamp + X-Signature
+func (s *Server) requireSignature() gin.HandlerFunc {
+	secret := s.cfg.Auth.SharedSecret
+	clockSkew := s.cfg.Auth.ClockSkew
+	if clockSkew <= 0 {
+		clockSkew = 5 * time.Minute
+	}
+	return func(c *gin.Context) {
+		if secret == "" {
+			c.Next()
+			return
+		}
+
+		tsStr := c.GetHeader("X-Timestamp")
+		sig := c.GetHeader("X-Signature")
+		if tsStr == "" || sig == "" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing signature headers"})
+			return
+		}
+		ts, err := strconv.ParseInt(tsStr, 10, 64)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid timestamp"})
+			return
+		}
+		now := time.Now().Unix()
+		if absInt64(now-ts) > int64(clockSkew.Seconds()) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "timestamp skew too large"})
+			return
+		}
+
+		bodyBytes, err := c.GetRawData()
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "failed to read body"})
+			return
+		}
+		// 读过 body 之后需要恢复
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+		expected := computeHMAC(secret, c.Request.Method, path, tsStr, bodyBytes)
+		if !hmac.Equal([]byte(expected), []byte(sig)) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid signature"})
+			return
+		}
+
+		c.Next()
+	}
+}
+
+func computeHMAC(secret, method, path, ts string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	// message = timestamp + "\n" + method + "\n" + path + "\n" + body
+	mac.Write([]byte(ts))
+	mac.Write([]byte("\n"))
+	mac.Write([]byte(method))
+	mac.Write([]byte("\n"))
+	mac.Write([]byte(path))
+	mac.Write([]byte("\n"))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // handleWebSocketMessages 处理 WebSocket 消息

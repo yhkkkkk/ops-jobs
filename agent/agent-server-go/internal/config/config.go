@@ -15,6 +15,7 @@ type Config struct {
 	Logging      LoggingConfig      `mapstructure:"logging"`
 	Redis        RedisConfig        `mapstructure:"redis"`
 	Asynq        AsynqConfig        `mapstructure:"asynq"`
+	Auth         AuthConfig         `mapstructure:"auth"`
 }
 
 // ServerConfig 服务器配置
@@ -29,6 +30,7 @@ type ServerConfig struct {
 type ControlPlaneConfig struct {
 	URL     string        `mapstructure:"url"`
 	Token   string        `mapstructure:"token"`
+	Scope   string        `mapstructure:"scope"` // 作用域/租户标识，用于隔离控制面请求
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -43,9 +45,9 @@ type AgentConfig struct {
 type LoggingConfig struct {
 	Level    string `mapstructure:"level"`
 	Dir      string `mapstructure:"dir"`
-	MaxSize  int    `mapstructure:"max_size"`  // MB
+	MaxSize  int    `mapstructure:"max_size"` // MB
 	MaxFiles int    `mapstructure:"max_files"`
-	MaxAge   int    `mapstructure:"max_age"`   // days
+	MaxAge   int    `mapstructure:"max_age"` // days
 }
 
 // RedisConfig Redis 配置
@@ -58,11 +60,18 @@ type RedisConfig struct {
 
 // AsynqConfig Asynq 配置
 type AsynqConfig struct {
-	Enabled      bool          `mapstructure:"enabled"`
-	Concurrency  int           `mapstructure:"concurrency"`
-	RetryMax     int           `mapstructure:"retry_max"`
-	RetryDelay   time.Duration `mapstructure:"retry_delay"`
-	TaskTimeout  time.Duration `mapstructure:"task_timeout"`
+	Enabled     bool          `mapstructure:"enabled"`
+	Concurrency int           `mapstructure:"concurrency"`
+	RetryMax    int           `mapstructure:"retry_max"`
+	RetryDelay  time.Duration `mapstructure:"retry_delay"`
+	TaskTimeout time.Duration `mapstructure:"task_timeout"`
+}
+
+// AuthConfig API 鉴权配置
+type AuthConfig struct {
+	SharedSecret     string        `mapstructure:"shared_secret"`
+	ClockSkew        time.Duration `mapstructure:"clock_skew"`
+	RequireSignature bool          `mapstructure:"require_signature"`
 }
 
 // Load 加载配置
@@ -105,6 +114,7 @@ func setDefaults() {
 
 	// ControlPlane 默认值
 	viper.SetDefault("control_plane.timeout", "30s")
+	viper.SetDefault("control_plane.scope", "default")
 
 	// Agent 默认值
 	viper.SetDefault("agent.heartbeat_timeout", "60s")
@@ -129,5 +139,9 @@ func setDefaults() {
 	viper.SetDefault("asynq.retry_max", 3)
 	viper.SetDefault("asynq.retry_delay", "1s")
 	viper.SetDefault("asynq.task_timeout", "5m")
-}
 
+	// Auth 默认值
+	viper.SetDefault("auth.shared_secret", "")
+	viper.SetDefault("auth.clock_skew", "300s")
+	viper.SetDefault("auth.require_signature", false)
+}

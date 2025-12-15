@@ -9,6 +9,7 @@ server:
 control_plane:
   url: "https://control-plane.example.com"
   token: "server-auth-token"
+  scope: "default"  # 用于作用域/租户隔离，控制面请求需携带 X-Scope
   timeout: 30s
 
 agent:
@@ -35,4 +36,9 @@ asynq:
   retry_max: 3
   retry_delay: "1s"
   task_timeout: "5m"
+
+auth:
+  shared_secret: ""    # 可选，控制面调用时用于 HMAC 校验
+  clock_skew: "300s"   # 允许的时间偏移
+  require_signature: false
 

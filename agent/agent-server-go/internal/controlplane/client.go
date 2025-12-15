@@ -15,12 +15,14 @@ import (
 type Client struct {
 	baseURL string
 	token   string
+	scope   string
+	secret  string
 	timeout time.Duration
 	cli     *resty.Client
 }
 
 // NewClient 创建控制面客户端
-func NewClient(baseURL, token string, timeout time.Duration) *Client {
+func NewClient(baseURL, token, scope string, timeout time.Duration) *Client {
 	rc := resty.New().
 		SetBaseURL(baseURL).
 		SetTimeout(timeout).
@@ -29,10 +31,14 @@ func NewClient(baseURL, token string, timeout time.Duration) *Client {
 	if token != "" {
 		rc.SetAuthToken(token)
 	}
+	if scope != "" {
+		rc.SetHeader("X-Scope", scope)
+	}
 
 	return &Client{
 		baseURL: baseURL,
 		token:   token,
+		scope:   scope,
 		timeout: timeout,
 		cli:     rc,
 	}

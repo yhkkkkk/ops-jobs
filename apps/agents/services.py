@@ -154,9 +154,11 @@ class AgentService:
         else:
             return f"{base_url}ops-job-agent-linux-amd64"
 
-    @staticmethod
-    def generate_install_script(host: Host, token: str, install_mode: str = 'agent-server',
-                                agent_server_url: str = '', download_url: str = '', 
+    @classmethod
+    def generate_install_script(cls, host: Host, token: str, install_mode: str = 'agent-server',
+                                agent_server_url: str = '', agent_server_backup_url: str = '',
+                                download_url: str = '', ws_backoff_initial_ms: int = 1000,
+                                ws_backoff_max_ms: int = 30000, ws_max_retries: int = 6,
                                 package_version: str = None, package_id: int = None) -> Dict[str, str]:
         """
         生成 Agent 安装脚本
@@ -171,10 +173,14 @@ class AgentService:
         """
         scripts = {}
         
-        # 从配置获取默认值（如果未提供）
-        if not agent_server_url:
-            from apps.system_config.models import ConfigManager
-            agent_server_url = ConfigManager.get('agent.agent_server_url', 'ws://localhost:8080')
+        # agent-server 模式必须显式提供主地址
+        if install_mode == 'agent-server' and not agent_server_url:
+            raise ValueError("agent_server_url is required in agent-server mode")
+        agent_server_backup_url = agent_server_backup_url or ''
+        # clamp retry params to safe bounds
+        ws_backoff_initial_ms = max(100, min(ws_backoff_initial_ms or 1000, 60000))
+        ws_backoff_max_ms = max(1000, min(ws_backoff_max_ms or 30000, 600000))
+        ws_max_retries = max(1, min(ws_max_retries or 6, 20))
         
         if not download_url:
             # 使用版本管理获取下载地址
@@ -186,6 +192,10 @@ set -e
 
 # 配置
 AGENT_SERVER_URL="{agent_server_url}"
+AGENT_SERVER_BACKUP_URL="{agent_server_backup_url}"
+WS_BACKOFF_INITIAL_MS="{ws_backoff_initial_ms}"
+WS_BACKOFF_MAX_MS="{ws_backoff_max_ms}"
+WS_MAX_RETRIES="{ws_max_retries}"
 TOKEN="{token}"
 INSTALL_DIR="/opt/ops-job-agent"
 BINARY_NAME="ops-job-agent"
@@ -213,6 +223,10 @@ mode: {install_mode}
 """
         if install_mode == 'agent-server':
             linux_script += f"""agent_server_url: $AGENT_SERVER_URL
+agent_server_backup_url: $AGENT_SERVER_BACKUP_URL
+ws_backoff_initial_ms: $WS_BACKOFF_INITIAL_MS
+ws_backoff_max_ms: $WS_BACKOFF_MAX_MS
+ws_max_retries: $WS_MAX_RETRIES
 """
         else:
             linux_script += f"""control_plane_url: {agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')}
@@ -254,6 +268,10 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
         windows_script = f"""# PowerShell 安装脚本
 # 配置
 $AGENT_SERVER_URL = "{agent_server_url}"
+$AGENT_SERVER_BACKUP_URL = "{agent_server_backup_url}"
+$WS_BACKOFF_INITIAL_MS = "{ws_backoff_initial_ms}"
+$WS_BACKOFF_MAX_MS = "{ws_backoff_max_ms}"
+$WS_MAX_RETRIES = "{ws_max_retries}"
 $TOKEN = "{token}"
 $INSTALL_DIR = "C:\\Program Files\\ops-job-agent"
 $BINARY_NAME = "ops-job-agent.exe"
@@ -290,6 +308,10 @@ mode: {install_mode}
 """
         if install_mode == 'agent-server':
             windows_script += f"""agent_server_url: $AGENT_SERVER_URL
+agent_server_backup_url: $AGENT_SERVER_BACKUP_URL
+ws_backoff_initial_ms: $WS_BACKOFF_INITIAL_MS
+ws_backoff_max_ms: $WS_BACKOFF_MAX_MS
+ws_max_retries: $WS_MAX_RETRIES
 """
         else:
             control_plane_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
@@ -320,8 +342,10 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
     @classmethod
     def batch_install_agents(cls, host_ids: list, user, account_id: int = None,
                              install_mode: str = 'agent-server', agent_server_url: str = '',
-                             download_url: str = '', install_task_id: str = None,
-                             package_version: str = None, package_id: int = None) -> Dict[str, Any]:
+                             agent_server_backup_url: str = '', download_url: str = '', install_task_id: str = None,
+                             package_version: str = None, package_id: int = None,
+                             ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
+                             ws_max_retries: int = 6, ssh_timeout: int = 300, allow_reinstall: bool = False) -> Dict[str, Any]:
         """
         批量安装 Agent（通过 SSH）
         
@@ -362,17 +386,17 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
         for host in hosts:
             try:
                 # 检查是否已有 Agent
-                if hasattr(host, 'agent') and host.agent:
+                if hasattr(host, 'agent') and host.agent and not allow_reinstall:
                     results.append({
                         'host_id': host.id,
                         'host_name': host.name,
                         'success': False,
-                        'message': '该主机已安装 Agent'
+                        'message': '该主机已安装 Agent（allow_reinstall=false）'
                     })
                     continue
                 
                 # 为每个主机签发 Token
-                # 先创建 Agent 对象（如果不存在）
+                # 先创建 Agent 对象
                 agent, created = Agent.objects.get_or_create(
                     host=host,
                     defaults={'status': 'pending'}
@@ -391,7 +415,11 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                     token=token,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
+                    agent_server_backup_url=agent_server_backup_url,
                     download_url=download_url,
+                    ws_backoff_initial_ms=ws_backoff_initial_ms,
+                    ws_backoff_max_ms=ws_backoff_max_ms,
+                    ws_max_retries=ws_max_retries,
                     package_version=package_version,
                     package_id=package_id
                 )
@@ -428,38 +456,40 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                 
                 # 通过 SSH 执行安装脚本
                 try:
+                    timeout = max(60, min(ssh_timeout or 300, 900))
                     result = fabric_ssh_manager.execute_script(
                         host=host,
                         script_content=script_content,
                         script_type=script_type,
-                        timeout=300,  # 5分钟超时
+                        timeout=timeout,
                         account_id=account_id
                     )
                     
+                    config_summary = f"primary={agent_server_url or 'n/a'}, backup={agent_server_backup_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                     if result['success']:
                         install_record.status = 'success'
-                        install_record.message = '安装成功'
+                        install_record.message = f'安装成功 | {config_summary}'
                         success_count += 1
                         results.append({
                             'host_id': host.id,
                             'host_name': host.name,
                             'agent_id': agent.id,
                             'success': True,
-                            'message': '安装成功'
+                            'message': install_record.message
                         })
                         # 推送成功日志
                         realtime_log_service.push_log(install_task_id, str(host.id), {
                             'host_name': host.name,
                             'host_ip': host.ip_address,
                             'log_type': 'info',
-                            'content': f'主机 {host.name} Agent 安装成功',
+                            'content': f'主机 {host.name} Agent 安装成功 | {config_summary}',
                             'step_name': '安装 Agent',
                             'step_order': 1
                         })
                     else:
                         install_record.status = 'failed'
                         error_msg = result.get('stderr', '安装失败')
-                        install_record.message = error_msg
+                        install_record.message = f'{error_msg} | {config_summary}'
                         install_record.error_message = error_msg
                         install_record.error_detail = result.get('stderr', '')
                         failed_count += 1
@@ -467,14 +497,14 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                             'host_id': host.id,
                             'host_name': host.name,
                             'success': False,
-                            'message': error_msg
+                            'message': install_record.message
                         })
                         # 推送失败日志
                         realtime_log_service.push_log(install_task_id, str(host.id), {
                             'host_name': host.name,
                             'host_ip': host.ip_address,
                             'log_type': 'error',
-                            'content': f'主机 {host.name} Agent 安装失败: {error_msg}',
+                            'content': f'主机 {host.name} Agent 安装失败: {error_msg} | {config_summary}',
                             'step_name': '安装 Agent',
                             'step_order': 1
                         })
@@ -495,7 +525,7 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                 except Exception as e:
                     error_msg = f'SSH 执行失败: {str(e)}'
                     install_record.status = 'failed'
-                    install_record.message = error_msg
+                    install_record.message = f'{error_msg} | primary={agent_server_url or "n/a"}, backup={agent_server_backup_url or "n/a"}'
                     install_record.error_message = error_msg
                     install_record.error_detail = str(e)
                     install_record.save()
@@ -538,7 +568,7 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                     'host_id': host.id,
                     'host_name': host_name,
                     'success': False,
-                    'message': error_msg
+                    'message': f'{error_msg} | primary={agent_server_url or "n/a"}, backup={agent_server_backup_url or "n/a"}'
                 })
                 
                 # 推送失败日志

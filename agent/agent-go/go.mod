@@ -3,6 +3,7 @@ module ops-job-agent
 go 1.24.9
 
 require (
+	github.com/avast/retry-go/v4 v4.5.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-resty/resty/v2 v2.13.1
 	github.com/gorilla/websocket v1.5.3

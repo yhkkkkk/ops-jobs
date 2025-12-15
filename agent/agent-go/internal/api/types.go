@@ -7,6 +7,7 @@ type AgentInfo struct {
 	Labels  map[string]string `json:"labels,omitempty"`
 	Version string            `json:"version,omitempty"`
 	System  *SystemInfo       `json:"system"`
+	WSURL   string            `json:"ws_url,omitempty"`
 }
 
 // TaskSpec 控制面下发的任务定义

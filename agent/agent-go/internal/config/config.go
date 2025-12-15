@@ -15,6 +15,10 @@ type Config struct {
 	Mode               string            `mapstructure:"mode"`              // direct/agent-server
 	ControlPlaneURL    string            `mapstructure:"control_plane_url"` // 控制面地址（direct 模式）
 	AgentServerURL     string            `mapstructure:"agent_server_url"`  // Agent-Server 地址（agent-server 模式）
+	AgentServerBackup  string            `mapstructure:"agent_server_backup_url"`
+	WSBackoffInitialMs int               `mapstructure:"ws_backoff_initial_ms"`
+	WSBackoffMaxMs     int               `mapstructure:"ws_backoff_max_ms"`
+	WSMaxRetries       int               `mapstructure:"ws_max_retries"`
 	HTTPAddr           string            `mapstructure:"http_addr"`
 	AgentName          string            `mapstructure:"agent_name"`
 	AgentLabels        map[string]string `mapstructure:"agent_labels"`
@@ -97,6 +101,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config failed: %w", err)
 	}
 
+	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if cfg.Mode == "" {
+		cfg.Mode = "direct"
+	}
+	switch cfg.Mode {
+	case "direct":
+		if cfg.ControlPlaneURL == "" {
+			return nil, fmt.Errorf("control_plane_url is required in direct mode")
+		}
+	case "agent-server":
+		if cfg.AgentServerURL == "" {
+			return nil, fmt.Errorf("agent_server_url is required in agent-server mode")
+		}
+	default:
+		return nil, fmt.Errorf("invalid mode %q, must be direct or agent-server", cfg.Mode)
+	}
+
 	// 处理标签字符串（如果从环境变量读取）
 	if len(cfg.AgentLabels) == 0 {
 		if labelsStr := v.GetString("labels"); labelsStr != "" {
@@ -115,6 +136,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("mode", "direct") // 默认直连模式
 	v.SetDefault("control_plane_url", "http://localhost:8000")
 	v.SetDefault("agent_server_url", "ws://localhost:8080")
+	v.SetDefault("agent_server_backup_url", "")
+	v.SetDefault("ws_backoff_initial_ms", 1000)
+	v.SetDefault("ws_backoff_max_ms", 30000)
+	v.SetDefault("ws_max_retries", 6)
 	v.SetDefault("http_addr", ":8080")
 	v.SetDefault("agent_name", getHostname())
 	v.SetDefault("agent_token", "")
@@ -144,10 +169,26 @@ func setDefaults(v *viper.Viper) {
 
 // bindEnvVars 绑定环境变量
 func bindEnvVars(v *viper.Viper) {
-	// 直接使用环境变量（不通过 viper 的自动绑定）
-	// 因为 viper 的环境变量绑定可能不够灵活
 	if val := os.Getenv("CONTROL_PLANE_URL"); val != "" {
 		v.Set("control_plane_url", val)
+	}
+	if val := os.Getenv("AGENT_MODE"); val != "" {
+		v.Set("mode", val)
+	}
+	if val := os.Getenv("AGENT_SERVER_URL"); val != "" {
+		v.Set("agent_server_url", val)
+	}
+	if val := os.Getenv("AGENT_SERVER_BACKUP_URL"); val != "" {
+		v.Set("agent_server_backup_url", val)
+	}
+	if val := os.Getenv("AGENT_WS_BACKOFF_INITIAL_MS"); val != "" {
+		v.Set("ws_backoff_initial_ms", val)
+	}
+	if val := os.Getenv("AGENT_WS_BACKOFF_MAX_MS"); val != "" {
+		v.Set("ws_backoff_max_ms", val)
+	}
+	if val := os.Getenv("AGENT_WS_MAX_RETRIES"); val != "" {
+		v.Set("ws_max_retries", val)
 	}
 	if val := os.Getenv("AGENT_HTTP_ADDR"); val != "" {
 		v.Set("http_addr", val)

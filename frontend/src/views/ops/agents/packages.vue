@@ -262,18 +262,6 @@
           </div>
         </a-form-item>
 
-        <a-form-item label="下载地址（可选）" field="download_url">
-          <a-input
-            v-model="packageForm.download_url"
-            placeholder="如果使用对象存储，可以设置公开URL"
-          />
-          <template #extra>
-            <div style="color: #86909c; font-size: 12px;">
-              如果设置了下载地址，将优先使用此地址，否则使用上传的文件
-            </div>
-          </template>
-        </a-form-item>
-
         <a-form-item label="描述" field="description">
           <a-textarea
             v-model="packageForm.description"
@@ -356,7 +344,6 @@ const packageForm = reactive({
   arch: '' as 'amd64' | 'arm64' | '386' | '',
   file: null as File | null,
   storage_type: 'local' as 'local' | 'oss' | 's3' | 'cos' | 'minio' | 'rustfs',
-  download_url: '',
   description: '',
   is_active: true,
   is_default: false,
@@ -376,8 +363,8 @@ const packageFormRules = {
   file: [
     {
       validator: (value: any, callback: (error?: string) => void) => {
-        if (!isEdit.value && !value && !packageForm.download_url) {
-          callback('请上传文件或填写下载地址')
+        if (!isEdit.value && !value) {
+          callback('请上传文件')
         } else {
           callback()
         }
@@ -530,7 +517,6 @@ const handleEdit = (record: AgentPackage) => {
   packageForm.version = record.version
   packageForm.os_type = record.os_type
   packageForm.arch = record.arch
-  packageForm.download_url = record.download_url || ''
   packageForm.description = record.description || ''
   packageForm.is_active = record.is_active
   packageForm.is_default = record.is_default
@@ -546,7 +532,6 @@ const resetPackageForm = () => {
   packageForm.arch = ''
   packageForm.file = null
   packageForm.storage_type = 'local'
-  packageForm.download_url = ''
   packageForm.description = ''
   packageForm.is_active = true
   packageForm.is_default = false
@@ -586,9 +571,9 @@ const handleSubmitPackage = async () => {
     return
   }
 
-  // 验证：如果没有文件且没有下载地址，则不允许提交
-  if (!isEdit.value && !packageForm.file && !packageForm.download_url) {
-    Message.error('请上传文件或填写下载地址')
+  // 验证：创建时必须上传文件
+  if (!isEdit.value && !packageForm.file) {
+    Message.error('请上传文件')
     return
   }
 
@@ -603,9 +588,6 @@ const handleSubmitPackage = async () => {
       formData.append('file', packageForm.file)
     }
     formData.append('storage_type', packageForm.storage_type)
-    if (packageForm.download_url) {
-      formData.append('download_url', packageForm.download_url)
-    }
     if (packageForm.description) {
       formData.append('description', packageForm.description)
     }
@@ -854,4 +836,3 @@ onMounted(() => {
   font-size: 12px;
 }
 </style>
-
