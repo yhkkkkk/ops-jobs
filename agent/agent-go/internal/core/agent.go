@@ -17,6 +17,7 @@ import (
 	"ops-job-agent/internal/errors"
 	"ops-job-agent/internal/executor"
 	"ops-job-agent/internal/httpclient"
+	"ops-job-agent/internal/httpserver"
 	"ops-job-agent/internal/logger"
 	"ops-job-agent/internal/logstream"
 	"ops-job-agent/internal/metrics"
@@ -31,6 +32,7 @@ type Agent struct {
 	client         *httpclient.Client   // HTTP 客户端（direct 模式）
 	wsClient       *wsclient.Client     // WebSocket 客户端（agent-server 模式）
 	taskQueue      *taskqueue.TaskQueue // asynq任务队列（可选）
+	httpServer     *httpserver.Server   // 直连模式下用于接收控制面任务的 HTTP 服务
 	info           *AgentInfo
 	system         SystemInfo
 	ctx            context.Context
@@ -119,6 +121,7 @@ func (a *Agent) Start() error {
 		return nil
 	}
 
+	// 先注册自身，获取 agentID 等信息
 	if err := a.register(); err != nil {
 		return err
 	}
@@ -145,13 +148,23 @@ func (a *Agent) Start() error {
 		go a.processPendingTasksFromQueue()
 	}
 
+	// 启动心跳循环
 	a.wg.Add(1)
 	go a.heartbeatLoop()
 
+	// 根据模式启动不同的接入方式
 	if a.cfg.Mode == "direct" {
+		// 直连模式：启动内置 HTTP Server，等待控制面主动推送任务
+		a.httpServer = httpserver.NewServer(a.cfg.HTTPAddr, a.cfg.AgentToken, a)
 		a.wg.Add(1)
-	go a.taskLoop()
+		go func() {
+			defer a.wg.Done()
+			if err := a.httpServer.Start(a.ctx); err != nil {
+				logger.GetLogger().WithError(err).Error("agent http server exited with error")
+			}
+		}()
 	} else {
+		// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
 		if err := a.ensureWebSocketConnection(); err != nil {
 			return err
 		}
@@ -168,6 +181,7 @@ func (a *Agent) Stop() {
 	if a.logStream != nil {
 		a.logStream.Stop()
 	}
+	// HTTP Server 会在 ctx 取消后优雅退出（Start 中监听 ctx.Done）
 	// 断开 WebSocket 连接（agent-server 模式）
 	if a.wsClient != nil {
 		a.wsClient.Disconnect()
@@ -232,41 +246,6 @@ func (a *Agent) heartbeatLoop() {
 					}
 				}
 			}
-		}
-	}
-}
-
-// taskLoop 轮询控制面，拉取任务并执行
-func (a *Agent) taskLoop() {
-	defer a.wg.Done()
-	interval := time.Duration(a.cfg.TaskPollInterval) * time.Second
-	if interval == 0 {
-		interval = 5 * time.Second
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-a.ctx.Done():
-			return
-		case <-ticker.C:
-			if a.info == nil {
-				continue
-			}
-			task, err := a.client.FetchTask(a.ctx, a.info.ID)
-			if err != nil {
-				logger.GetLogger().WithError(err).Error("fetch task error")
-				continue
-			}
-			if task == nil {
-				continue
-			}
-			logger.GetLogger().WithFields(map[string]interface{}{
-				"task_id":   task.ID,
-				"task_name": task.Name,
-			}).Info("received task")
-			// 异步执行任务
-			go a.executeTask(task)
 		}
 	}
 }
@@ -405,6 +384,12 @@ func (a *Agent) executeTask(task *TaskSpec) {
 			a.logStream.RemoveTask(task.ID)
 		}
 	}
+}
+
+// SubmitTask 实现 httpserver.TaskService 接口，用于接收 HTTP 推送任务
+// 注意：内部采用异步执行，避免阻塞 HTTP 处理协程
+func (a *Agent) SubmitTask(task *TaskSpec) {
+	go a.executeTask(task)
 }
 
 // register 向控制面或 Agent-Server 注册自身

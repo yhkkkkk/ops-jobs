@@ -101,42 +101,82 @@ class AgentExecutionService:
             import requests
             from django.conf import settings
 
-            # 确定Agent-Server地址
+            # 优先判断是否走 Agent-Server 模式（有显式 agent_server_url / endpoint / 全局配置）
+            server_url = None
             if agent_server_url:
                 server_url = agent_server_url
             elif agent.endpoint:
-                # 从Agent的endpoint提取Agent-Server地址
                 server_url = agent.endpoint
             else:
-                # 从配置获取默认Agent-Server地址
                 server_url = getattr(settings, 'AGENT_SERVER_URL', None)
-                if not server_url:
+
+            if server_url:
+                # === Agent-Server 模式：调用 Agent-Server 的 /api/agents/{id}/tasks ===
+                if server_url.startswith('ws://') or server_url.startswith('wss://'):
+                    server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
+
+                # 移除路径部分，只保留基础URL
+                if '://' in server_url:
+                    scheme_end = server_url.find('://') + 3
+                    slash_idx = server_url.find('/', scheme_end)
+                    if slash_idx != -1:
+                        server_url = server_url[:slash_idx]
+
+                api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
+
+                agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
+                headers = {
+                    'Content-Type': 'application/json',
+                }
+                if agent_server_token:
+                    headers['Authorization'] = f'Bearer {agent_server_token}'
+
+                response = requests.post(
+                    api_url,
+                    json=task_spec,
+                    headers=headers,
+                    timeout=10
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"任务已通过 Agent-Server 推送到Agent: {task_spec['id']}, Agent: {agent.host_id}")
+                    return {
+                        'success': True,
+                        'task_id': task_spec['id'],
+                        'agent_id': agent.host_id,
+                        'status': result.get('status', 'dispatched')
+                    }
+                else:
+                    error_msg = response.text or f"HTTP {response.status_code}"
+                    logger.error(f"通过 Agent-Server 推送任务到Agent失败: {error_msg}")
                     return {
                         'success': False,
-                        'error': 'Agent-Server地址未配置'
+                        'error': f'推送任务失败: {error_msg}'
                     }
 
-            # 确保URL格式正确
-            if server_url.startswith('ws://') or server_url.startswith('wss://'):
-                server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-            
-            # 移除路径部分，只保留基础URL
-            if '/' in server_url[8:]:  # 跳过 http:// 或 https://
-                server_url = server_url[:server_url.find('/', 8)]
+            # === 直连模式：控制面主动 POST 到 Agent 本地 HTTP 服务 ===
+            host = agent.host  # OneToOne 关联
+            if not host or not host.ip_address:
+                return {
+                    'success': False,
+                    'error': '直连模式下需要主机 IP 地址'
+                }
 
-            # 构建API URL
-            api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
-            
-            # 获取Agent-Server的认证Token（如果需要）
-            agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
-            
+            direct_port = getattr(settings, 'AGENT_DIRECT_PORT', 8080)
+            # 如果 endpoint 已经是 http(s):// 开头，可用作直连基础地址
+            base_url = None
+            if agent.endpoint and (agent.endpoint.startswith('http://') or agent.endpoint.startswith('https://')):
+                base_url = agent.endpoint.rstrip('/')
+            else:
+                base_url = f"http://{host.ip_address}:{direct_port}"
+
+            api_url = f"{base_url}/api/tasks"
             headers = {
                 'Content-Type': 'application/json',
             }
-            if agent_server_token:
-                headers['Authorization'] = f'Bearer {agent_server_token}'
+            # 当前 httpserver 端未强制鉴权，这里暂不附加 Authorization 头
 
-            # 发送任务
             response = requests.post(
                 api_url,
                 json=task_spec,
@@ -146,19 +186,19 @@ class AgentExecutionService:
 
             if response.status_code == 200:
                 result = response.json()
-                logger.info(f"任务已推送到Agent: {task_spec['id']}, Agent: {agent.host_id}")
+                logger.info(f"任务已通过直连模式推送到Agent: {task_spec['id']}, Agent: {agent.host_id}, URL={api_url}")
                 return {
                     'success': True,
                     'task_id': task_spec['id'],
                     'agent_id': agent.host_id,
-                    'status': result.get('status', 'dispatched')
+                    'status': result.get('status', 'accepted')
                 }
             else:
                 error_msg = response.text or f"HTTP {response.status_code}"
-                logger.error(f"推送任务到Agent失败: {error_msg}")
+                logger.error(f"直连模式推送任务到Agent失败: {error_msg}, URL={api_url}")
                 return {
                     'success': False,
-                    'error': f'推送任务失败: {error_msg}'
+                    'error': f'直连模式推送任务失败: {error_msg}'
                 }
 
         except Exception as e:
@@ -1343,7 +1383,7 @@ class AgentExecutionService:
         agent_task_map: Dict[int, Dict],
     ) -> Dict[str, Any]:
         """
-        通过直连模式取消任务（调用控制面的取消任务API）
+        通过直连模式取消任务：直接调用 Agent 本地 HTTP 接口 /api/tasks/{id}/cancel
         
         Args:
             agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
@@ -1352,39 +1392,69 @@ class AgentExecutionService:
             Dict: 取消结果
         """
         try:
-            # 在直连模式下，Agent会轮询拉取任务
-            # 控制面需要提供一个取消任务的API，Agent在下次轮询时会收到取消指令
-            # 或者，控制面可以维护一个取消任务列表，Agent轮询时检查
-            
-            # 方案：在控制面维护一个取消任务列表（使用Redis），Agent轮询时检查
-            from django.core.cache import cache
+            import requests
+            from django.conf import settings
+            from apps.hosts.models import Host
             
             cancelled_count = 0
             failed_count = 0
             errors = []
             
-            # 为每个任务设置取消标志
+            direct_port = getattr(settings, 'AGENT_DIRECT_PORT', 8080)
+            
             for agent_id, agent_info in agent_task_map.items():
-                agent = agent_info['agent']
+                agent_obj = agent_info['agent']
                 tasks = agent_info['tasks']
+                
+                # 获取主机 IP
+                host: Host = getattr(agent_obj, 'host', None)
+                host_ip = getattr(host, 'ip_address', '') if host else ''
+                if not host_ip:
+                    for task_info in tasks:
+                        failed_count += 1
+                        msg = f'直连模式取消任务失败: 找不到主机 IP (agent_id={agent_id})'
+                        errors.append(msg)
+                        logger.error(msg)
+                    continue
+                
+                # 如果 endpoint 已是 http(s)，可作为直连基础 URL
+                endpoint = getattr(agent_obj, 'endpoint', '') or ''
+                if endpoint.startswith('http://') or endpoint.startswith('https://'):
+                    base_url = endpoint.rstrip('/')
+                else:
+                    base_url = f"http://{host_ip}:{direct_port}"
                 
                 for task_info in tasks:
                     task_id = task_info['task_id']
                     host_id = task_info['host_id']
                     
+                    api_url = f"{base_url}/api/tasks/{task_id}/cancel"
                     try:
-                        # 设置取消标志，Agent轮询时会检查
-                        cache_key = f"agent:cancel:{agent_id}:{task_id}"
-                        cache.set(cache_key, "1", timeout=3600)  # 1小时过期
-                        
-                        cancelled_count += 1
-                        logger.info(f"设置取消标志: task_id={task_id}, agent_id={agent_id}, host_id={host_id}")
-                    
+                        resp = requests.post(api_url, timeout=10)
+                        if resp.status_code == 200:
+                            cancelled_count += 1
+                            logger.info(
+                                f"直连模式取消任务成功: task_id={task_id}, agent_id={agent_id}, host_id={host_id}, url={api_url}"
+                            )
+                        else:
+                            failed_count += 1
+                            error_msg = resp.text or f"HTTP {resp.status_code}"
+                            errors.append(
+                                f"直连模式取消任务失败 (task_id={task_id}, agent_id={agent_id}): {error_msg}"
+                            )
+                            logger.error(
+                                f"直连模式取消任务失败: task_id={task_id}, agent_id={agent_id}, 状态码={resp.status_code}, 错误={error_msg}"
+                            )
                     except Exception as e:
                         failed_count += 1
-                        error_msg = f"设置取消标志异常: {str(e)}"
-                        errors.append(f"取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
-                        logger.error(f"设置取消标志异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}", exc_info=True)
+                        error_msg = f"请求异常: {str(e)}"
+                        errors.append(
+                            f"直连模式取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}"
+                        )
+                        logger.error(
+                            f"直连模式取消任务异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}",
+                            exc_info=True,
+                        )
             
             return {
                 'success': cancelled_count > 0,
@@ -1392,7 +1462,7 @@ class AgentExecutionService:
                 'failed_count': failed_count,
                 'total_count': cancelled_count + failed_count,
                 'errors': errors if errors else None,
-                'message': f'成功设置 {cancelled_count} 个任务的取消标志，失败 {failed_count} 个（直连模式下，Agent会在下次轮询时检查取消标志）'
+                'message': f'直连模式取消任务：成功 {cancelled_count} 个，失败 {failed_count} 个',
             }
         
         except Exception as e:
