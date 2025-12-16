@@ -182,6 +182,8 @@ class AgentPackageSerializer(serializers.ModelSerializer):
     arch_display = serializers.CharField(source='get_arch_display', read_only=True)
     download_url = serializers.SerializerMethodField()
     file_name = serializers.SerializerMethodField()
+    validate_status = serializers.CharField(read_only=True)
+    validate_message = serializers.CharField(read_only=True)
 
     class Meta:
         model = AgentPackage
@@ -201,12 +203,23 @@ class AgentPackageSerializer(serializers.ModelSerializer):
             'download_url',
             'is_default',
             'is_active',
+            'validate_status',
+            'validate_message',
             'created_by',
             'created_by_name',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_by', 'created_by_name', 'file_name', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id',
+            'created_by',
+            'created_by_name',
+            'file_name',
+            'created_at',
+            'updated_at',
+            'validate_status',
+            'validate_message',
+        ]
 
     def get_download_url(self, obj):
         """获取下载地址"""

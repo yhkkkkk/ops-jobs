@@ -216,6 +216,17 @@ class AgentPackage(models.Model):
     sha256_hash = models.CharField(max_length=64, blank=True, verbose_name="SHA256哈希值")
     is_default = models.BooleanField(default=False, verbose_name="是否默认版本", help_text="该版本+操作系统+架构组合是否为默认")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    validate_status = models.CharField(
+        max_length=20,
+        default="pending",
+        verbose_name="校验状态",
+        help_text="安装包完整性校验状态：pending/running/passed/failed",
+    )
+    validate_message = models.TextField(
+        blank=True,
+        verbose_name="校验结果说明",
+        help_text="校验失败原因或校验详情",
+    )
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="创建人")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

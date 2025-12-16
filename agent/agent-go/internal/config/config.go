@@ -80,9 +80,20 @@ func Load() (*Config, error) {
 	// 尝试从配置文件加载
 	configFile := v.GetString("config_file")
 	if configFile == "" {
-		// 尝试默认配置文件位置
-		homeDir, _ := os.UserHomeDir()
-		configFile = filepath.Join(homeDir, ".ops-job-agent", "config.yaml")
+		// 优先使用二进制同目录下的 config/config.yaml
+		if exePath, err := os.Executable(); err == nil {
+			exeDir := filepath.Dir(exePath)
+			localCfg := filepath.Join(exeDir, "config", "config.yaml")
+			if _, err := os.Stat(localCfg); err == nil {
+				configFile = localCfg
+			}
+		}
+	}
+	if configFile == "" {
+		// 兼容老版本：回退到用户家目录下的 ~/.ops-job-agent/config.yaml
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			configFile = filepath.Join(homeDir, ".ops-job-agent", "config.yaml")
+		}
 	}
 
 	// 如果配置文件存在，读取它

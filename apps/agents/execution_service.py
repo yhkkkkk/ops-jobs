@@ -114,7 +114,7 @@ class AgentExecutionService:
                 # === Agent-Server 模式：调用 Agent-Server 的 /api/agents/{id}/tasks ===
                 if server_url.startswith('ws://') or server_url.startswith('wss://'):
                     server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-
+            
                 # 移除路径部分，只保留基础URL
                 if '://' in server_url:
                     scheme_end = server_url.find('://') + 3
@@ -123,10 +123,9 @@ class AgentExecutionService:
                         server_url = server_url[:slash_idx]
 
                 api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
-
-                # 构造带 HMAC 签名的请求头
+            
+                # 构造带 HMAC 签名的请求
                 from utils.agent_server_client import AgentServerClient
-
                 client = AgentServerClient.from_settings()
                 response = client.post(api_url, json=task_spec)
 
@@ -167,7 +166,9 @@ class AgentExecutionService:
             headers = {
                 "Content-Type": "application/json",
             }
-            # 当前 httpserver 端未强制鉴权，这里暂不附加 Authorization 头（后续如配置 token，可在此处添加）
+            direct_secret = getattr(settings, "AGENT_DIRECT_SHARED_SECRET", "") or ""
+            if direct_secret:
+                headers["Authorization"] = f"Bearer {direct_secret}"
 
             response = requests.post(
                 api_url,
@@ -1336,11 +1337,10 @@ class AgentExecutionService:
                     api_url = f"{server_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
                     
                     try:
-                        response = requests.post(
-                            api_url,
-                            headers=headers,
-                            timeout=10
-                        )
+                        # 使用 HMAC 客户端发起请求
+                        from utils.agent_server_client import AgentServerClient
+                        client = AgentServerClient.from_settings()
+                        response = client.post(api_url, json=None, headers=headers)
                         
                         if response.status_code == 200:
                             cancelled_count += 1
@@ -1379,10 +1379,8 @@ class AgentExecutionService:
     ) -> Dict[str, Any]:
         """
         通过直连模式取消任务：直接调用 Agent 本地 HTTP 接口 /api/tasks/{id}/cancel
-        
         Args:
             agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
-        
         Returns:
             Dict: 取消结果
         """
@@ -1390,17 +1388,18 @@ class AgentExecutionService:
             import requests
             from django.conf import settings
             from apps.hosts.models import Host
-            
+
             cancelled_count = 0
             failed_count = 0
             errors = []
-            
+
             direct_port = getattr(settings, 'AGENT_DIRECT_PORT', 8080)
-            
+            direct_secret = getattr(settings, 'AGENT_DIRECT_SHARED_SECRET', '') or ''
+
             for agent_id, agent_info in agent_task_map.items():
                 agent_obj = agent_info['agent']
                 tasks = agent_info['tasks']
-                
+
                 # 获取主机 IP
                 host: Host = getattr(agent_obj, 'host', None)
                 host_ip = getattr(host, 'ip_address', '') if host else ''
@@ -1411,21 +1410,24 @@ class AgentExecutionService:
                         errors.append(msg)
                         logger.error(msg)
                     continue
-                
+
                 # 如果 endpoint 已是 http(s)，可作为直连基础 URL
                 endpoint = getattr(agent_obj, 'endpoint', '') or ''
                 if endpoint.startswith('http://') or endpoint.startswith('https://'):
                     base_url = endpoint.rstrip('/')
                 else:
                     base_url = f"http://{host_ip}:{direct_port}"
-                
+
                 for task_info in tasks:
                     task_id = task_info['task_id']
                     host_id = task_info['host_id']
-                    
+
                     api_url = f"{base_url}/api/tasks/{task_id}/cancel"
                     try:
-                        resp = requests.post(api_url, timeout=10)
+                        cancel_headers = {}
+                        if direct_secret:
+                            cancel_headers["Authorization"] = f"Bearer {direct_secret}"
+                        resp = requests.post(api_url, timeout=10, headers=cancel_headers)
                         if resp.status_code == 200:
                             cancelled_count += 1
                             logger.info(
@@ -1450,7 +1452,7 @@ class AgentExecutionService:
                             f"直连模式取消任务异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}",
                             exc_info=True,
                         )
-            
+
             return {
                 'success': cancelled_count > 0,
                 'cancelled_count': cancelled_count,
@@ -1459,7 +1461,7 @@ class AgentExecutionService:
                 'errors': errors if errors else None,
                 'message': f'直连模式取消任务：成功 {cancelled_count} 个，失败 {failed_count} 个',
             }
-        
+
         except Exception as e:
             logger.error(f"通过直连模式取消任务异常: {str(e)}", exc_info=True)
             return {

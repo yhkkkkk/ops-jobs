@@ -207,6 +207,8 @@ INSTALL_DIR="/opt/ops-job-agent"
 BINARY_NAME="ops-job-agent"
 SERVICE_NAME="ops-job-agent"
 DOWNLOAD_URL="{download_url}"
+CONFIG_DIR="$INSTALL_DIR/config"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
 
 # 检查是否已安装
 if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
@@ -215,29 +217,36 @@ if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
 fi
 
 # 创建安装目录
-mkdir -p $INSTALL_DIR
-cd $INSTALL_DIR
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
 # 下载二进制
 echo "正在下载 Agent 二进制..."
-curl -L -o $BINARY_NAME "$DOWNLOAD_URL" || wget -O $BINARY_NAME "$DOWNLOAD_URL"
-chmod +x $BINARY_NAME
+curl -L -o "$BINARY_NAME" "$DOWNLOAD_URL" || wget -O "$BINARY_NAME" "$DOWNLOAD_URL"
+chmod +x "$BINARY_NAME"
 
-# 创建配置文件
-cat > config.yaml <<EOF
+# 准备配置目录（与二进制同级的 config 目录）
+mkdir -p "$CONFIG_DIR"
+if [ -f "$CONFIG_FILE" ]; then
+    cp "$CONFIG_FILE" "$CONFIG_FILE.$(date +%Y%m%d%H%M%S).bak"
+fi
+
+# 创建配置文件 ($INSTALL_DIR/config/config.yaml)
+cat > "$CONFIG_FILE" <<EOF
 mode: {install_mode}
 """
         if install_mode == 'agent-server':
-            linux_script += f"""agent_server_url: $AGENT_SERVER_URL
+            linux_script += """agent_server_url: $AGENT_SERVER_URL
 agent_server_backup_url: $AGENT_SERVER_BACKUP_URL
 ws_backoff_initial_ms: $WS_BACKOFF_INITIAL_MS
 ws_backoff_max_ms: $WS_BACKOFF_MAX_MS
 ws_max_retries: $WS_MAX_RETRIES
 """
         else:
-            linux_script += f"""control_plane_url: {agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')}
+            cp_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
+            linux_script += f"""control_plane_url: {cp_url}
 """
-        linux_script += f"""token: $TOKEN
+        linux_script += """agent_token: "$TOKEN"
 log_level: info
 EOF
 
@@ -270,79 +279,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
 """
         scripts['linux'] = linux_script
 
-        # Windows 安装脚本（PowerShell）
-        windows_script = f"""# PowerShell 安装脚本
-# 配置
-$AGENT_SERVER_URL = "{agent_server_url}"
-$AGENT_SERVER_BACKUP_URL = "{agent_server_backup_url}"
-$WS_BACKOFF_INITIAL_MS = "{ws_backoff_initial_ms}"
-$WS_BACKOFF_MAX_MS = "{ws_backoff_max_ms}"
-$WS_MAX_RETRIES = "{ws_max_retries}"
-$TOKEN = "{token}"
-$INSTALL_DIR = "C:\\Program Files\\ops-job-agent"
-$BINARY_NAME = "ops-job-agent.exe"
-$SERVICE_NAME = "OpsJobAgent"
-$DOWNLOAD_URL = "{download_url}"
-
-# 检查管理员权限
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {{
-    Write-Host "错误: 需要管理员权限运行此脚本" -ForegroundColor Red
-    exit 1
-}}
-
-# 检查服务是否已存在
-$service = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
-if ($service) {{
-    Write-Host "Agent 服务已存在，请先停止并删除服务" -ForegroundColor Yellow
-    Stop-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
-    sc.exe delete $SERVICE_NAME
-    Start-Sleep -Seconds 2
-}}
-
-# 创建目录
-New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
-Set-Location $INSTALL_DIR
-
-# 下载二进制
-Write-Host "正在下载 Agent 二进制..." -ForegroundColor Green
-Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile "$INSTALL_DIR\\$BINARY_NAME"
-
-# 创建配置文件
-$configContent = @"
-mode: {install_mode}
-"""
-        if install_mode == 'agent-server':
-            windows_script += f"""agent_server_url: $AGENT_SERVER_URL
-agent_server_backup_url: $AGENT_SERVER_BACKUP_URL
-ws_backoff_initial_ms: $WS_BACKOFF_INITIAL_MS
-ws_backoff_max_ms: $WS_BACKOFF_MAX_MS
-ws_max_retries: $WS_MAX_RETRIES
-"""
-        else:
-            control_plane_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-            windows_script += f"""control_plane_url: {control_plane_url}
-"""
-        windows_script += f"""token: $TOKEN
-log_level: info
-"@
-$configContent | Out-File -FilePath "$INSTALL_DIR\\config.yaml" -Encoding utf8
-
-# 创建 Windows 服务
-New-Service -Name $SERVICE_NAME `
-    -BinaryPathName "$INSTALL_DIR\\$BINARY_NAME" `
-    -DisplayName "Ops Job Agent" `
-    -Description "Ops Job Platform Agent Service" `
-    -StartupType Automatic | Out-Null
-
-# 启动服务
-Start-Service -Name $SERVICE_NAME
-
-Write-Host "Agent 安装成功！" -ForegroundColor Green
-Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
-"""
-        scripts['windows'] = windows_script
-
+        # 目前仅输出 Linux 安装脚本（暂不支持 Windows）
         return scripts
 
     @classmethod

@@ -4,6 +4,9 @@ Agent 安装包管理视图
 import logging
 import hashlib
 import os
+import tarfile
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +25,136 @@ from .serializers import (
 from .storage_service import StorageService as StorageServiceFactory
 
 logger = logging.getLogger(__name__)
+
+
+_package_validate_executor = ThreadPoolExecutor(max_workers=2)
+
+
+def _safe_member_name(name: str) -> bool:
+    """检查压缩包成员名称是否安全，防止路径穿越等问题。"""
+    if not name or name.startswith("/") or name.startswith("\\"):
+        return False
+    # 统一为正斜杠判断
+    norm = name.replace("\\", "/")
+    parts = [p for p in norm.split("/") if p not in ("", ".")]
+    return all(p != ".." for p in parts)
+
+
+def _validate_compressed_package(file_path: str, os_type: str) -> None:
+    """
+    对压缩包做结构与安全校验。
+
+    - 防止 zip/tar bomb（限制文件数与总解压大小）
+    - 禁止路径穿越
+    - 尝试检查是否包含 agent 可执行文件
+    """
+    if not os.path.exists(file_path):
+        raise ValueError("安装包文件不存在")
+
+    max_files = 2000
+    max_total_size = 2 * 1024 * 1024 * 1024  # 2GB
+
+    _, ext = os.path.splitext(file_path.lower())
+    # 兼容 .tar.gz / .tgz
+    if file_path.lower().endswith(".tar.gz") or file_path.lower().endswith(".tgz"):
+        mode = "r:gz"
+        with tarfile.open(file_path, mode) as tf:
+            members = tf.getmembers()
+            if len(members) > max_files:
+                raise ValueError("压缩包文件数量过多，疑似异常包")
+            total = 0
+            has_agent_binary = False
+            for m in members:
+                if not _safe_member_name(m.name):
+                    raise ValueError(f"压缩包内包含不安全路径: {m.name}")
+                total += max(m.size, 0)
+                if total > max_total_size:
+                    raise ValueError("压缩包解压后总大小超出限制，疑似异常包")
+                base = os.path.basename(m.name).lower()
+                if "ops-job-agent" in base:
+                    has_agent_binary = True
+            if not has_agent_binary:
+                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 字样）")
+        return
+
+    if ext == ".zip":
+        with zipfile.ZipFile(file_path, "r") as zf:
+            infos = zf.infolist()
+            if len(infos) > max_files:
+                raise ValueError("压缩包文件数量过多，疑似异常包")
+            total = 0
+            has_agent_binary = False
+            for info in infos:
+                if not _safe_member_name(info.filename):
+                    raise ValueError(f"压缩包内包含不安全路径: {info.filename}")
+                total += max(info.file_size, 0)
+                if total > max_total_size:
+                    raise ValueError("压缩包解压后总大小超出限制，疑似异常包")
+                base = os.path.basename(info.filename).lower()
+                if "ops-job-agent" in base:
+                    has_agent_binary = True
+            if not has_agent_binary:
+                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 字样）")
+        return
+
+    # 其他类型（如 .exe/.bin）仅做基础存在与大小校验，详细校验后续按需扩展
+    stat = os.stat(file_path)
+    if stat.st_size <= 0:
+        raise ValueError("安装包文件大小异常")
+
+
+def _run_package_validation(package_id: int) -> None:
+    """后台线程中执行的安装包校验逻辑。"""
+    from django.db import transaction
+
+    try:
+        pkg = AgentPackage.objects.get(id=package_id)
+    except AgentPackage.DoesNotExist:
+        logger.warning("安装包校验失败：包不存在, id=%s", package_id)
+        return
+
+    # 标记为 running
+    AgentPackage.objects.filter(id=package_id).update(
+        validate_status="running",
+        validate_message="",
+    )
+
+    try:
+        # 目前仅对本地存储做深度结构校验，其它存储类型后续可扩展为预下载到本地再校验
+        file_path = None
+        if pkg.file and pkg.file.name:
+            try:
+                file_path = pkg.file.path
+            except Exception:  # pragma: no cover - 防御性
+                file_path = None
+
+        if pkg.storage_type == "local" and file_path:
+            _validate_compressed_package(file_path, pkg.os_type)
+
+        # 校验通过
+        AgentPackage.objects.filter(id=package_id).update(
+            validate_status="passed",
+            validate_message="",
+        )
+        logger.info("安装包校验通过, id=%s", package_id)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        logger.error("安装包校验失败, id=%s, error=%s", package_id, msg, exc_info=True)
+        AgentPackage.objects.filter(id=package_id).update(
+            validate_status="failed",
+            validate_message=msg[:2000],
+        )
+
+
+def _schedule_package_validation(package_id: int) -> None:
+    """在事务提交后调度后台线程执行安装包校验。"""
+    def _on_commit():
+        try:
+            _package_validate_executor.submit(_run_package_validation, package_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("提交安装包校验任务失败 id=%s, error=%s", package_id, exc, exc_info=True)
+
+    transaction.on_commit(_on_commit)
 
 
 class AgentPackageViewSet(viewsets.ModelViewSet):
@@ -97,11 +230,19 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                     'sha256_hash': sha256_hash,
                     'storage_type': storage_type,
                     'storage_path': storage_path,
+                    'validate_status': 'pending',
+                    'validate_message': '',
                 }
-                
-                serializer.save(**save_kwargs)
+
+                package = serializer.save(**save_kwargs)
+                _schedule_package_validation(package.id)
             else:
-                serializer.save(created_by=self.request.user)
+                package = serializer.save(
+                    created_by=self.request.user,
+                    validate_status='pending',
+                    validate_message='',
+                )
+                _schedule_package_validation(package.id)
 
     def perform_update(self, serializer):
         # 使用事务确保数据一致性
@@ -116,11 +257,14 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                 sha256_hash = hashlib.sha256(file_content).hexdigest()
                 file_obj.seek(0)
                 
-                serializer.save(
+                package = serializer.save(
                     file_size=file_size,
                     md5_hash=md5_hash,
-                    sha256_hash=sha256_hash
+                    sha256_hash=sha256_hash,
+                    validate_status='pending',
+                    validate_message='',
                 )
+                _schedule_package_validation(package.id)
             else:
                 serializer.save()
 

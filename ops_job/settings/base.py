@@ -35,7 +35,7 @@ INSTALLED_APPS = [
     'django_filters',                    # drf过滤器
     'guardian',                          # 对象级权限管理
     'django_apscheduler',                # APScheduler 持久化配置
-    'django_extensions',
+    'django_extensions',                 # django extensions
     'captcha',                           # 验证码
     'health_check',                      # 健康检查
     'health_check.db',                   # 数据库健康检查

@@ -2,7 +2,6 @@
 调度管理过滤器
 """
 import django_filters
-from django.db import models
 from .models import ScheduledJob
 from apps.job_templates.models import ExecutionPlan
 
