@@ -419,6 +419,7 @@ CLOUD_TENCENT_SECRET_KEY=your-secret-key
 AGENT_MODE=direct
 AGENT_CONTROL_PLANE_URL=http://localhost:8000
 AGENT_TOKEN=your-agent-token
+AGENT_DIRECT_SHARED_SECRET=your-direct-shared-secret   # 直连模式 Bearer/HMAC 密钥（跨主机直连必配，未配仅 loopback）
 AGENT_NAME=agent-01
 AGENT_HTTP_ADDR=:8080
 AGENT_HEARTBEAT_INTERVAL=10

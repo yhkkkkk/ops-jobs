@@ -237,23 +237,21 @@ class AgentPackage(models.Model):
     def get_download_url(self, expires_in: int = 3600):
         """
         根据存储类型和路径动态生成下载地址
-        
         Args:
-            expires_in: URL过期时间（秒），用于私有存储的预签名URL
-        
+            expires_in: url过期时间（秒），用于私有存储的预签名url
         Returns:
-            下载URL
+            下载url
         """
         from apps.agents.storage_service import StorageService
         
         # 如果没有存储路径，尝试从file字段获取
         if not self.storage_path:
             if self.file:
-                # 本地存储，使用Django的file.url
+                # 本地存储
                 return self.file.url
             return ''
         
-        # 根据存储类型生成URL
+        # 根据存储类型生成url
         import logging
         logger_instance = logging.getLogger(__name__)
         backend = StorageService.get_backend(self.storage_type)

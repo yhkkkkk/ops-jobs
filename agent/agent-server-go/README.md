@@ -45,6 +45,11 @@ server:
 control_plane:
   url: "https://control-plane.example.com"
   token: "server-auth-token"
+  scope: "default"  # 控制面作用域/租户标识，控制面调用需携带 X-Scope
+auth:
+  shared_secret: ""      # 可选，启用后控制面请求需带 HMAC 签名
+  require_signature: false
+  clock_skew: "300s"     # 允许的时间偏移
 ```
 
 ### 运行
@@ -60,6 +65,9 @@ AGENT_SERVER_HOST=0.0.0.0
 AGENT_SERVER_PORT=8080
 CONTROL_PLANE_URL=https://control-plane.example.com
 CONTROL_PLANE_TOKEN=server-auth-token
+CONTROL_PLANE_SCOPE=default
+AUTH_SHARED_SECRET=your-hmac-secret
+AUTH_REQUIRE_SIGNATURE=true
 ```
 
 ## API 接口

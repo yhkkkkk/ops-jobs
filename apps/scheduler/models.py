@@ -1,14 +1,9 @@
 """
-作业调度模型 - 基于django-celery-beat
+作业调度模型（APScheduler 持久化配置，不再关联 celery beat）
 """
 from django.db import models
 from django.contrib.auth.models import User
-from django.utils import timezone
 from utils.validators import validate_cron_expression, validate_timezone
-from django_celery_beat.models import PeriodicTask, CrontabSchedule
-from apps.job_templates.models import ExecutionPlan
-from apps.hosts.models import Host, HostGroup
-import json
 
 
 class ScheduledJob(models.Model):
@@ -23,7 +18,7 @@ class ScheduledJob(models.Model):
         on_delete=models.CASCADE,
         related_name='scheduled_jobs',
         verbose_name="执行方案",
-        null=True,  # 临时允许为空，用于迁移
+        null=True,
         blank=True
     )
 
@@ -44,15 +39,6 @@ class ScheduledJob(models.Model):
 
     # 状态控制
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
-
-    # 关联Celery Beat任务
-    periodic_task = models.OneToOneField(
-        PeriodicTask,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        verbose_name="周期任务"
-    )
 
     # 元数据
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")

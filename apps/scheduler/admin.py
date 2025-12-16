@@ -34,9 +34,8 @@ class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
     search_fields = ['name', 'description', 'execution_plan__name', 'execution_plan__template__name']
     readonly_fields = [
         'created_at', 'updated_at', 'total_runs', 'success_runs',
-        'failed_runs', 'last_run_time', 'next_run_time', 'periodic_task'
+        'failed_runs', 'last_run_time', 'next_run_time'
     ]
-    # 删除filter_horizontal，因为ScheduledJob不再有target_hosts和target_groups字段
 
     fieldsets = (
         ('基本信息', {
@@ -54,7 +53,7 @@ class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
             'classes': ('collapse',)
         }),
         ('系统信息', {
-            'fields': ('periodic_task', 'created_by', 'created_at', 'updated_at'),
+            'fields': ('created_by', 'created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )
@@ -82,9 +81,6 @@ class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
         else:
             # 创建定时作业时需要特殊处理
             super().save_model(request, obj, form, change)
-            # 创建Celery Beat任务
-            if obj.is_active:
-                SchedulerService._create_periodic_task(obj)
     
     def get_queryset(self, request):
         """根据用户权限过滤查询集"""
@@ -129,13 +125,3 @@ class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
 
         self.message_user(request, f'成功禁用 {count} 个定时作业')
     disable_jobs.short_description = '禁用选中的定时作业'
-
-    # 注意：移除了execute_now方法
-    # 定时作业不应该有"立即执行"功能，这在逻辑上是矛盾的
-    # 如果需要立即执行，应该直接执行ExecutionPlan：POST /api/templates/plans/{id}/execute/
-
-
-# ScheduledJobExecution管理已移除，统一使用executor.models.ExecutionRecord
-
-
-# JobScheduleRuleAdmin已删除，因为JobScheduleRule模型已删除

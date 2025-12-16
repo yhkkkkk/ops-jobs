@@ -33,7 +33,7 @@ type Server struct {
 	engine      *gin.Engine
 	addr        string
 	taskService TaskService
-	authToken   string
+	authToken   string // direct_shared_secret
 }
 
 // New 创建 HTTP Server
@@ -79,8 +79,8 @@ func (s *Server) SetTaskService(service TaskService) {
 }
 
 // authMiddleware 统一鉴权：
-// - 若 authToken 为空：仅允许本机回环地址访问
-// - 若配置了 authToken：要求 Authorization: Bearer <token>
+// - 若 authToken 为空：仅允许本机回环地址访问（默认最小暴露）
+// - 若配置了 authToken：要求 Authorization: Bearer <token>（可扩展为 HMAC）
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 未配置 token：仅允许 loopback

@@ -627,7 +627,7 @@ const handleDownload = async (record: AgentPackage) => {
       return
     }
     
-    // 否则通过API下载
+    // 否则通过api下载
     const downloadUrl = `/api/agents/packages/${record.id}/download/`
     // 创建一个隐藏的a标签来触发下载
     const link = document.createElement('a')

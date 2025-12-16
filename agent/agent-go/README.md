@@ -72,6 +72,12 @@ export CONTROL_PLANE_URL=http://localhost:8000
 export AGENT_TOKEN=your-token-here
 export AGENT_NAME=my-agent
 export AGENT_LABELS=env=prod,region=us-east-1
+export AGENT_MODE=direct                 # direct 或 agent-server
+export AGENT_SERVER_URL=wss://agent-server.example.com
+export AGENT_SERVER_BACKUP_URL=wss://agent-server-backup.example.com
+export AGENT_WS_BACKOFF_INITIAL_MS=1000
+export AGENT_WS_BACKOFF_MAX_MS=30000
+export AGENT_WS_MAX_RETRIES=6
 ```
 
 #### 方式2：配置文件（YAML）
@@ -79,7 +85,13 @@ export AGENT_LABELS=env=prod,region=us-east-1
 创建 `~/.ops-job-agent/config.yaml`:
 
 ```yaml
+mode: "direct"  # 或 "agent-server"
 control_plane_url: "http://localhost:8000"
+agent_server_url: "wss://agent-server.example.com"
+agent_server_backup_url: "wss://agent-server-backup.example.com"
+ws_backoff_initial_ms: 1000
+ws_backoff_max_ms: 30000
+ws_max_retries: 6
 agent_token: "your-token-here"
 agent_name: "my-agent"
 agent_labels:
@@ -130,7 +142,13 @@ tls_key_file: ""
 
 | 环境变量 | 配置文件字段 | 默认值 | 说明 |
 |---------|------------|--------|------|
+| `AGENT_MODE` | `mode` | `direct` | 连接模式：`direct` or `agent-server` |
 | `CONTROL_PLANE_URL` | `control_plane_url` | `http://localhost:8000` | 控制面 URL |
+| `AGENT_SERVER_URL` | `agent_server_url` | `ws://localhost:8080` | Agent-Server WebSocket 入口（agent-server 模式） |
+| `AGENT_SERVER_BACKUP_URL` | `agent_server_backup_url` | `` | 备用 Agent-Server WS 入口 |
+| `AGENT_WS_BACKOFF_INITIAL_MS` | `ws_backoff_initial_ms` | `1000` | WS 重连初始退避（毫秒） |
+| `AGENT_WS_BACKOFF_MAX_MS` | `ws_backoff_max_ms` | `30000` | WS 重连最大退避（毫秒） |
+| `AGENT_WS_MAX_RETRIES` | `ws_max_retries` | `6` | WS 重试次数 |
 | `AGENT_TOKEN` | `agent_token` | - | Agent 认证 Token |
 | `AGENT_NAME` | `agent_name` | 主机名 | Agent 名称 |
 | `AGENT_LABELS` | `agent_labels` | - | Agent 标签（格式：key1=value1,key2=value2） |
@@ -144,6 +162,11 @@ tls_key_file: ""
 | `AGENT_CONFIG_FILE` | - | `~/.ops-job-agent/config.yaml` | 配置文件路径 |
 
 **注意**: 环境变量优先级高于配置文件。
+
+### 连接模式
+
+- **direct**（默认）：Agent 直接通过 HTTP 连接控制面，适合节点较少、无跨网需求的场景。
+- **agent-server**：Agent 通过 Agent-Server 注册，并使用 WebSocket 接收任务、心跳和日志；控制面仅需向 Agent-Server 使用 HTTP 主动推送任务，适合大规模或跨网络部署。此模式需要配置 `AGENT_SERVER_URL` 并保证 Agent 出站可访问。
 
 ## API 接口
 

@@ -34,14 +34,12 @@ INSTALLED_APPS = [
     'axes',                              # 登录安全防护
     'django_filters',                    # drf过滤器
     'guardian',                          # 对象级权限管理
-    'django_celery_beat',                # celery定时任务
-    'django_celery_results',
+    'django_apscheduler',                # APScheduler 持久化配置
     'django_extensions',
     'captcha',                           # 验证码
     'health_check',                      # 健康检查
     'health_check.db',                   # 数据库健康检查
     'health_check.contrib.redis',        # redis健康检查
-    'health_check.contrib.celery',       # celery健康检查
 
     # 自定义应用
     'apps.hosts',           # 主机管理
@@ -56,6 +54,7 @@ INSTALLED_APPS = [
     'apps.system_config',   # 系统配置
     'apps.agents',          # Agent 管理
 ]
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

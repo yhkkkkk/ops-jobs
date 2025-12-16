@@ -20,6 +20,7 @@ type Config struct {
 	WSBackoffMaxMs     int               `mapstructure:"ws_backoff_max_ms"`
 	WSMaxRetries       int               `mapstructure:"ws_max_retries"`
 	HTTPAddr           string            `mapstructure:"http_addr"`
+	DirectSharedSecret string            `mapstructure:"direct_shared_secret"` // 直连模式共享密钥（Bearer/HMAC）
 	AgentName          string            `mapstructure:"agent_name"`
 	AgentLabels        map[string]string `mapstructure:"agent_labels"`
 	AgentToken         string            `mapstructure:"agent_token"`
@@ -37,7 +38,7 @@ type Config struct {
 	TLSKeyFile         string            `mapstructure:"tls_key_file"`
 	// 资源限制
 	BandwidthLimit int     `mapstructure:"bandwidth_limit"` // 带宽限制（KB/s），0表示不限制
-	CPULimit       float64 `mapstructure:"cpu_limit"`       // CPU 使用率限制（百分比），0表示不限制
+	CPULimit       float64 `mapstructure:"cpu_limit"`       // cpu 使用率限制（百分比），0表示不限制
 	MemoryLimit    int     `mapstructure:"memory_limit"`    // 内存限制（MB），0表示不限制
 
 	// Redis配置（用于asynq）
@@ -61,7 +62,7 @@ type AsynqConfig struct {
 	Concurrency int  `mapstructure:"concurrency"`
 }
 
-// Load 加载配置（使用 viper）
+// Load 加载配置
 func Load() (*Config, error) {
 	v := viper.New()
 
@@ -141,6 +142,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ws_backoff_max_ms", 30000)
 	v.SetDefault("ws_max_retries", 6)
 	v.SetDefault("http_addr", ":8080")
+	v.SetDefault("direct_shared_secret", "")
 	v.SetDefault("agent_name", getHostname())
 	v.SetDefault("agent_token", "")
 	v.SetDefault("log_dir", "")
@@ -192,6 +194,9 @@ func bindEnvVars(v *viper.Viper) {
 	}
 	if val := os.Getenv("AGENT_HTTP_ADDR"); val != "" {
 		v.Set("http_addr", val)
+	}
+	if val := os.Getenv("AGENT_DIRECT_SHARED_SECRET"); val != "" {
+		v.Set("direct_shared_secret", val)
 	}
 	if val := os.Getenv("AGENT_NAME"); val != "" {
 		v.Set("agent_name", val)
