@@ -13,6 +13,9 @@ type Config struct {
 	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
 	Agent        AgentConfig        `mapstructure:"agent"`
 	Logging      LoggingConfig      `mapstructure:"logging"`
+	LogStream    LogStreamConfig    `mapstructure:"log_stream"`
+	ResultStream ResultStreamConfig `mapstructure:"result_stream"`
+	StatusStream StatusStreamConfig `mapstructure:"status_stream"`
 	Redis        RedisConfig        `mapstructure:"redis"`
 	Asynq        AsynqConfig        `mapstructure:"asynq"`
 	Auth         AuthConfig         `mapstructure:"auth"`
@@ -48,6 +51,24 @@ type LoggingConfig struct {
 	MaxSize  int    `mapstructure:"max_size"` // MB
 	MaxFiles int    `mapstructure:"max_files"`
 	MaxAge   int    `mapstructure:"max_age"` // days
+}
+
+// LogStreamConfig Redis Stream 写日志配置
+type LogStreamConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Key     string `mapstructure:"key"`
+}
+
+// ResultStreamConfig Redis Stream 写任务结果配置
+type ResultStreamConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Key     string `mapstructure:"key"`
+}
+
+// StatusStreamConfig Redis Stream 写在线状态/心跳配置
+type StatusStreamConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Key     string `mapstructure:"key"`
 }
 
 // RedisConfig Redis 配置
@@ -127,6 +148,18 @@ func setDefaults() {
 	viper.SetDefault("logging.max_size", 100)
 	viper.SetDefault("logging.max_files", 10)
 	viper.SetDefault("logging.max_age", 7)
+
+	// Log Stream 默认值（统一日志流写入）
+	viper.SetDefault("log_stream.enabled", true)
+	viper.SetDefault("log_stream.key", "agent_logs")
+
+	// Result Stream 默认值
+	viper.SetDefault("result_stream.enabled", true)
+	viper.SetDefault("result_stream.key", "agent_results")
+
+	// Status Stream 默认值
+	viper.SetDefault("status_stream.enabled", true)
+	viper.SetDefault("status_stream.key", "agent_status")
 
 	// Redis 默认值
 	viper.SetDefault("redis.enabled", false)

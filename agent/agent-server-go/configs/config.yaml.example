@@ -24,6 +24,18 @@ logging:
   max_files: 10
   max_age: 7     # days
 
+log_stream:
+  enabled: true           # 将日志写入 Redis Stream（统一消费/ACK）
+  key: "agent_logs"       # 日志流 key
+
+result_stream:
+  enabled: true           # 将任务结果写入 Redis Stream
+  key: "agent_results"    # 结果流 key
+
+status_stream:
+  enabled: true           # 将 Agent 在线状态/心跳写入 Redis Stream
+  key: "agent_status"     # 状态流 key
+
 redis:
   enabled: true
   addr: "localhost:6379"

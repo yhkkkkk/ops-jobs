@@ -378,10 +378,19 @@
         </a-tab-pane>
         <a-tab-pane key="script" title="安装脚本" v-if="installScripts">
           <div class="install-step">
-            <a-alert type="info" style="margin-bottom: 16px">
+            <a-alert type="warning" style="margin-bottom: 16px">
               <template #content>
                 <div>
-                  <p>请将以下脚本复制到对应主机上执行：</p>
+                  <p style="margin-bottom: 8px;">
+                    <strong>重要提示：</strong>这只是生成安装脚本，Agent 尚未实际安装！
+                  </p>
+                  <p style="margin-bottom: 8px;">
+                    您需要：
+                  </p>
+                  <ul style="margin: 0; padding-left: 20px;">
+                    <li>将以下脚本复制到对应主机上手动执行，或</li>
+                    <li>使用"批量安装（SSH）"功能自动安装</li>
+                  </ul>
                   <p style="margin-top: 8px; color: #f53f3f;">
                     <strong>注意：Token 仅显示一次，请妥善保存！</strong>
                   </p>
@@ -1164,6 +1173,15 @@ const handleGenerateScript = async () => {
     })
 
     installScripts.value = response.scripts
+    
+    // 显示提示信息
+    if (response.notice) {
+      Message.warning(response.notice)
+    }
+    if (response.errors && response.errors.length > 0) {
+      Message.warning(`部分主机生成脚本失败: ${response.errors.join('; ')}`)
+    }
+    
     installTab.value = 'script'
     Message.success('安装脚本生成成功')
   } catch (error: any) {
@@ -1290,12 +1308,12 @@ const handleBatchInstall = async () => {
           confirmed: true,
         })
 
-        // 如果有 install_task_id，连接 SSE 查看实时进度
+        // 如果有 install_task_id，连接sse查看实时进度
         if (response.install_task_id) {
           connectInstallProgressSSE(response.install_task_id)
           Message.info('安装已启动，正在查看实时进度...')
         } else {
-          // 如果没有 SSE，显示最终结果
+          // 如果没有sse，显示最终结果
           Message.success(
             `批量安装完成：成功 ${response.success_count} 个，失败 ${response.failed_count} 个`
           )

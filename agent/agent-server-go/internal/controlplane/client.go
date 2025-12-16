@@ -87,33 +87,6 @@ func (c *Client) SendHeartbeat(ctx context.Context, agentID string, payload *api
 	return nil
 }
 
-// FetchTask 从控制面拉取任务
-func (c *Client) FetchTask(ctx context.Context, agentID string) (*api.TaskSpec, error) {
-	path := fmt.Sprintf("/api/agents/%s/next-task/", agentID)
-	var task api.TaskSpec
-	resp, err := c.cli.R().
-		SetContext(ctx).
-		SetResult(&task).
-		Post(path)
-
-	if err != nil {
-		return nil, fmt.Errorf("fetch task: %w", err)
-	}
-
-	if resp.IsError() {
-		if resp.StatusCode() == 404 || resp.StatusCode() == 204 {
-			return nil, nil // 没有任务
-		}
-		return nil, fmt.Errorf("fetch task: status=%d", resp.StatusCode())
-	}
-
-	if task.ID == "" {
-		return nil, nil // 没有任务
-	}
-
-	return &task, nil
-}
-
 // ReportTaskResult 上报任务结果到控制面
 func (c *Client) ReportTaskResult(ctx context.Context, agentID string, result *api.TaskResult) error {
 	path := fmt.Sprintf("/api/agents/%s/tasks/%s/report/", agentID, result.TaskID)

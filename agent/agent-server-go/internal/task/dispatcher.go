@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"sync"
-	"time"
 
 	"ops-job-agent-server/internal/agent"
 	"ops-job-agent-server/internal/controlplane"
@@ -19,12 +18,11 @@ type Dispatcher struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
-	interval     time.Duration
 	asynqEnabled bool
 }
 
-// NewDispatcher 创建任务分发器
-func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, taskQueue *TaskQueue, interval time.Duration, asynqEnabled bool) *Dispatcher {
+// NewDispatcher 创建任务分发器（仅支持控制面主动推送，不再轮询拉取）
+func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, taskQueue *TaskQueue, asynqEnabled bool) *Dispatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Dispatcher{
 		agentManager: agentMgr,
@@ -32,7 +30,6 @@ func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, taskQ
 		taskQueue:    taskQueue,
 		ctx:          ctx,
 		cancel:       cancel,
-		interval:     interval,
 		asynqEnabled: asynqEnabled,
 	}
 
@@ -46,9 +43,8 @@ func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, taskQ
 
 // Start 启动任务分发器
 func (d *Dispatcher) Start() {
-	d.wg.Add(1)
-	go d.dispatchLoop()
-	logger.GetLogger().Info("task dispatcher started")
+	// 轮询模式已移除，仅保留 Asynq 处理器（如启用）
+	logger.GetLogger().Info("task dispatcher started (push-only, no polling)")
 }
 
 // Stop 停止任务分发器
@@ -56,75 +52,6 @@ func (d *Dispatcher) Stop() {
 	d.cancel()
 	d.wg.Wait()
 	logger.GetLogger().Info("task dispatcher stopped")
-}
-
-// dispatchLoop 任务分发循环
-func (d *Dispatcher) dispatchLoop() {
-	defer d.wg.Done()
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-d.ctx.Done():
-			return
-		case <-ticker.C:
-			d.dispatchTasks()
-		}
-	}
-}
-
-// dispatchTasks 分发任务到所有活跃的 Agent
-func (d *Dispatcher) dispatchTasks() {
-	agents := d.agentManager.List()
-	for _, agentConn := range agents {
-		if agentConn.Status != "active" || agentConn.Conn == nil {
-			continue
-		}
-
-		// 从控制面拉取任务
-		task, err := d.cpClient.FetchTask(d.ctx, agentConn.ID)
-		if err != nil {
-			logger.GetLogger().WithError(err).WithField("agent_id", agentConn.ID).Error("fetch task failed")
-			continue
-		}
-
-		if task == nil {
-			continue // 没有任务
-		}
-
-		// 将任务放入 Agent 的任务队列
-		select {
-		case agentConn.TaskQueue <- task:
-			logger.GetLogger().WithFields(map[string]interface{}{
-				"agent_id": agentConn.ID,
-				"task_id":  task.ID,
-			}).Info("task dispatched to agent")
-		default:
-			// 任务队列满，如果启用了asynq，入队
-			if d.asynqEnabled && d.taskQueue != nil {
-				_, err := d.taskQueue.EnqueueWithPolicy(agentConn.ID, task)
-				if err != nil {
-					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-						"agent_id": agentConn.ID,
-						"task_id":  task.ID,
-					}).Error("enqueue task failed (agent queue full)")
-				} else {
-					logger.GetLogger().WithFields(map[string]interface{}{
-						"agent_id": agentConn.ID,
-						"task_id":  task.ID,
-					}).Warn("task enqueued to asynq (agent queue full)")
-				}
-			} else {
-				// 未启用asynq，只能丢弃任务
-				logger.GetLogger().WithFields(map[string]interface{}{
-					"agent_id": agentConn.ID,
-					"task_id":  task.ID,
-				}).Warn("task queue full, dropping task (asynq not enabled)")
-			}
-		}
-	}
 }
 
 // DispatchTaskToAgent 直接分发任务到指定 Agent（用于控制面主动推送）

@@ -15,6 +15,7 @@ import (
 	"ops-job-agent-server/internal/agent"
 	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/internal/controlplane"
+	logstream "ops-job-agent-server/internal/log"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/internal/task"
 	"ops-job-agent-server/pkg/api"
@@ -38,6 +39,9 @@ type Server struct {
 	cpClient       *controlplane.Client
 	taskDispatcher *task.Dispatcher
 	taskQueue      *task.TaskQueue
+	logStream      *logstream.StreamWriter
+	resultStream   *logstream.ResultStreamWriter
+	statusStream   *logstream.StatusStreamWriter
 }
 
 // New 创建服务器
@@ -68,8 +72,26 @@ func New(cfg *config.Config) (*Server, error) {
 		logger.GetLogger().Info("asynq task queue initialized")
 	}
 
-	// 创建任务分发器
-	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, taskQueue, 5*time.Second, asynqEnabled)
+	// 创建任务分发器（已移除轮询拉取控制面任务，采用控制面主动推送）
+	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, taskQueue, asynqEnabled)
+
+	// 创建日志流写入器（可选）
+	logStream, err := logstream.NewStreamWriter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create log stream writer: %w", err)
+	}
+
+	// 创建结果流写入器（可选）
+	resultStream, err := logstream.NewResultStreamWriter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create result stream writer: %w", err)
+	}
+
+	// 创建状态流写入器（可选）
+	statusStream, err := logstream.NewStatusStreamWriter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create status stream writer: %w", err)
+	}
 
 	s := &Server{
 		cfg:            cfg,
@@ -78,6 +100,9 @@ func New(cfg *config.Config) (*Server, error) {
 		cpClient:       cpClient,
 		taskDispatcher: taskDispatcher,
 		taskQueue:      taskQueue,
+		logStream:      logStream,
+		resultStream:   resultStream,
+		statusStream:   statusStream,
 	}
 
 	s.setupRoutes()
@@ -166,8 +191,48 @@ func (s *Server) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			// 清理非活跃连接，并为变为离线的连接写一条 offline 状态
+			agents := s.agentManager.List()
 			s.agentManager.CleanupInactive()
+			for _, a := range agents {
+				if !a.IsAlive(s.cfg.Agent.HeartbeatTimeout) {
+					go s.pushStatus(context.Background(), a, "offline", nil)
+				}
+			}
 		}
+	}
+}
+
+// pushStatus 将 Agent 在线状态写入状态流
+func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status string, payload map[string]interface{}) {
+	if s.statusStream == nil || conn == nil {
+		return
+	}
+
+	fields := map[string]interface{}{
+		"agent_id":       conn.ID,
+		"agent_name":     conn.Name,
+		"status":         status,
+		"last_heartbeat": conn.LastHeartbeat.UnixMilli(),
+	}
+
+	// 从 SystemInfo / payload 中提取补充信息
+	if conn.System != nil {
+		if conn.System.Hostname != "" {
+			fields["hostname"] = conn.System.Hostname
+		}
+		if conn.System.OS != "" {
+			fields["os"] = conn.System.OS
+		}
+		if conn.System.Arch != "" {
+			fields["arch"] = conn.System.Arch
+		}
+	}
+
+	_ = payload // 预留：如需从心跳 payload 中提取更多信息
+
+	if err := s.statusStream.PushStatus(ctx, fields); err != nil {
+		logger.GetLogger().WithError(err).WithField("agent_id", conn.ID).Warn("push status to stream failed")
 	}
 }
 
@@ -485,26 +550,13 @@ func (s *Server) handleWebSocketMessages(conn *agent.Connection) {
 		switch msg.Type {
 		case "heartbeat":
 			conn.UpdateHeartbeat()
-			// 转发心跳到控制面（可选）
-			if msg.Payload != nil {
-				// 从 payload 中提取系统信息
-				if timestamp, ok := msg.Payload["timestamp"].(float64); ok {
-					hb := &api.HeartbeatPayload{
-						Timestamp: int64(timestamp),
-					}
-					if systemMap, ok := msg.Payload["system"].(map[string]interface{}); ok && len(systemMap) > 0 {
-						// 简化处理，实际应该完整解析 SystemInfo
-						hb.System = &api.SystemInfo{}
-						_ = systemMap // 避免未使用变量警告
-					}
-					go s.cpClient.SendHeartbeat(context.Background(), conn.ID, hb)
-				}
-			}
+			// 写入状态流：online
+			go s.pushStatus(context.Background(), conn, "online", msg.Payload)
 
 		case "task_result":
-			// 转发任务结果到控制面
+			// 优先写入结果流，失败再回退 HTTP
 			if msg.Result != nil {
-				go s.cpClient.ReportTaskResult(context.Background(), conn.ID, msg.Result)
+				go s.pushResult(context.Background(), conn.ID, msg.Result)
 			}
 
 		case "log":
@@ -549,7 +601,7 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 				// 通道关闭，发送剩余日志
 				for taskID, logs := range taskLogs {
 					if len(logs) > 0 {
-						s.cpClient.PushLogs(context.Background(), conn.ID, taskID, logs)
+					s.pushLogs(context.Background(), conn.ID, taskID, logs)
 					}
 				}
 				return
@@ -565,7 +617,7 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 
 			// 批量发送（每个任务达到 50 条日志时）
 			if len(taskLogs[taskID]) >= 50 {
-				s.cpClient.PushLogs(context.Background(), conn.ID, taskID, taskLogs[taskID])
+				s.pushLogs(context.Background(), conn.ID, taskID, taskLogs[taskID])
 				taskLogs[taskID] = taskLogs[taskID][:0]
 			}
 
@@ -573,10 +625,62 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 			// 定时发送所有任务的日志
 			for taskID, logs := range taskLogs {
 				if len(logs) > 0 {
-					s.cpClient.PushLogs(context.Background(), conn.ID, taskID, logs)
+					s.pushLogs(context.Background(), conn.ID, taskID, logs)
 					taskLogs[taskID] = logs[:0]
 				}
 			}
 		}
 	}
+}
+
+// pushLogs 优先写入 Redis Stream（如配置启用），否则回退到控制面 HTTP
+func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []api.LogEntry) {
+	if len(logs) == 0 {
+		return
+	}
+
+	// 尝试写入统一日志流
+	if s.logStream != nil {
+		entries := make([]map[string]interface{}, 0, len(logs))
+		now := time.Now().UnixMilli()
+		for _, l := range logs {
+			entries = append(entries, map[string]interface{}{
+				"task_id":    taskID,
+				"agent_id":   agentID,
+				"timestamp":  l.Timestamp,
+				"content":    l.Content,
+				"stream":     l.Stream,
+				"received_at": now,
+			})
+		}
+		if err := s.logStream.PushLogs(ctx, entries); err != nil {
+			logger.GetLogger().WithError(err).Warn("push logs to stream failed")
+		} else {
+			return
+		}
+	}
+
+	// 不再常规回退 HTTP，失败仅记录告警
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id": agentID,
+		"task_id":  taskID,
+	}).Warn("log stream unavailable, log not delivered")
+}
+
+// pushResult 将任务结果写入结果流，失败可选回退 HTTP（当前仅记录错误，不回退）
+func (s *Server) pushResult(ctx context.Context, agentID string, result *api.TaskResult) {
+	if result == nil {
+		return
+	}
+
+	if s.resultStream != nil {
+		if err := s.resultStream.PushResult(ctx, agentID, result); err != nil {
+			logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Warn("push result to stream failed")
+		} else {
+			return
+		}
+	}
+
+	// 不再常规回退 HTTP，失败仅记录告警。如需回退，可在此调用 cpClient.ReportTaskResult
+	logger.GetLogger().WithField("task_id", result.TaskID).Warn("result stream unavailable, result not delivered")
 }

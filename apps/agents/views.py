@@ -359,41 +359,70 @@ class AgentViewSet(viewsets.ModelViewSet):
 
         scripts = {}
         tokens = {}
+        errors = []
 
         for host in hosts:
-            # 检查是否已有 Agent
-            if hasattr(host, 'agent') and host.agent:
-                # 如果已有 Agent，使用现有 Token（如果有）
-                if host.agent.active_token_hash:
-                    # 无法获取明文 Token，需要重新签发
-                    token_data = AgentService.issue_token(host.agent, request.user, note='安装脚本生成')
-                    token = token_data['token']
-                else:
-                    token_data = AgentService.issue_token(host.agent, request.user, note='安装脚本生成')
-                    token = token_data['token']
-            else:
-                # 创建 Agent 对象
-                agent, created = Agent.objects.get_or_create(
-                    host=host,
-                    defaults={'status': 'pending'}
-                )
-                # 签发 Token
-                token_data = AgentService.issue_token(agent, request.user, note='安装脚本生成')
-                token = token_data['token']
+            try:
+                # 先验证安装包是否存在（在生成脚本前验证）
+                try:
+                    AgentService.get_download_url(
+                        host=host,
+                        package_version=package_version,
+                        package_id=package_id,
+                        raise_if_not_found=True,
+                    )
+                except ValueError as e:
+                    errors.append(f"主机 {host.name} ({host.ip_address}): {str(e)}")
+                    continue
 
-            # 生成安装脚本
-            host_scripts = AgentService.generate_install_script(
-                host=host,
-                token=token,
-                install_mode=install_mode,
-                agent_server_url=agent_server_url,
-                agent_server_backup_url=agent_server_backup_url,
-                ws_backoff_initial_ms=ws_backoff_initial_ms,
-                ws_backoff_max_ms=ws_backoff_max_ms,
-                ws_max_retries=ws_max_retries,
-                package_version=package_version,
-                package_id=package_id
-            )
+                # 检查是否已有 Agent
+                if hasattr(host, "agent") and host.agent:
+                    # 如果已有 Agent，使用现有 Token
+                    if host.agent.active_token_hash:
+                        # 无法获取明文 Token，需要重新签发
+                        token_data = AgentService.issue_token(
+                            host.agent, request.user, note="安装脚本生成"
+                        )
+                        token = token_data["token"]
+                    else:
+                        token_data = AgentService.issue_token(
+                            host.agent, request.user, note="安装脚本生成"
+                        )
+                        token = token_data["token"]
+                else:
+                    # 创建 Agent 对象（生成脚本时需要 token，所以需要创建 Agent）
+                    # 注意：这只是为了生成脚本，实际安装需要手动执行脚本或使用批量安装功能
+                    agent, created = Agent.objects.get_or_create(
+                        host=host,
+                        defaults={"status": "pending"},
+                    )
+                    # 签发 Token
+                    token_data = AgentService.issue_token(
+                        agent, request.user, note="安装脚本生成"
+                    )
+                    token = token_data["token"]
+
+                # 生成安装脚本
+                host_scripts = AgentService.generate_install_script(
+                    host=host,
+                    token=token,
+                    install_mode=install_mode,
+                    agent_server_url=agent_server_url,
+                    agent_server_backup_url=agent_server_backup_url,
+                    ws_backoff_initial_ms=ws_backoff_initial_ms,
+                    ws_backoff_max_ms=ws_backoff_max_ms,
+                    ws_max_retries=ws_max_retries,
+                    package_version=package_version,
+                    package_id=package_id,
+                )
+            except Exception as e:
+                logger.error(
+                    f"为主机 {host.name} 生成安装脚本失败: {str(e)}", exc_info=True
+                )
+                errors.append(
+                    f"主机 {host.name} ({host.ip_address}): 生成脚本失败 - {str(e)}"
+                )
+                continue
 
             # 合并脚本（按操作系统分组）
             for os_type, script in host_scripts.items():
@@ -407,13 +436,35 @@ class AgentViewSet(viewsets.ModelViewSet):
                     'token': token  # 注意：这里返回明文 token，前端需要一次性显示
                 })
 
+        if errors:
+            if not scripts:
+                # 全部失败
+                return SycResponse.error(
+                    message="生成安装脚本失败",
+                    code=400,
+                    content={'errors': errors}
+                )
+            else:
+                # 部分成功
+                return SycResponse.success(
+                    content={
+                        'scripts': scripts,
+                        'install_mode': install_mode,
+                        'agent_server_url': agent_server_url,
+                        'errors': errors,
+                        'warning': '部分主机生成脚本失败，请查看 errors 字段'
+                    },
+                    message="生成安装脚本成功（部分主机失败）"
+                )
+
         return SycResponse.success(
             content={
                 'scripts': scripts,
                 'install_mode': install_mode,
-                'agent_server_url': agent_server_url
+                'agent_server_url': agent_server_url,
+                'notice': '这只是生成安装脚本，您需要手动在主机上执行脚本或使用"批量安装（SSH）"功能进行安装'
             },
-            message="生成安装脚本成功"
+            message="生成安装脚本成功（请手动执行脚本或使用批量安装功能）"
         )
 
     @action(detail=False, methods=["post"], url_path="batch_install")

@@ -88,15 +88,18 @@ class AgentService:
         )
 
     @staticmethod
-    def get_download_url(host: Host, package_version: str = None, package_id: int = None) -> str:
+    def get_download_url(host: Host, package_version: str = None, package_id: int = None, raise_if_not_found: bool = False) -> str:
         """
         获取 Agent 安装包下载地址
         Args:
             host: 主机对象
             package_version: 安装包版本号（可选，不指定则使用默认版本）
             package_id: 安装包ID（可选，优先级最高）
+            raise_if_not_found: 如果找不到安装包是否抛出异常（默认 False，返回默认 URL）
         Returns:
             str: 下载地址
+        Raises:
+            ValueError: 如果 raise_if_not_found=True 且找不到安装包
         """
         from .models import AgentPackage
         
@@ -118,7 +121,8 @@ class AgentService:
                 package = AgentPackage.objects.get(id=package_id, is_active=True)
                 return package.get_download_url()
             except AgentPackage.DoesNotExist:
-                pass
+                if raise_if_not_found:
+                    raise ValueError(f"指定的安装包 ID {package_id} 不存在或未启用")
         
         # 其次使用 package_version
         if package_version:
@@ -131,22 +135,24 @@ class AgentService:
                 )
                 return package.get_download_url()
             except AgentPackage.DoesNotExist:
-                pass
+                if raise_if_not_found:
+                    raise ValueError(f"指定的安装包版本 {package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用")
         
         # 使用默认版本
-        try:
-            package = AgentPackage.objects.filter(
-                is_default=True,
-                is_active=True,
-                os_type=os_type,
-                arch=arch
-            ).first()
-            if package:
-                return package.get_download_url()
-        except AgentPackage.DoesNotExist:
-            pass
+        package = AgentPackage.objects.filter(
+            is_default=True,
+            is_active=True,
+            os_type=os_type,
+            arch=arch
+        ).first()
+        if package:
+            return package.get_download_url()
         
-        # 如果都没有，使用配置中的默认地址
+        # 如果都没有且要求验证，抛出异常
+        if raise_if_not_found:
+            raise ValueError(f"未找到可用的 Agent 安装包 (OS: {os_type}, Arch: {arch})，请先上传安装包")
+        
+        # 如果都没有，使用配置中的默认地址（向后兼容，但不推荐）
         from apps.system_config.models import ConfigManager
         base_url = ConfigManager.get('agent.download_url', 'http://localhost:8000/static/agent/')
         if os_type == 'windows':
@@ -183,8 +189,8 @@ class AgentService:
         ws_max_retries = max(1, min(ws_max_retries or 6, 20))
         
         if not download_url:
-            # 使用版本管理获取下载地址
-            download_url = cls.get_download_url(host, package_version=package_version, package_id=package_id)
+            # 使用版本管理获取下载地址（生成脚本时必须验证安装包存在）
+            download_url = cls.get_download_url(host, package_version=package_version, package_id=package_id, raise_if_not_found=True)
         
         # Linux 安装脚本
         linux_script = f"""#!/bin/bash
@@ -454,7 +460,7 @@ Write-Host "服务状态: Get-Service -Name $SERVICE_NAME" -ForegroundColor Cyan
                     'step_order': 1
                 })
                 
-                # 通过 SSH 执行安装脚本
+                # 通过ssh执行安装脚本
                 try:
                     timeout = max(60, min(ssh_timeout or 300, 900))
                     result = fabric_ssh_manager.execute_script(

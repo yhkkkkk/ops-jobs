@@ -459,6 +459,10 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.mb-4 {
+  margin-bottom: 16px;
+}
+
 .agent-detail .agent-detail-content .info-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

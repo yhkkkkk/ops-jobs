@@ -10,7 +10,6 @@ import (
 	"ops-job-agent/internal/config"
 	"ops-job-agent/internal/core"
 	"ops-job-agent/internal/logger"
-	"ops-job-agent/internal/server"
 )
 
 var rootCmd = &cobra.Command{
@@ -48,17 +47,6 @@ var startCmd = &cobra.Command{
 			log.WithError(err).Error("start agent failed")
 			return err
 		}
-
-		srv := server.New(cfg.HTTPAddr)
-		// 设置任务服务，使 server 能够访问 executor
-		srv.SetTaskService(ag)
-
-		// http server
-		go func() {
-			if err := srv.Start(); err != nil {
-				log.WithError(err).Error("http server stopped")
-			}
-		}()
 
 		// wait for signal
 		ch := make(chan os.Signal, 1)

@@ -193,7 +193,7 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 
 # 自定义管理站点标题
-admin.site.site_header = "运维作业平台"
+admin.site.site_header = "运维作业管理后台"
 admin.site.site_title = "运维作业管理"
 admin.site.index_title = "运维作业管理后台"
 

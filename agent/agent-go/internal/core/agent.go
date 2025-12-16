@@ -17,10 +17,10 @@ import (
 	"ops-job-agent/internal/errors"
 	"ops-job-agent/internal/executor"
 	"ops-job-agent/internal/httpclient"
-	"ops-job-agent/internal/httpserver"
 	"ops-job-agent/internal/logger"
 	"ops-job-agent/internal/logstream"
 	"ops-job-agent/internal/metrics"
+	"ops-job-agent/internal/server"
 	"ops-job-agent/internal/system"
 	"ops-job-agent/internal/taskqueue"
 	wsclient "ops-job-agent/internal/websocket"
@@ -32,7 +32,6 @@ type Agent struct {
 	client         *httpclient.Client   // HTTP 客户端（direct 模式）
 	wsClient       *wsclient.Client     // WebSocket 客户端（agent-server 模式）
 	taskQueue      *taskqueue.TaskQueue // asynq任务队列（可选）
-	httpServer     *httpserver.Server   // 直连模式下用于接收控制面任务的 HTTP 服务
 	info           *AgentInfo
 	system         SystemInfo
 	ctx            context.Context
@@ -64,7 +63,7 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	taskSemaphore := semaphore.New(maxConcurrent)
 
-	// 创建 HTTP 客户端
+	// 创建http客户端
 	httpClient := httpclient.NewClient(cfg.ControlPlaneURL, cfg.AgentToken)
 
 	// 创建日志流管理器（批量推送）
@@ -153,21 +152,22 @@ func (a *Agent) Start() error {
 	go a.heartbeatLoop()
 
 	// 根据模式启动不同的接入方式
-	if a.cfg.Mode == "direct" {
-		// 直连模式：启动内置 HTTP Server，等待控制面主动推送任务
-		a.httpServer = httpserver.NewServer(a.cfg.HTTPAddr, a.cfg.AgentToken, a)
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			if err := a.httpServer.Start(a.ctx); err != nil {
-				logger.GetLogger().WithError(err).Error("agent http server exited with error")
-			}
-		}()
-	} else {
+	if a.cfg.Mode == "agent-server" {
 		// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
 		if err := a.ensureWebSocketConnection(); err != nil {
 			return err
 		}
+	} else {
+		// Direct 模式：启动 Gin HTTP Server，作为控制面直连入口 + 本地管理接口
+		srv := server.New(a.cfg.HTTPAddr, a.cfg.AgentToken)
+		srv.SetTaskService(a)
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			if err := srv.Start(); err != nil {
+				logger.GetLogger().WithError(err).Error("agent http server exited with error")
+			}
+		}()
 	}
 
 	a.started = true
@@ -184,9 +184,10 @@ func (a *Agent) Stop() {
 	// HTTP Server 会在 ctx 取消后优雅退出（Start 中监听 ctx.Done）
 	// 断开 WebSocket 连接（agent-server 模式）
 	if a.wsClient != nil {
+		//nolint:errcheck // 现阶段断开失败无需强制处理
 		a.wsClient.Disconnect()
 	}
-	// 停止asynq任务队列（如果启用）
+	// 停止asynq任务队列
 	if a.taskQueue != nil {
 		a.taskQueue.Stop()
 	}

@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"ops-job-agent/internal/api"
 	"ops-job-agent/internal/logger"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // RedisLogStream 基于 Redis Stream 的日志流管理器
@@ -172,7 +173,7 @@ func (ls *RedisLogStream) flushBuffer(taskID string, buf *LogBuffer) {
 				message["host_name"] = log.HostName
 			}
 
-			// 将 map 转换为 Redis 需要的格式
+			// 将 map 转换为 redis 需要的格式
 			redisMsg := make(map[string]interface{})
 			for k, v := range message {
 				var val string
@@ -198,7 +199,9 @@ func (ls *RedisLogStream) flushBuffer(taskID string, buf *LogBuffer) {
 				Values: redisMsg,
 			}
 			if ls.maxLen > 0 {
-				addArgs.MaxLenApprox = ls.maxLen
+				// go-redis 使用 MaxLen + Approx 组合来实现近似裁剪
+				addArgs.MaxLen = ls.maxLen
+				addArgs.Approx = true
 			}
 			pipe.XAdd(ctx, addArgs)
 		}
@@ -236,4 +239,3 @@ func (ls *RedisLogStream) RemoveTask(taskID string) {
 		delete(ls.buffer, taskID)
 	}
 }
-

@@ -55,7 +55,6 @@ class RealtimeLogService:
     
     def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any]):
         """推送日志到Redis Stream
-
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             host_id: 主机ID
@@ -109,7 +108,6 @@ class RealtimeLogService:
     
     def push_status(self, task_id: str, status_data: Dict[str, Any]):
         """推送状态更新到Redis Stream
-
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             status_data: 状态数据

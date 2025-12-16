@@ -124,19 +124,11 @@ class AgentExecutionService:
 
                 api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
 
-                agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
-                headers = {
-                    'Content-Type': 'application/json',
-                }
-                if agent_server_token:
-                    headers['Authorization'] = f'Bearer {agent_server_token}'
+                # 构造带 HMAC 签名的请求头
+                from utils.agent_server_client import AgentServerClient
 
-                response = requests.post(
-                    api_url,
-                    json=task_spec,
-                    headers=headers,
-                    timeout=10
-                )
+                client = AgentServerClient.from_settings()
+                response = client.post(api_url, json=task_spec)
 
                 if response.status_code == 200:
                     result = response.json()
@@ -173,32 +165,36 @@ class AgentExecutionService:
 
             api_url = f"{base_url}/api/tasks"
             headers = {
-                'Content-Type': 'application/json',
+                "Content-Type": "application/json",
             }
-            # 当前 httpserver 端未强制鉴权，这里暂不附加 Authorization 头
+            # 当前 httpserver 端未强制鉴权，这里暂不附加 Authorization 头（后续如配置 token，可在此处添加）
 
             response = requests.post(
                 api_url,
                 json=task_spec,
                 headers=headers,
-                timeout=10
+                timeout=10,
             )
 
             if response.status_code == 200:
                 result = response.json()
-                logger.info(f"任务已通过直连模式推送到Agent: {task_spec['id']}, Agent: {agent.host_id}, URL={api_url}")
+                logger.info(
+                    f"任务已通过直连模式推送到Agent: {task_spec['id']}, Agent: {agent.host_id}, URL={api_url}"
+                )
                 return {
-                    'success': True,
-                    'task_id': task_spec['id'],
-                    'agent_id': agent.host_id,
-                    'status': result.get('status', 'accepted')
+                    "success": True,
+                    "task_id": task_spec["id"],
+                    "agent_id": agent.host_id,
+                    "status": result.get("status", "accepted"),
                 }
             else:
                 error_msg = response.text or f"HTTP {response.status_code}"
-                logger.error(f"直连模式推送任务到Agent失败: {error_msg}, URL={api_url}")
+                logger.error(
+                    f"直连模式推送任务到Agent失败: {error_msg}, URL={api_url}"
+                )
                 return {
-                    'success': False,
-                    'error': f'直连模式推送任务失败: {error_msg}'
+                    "success": False,
+                    "error": f"直连模式推送任务失败: {error_msg}",
                 }
 
         except Exception as e:
@@ -388,7 +384,6 @@ class AgentExecutionService:
                 task_id = f"{execution_record.execution_id}_{step_id or 'main'}_{host.id}_{uuid.uuid4().hex[:8]}"
 
                 # 创建文件传输规范
-                # 注意：Go的JSON库会自动将base64字符串解码为[]byte
                 # 对于大文件，如果文件太大，可以考虑只传递local_path，让Agent端自己读取
                 import base64
                 
@@ -407,7 +402,7 @@ class AgentExecutionService:
                     'type': transfer_type,
                     'local_path': local_path,
                     'remote_path': remote_path,
-                    'content': file_content_b64,  # base64编码的字符串，Go JSON库会自动解码为[]byte
+                    'content': file_content_b64,  # base64编码的字符串
                     'bandwidth_limit': bandwidth_limit,
                 }
 
