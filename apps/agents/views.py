@@ -3,13 +3,12 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
+from django_filters import rest_framework as filters
 from django.utils import timezone
 from django.db import transaction
 from guardian.shortcuts import get_objects_for_user
 
 from utils.responses import SycResponse
-
-logger = logging.getLogger(__name__)
 from utils.pagination import CustomPagination
 from utils.audit_service import AuditLogService
 from apps.permissions.permissions import BasePermissionMixin
@@ -30,6 +29,26 @@ from .serializers import (
 )
 from .filters import AgentFilter
 from .services import AgentService
+
+logger = logging.getLogger(__name__)
+
+
+class InstallRecordFilter(filters.FilterSet):
+    host_id = filters.NumberFilter(field_name="host_id")
+    status = filters.ChoiceFilter(choices=AgentInstallRecord.STATUS_CHOICES)
+
+    class Meta:
+        model = AgentInstallRecord
+        fields = ["host_id", "status", "install_mode"]
+
+
+class UninstallRecordFilter(filters.FilterSet):
+    host_id = filters.NumberFilter(field_name="host_id")
+    status = filters.ChoiceFilter(choices=AgentUninstallRecord.STATUS_CHOICES)
+
+    class Meta:
+        model = AgentUninstallRecord
+        fields = ["host_id", "status"]
 
 
 class AgentPermission(BasePermissionMixin):
@@ -74,6 +93,8 @@ class AgentViewSet(viewsets.ModelViewSet):
     pagination_class = AgentPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = AgentFilter
+    install_record_filterset_class = InstallRecordFilter
+    uninstall_record_filterset_class = UninstallRecordFilter
 
     def get_queryset(self):
         """基于用户权限过滤查询集"""
@@ -87,7 +108,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         if self.request.user.has_perm('agents.view_agent'):
             return queryset.select_related("host").prefetch_related("tokens", "host__groups").order_by('-created_at')
 
-        # 否则，只返回有对象级别权限的 Agent（基于关联的 Host 权限）
+        # 否则，只返回有对象级别权限的 Agent
         from apps.hosts.models import Host
         allowed_hosts = get_objects_for_user(
             self.request.user,
@@ -153,36 +174,36 @@ class AgentViewSet(viewsets.ModelViewSet):
         if not auth_header.startswith('Bearer '):
             return SycResponse.error(message="缺少 Authorization Bearer token", code=401)
         token = auth_header.replace('Bearer ', '').strip()
-        
+
         if not token:
             return SycResponse.error(message="token 不能为空", code=400)
-        
+
         # 通过 token 查找 Agent
         from .models import AgentToken
         import hashlib
-        
+
         token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-        
+
         # 查找有效的 token
         agent_token = AgentToken.objects.filter(
             token_hash=token_hash,
             revoked_at__isnull=True
         ).first()
-        
+
         if not agent_token:
             return SycResponse.error(message="token 无效或已吊销", code=403)
-        
+
         # 检查 token 是否过期
         if agent_token.expired_at and agent_token.expired_at <= timezone.now():
             return SycResponse.error(message="token 已过期", code=403)
-        
+
         agent = agent_token.agent
-        
+
         # 更新 Agent 状态为 online（如果之前是 pending）
         if agent.status == 'pending':
             agent.status = 'online'
             agent.save(update_fields=['status', 'updated_at'])
-        
+
         serializer = AgentDetailSerializer(agent)
         return SycResponse.success(
             content={
@@ -212,7 +233,8 @@ class AgentViewSet(viewsets.ModelViewSet):
             expired_at=serializer.validated_data.get("expired_at"),
             note=serializer.validated_data.get("note", ""),
         )
-        AgentService.audit(request.user, "issue_agent_token", agent, request=request, extra={"token_last4": data["token_last4"]})
+        AgentService.audit(request.user, "issue_agent_token", agent, request=request,
+                           extra={"token_last4": data["token_last4"]})
         return SycResponse.success(
             content={"token": data["token"], "expired_at": data["expired_at"], "token_last4": data["token_last4"]},
             message="签发 Agent Token 成功（仅本次返回明文）",
@@ -343,14 +365,14 @@ class AgentViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """删除 Agent（仅允许删除 pending 状态的 Agent）"""
         agent = self.get_object()
-        
+
         # 只允许删除 pending 状态的 Agent
         if agent.status != 'pending':
             return SycResponse.error(
                 message=f"只能删除待激活状态的 Agent，当前状态为：{agent.get_status_display()}",
                 code=400
             )
-        
+
         # 高危操作二次确认
         confirmed = request.data.get("confirmed", False)
         if not confirmed:
@@ -358,7 +380,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 message="高危操作需要二次确认，请设置 confirmed=true",
                 code=400
             )
-        
+
         host_name = agent.host.name
         host_id = agent.host_id
         agent_id = agent.id
@@ -368,11 +390,11 @@ class AgentViewSet(viewsets.ModelViewSet):
         from .models import Agent
         temp_agent = Agent(id=agent_id, host_id=host_id)
         AgentService.audit(
-            request.user, 
-            "delete_agent", 
-            temp_agent, 
-            request=request, 
-            success=True, 
+            request.user,
+            "delete_agent",
+            temp_agent,
+            request=request,
+            success=True,
             extra={"host_name": host_name, "host_id": host_id, "agent_id": agent_id}
         )
         return SycResponse.success(message=f"Agent ({host_name}) 删除成功")
@@ -430,28 +452,28 @@ class AgentViewSet(viewsets.ModelViewSet):
         这是备用操作，用于用户生成脚本后没有复制也没有安装的场景
         """
         agent = self.get_object()
-        
+
         # 只有 pending 状态的 Agent 才能重新生成脚本
         if agent.status != 'pending':
             return SycResponse.error(message="只有待激活状态的 Agent 才能重新生成脚本", code=400)
-        
+
         # 查找最新的安装记录
         install_record = AgentInstallRecord.objects.filter(
             agent=agent,
             host=agent.host
         ).order_by('-installed_at').first()
-        
+
         if not install_record:
             return SycResponse.error(message="未找到安装记录，无法重新生成脚本", code=404)
-        
+
         # 重新签发 token
         token_data = AgentService.issue_token(agent, request.user, note="重新生成安装脚本")
         agent_token = token_data['token']
-        
+
         # 验证安装包是否存在
         package_id = install_record.package_id
         package_version = install_record.package_version
-        
+
         # 如果安装记录中的 package_id/package_version 无效，尝试使用最新的可用包
         if package_id:
             from .models import AgentPackage
@@ -461,7 +483,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 logger.warning(f"安装记录中的 package_id={package_id} 不存在或未启用，将尝试使用最新的可用包")
                 package_id = None
                 package_version = None
-        
+
         if package_version and not package_id:
             from .models import AgentPackage
             os_type = agent.host.os_type.lower() if agent.host.os_type else 'linux'
@@ -480,9 +502,10 @@ class AgentViewSet(viewsets.ModelViewSet):
                     is_active=True
                 )
             except AgentPackage.DoesNotExist:
-                logger.warning(f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
+                logger.warning(
+                    f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
                 package_version = None
-        
+
         # 生成安装脚本
         try:
             host_scripts = AgentService.generate_install_script(
@@ -500,7 +523,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"为 Agent {agent.id} 重新生成脚本失败: {str(e)}", exc_info=True)
             return SycResponse.error(message=f"生成脚本失败: {str(e)}", code=500)
-        
+
         # 格式化返回数据
         scripts = {}
         for os_type, script in host_scripts.items():
@@ -514,7 +537,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 'agent_token': agent_token,
                 'agent_id': agent.id,
             })
-        
+
         return SycResponse.success(
             content={
                 'scripts': scripts,
@@ -579,17 +602,17 @@ class AgentViewSet(viewsets.ModelViewSet):
                         'endpoint': agent_server_url or '',
                     }
                 )
-                
+
                 # 如果 Agent 已存在，更新状态和配置
                 if not agent_created:
                     agent.status = 'pending'
                     agent.endpoint = agent_server_url or ''
                     agent.save(update_fields=['status', 'endpoint', 'updated_at'])
-                
+
                 # 签发 Agent Token
                 token_data = AgentService.issue_token(agent, request.user, note="生成安装脚本")
                 agent_token = token_data['token']
-                
+
                 # 创建或更新安装记录
                 install_record, created = AgentInstallRecord.objects.get_or_create(
                     host=host,
@@ -718,7 +741,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         if not confirmed:
             return SycResponse.error(message="请勾选确认框以执行批量安装操作", code=400)
         if install_mode == 'agent-server' and not agent_server_url:
-            return SycResponse.error(message="agent_server_url 不能为空（agent-server 模式）", code=400)
+            return SycResponse.error(message="agent_server_url不能为空（agent-server模式）", code=400)
 
         # 批量操作限流
         MAX_BATCH_SIZE = 50
@@ -726,7 +749,7 @@ class AgentViewSet(viewsets.ModelViewSet):
 
         from apps.hosts.models import Host
         hosts = Host.objects.filter(id__in=host_ids)
-        
+
         # 检查是否有生产环境主机
         prod_hosts = hosts.filter(environment='prod')
         is_prod_env = prod_hosts.exists()
@@ -734,19 +757,19 @@ class AgentViewSet(viewsets.ModelViewSet):
 
         if len(host_ids) > current_max_batch_size:
             return SycResponse.error(
-                message=f"批量安装数量超过限制，当前环境最多允许安装 {current_max_batch_size} 个 Agent",
+                message=f"批量安装数量超过限制，当前环境最多允许安装{current_max_batch_size}个Agent",
                 code=400
             )
 
         # 生成安装任务ID
         import uuid
         from concurrent.futures import ThreadPoolExecutor
-        
+
         install_task_id = str(uuid.uuid4())
-        
+
         # 提前获取用户对象，避免在线程中访问 request
         user = request.user
-        
+
         # 使用线程池异步执行批量安装
         def run_batch_install():
             """在后台线程中执行批量安装"""
@@ -767,7 +790,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                     ssh_timeout=ssh_timeout,
                     allow_reinstall=allow_reinstall
                 )
-                
+
                 # 记录审计日志
                 for install_result in result['results']:
                     if install_result['success'] and install_result.get('agent_id'):
@@ -783,9 +806,10 @@ class AgentViewSet(viewsets.ModelViewSet):
                             )
                         except Agent.DoesNotExist:
                             logger.warning(f"Agent {install_result.get('agent_id')} 不存在，跳过审计日志")
-                
-                logger.info(f"批量安装任务完成: install_task_id={install_task_id}, 成功={result['success_count']}, 失败={result['failed_count']}")
-                
+
+                logger.info(
+                    f"批量安装任务完成: install_task_id={install_task_id}, 成功={result['success_count']}, 失败={result['failed_count']}")
+
             except Exception as e:
                 logger.error(f"批量安装任务失败: install_task_id={install_task_id}, 错误={str(e)}", exc_info=True)
                 # 推送错误状态
@@ -794,21 +818,21 @@ class AgentViewSet(viewsets.ModelViewSet):
                     'status': 'error',
                     'message': f'批量安装任务失败: {str(e)}'
                 })
-        
+
         # 在线程池中执行
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(run_batch_install)
         executor.shutdown(wait=False)  # 不等待任务完成，立即返回
-        
+
         logger.info(f"批量安装任务已启动: install_task_id={install_task_id}")
 
         return SycResponse.success(
             content={
-                'install_task_id': install_task_id,  # 返回任务ID用于前端连接SSE
+                'install_task_id': install_task_id,  # 返回任务ID用于前端连接sse
                 'total': len(host_ids),
                 'status': 'running'
             },
-            message=f"批量安装已启动，正在后台执行，可通过 install_task_id 连接 SSE 查看实时进度"
+            message=f"批量安装已启动，正在后台执行，可通过install_task_id连接sse查看实时进度"
         )
 
     @action(detail=False, methods=["post"], url_path="batch_uninstall")
@@ -829,16 +853,16 @@ class AgentViewSet(viewsets.ModelViewSet):
         # 权限过滤（基于 get_queryset）
         allowed_agents = self.get_queryset().filter(id__in=agent_ids).select_related('host')
         if allowed_agents.count() != len(agent_ids):
-            return SycResponse.error(message="部分 Agent 无权限操作", code=403)
+            return SycResponse.error(message="部分agent无权限操作", code=403)
 
-        # 批量操作限流（生产环境更严格）
+        # 批量操作限流
         MAX_BATCH_SIZE = 50
         PROD_MAX_BATCH_SIZE = 10
         prod_agents = allowed_agents.filter(host__environment='prod')
         current_max_batch_size = PROD_MAX_BATCH_SIZE if prod_agents.exists() else MAX_BATCH_SIZE
         if len(agent_ids) > current_max_batch_size:
             return SycResponse.error(
-                message=f"批量卸载数量超过限制，当前环境最多允许卸载 {current_max_batch_size} 个 Agent",
+                message=f"批量卸载数量超过限制，当前环境最多允许卸载 {current_max_batch_size} 个agent",
                 code=400
             )
 
@@ -870,7 +894,8 @@ class AgentViewSet(viewsets.ModelViewSet):
                             agent,
                             request=None,
                             success=bool(uninstall_result.get('success')),
-                            error_message='' if uninstall_result.get('success') else uninstall_result.get('message', ''),
+                            error_message='' if uninstall_result.get('success') else uninstall_result.get('message',
+                                                                                                          ''),
                             extra={
                                 'host_id': uninstall_result.get('host_id'),
                                 'host_name': uninstall_result.get('host_name'),
@@ -905,46 +930,31 @@ class AgentViewSet(viewsets.ModelViewSet):
                 'uninstall_task_id': uninstall_task_id,
                 'status': 'running'
             },
-            message="批量卸载已启动，正在后台执行，可通过 uninstall_task_id 连接 SSE 查看实时进度"
+            message="批量卸载已启动，正在后台执行，可通过uninstall_task_id连接sse查看实时进度"
         )
 
     @action(detail=False, methods=["get"], url_path="install_records")
     def install_records(self, request):
         """查询安装记录"""
-        from .models import AgentInstallRecord
-        from django_filters.rest_framework import DjangoFilterBackend
-        from django_filters import rest_framework as filters
-
-        class InstallRecordFilter(filters.FilterSet):
-            host_id = filters.NumberFilter(field_name='host_id')
-            status = filters.ChoiceFilter(choices=AgentInstallRecord.STATUS_CHOICES)
-
-            class Meta:
-                model = AgentInstallRecord
-                fields = ['host_id', 'status', 'install_mode']
-
         queryset = AgentInstallRecord.objects.select_related('host', 'agent', 'installed_by').order_by('-installed_at')
-        
-        # 权限过滤
+
+        # 权限过滤（基于 Host 权限）
         if not request.user.is_superuser:
-            from apps.hosts.models import Host
-            from guardian.shortcuts import get_objects_for_user
             allowed_hosts = get_objects_for_user(
                 request.user,
                 'view_host',
-                klass=Host,
                 accept_global_perms=False
             )
             queryset = queryset.filter(host__in=allowed_hosts)
 
-        # 应用过滤器
-        filter_backend = DjangoFilterBackend()
-        queryset = filter_backend.filter_queryset(request, queryset, InstallRecordFilter)
+        # 应用过滤器（使用专门的 FilterSet）
+        backend = DjangoFilterBackend()
+        queryset = backend.filter_queryset(request, queryset, self.install_record_filterset_class)
 
-        # 分页
+        # 分页与序列化
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = AgentInstallRecordSerializer(page, many=True)
+            serializer = self.get_serializer(page, many=True)
             paginator = self.paginator
             return SycResponse.success(
                 content={
@@ -956,7 +966,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 message="获取安装记录成功",
             )
 
-        serializer = AgentInstallRecordSerializer(queryset, many=True)
+        serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(
             content={
                 "results": serializer.data,
@@ -970,36 +980,24 @@ class AgentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="uninstall_records")
     def uninstall_records(self, request):
         """查询卸载记录"""
-        from django_filters.rest_framework import DjangoFilterBackend
-        from django_filters import rest_framework as filters
-
-        class UninstallRecordFilter(filters.FilterSet):
-            host_id = filters.NumberFilter(field_name='host_id')
-            status = filters.ChoiceFilter(choices=AgentUninstallRecord.STATUS_CHOICES)
-
-            class Meta:
-                model = AgentUninstallRecord
-                fields = ['host_id', 'status']
-
-        queryset = AgentUninstallRecord.objects.select_related('host', 'agent', 'uninstalled_by').order_by('-uninstalled_at')
+        queryset = AgentUninstallRecord.objects.select_related('host', 'agent', 'uninstalled_by').order_by(
+            '-uninstalled_at')
 
         # 权限过滤（基于 Host 权限）
         if not request.user.is_superuser:
-            from apps.hosts.models import Host
             allowed_hosts = get_objects_for_user(
                 request.user,
                 'view_host',
-                klass=Host,
                 accept_global_perms=False
             )
             queryset = queryset.filter(host__in=allowed_hosts)
 
-        filter_backend = DjangoFilterBackend()
-        queryset = filter_backend.filter_queryset(request, queryset, UninstallRecordFilter)
+        backend = DjangoFilterBackend()
+        queryset = backend.filter_queryset(request, queryset, self.uninstall_record_filterset_class)
 
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = AgentUninstallRecordSerializer(page, many=True)
+            serializer = self.get_serializer(page, many=True)
             paginator = self.paginator
             return SycResponse.success(
                 content={
@@ -1011,7 +1009,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 message="获取卸载记录成功",
             )
 
-        serializer = AgentUninstallRecordSerializer(queryset, many=True)
+        serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(
             content={
                 "results": serializer.data,
@@ -1030,16 +1028,16 @@ class AgentViewSet(viewsets.ModelViewSet):
         请求参数: {"install_record_id": 123}
         """
         from .models import AgentInstallRecord
-        
+
         install_record_id = request.data.get('install_record_id')
         if not install_record_id:
             return SycResponse.error(message="install_record_id 不能为空", code=400)
-        
+
         try:
             install_record = AgentInstallRecord.objects.select_related('host').get(id=install_record_id)
         except AgentInstallRecord.DoesNotExist:
             return SycResponse.error(message="安装记录不存在", code=404)
-        
+
         # 检查权限
         if not request.user.is_superuser:
             from apps.hosts.models import Host
@@ -1052,7 +1050,7 @@ class AgentViewSet(viewsets.ModelViewSet):
             )
             if install_record.host not in allowed_hosts:
                 return SycResponse.error(message="无权限访问此安装记录", code=403)
-        
+
         # 如果安装记录没有关联 Agent，创建一个
         if not install_record.agent:
             agent, _ = Agent.objects.get_or_create(
@@ -1070,20 +1068,20 @@ class AgentViewSet(viewsets.ModelViewSet):
             agent.status = 'pending'
             agent.endpoint = install_record.agent_server_url or ''
             agent.save(update_fields=['status', 'endpoint', 'updated_at'])
-        
+
         # 重新签发 Agent Token
         token_data = AgentService.issue_token(agent, request.user, note="基于安装记录重新生成脚本")
         agent_token = token_data['token']
-        
+
         # 更新安装记录状态
         install_record.status = 'pending'
         install_record.save()
-        
+
         # 基于安装记录的配置重新生成脚本
         # 如果安装记录中的 package_id/package_version 无效，尝试使用最新的可用包
         package_id = install_record.package_id
         package_version = install_record.package_version
-        
+
         # 验证安装包是否存在，如果不存在则尝试使用最新的可用包
         if package_id:
             from .models import AgentPackage
@@ -1093,7 +1091,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 logger.warning(f"安装记录中的 package_id={package_id} 不存在或未启用，将尝试使用最新的可用包")
                 package_id = None
                 package_version = None
-        
+
         if package_version and not package_id:
             from .models import AgentPackage
             os_type = install_record.host.os_type.lower() if install_record.host.os_type else 'linux'
@@ -1112,9 +1110,10 @@ class AgentViewSet(viewsets.ModelViewSet):
                     is_active=True
                 )
             except AgentPackage.DoesNotExist:
-                logger.warning(f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
+                logger.warning(
+                    f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
                 package_version = None
-        
+
         try:
             host_scripts = AgentService.generate_install_script(
                 host=install_record.host,
@@ -1131,7 +1130,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"基于安装记录重新生成脚本失败: {str(e)}", exc_info=True)
             return SycResponse.error(message=f"生成脚本失败: {str(e)}", code=500)
-        
+
         # 格式化返回数据
         scripts = {}
         for os_type, script in host_scripts.items():
@@ -1146,7 +1145,7 @@ class AgentViewSet(viewsets.ModelViewSet):
                 'agent_id': agent.id,
                 'install_record_id': install_record.id,
             })
-        
+
         return SycResponse.success(
             content={
                 'scripts': scripts,
@@ -1165,7 +1164,7 @@ class AgentViewSet(viewsets.ModelViewSet):
 
         # 优先使用版本管理
         default_packages = AgentPackage.objects.filter(is_default=True, is_active=True)
-        
+
         if default_packages.exists():
             # 从版本管理获取下载地址
             download_urls = {}
@@ -1173,10 +1172,10 @@ class AgentViewSet(viewsets.ModelViewSet):
                 if package.os_type not in download_urls:
                     download_urls[package.os_type] = {}
                 download_urls[package.os_type][package.arch] = package.get_download_url()
-            
+
             # 获取版本号（取第一个默认包的版本）
             version = default_packages.first().version if default_packages else 'latest'
-            
+
             return SycResponse.success(
                 content={
                     'download_urls': download_urls,
@@ -1186,5 +1185,5 @@ class AgentViewSet(viewsets.ModelViewSet):
                 },
                 message="获取下载地址成功"
             )
-        
+
         return SycResponse.error(message="未找到可用的 Agent 包", code=404)
