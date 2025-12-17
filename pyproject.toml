@@ -55,4 +55,5 @@ dependencies = [
     "django-otp>=1.6.3",
     "qrcode[pil]>=8.2",
     "django-apscheduler>=0.7.0",
+    "djangorestframework-stubs>=3.16.6",
 ]

@@ -445,8 +445,6 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     script_content = scripts.get('linux', '')
                     script_type = 'shell'
                 
-                # 安装记录已在上面创建，这里不需要再创建
-                
                 # 推送开始安装日志
                 realtime_log_service.push_log(install_task_id, str(host.id), {
                     'host_name': host.name,
@@ -613,5 +611,237 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
             'success_count': success_count,
             'failed_count': failed_count,
             'install_task_id': install_task_id
+        }
+
+    @classmethod
+    def batch_uninstall_agents(
+        cls,
+        agent_ids: list,
+        user,
+        account_id: int = None,
+        uninstall_task_id: str = None,
+        ssh_timeout: int = 300,
+    ) -> Dict[str, Any]:
+        """
+        批量卸载 Agent（通过 SSH）
+        - 停止/禁用 systemd 服务
+        - 删除安装目录 /opt/ops-job-agent
+        - 写入 AgentUninstallRecord 并通过 SSE 推送进度
+        """
+        if not uninstall_task_id:
+            uninstall_task_id = str(uuid.uuid4())
+
+        results = []
+        total = len(agent_ids)
+        completed = 0
+        success_count = 0
+        failed_count = 0
+
+        realtime_log_service.push_status(uninstall_task_id, {
+            'status': 'running',
+            'total': total,
+            'completed': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'message': '开始批量卸载 Agent'
+        })
+
+        agents = Agent.objects.select_related('host').filter(id__in=agent_ids)
+
+        # 卸载脚本（尽量幂等）
+        uninstall_script = """#!/bin/bash
+set -e
+
+SERVICE_NAME="ops-job-agent"
+INSTALL_DIR="/opt/ops-job-agent"
+UNIT_FILE_1="/etc/systemd/system/${SERVICE_NAME}.service"
+UNIT_FILE_2="/lib/systemd/system/${SERVICE_NAME}.service"
+
+echo "[1/3] 停止并禁用服务（如存在）..."
+if systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}\\.service"; then
+  systemctl stop "${SERVICE_NAME}" || true
+  systemctl disable "${SERVICE_NAME}" || true
+fi
+
+echo "[2/3] 删除 systemd unit（如存在）..."
+rm -f "${UNIT_FILE_1}" "${UNIT_FILE_2}" || true
+systemctl daemon-reload || true
+
+echo "[3/3] 清理安装目录（如存在）..."
+if [ -d "${INSTALL_DIR}" ]; then
+  # 备份配置（可选）
+  if [ -f "${INSTALL_DIR}/config/config.yaml" ]; then
+    ts=$(date +%Y%m%d%H%M%S)
+    mkdir -p "/opt/ops-job-agent-backup" || true
+    cp "${INSTALL_DIR}/config/config.yaml" "/opt/ops-job-agent-backup/config.yaml.${ts}.bak" || true
+  fi
+  rm -rf "${INSTALL_DIR}"
+fi
+
+echo "Agent 卸载完成"
+"""
+
+        for agent in agents:
+            host = agent.host
+            try:
+                # 创建卸载记录
+                uninstall_record = AgentUninstallRecord.objects.create(
+                    host=host,
+                    agent=agent,
+                    status='pending',
+                    uninstalled_by=user,
+                    uninstall_task_id=uninstall_task_id,
+                    message='开始卸载'
+                )
+
+                realtime_log_service.push_log(uninstall_task_id, str(host.id), {
+                    'host_name': host.name,
+                    'host_ip': host.ip_address,
+                    'log_type': 'info',
+                    'content': f'开始卸载主机 {host.name} ({host.ip_address}) 的 Agent',
+                    'step_name': '卸载 Agent',
+                    'step_order': 1
+                })
+
+                timeout = max(60, min(ssh_timeout or 300, 900))
+                exec_result = fabric_ssh_manager.execute_script(
+                    host=host,
+                    script_content=uninstall_script,
+                    script_type='shell',
+                    timeout=timeout,
+                    account_id=account_id
+                )
+
+                if exec_result.get('success'):
+                    uninstall_record.status = 'success'
+                    uninstall_record.message = '卸载脚本执行成功'
+                    success_count += 1
+
+                    # 安全：吊销 token，标记离线
+                    try:
+                        cls.revoke_active_token(agent)
+                    except Exception:
+                        # 不影响卸载结果
+                        pass
+                    try:
+                        agent.status = 'offline'
+                        agent.save(update_fields=['status', 'updated_at'])
+                    except Exception:
+                        pass
+
+                    results.append({
+                        'agent_id': agent.id,
+                        'host_id': host.id,
+                        'host_name': host.name,
+                        'success': True,
+                        'message': uninstall_record.message
+                    })
+
+                    realtime_log_service.push_log(uninstall_task_id, str(host.id), {
+                        'host_name': host.name,
+                        'host_ip': host.ip_address,
+                        'log_type': 'info',
+                        'content': f'主机 {host.name} Agent 卸载成功',
+                        'step_name': '卸载 Agent',
+                        'step_order': 1
+                    })
+                else:
+                    stderr = exec_result.get('stderr') or exec_result.get('message') or '卸载失败'
+                    uninstall_record.status = 'failed'
+                    uninstall_record.message = stderr
+                    uninstall_record.error_message = stderr
+                    uninstall_record.error_detail = exec_result.get('stderr', '')
+                    failed_count += 1
+
+                    results.append({
+                        'agent_id': agent.id,
+                        'host_id': host.id,
+                        'host_name': host.name,
+                        'success': False,
+                        'message': uninstall_record.message
+                    })
+
+                    realtime_log_service.push_log(uninstall_task_id, str(host.id), {
+                        'host_name': host.name,
+                        'host_ip': host.ip_address,
+                        'log_type': 'error',
+                        'content': f'主机 {host.name} Agent 卸载失败: {stderr}',
+                        'step_name': '卸载 Agent',
+                        'step_order': 1
+                    })
+
+                uninstall_record.save()
+                completed += 1
+
+                realtime_log_service.push_status(uninstall_task_id, {
+                    'status': 'running',
+                    'total': total,
+                    'completed': completed,
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'message': f'已完成 {completed}/{total} 个 Agent 的卸载'
+                })
+
+            except Exception as e:
+                failed_count += 1
+                completed += 1
+                err = f'卸载失败: {str(e)}'
+
+                try:
+                    AgentUninstallRecord.objects.create(
+                        host=host,
+                        agent=agent,
+                        status='failed',
+                        uninstalled_by=user,
+                        uninstall_task_id=uninstall_task_id,
+                        message=err,
+                        error_message=err,
+                        error_detail=str(e)
+                    )
+                except Exception:
+                    pass
+
+                results.append({
+                    'agent_id': getattr(agent, 'id', None),
+                    'host_id': getattr(host, 'id', None),
+                    'host_name': getattr(host, 'name', 'Unknown'),
+                    'success': False,
+                    'message': err
+                })
+
+                realtime_log_service.push_log(uninstall_task_id, str(getattr(host, 'id', '0')), {
+                    'host_name': getattr(host, 'name', 'Unknown'),
+                    'host_ip': getattr(host, 'ip_address', ''),
+                    'log_type': 'error',
+                    'content': f'主机 {getattr(host, "name", "Unknown")} 卸载异常: {err}',
+                    'step_name': '卸载 Agent',
+                    'step_order': 1
+                })
+
+                realtime_log_service.push_status(uninstall_task_id, {
+                    'status': 'running',
+                    'total': total,
+                    'completed': completed,
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'message': f'已完成 {completed}/{total} 个 Agent 的卸载'
+                })
+
+        final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
+        realtime_log_service.push_status(uninstall_task_id, {
+            'status': final_status,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': f'批量卸载完成：成功 {success_count} 个，失败 {failed_count} 个'
+        })
+
+        return {
+            'results': results,
+            'total': len(results),
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'uninstall_task_id': uninstall_task_id
         }
 

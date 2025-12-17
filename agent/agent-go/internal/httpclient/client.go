@@ -10,7 +10,7 @@ import (
 	"ops-job-agent/internal/api"
 )
 
-// Client 与控制面交互的最小 HTTP 客户端（基于 resty 封装）
+// Client 与控制面交互的最小http客户端
 type Client struct {
 	baseURL string
 	token   string
@@ -70,7 +70,7 @@ func (c *Client) Register(ctx context.Context, info api.AgentInfo) (*api.AgentIn
 	return &resp, nil
 }
 
-// Heartbeat 上报心跳（可根据你的后端接口调整 payload）
+// Heartbeat 上报心跳（可根据后端接口调整请求体）
 func (c *Client) Heartbeat(ctx context.Context, agentID string, payload api.HeartbeatPayload) error {
 	path := fmt.Sprintf("/api/agents/%s/heartbeat/", agentID)
 	return c.doJSON(ctx, resty.MethodPost, path, payload, nil)

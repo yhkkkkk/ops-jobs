@@ -50,7 +50,7 @@ func NewExecutor(logDir string) *Executor {
 // ExecuteTask 执行任务
 func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallback func(string)) (*api.TaskResult, error) {
 	var err error
-	
+
 	// 创建任务上下文，支持取消
 	taskCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -233,7 +233,7 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 				ErrorCode:  int(errors.ErrCodeTimeout),
 			}, nil
 		}
-		case waitErr = <-doneCh:
+	case waitErr = <-doneCh:
 		// 命令正常完成
 		finishedAt = time.Now()
 		err = waitErr
@@ -377,4 +377,3 @@ func GetCurrentUser() string {
 	}
 	return u.Username
 }
-
