@@ -127,6 +127,16 @@ export const agentsApi = {
     return http.post('/agents/batch_disable/', data)
   },
 
+  // 删除 Agent（仅允许删除 pending 状态）
+  deleteAgent(id: number, data: { confirmed: boolean }): Promise<void> {
+    return http.delete(`/agents/${id}/`, { data })
+  },
+
+  // 批量删除 Agent（仅允许删除 pending 状态）
+  batchDelete(data: BatchOperationParams): Promise<{ count: number }> {
+    return http.post('/agents/batch_delete/', data)
+  },
+
   // 生成安装脚本
   generateInstallScript(data: {
     host_ids: number[]
@@ -190,6 +200,43 @@ export const agentsApi = {
     status?: string
   }): Promise<PaginatedResponse<any>> {
     return http.get('/agents/install_records/', { params })
+  },
+
+  // 基于安装记录重新生成脚本
+  regenerateScriptFromRecord(data: {
+    install_record_id: number
+  }): Promise<{
+    scripts: Record<string, Array<{
+      host_id: number
+      host_name: string
+      host_ip: string
+      script: string
+      agent_token: string
+      agent_id: number
+      install_record_id: number
+    }>>
+    install_mode: string
+    agent_server_url: string
+    notice?: string
+  }> {
+    return http.post('/agents/install_records/regenerate_script/', data)
+  },
+
+  // 为 Agent 重新生成安装脚本（用于 pending 状态的 Agent）
+  regenerateScript(agentId: number): Promise<{
+    scripts: Record<string, Array<{
+      host_id: number
+      host_name: string
+      host_ip: string
+      script: string
+      agent_token: string
+      agent_id: number
+    }>>
+    install_mode: string
+    agent_server_url: string
+    notice?: string
+  }> {
+    return http.post(`/agents/${agentId}/regenerate_script/`)
   },
 
   // 获取下载地址

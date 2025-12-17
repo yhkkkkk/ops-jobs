@@ -241,9 +241,14 @@ func (a *Agent) heartbeatLoop() {
 				}
 				if err := a.client.Heartbeat(a.ctx, a.info.ID, payload); err != nil {
 					logger.GetLogger().WithError(err).Error("heartbeat failed")
-					// 心跳失败时尝试重新注册
-					if err := a.register(); err != nil {
-						logger.GetLogger().WithError(err).Error("re-register failed")
+					// 心跳失败时尝试重新获取 Agent ID
+					if a.info == nil || a.info.ID == "" {
+						agentID, err := a.getAgentIDFromInfo()
+						if err != nil {
+							logger.GetLogger().WithError(err).Error("re-get agent ID failed")
+						} else {
+							a.info.ID = agentID
+						}
 					}
 				}
 			}
@@ -426,12 +431,20 @@ func (a *Agent) register() error {
 			"mode":       "agent-server",
 		}).Info("agent registered to agent-server")
 	} else {
-		// Direct 模式：向控制面注册
-		registered, err := a.client.Register(a.ctx, info)
+		// Direct 模式：直接使用配置文件中的 agent_token（已经是正式 token）
+		// 通过 /api/agents/me/ 接口获取 Agent 信息（包括 ID）
+		agentID, err := a.getAgentIDFromInfo()
 		if err != nil {
-			return err
+			return fmt.Errorf("get agent ID failed: %w", err)
 		}
-		a.info = registered
+
+		a.info = &AgentInfo{
+			ID:     agentID,
+			Name:   a.cfg.AgentName,
+			Labels: a.cfg.AgentLabels,
+			System: &a.system,
+		}
+
 		// 更新日志流的 agent ID
 		if a.logStream != nil {
 			// 重新创建日志流以更新 agent ID
@@ -450,7 +463,7 @@ func (a *Agent) register() error {
 			"agent_id":   a.info.ID,
 			"agent_name": a.info.Name,
 			"mode":       "direct",
-		}).Info("agent registered to control plane")
+		}).Info("agent initialized (using agent_token directly)")
 	}
 	return nil
 }
@@ -646,6 +659,35 @@ func (a *Agent) connectWithBackoff() error {
 		retry.LastErrorOnly(true),
 		retry.Context(a.ctx),
 	)
+}
+
+// getAgentIDFromInfo 通过 Agent 信息接口获取 Agent ID
+func (a *Agent) getAgentIDFromInfo() (string, error) {
+	// 通过 /api/agents/me/ 接口获取 Agent 信息
+	var resp struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+
+	req := a.client.GetClient().R().
+		SetContext(a.ctx).
+		SetResult(&resp)
+
+	respData, err := req.Get("/api/agents/me/")
+	if err != nil {
+		return "", fmt.Errorf("get agent info: %w", err)
+	}
+
+	if respData.IsError() {
+		return "", fmt.Errorf("get agent info: status=%d", respData.StatusCode())
+	}
+
+	if resp.ID == "" {
+		return "", fmt.Errorf("agent ID not found in response")
+	}
+
+	return resp.ID, nil
 }
 
 func listIPs() []string {

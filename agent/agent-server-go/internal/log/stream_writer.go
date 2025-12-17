@@ -16,7 +16,7 @@ type StreamWriter struct {
 	key    string
 }
 
-// NewStreamWriter 创建流写入器，复用 Redis 配置
+// NewStreamWriter 创建流写入器，复用 redis 配置
 func NewStreamWriter(cfg *config.Config) (*StreamWriter, error) {
 	if !cfg.Redis.Enabled || !cfg.LogStream.Enabled {
 		return nil, nil
@@ -53,4 +53,3 @@ func (w *StreamWriter) PushLogs(ctx context.Context, entries []map[string]interf
 	_, err := pipe.Exec(ctx)
 	return err
 }
-

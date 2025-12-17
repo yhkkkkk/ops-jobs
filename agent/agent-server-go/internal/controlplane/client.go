@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/pkg/api"
 
 	"github.com/go-resty/resty/v2"
@@ -42,30 +41,6 @@ func NewClient(baseURL, token, scope string, timeout time.Duration) *Client {
 		timeout: timeout,
 		cli:     rc,
 	}
-}
-
-// RegisterAgent 注册 Agent 到控制面
-func (c *Client) RegisterAgent(ctx context.Context, agentInfo *api.AgentInfo) error {
-	path := "/api/agents/register/"
-	resp, err := c.cli.R().
-		SetContext(ctx).
-		SetBody(agentInfo).
-		Post(path)
-
-	if err != nil {
-		return fmt.Errorf("register agent: %w", err)
-	}
-
-	if resp.IsError() {
-		return fmt.Errorf("register agent: status=%d, body=%s", resp.StatusCode(), resp.String())
-	}
-
-	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id":   agentInfo.ID,
-		"agent_name": agentInfo.Name,
-	}).Info("agent registered to control plane")
-
-	return nil
 }
 
 // SendHeartbeat 发送心跳到控制面

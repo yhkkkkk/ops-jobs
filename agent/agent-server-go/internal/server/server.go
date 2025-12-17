@@ -72,22 +72,22 @@ func New(cfg *config.Config) (*Server, error) {
 		logger.GetLogger().Info("asynq task queue initialized")
 	}
 
-	// 创建任务分发器（已移除轮询拉取控制面任务，采用控制面主动推送）
+	// 创建任务分发器（
 	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, taskQueue, asynqEnabled)
 
-	// 创建日志流写入器（可选）
+	// 创建日志流写入器
 	logStream, err := logstream.NewStreamWriter(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create log stream writer: %w", err)
 	}
 
-	// 创建结果流写入器（可选）
+	// 创建结果流写入器
 	resultStream, err := logstream.NewResultStreamWriter(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create result stream writer: %w", err)
 	}
 
-	// 创建状态流写入器（可选）
+	// 创建状态流写入器
 	statusStream, err := logstream.NewStatusStreamWriter(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create status stream writer: %w", err)
@@ -252,20 +252,6 @@ func (s *Server) handleRegister(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	// 注册到控制面
-	agentInfo := &api.AgentInfo{
-		ID:     agentID,
-		Name:   req.Name,
-		Token:  conn.Token,
-		Labels: req.Labels,
-		System: req.System,
-		Status: "active",
-	}
-	if err := s.cpClient.RegisterAgent(context.Background(), agentInfo); err != nil {
-		logger.GetLogger().WithError(err).Error("register agent to control plane failed")
-		// 不返回错误，允许 Agent 先连接
 	}
 
 	wsURL := fmt.Sprintf("ws://%s:%d/ws/agent/%s?token=%s",
@@ -601,7 +587,7 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 				// 通道关闭，发送剩余日志
 				for taskID, logs := range taskLogs {
 					if len(logs) > 0 {
-					s.pushLogs(context.Background(), conn.ID, taskID, logs)
+						s.pushLogs(context.Background(), conn.ID, taskID, logs)
 					}
 				}
 				return
@@ -645,11 +631,11 @@ func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []ap
 		now := time.Now().UnixMilli()
 		for _, l := range logs {
 			entries = append(entries, map[string]interface{}{
-				"task_id":    taskID,
-				"agent_id":   agentID,
-				"timestamp":  l.Timestamp,
-				"content":    l.Content,
-				"stream":     l.Stream,
+				"task_id":     taskID,
+				"agent_id":    agentID,
+				"timestamp":   l.Timestamp,
+				"content":     l.Content,
+				"stream":      l.Stream,
 				"received_at": now,
 			})
 		}

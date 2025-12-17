@@ -24,6 +24,7 @@ class AgentService:
     def _hash_token(raw: str) -> str:
         return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
+
     @classmethod
     def issue_token(cls, agent: Agent, user, expired_at=None, note: str = '') -> Dict[str, Any]:
         """签发新 token，吊销旧 token，返回明文（仅此一次）"""
@@ -74,17 +75,42 @@ class AgentService:
     @staticmethod
     def audit(user, action: str, agent: Agent, request=None, success: bool = True, error_message: str = '', extra: Optional[Dict[str, Any]] = None):
         """写审计日志"""
+        extra_data = extra or {}
+        
+        # 处理 agent 已被删除的情况（如批量删除场景）
+        try:
+            # 尝试访问 agent 的属性
+            if agent and hasattr(agent, 'id') and agent.id:
+                resource_id = agent.id
+                host_id = getattr(agent, 'host_id', None) or extra_data.get('host_id')
+                try:
+                    resource_name = str(agent)
+                except (AttributeError, ValueError):
+                    resource_name = extra_data.get('host_name', 'Unknown')
+            else:
+                # agent 无效或已删除，从 extra 中获取信息
+                resource_id = extra_data.get('agent_id') or extra_data.get('host_id')
+                host_id = extra_data.get('host_id', 'Unknown')
+                resource_name = extra_data.get('host_name', 'Unknown')
+        except (AttributeError, ValueError, TypeError):
+            # agent 对象无效，从 extra 中获取信息
+            resource_id = extra_data.get('agent_id') or extra_data.get('host_id')
+            host_id = extra_data.get('host_id', 'Unknown')
+            resource_name = extra_data.get('host_name', 'Unknown')
+        
+        description = f"{action} agent {host_id}"
+        
         AuditLogService.log_action(
             user=user,
             action=action,
-            description=f"{action} agent {agent.host_id}",
+            description=description,
             request=request,
             success=success,
             error_message=error_message,
-            resource_type=ContentType.objects.get_for_model(agent),
-            resource_id=agent.id,
-            resource_name=str(agent),
-            extra_data=extra or {},
+            resource_type=ContentType.objects.get_for_model(Agent),
+            resource_id=resource_id,
+            resource_name=resource_name,
+            extra_data=extra_data,
         )
 
     @staticmethod
@@ -148,20 +174,23 @@ class AgentService:
         if package:
             return package.get_download_url()
         
+        # 如果默认版本不存在，尝试使用最新的可用包
+        package = AgentPackage.objects.filter(
+            is_active=True,
+            os_type=os_type,
+            arch=arch
+        ).order_by('-created_at').first()
+        if package:
+            return package.get_download_url()
+        
         # 如果都没有且要求验证，抛出异常
         if raise_if_not_found:
             raise ValueError(f"未找到可用的 Agent 安装包 (OS: {os_type}, Arch: {arch})，请先上传安装包")
         
-        # 如果都没有，使用配置中的默认地址（向后兼容，但不推荐）
-        from apps.system_config.models import ConfigManager
-        base_url = ConfigManager.get('agent.download_url', 'http://localhost:8000/static/agent/')
-        if os_type == 'windows':
-            return f"{base_url}ops-job-agent-windows-amd64.exe"
-        else:
-            return f"{base_url}ops-job-agent-linux-amd64"
+        return ''
 
     @classmethod
-    def generate_install_script(cls, host: Host, token: str, install_mode: str = 'agent-server',
+    def generate_install_script(cls, host: Host, agent_token: str, install_mode: str = 'agent-server',
                                 agent_server_url: str = '', agent_server_backup_url: str = '',
                                 download_url: str = '', ws_backoff_initial_ms: int = 1000,
                                 ws_backoff_max_ms: int = 30000, ws_max_retries: int = 6,
@@ -170,7 +199,7 @@ class AgentService:
         生成 Agent 安装脚本
         Args:
             host: 主机对象
-            token: Agent Token
+            agent_token: Agent Token（用于 Agent 认证）
             install_mode: 安装模式 ('direct' 或 'agent-server')
             agent_server_url: Agent-Server 地址（agent-server 模式需要）
             download_url: Agent 二进制下载地址
@@ -202,7 +231,7 @@ AGENT_SERVER_BACKUP_URL="{agent_server_backup_url}"
 WS_BACKOFF_INITIAL_MS="{ws_backoff_initial_ms}"
 WS_BACKOFF_MAX_MS="{ws_backoff_max_ms}"
 WS_MAX_RETRIES="{ws_max_retries}"
-TOKEN="{token}"
+AGENT_TOKEN="{agent_token}"
 INSTALL_DIR="/opt/ops-job-agent"
 BINARY_NAME="ops-job-agent"
 SERVICE_NAME="ops-job-agent"
@@ -246,7 +275,7 @@ ws_max_retries: $WS_MAX_RETRIES
             cp_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
             linux_script += f"""control_plane_url: {cp_url}
 """
-        linux_script += """agent_token: "$TOKEN"
+        linux_script += """agent_token: "$AGENT_TOKEN"
 log_level: info
 EOF
 
@@ -328,34 +357,74 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
         
         for host in hosts:
             try:
-                # 检查是否已有 Agent
-                if hasattr(host, 'agent') and host.agent and not allow_reinstall:
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'success': False,
-                        'message': '该主机已安装 Agent（allow_reinstall=false）'
-                    })
-                    continue
+                # 检查是否已有 Agent（如果已有且在线，不允许重新安装）
+                if hasattr(host, 'agent') and host.agent:
+                    if host.agent.status == 'online' and not allow_reinstall:
+                        results.append({
+                            'host_id': host.id,
+                            'host_name': host.name,
+                            'success': False,
+                            'message': '该主机已有在线 Agent（allow_reinstall=false）'
+                        })
+                        continue
                 
-                # 为每个主机签发 Token
-                # 先创建 Agent 对象
-                agent, created = Agent.objects.get_or_create(
+                # 创建或获取 Agent（status='pending'）
+                agent, agent_created = Agent.objects.get_or_create(
                     host=host,
-                    defaults={'status': 'pending'}
+                    defaults={
+                        'status': 'pending',
+                        'endpoint': agent_server_url or '',
+                    }
                 )
                 
-                # 签发 Token
-                token_data = cls.issue_token(agent, user, note='批量安装')
-                token = token_data['token']
+                # 如果 Agent 已存在，更新状态和配置
+                if not agent_created:
+                    agent.status = 'pending'
+                    agent.endpoint = agent_server_url or ''
+                    agent.save(update_fields=['status', 'endpoint', 'updated_at'])
                 
-                # 保存 agent_id 用于后续审计日志
-                agent_id = agent.id
+                # 签发 Agent Token
+                token_data = cls.issue_token(agent, user, note="Agent 安装")
+                agent_token = token_data['token']
                 
-                # 生成安装脚本
+                # 创建或更新安装记录
+                from .models import AgentInstallRecord
+                install_record, created = AgentInstallRecord.objects.get_or_create(
+                    host=host,
+                    agent=agent,
+                    status='pending',
+                    defaults={
+                        'install_mode': install_mode,
+                        'agent_server_url': agent_server_url,
+                        'agent_server_backup_url': agent_server_backup_url,
+                        'ws_backoff_initial_ms': ws_backoff_initial_ms,
+                        'ws_backoff_max_ms': ws_backoff_max_ms,
+                        'ws_max_retries': ws_max_retries,
+                        'package_id': package_id,
+                        'package_version': package_version,
+                        'installed_by': user,
+                        'install_task_id': install_task_id,
+                    }
+                )
+                if not created:
+                    # 更新现有安装记录的配置（允许重新安装）
+                    install_record.agent = agent
+                    install_record.install_mode = install_mode
+                    install_record.agent_server_url = agent_server_url
+                    install_record.agent_server_backup_url = agent_server_backup_url
+                    install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
+                    install_record.ws_backoff_max_ms = ws_backoff_max_ms
+                    install_record.ws_max_retries = ws_max_retries
+                    install_record.package_id = package_id
+                    install_record.package_version = package_version
+                    install_record.status = 'pending'
+                    install_record.install_task_id = install_task_id
+                    install_record.save()
+                
+                # 生成安装脚本（使用 Agent Token）
                 scripts = cls.generate_install_script(
                     host=host,
-                    token=token,
+                    agent_token=agent_token,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
                     agent_server_backup_url=agent_server_backup_url,
@@ -376,16 +445,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     script_content = scripts.get('linux', '')
                     script_type = 'shell'
                 
-                # 创建安装记录
-                install_record = AgentInstallRecord.objects.create(
-                    host=host,
-                    agent=agent,
-                    install_mode=install_mode,
-                    status='pending',
-                    agent_server_url=agent_server_url,
-                    installed_by=user,
-                    install_task_id=install_task_id
-                )
+                # 安装记录已在上面创建，这里不需要再创建
                 
                 # 推送开始安装日志
                 realtime_log_service.push_log(install_task_id, str(host.id), {
@@ -410,13 +470,13 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     
                     config_summary = f"primary={agent_server_url or 'n/a'}, backup={agent_server_backup_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                     if result['success']:
-                        install_record.status = 'success'
-                        install_record.message = f'安装成功 | {config_summary}'
+                        # 安装脚本执行成功，Agent 状态保持 pending，等待首次上线
+                        install_record.status = 'pending'  # 等待 Agent 首次上线
+                        install_record.message = f'安装脚本执行成功，等待 Agent 首次上线 | {config_summary}'
                         success_count += 1
                         results.append({
                             'host_id': host.id,
                             'host_name': host.name,
-                            'agent_id': agent.id,
                             'success': True,
                             'message': install_record.message
                         })

@@ -33,6 +33,11 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
+// GetClient 获取底层的 resty client（用于特殊请求）
+func (c *Client) GetClient() *resty.Client {
+	return c.cli
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
 	req := c.cli.R().
 		SetContext(ctx).
@@ -55,7 +60,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, r
 	return nil
 }
 
-// Register 向控制面注册 agent，返回 agent 信息（含 id）
+// Register 向 Agent-Server 注册 agent，返回 agent 信息（含 id）
+// 注意：此方法仅在 agent-server 模式下使用，direct 模式不再需要注册
 func (c *Client) Register(ctx context.Context, info api.AgentInfo) (*api.AgentInfo, error) {
 	var resp api.AgentInfo
 	if err := c.doJSON(ctx, resty.MethodPost, "/api/agents/register/", info, &resp); err != nil {
@@ -68,21 +74,6 @@ func (c *Client) Register(ctx context.Context, info api.AgentInfo) (*api.AgentIn
 func (c *Client) Heartbeat(ctx context.Context, agentID string, payload api.HeartbeatPayload) error {
 	path := fmt.Sprintf("/api/agents/%s/heartbeat/", agentID)
 	return c.doJSON(ctx, resty.MethodPost, path, payload, nil)
-}
-
-// FetchTask 拉取下一条任务；没有任务时应返回 (nil, nil)
-func (c *Client) FetchTask(ctx context.Context, agentID string) (*api.TaskSpec, error) {
-	path := fmt.Sprintf("/api/agents/%s/next-task/", agentID)
-	var resp api.TaskSpec
-	err := c.doJSON(ctx, resty.MethodPost, path, map[string]any{}, &resp)
-	if err != nil {
-		// 这里暂不区分 204/404 等情况，后续你可以按后端实际行为细化
-		return nil, err
-	}
-	if resp.ID == "" {
-		return nil, nil
-	}
-	return &resp, nil
 }
 
 // ReportResult 上报任务执行结果

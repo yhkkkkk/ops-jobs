@@ -1,8 +1,10 @@
 import logging
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
+from django.utils import timezone
+from django.db import transaction
 from guardian.shortcuts import get_objects_for_user
 
 from utils.responses import SycResponse
@@ -136,6 +138,57 @@ class AgentViewSet(viewsets.ModelViewSet):
         agent = self.get_object()
         serializer = self.get_serializer(agent)
         return SycResponse.success(content=serializer.data, message="获取 Agent 详情成功")
+
+    @action(detail=False, methods=["get"], url_path="me")
+    def me(self, request):
+        """
+        通过 token 获取当前 Agent 信息（用于 Agent 首次启动时获取自己的 ID）
+        """
+        # 从 Authorization header 读取 token
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if not auth_header.startswith('Bearer '):
+            return SycResponse.error(message="缺少 Authorization Bearer token", code=401)
+        token = auth_header.replace('Bearer ', '').strip()
+        
+        if not token:
+            return SycResponse.error(message="token 不能为空", code=400)
+        
+        # 通过 token 查找 Agent
+        from .models import AgentToken
+        import hashlib
+        
+        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        
+        # 查找有效的 token
+        agent_token = AgentToken.objects.filter(
+            token_hash=token_hash,
+            revoked_at__isnull=True
+        ).first()
+        
+        if not agent_token:
+            return SycResponse.error(message="token 无效或已吊销", code=403)
+        
+        # 检查 token 是否过期
+        if agent_token.expired_at and agent_token.expired_at <= timezone.now():
+            return SycResponse.error(message="token 已过期", code=403)
+        
+        agent = agent_token.agent
+        
+        # 更新 Agent 状态为 online（如果之前是 pending）
+        if agent.status == 'pending':
+            agent.status = 'online'
+            agent.save(update_fields=['status', 'updated_at'])
+        
+        serializer = AgentDetailSerializer(agent)
+        return SycResponse.success(
+            content={
+                'id': str(agent.host_id),  # Agent ID 就是 host_id
+                'name': agent.host.name,
+                'status': agent.status,
+                **serializer.data
+            },
+            message="获取 Agent 信息成功"
+        )
 
     @action(detail=True, methods=["post"], url_path="issue_token")
     def issue_token(self, request, pk=None):
@@ -283,6 +336,43 @@ class AgentViewSet(viewsets.ModelViewSet):
             logger.error("管控 Agent 异常: %s", exc, exc_info=True)
             return SycResponse.error(message=f"管控异常: {exc}")
 
+    def destroy(self, request, *args, **kwargs):
+        """删除 Agent（仅允许删除 pending 状态的 Agent）"""
+        agent = self.get_object()
+        
+        # 只允许删除 pending 状态的 Agent
+        if agent.status != 'pending':
+            return SycResponse.error(
+                message=f"只能删除待激活状态的 Agent，当前状态为：{agent.get_status_display()}",
+                code=400
+            )
+        
+        # 高危操作二次确认
+        confirmed = request.data.get("confirmed", False)
+        if not confirmed:
+            return SycResponse.error(
+                message="高危操作需要二次确认，请设置 confirmed=true",
+                code=400
+            )
+        
+        host_name = agent.host.name
+        host_id = agent.host_id
+        agent_id = agent.id
+        # 在删除前保存信息用于审计日志
+        agent.delete()
+        # 注意：agent 已删除，创建一个临时对象用于审计（仅用于类型检查）
+        from .models import Agent
+        temp_agent = Agent(id=agent_id, host_id=host_id)
+        AgentService.audit(
+            request.user, 
+            "delete_agent", 
+            temp_agent, 
+            request=request, 
+            success=True, 
+            extra={"host_name": host_name, "host_id": host_id, "agent_id": agent_id}
+        )
+        return SycResponse.success(message=f"Agent ({host_name}) 删除成功")
+
     @action(detail=False, methods=["post"], url_path="batch_disable")
     def batch_disable(self, request):
         """批量禁用 Agent（带限流）"""
@@ -327,6 +417,108 @@ class AgentViewSet(viewsets.ModelViewSet):
         return SycResponse.success(
             content={"count": count},
             message=f"批量禁用 {count} 个 Agent 成功"
+        )
+
+    @action(detail=True, methods=["post"], url_path="regenerate_script")
+    def regenerate_script(self, request, pk=None):
+        """
+        为指定 Agent 重新生成安装脚本（用于 pending 状态的 Agent）
+        这是备用操作，用于用户生成脚本后没有复制也没有安装的场景
+        """
+        agent = self.get_object()
+        
+        # 只有 pending 状态的 Agent 才能重新生成脚本
+        if agent.status != 'pending':
+            return SycResponse.error(message="只有待激活状态的 Agent 才能重新生成脚本", code=400)
+        
+        # 查找最新的安装记录
+        install_record = AgentInstallRecord.objects.filter(
+            agent=agent,
+            host=agent.host
+        ).order_by('-installed_at').first()
+        
+        if not install_record:
+            return SycResponse.error(message="未找到安装记录，无法重新生成脚本", code=404)
+        
+        # 重新签发 token
+        token_data = AgentService.issue_token(agent, request.user, note="重新生成安装脚本")
+        agent_token = token_data['token']
+        
+        # 验证安装包是否存在
+        package_id = install_record.package_id
+        package_version = install_record.package_version
+        
+        # 如果安装记录中的 package_id/package_version 无效，尝试使用最新的可用包
+        if package_id:
+            from .models import AgentPackage
+            try:
+                package = AgentPackage.objects.get(id=package_id, is_active=True)
+            except AgentPackage.DoesNotExist:
+                logger.warning(f"安装记录中的 package_id={package_id} 不存在或未启用，将尝试使用最新的可用包")
+                package_id = None
+                package_version = None
+        
+        if package_version and not package_id:
+            from .models import AgentPackage
+            os_type = agent.host.os_type.lower() if agent.host.os_type else 'linux'
+            if 'windows' in os_type:
+                os_type = 'windows'
+            elif 'darwin' in os_type or 'macos' in os_type:
+                os_type = 'darwin'
+            else:
+                os_type = 'linux'
+            arch = 'amd64'
+            try:
+                package = AgentPackage.objects.get(
+                    version=package_version,
+                    os_type=os_type,
+                    arch=arch,
+                    is_active=True
+                )
+            except AgentPackage.DoesNotExist:
+                logger.warning(f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
+                package_version = None
+        
+        # 生成安装脚本
+        try:
+            host_scripts = AgentService.generate_install_script(
+                host=agent.host,
+                agent_token=agent_token,
+                install_mode=install_record.install_mode,
+                agent_server_url=install_record.agent_server_url,
+                agent_server_backup_url=install_record.agent_server_backup_url or '',
+                ws_backoff_initial_ms=install_record.ws_backoff_initial_ms,
+                ws_backoff_max_ms=install_record.ws_backoff_max_ms,
+                ws_max_retries=install_record.ws_max_retries,
+                package_version=package_version,
+                package_id=package_id,
+            )
+        except Exception as e:
+            logger.error(f"为 Agent {agent.id} 重新生成脚本失败: {str(e)}", exc_info=True)
+            return SycResponse.error(message=f"生成脚本失败: {str(e)}", code=500)
+        
+        # 格式化返回数据
+        scripts = {}
+        for os_type, script in host_scripts.items():
+            if os_type not in scripts:
+                scripts[os_type] = []
+            scripts[os_type].append({
+                'host_id': agent.host.id,
+                'host_name': agent.host.name,
+                'host_ip': agent.host.ip_address,
+                'script': script,
+                'agent_token': agent_token,
+                'agent_id': agent.id,
+            })
+        
+        return SycResponse.success(
+            content={
+                'scripts': scripts,
+                'install_mode': install_record.install_mode,
+                'agent_server_url': install_record.agent_server_url,
+                'notice': '这是重新生成的安装脚本，旧的 token 已失效，请使用新的 token'
+            },
+            message="重新生成安装脚本成功"
         )
 
     @action(detail=False, methods=["post"], url_path="generate_install_script")
@@ -375,37 +567,60 @@ class AgentViewSet(viewsets.ModelViewSet):
                     errors.append(f"主机 {host.name} ({host.ip_address}): {str(e)}")
                     continue
 
-                # 检查是否已有 Agent
-                if hasattr(host, "agent") and host.agent:
-                    # 如果已有 Agent，使用现有 Token
-                    if host.agent.active_token_hash:
-                        # 无法获取明文 Token，需要重新签发
-                        token_data = AgentService.issue_token(
-                            host.agent, request.user, note="安装脚本生成"
-                        )
-                        token = token_data["token"]
-                    else:
-                        token_data = AgentService.issue_token(
-                            host.agent, request.user, note="安装脚本生成"
-                        )
-                        token = token_data["token"]
-                else:
-                    # 创建 Agent 对象（生成脚本时需要 token，所以需要创建 Agent）
-                    # 注意：这只是为了生成脚本，实际安装需要手动执行脚本或使用批量安装功能
-                    agent, created = Agent.objects.get_or_create(
-                        host=host,
-                        defaults={"status": "pending"},
-                    )
-                    # 签发 Token
-                    token_data = AgentService.issue_token(
-                        agent, request.user, note="安装脚本生成"
-                    )
-                    token = token_data["token"]
+                # 创建或获取 Agent（status='pending'）
+                agent, agent_created = Agent.objects.get_or_create(
+                    host=host,
+                    defaults={
+                        'status': 'pending',
+                        'endpoint': agent_server_url or '',
+                    }
+                )
+                
+                # 如果 Agent 已存在，更新状态和配置
+                if not agent_created:
+                    agent.status = 'pending'
+                    agent.endpoint = agent_server_url or ''
+                    agent.save(update_fields=['status', 'endpoint', 'updated_at'])
+                
+                # 签发 Agent Token
+                token_data = AgentService.issue_token(agent, request.user, note="生成安装脚本")
+                agent_token = token_data['token']
+                
+                # 创建或更新安装记录
+                install_record, created = AgentInstallRecord.objects.get_or_create(
+                    host=host,
+                    agent=agent,
+                    status='pending',
+                    defaults={
+                        'install_mode': install_mode,
+                        'agent_server_url': agent_server_url,
+                        'agent_server_backup_url': agent_server_backup_url,
+                        'ws_backoff_initial_ms': ws_backoff_initial_ms,
+                        'ws_backoff_max_ms': ws_backoff_max_ms,
+                        'ws_max_retries': ws_max_retries,
+                        'package_id': package_id,
+                        'package_version': package_version,
+                        'installed_by': request.user,
+                    }
+                )
+                if not created:
+                    # 更新现有安装记录的配置（允许重新生成脚本）
+                    install_record.agent = agent
+                    install_record.install_mode = install_mode
+                    install_record.agent_server_url = agent_server_url
+                    install_record.agent_server_backup_url = agent_server_backup_url
+                    install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
+                    install_record.ws_backoff_max_ms = ws_backoff_max_ms
+                    install_record.ws_max_retries = ws_max_retries
+                    install_record.package_id = package_id
+                    install_record.package_version = package_version
+                    install_record.status = 'pending'
+                    install_record.save()
 
-                # 生成安装脚本
+                # 生成安装脚本（使用 Agent Token）
                 host_scripts = AgentService.generate_install_script(
                     host=host,
-                    token=token,
+                    agent_token=agent_token,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
                     agent_server_backup_url=agent_server_backup_url,
@@ -433,7 +648,9 @@ class AgentViewSet(viewsets.ModelViewSet):
                     'host_name': host.name,
                     'host_ip': host.ip_address,
                     'script': script,
-                    'token': token  # 注意：这里返回明文 token，前端需要一次性显示
+                    'agent_token': agent_token,  # Agent Token
+                    'agent_id': agent.id,  # Agent ID（用于重新生成脚本）
+                    'install_record_id': install_record.id,
                 })
 
         if errors:
@@ -642,6 +859,141 @@ class AgentViewSet(viewsets.ModelViewSet):
                 "page_size": len(serializer.data),
             },
             message="获取安装记录成功",
+        )
+
+    @action(detail=False, methods=["post"], url_path="install_records/regenerate_script")
+    def regenerate_script_from_record(self, request):
+        """
+        基于安装记录重新生成安装脚本
+        用于用户想重新查看/获取安装脚本的场景
+        请求参数: {"install_record_id": 123}
+        """
+        from .models import AgentInstallRecord
+        
+        install_record_id = request.data.get('install_record_id')
+        if not install_record_id:
+            return SycResponse.error(message="install_record_id 不能为空", code=400)
+        
+        try:
+            install_record = AgentInstallRecord.objects.select_related('host').get(id=install_record_id)
+        except AgentInstallRecord.DoesNotExist:
+            return SycResponse.error(message="安装记录不存在", code=404)
+        
+        # 检查权限
+        if not request.user.is_superuser:
+            from apps.hosts.models import Host
+            from guardian.shortcuts import get_objects_for_user
+            allowed_hosts = get_objects_for_user(
+                request.user,
+                'view_host',
+                klass=Host,
+                accept_global_perms=False
+            )
+            if install_record.host not in allowed_hosts:
+                return SycResponse.error(message="无权限访问此安装记录", code=403)
+        
+        # 如果安装记录没有关联 Agent，创建一个
+        if not install_record.agent:
+            agent, _ = Agent.objects.get_or_create(
+                host=install_record.host,
+                defaults={
+                    'status': 'pending',
+                    'endpoint': install_record.agent_server_url or '',
+                }
+            )
+            install_record.agent = agent
+            install_record.save()
+        else:
+            agent = install_record.agent
+            # 更新 Agent 状态为 pending
+            agent.status = 'pending'
+            agent.endpoint = install_record.agent_server_url or ''
+            agent.save(update_fields=['status', 'endpoint', 'updated_at'])
+        
+        # 重新签发 Agent Token
+        token_data = AgentService.issue_token(agent, request.user, note="基于安装记录重新生成脚本")
+        agent_token = token_data['token']
+        
+        # 更新安装记录状态
+        install_record.status = 'pending'
+        install_record.save()
+        
+        # 基于安装记录的配置重新生成脚本
+        # 如果安装记录中的 package_id/package_version 无效，尝试使用最新的可用包
+        package_id = install_record.package_id
+        package_version = install_record.package_version
+        
+        # 验证安装包是否存在，如果不存在则尝试使用最新的可用包
+        if package_id:
+            from .models import AgentPackage
+            try:
+                package = AgentPackage.objects.get(id=package_id, is_active=True)
+            except AgentPackage.DoesNotExist:
+                logger.warning(f"安装记录中的 package_id={package_id} 不存在或未启用，将尝试使用最新的可用包")
+                package_id = None
+                package_version = None
+        
+        if package_version and not package_id:
+            from .models import AgentPackage
+            os_type = install_record.host.os_type.lower() if install_record.host.os_type else 'linux'
+            if 'windows' in os_type:
+                os_type = 'windows'
+            elif 'darwin' in os_type or 'macos' in os_type:
+                os_type = 'darwin'
+            else:
+                os_type = 'linux'
+            arch = 'amd64'
+            try:
+                package = AgentPackage.objects.get(
+                    version=package_version,
+                    os_type=os_type,
+                    arch=arch,
+                    is_active=True
+                )
+            except AgentPackage.DoesNotExist:
+                logger.warning(f"安装记录中的 package_version={package_version} (OS: {os_type}, Arch: {arch}) 不存在或未启用，将尝试使用最新的可用包")
+                package_version = None
+        
+        try:
+            host_scripts = AgentService.generate_install_script(
+                host=install_record.host,
+                agent_token=agent_token,
+                install_mode=install_record.install_mode,
+                agent_server_url=install_record.agent_server_url,
+                agent_server_backup_url=install_record.agent_server_backup_url or '',
+                ws_backoff_initial_ms=install_record.ws_backoff_initial_ms,
+                ws_backoff_max_ms=install_record.ws_backoff_max_ms,
+                ws_max_retries=install_record.ws_max_retries,
+                package_version=package_version,
+                package_id=package_id,
+            )
+        except Exception as e:
+            logger.error(f"基于安装记录重新生成脚本失败: {str(e)}", exc_info=True)
+            return SycResponse.error(message=f"生成脚本失败: {str(e)}", code=500)
+        
+        # 格式化返回数据
+        scripts = {}
+        for os_type, script in host_scripts.items():
+            if os_type not in scripts:
+                scripts[os_type] = []
+            scripts[os_type].append({
+                'host_id': install_record.host.id,
+                'host_name': install_record.host.name,
+                'host_ip': install_record.host.ip_address,
+                'script': script,
+                'agent_token': agent_token,
+                'agent_id': agent.id,
+                'install_record_id': install_record.id,
+            })
+        
+        return SycResponse.success(
+            content={
+                'scripts': scripts,
+                'install_mode': install_record.install_mode,
+                'agent_server_url': install_record.agent_server_url,
+                'notice': '这是重新生成的安装脚本，旧的 token 已失效，请使用新的 token'
+            },
+            message="重新生成安装脚本成功"
         )
 
     @action(detail=False, methods=["get"], url_path="download_urls")

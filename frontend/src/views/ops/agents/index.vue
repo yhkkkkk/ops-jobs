@@ -15,6 +15,28 @@
               </template>
               安装 Agent
             </a-button>
+            <a-button 
+              v-if="selectedAgentIds.length > 0"
+              type="primary" 
+              status="warning"
+              @click="handleBatchRegenerateScript"
+            >
+              <template #icon>
+                <IconCopy />
+              </template>
+              批量重新生成脚本 ({{ selectedAgentIds.length }})
+            </a-button>
+            <a-button 
+              v-if="selectedAgentIds.length > 0 && hasPendingAgents"
+              type="primary" 
+              status="danger"
+              @click="handleBatchDeletePending"
+            >
+              <template #icon>
+                <icon-delete />
+              </template>
+              批量删除待激活 ({{ selectedPendingCount }})
+            </a-button>
             <a-button type="primary" status="danger" @click="handleUninstallAgent">
               <template #icon>
                 <icon-delete />
@@ -37,6 +59,62 @@
         </div>
       </div>
     </div>
+
+    <!-- 统计信息卡片 -->
+    <a-row :gutter="16" class="mb-4">
+      <a-col :span="6">
+        <a-card class="stat-card">
+          <a-statistic
+            title="待激活"
+            :value="statistics.pending"
+            :value-style="{ color: '#ff7d00' }"
+          >
+            <template #prefix>
+              <icon-clock-circle style="margin-right: 4px" />
+            </template>
+          </a-statistic>
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card class="stat-card">
+          <a-statistic
+            title="在线"
+            :value="statistics.online"
+            :value-style="{ color: '#00b42a' }"
+          >
+            <template #prefix>
+              <icon-check-circle style="margin-right: 4px" />
+            </template>
+          </a-statistic>
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card class="stat-card">
+          <a-statistic
+            title="离线"
+            :value="statistics.offline"
+            :value-style="{ color: '#f53f3f' }"
+          >
+            <template #prefix>
+              <icon-close-circle style="margin-right: 4px" />
+            </template>
+          </a-statistic>
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card class="stat-card">
+          <a-statistic
+            title="禁用"
+            :value="statistics.disabled"
+            :value-style="{ color: '#86909c' }"
+          >
+            <template #prefix>
+              <icon-minus-circle style="margin-right: 4px" />
+            </template>
+          </a-statistic>
+        </a-card>
+      </a-col>
+    </a-row>
 
     <!-- 搜索栏 -->
     <a-card class="mb-4">
@@ -117,8 +195,10 @@
         :data="agents"
         :loading="loading"
         :pagination="pagination"
+        :row-selection="rowSelection"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
+        @selection-change="handleSelectionChange"
       >
         <template #host="{ record }">
           <div class="host-info">
@@ -128,12 +208,17 @@
         </template>
 
         <template #status="{ record }">
-          <a-tag
-            :color="getStatusColor(record.status)"
-            size="small"
-          >
-            {{ record.status_display }}
-          </a-tag>
+          <a-space>
+            <a-tag
+              :color="getStatusColor(record.status)"
+              size="small"
+            >
+              {{ record.status_display }}
+            </a-tag>
+            <a-tooltip v-if="record.status === 'pending'" content="此 Agent 已生成安装脚本但尚未安装，点击「查看安装脚本」可重新获取脚本">
+              <IconInfoCircle style="color: #ff7d00; cursor: help" />
+            </a-tooltip>
+          </a-space>
         </template>
 
         <template #version="{ record }">
@@ -172,6 +257,19 @@
               详情
             </a-button>
             <a-button
+              v-if="record.status === 'pending'"
+              type="text"
+              status="warning"
+              size="small"
+              @click="handleViewInstallScript(record)"
+            >
+              <template #icon>
+                <IconCopy />
+              </template>
+              查看安装脚本
+            </a-button>
+            <a-button
+              v-if="record.status !== 'pending'"
               type="text"
               size="small"
               @click="handleIssueToken(record)"
@@ -182,7 +280,7 @@
               发Token
             </a-button>
             <a-button
-              v-if="record.status !== 'disabled'"
+              v-if="record.status !== 'disabled' && record.status !== 'pending'"
               type="text"
               status="warning"
               size="small"
@@ -194,7 +292,7 @@
               禁用
             </a-button>
             <a-button
-              v-else
+              v-if="record.status === 'disabled'"
               type="text"
               status="success"
               size="small"
@@ -259,12 +357,13 @@
       </template>
     </a-modal>
 
-    <!-- 安装 Agent 对话框 -->
-    <a-modal
+    <!-- 安装 Agent 抽屉 -->
+    <a-drawer
       v-model:visible="installModalVisible"
       title="安装 Agent"
       width="900px"
       :footer="false"
+      placement="right"
     >
       <a-tabs v-model:active-key="installTab">
         <a-tab-pane key="select" title="选择主机">
@@ -377,26 +476,22 @@
           </div>
         </a-tab-pane>
         <a-tab-pane key="script" title="安装脚本" v-if="installScripts">
-          <div class="install-step">
-            <a-alert type="warning" style="margin-bottom: 16px">
-              <template #content>
-                <div>
-                  <p style="margin-bottom: 8px;">
-                    <strong>重要提示：</strong>这只是生成安装脚本，Agent 尚未实际安装！
-                  </p>
-                  <p style="margin-bottom: 8px;">
-                    您需要：
-                  </p>
-                  <ul style="margin: 0; padding-left: 20px;">
-                    <li>将以下脚本复制到对应主机上手动执行，或</li>
-                    <li>使用"批量安装（SSH）"功能自动安装</li>
-                  </ul>
-                  <p style="margin-top: 8px; color: #f53f3f;">
+          <div class="install-step install-step-scripts">
+            <div class="install-script-tip">
+              <p class="install-script-tip-title">
+                <strong>重要提示：</strong>这只是生成安装脚本，Agent 尚未实际安装！
+              </p>
+              <p class="install-script-tip-text">
+                您需要：
+              </p>
+              <ul class="install-script-tip-list">
+                <li>将以下脚本复制到对应主机上手动执行，或</li>
+                <li>使用「批量安装（SSH）」功能自动安装</li>
+              </ul>
+              <p class="install-script-tip-warning">
                     <strong>注意：Token 仅显示一次，请妥善保存！</strong>
                   </p>
                 </div>
-              </template>
-            </a-alert>
             <div v-for="(scriptGroup, osType) in installScripts" :key="String(osType)">
               <h3 style="margin: 16px 0 8px 0;">{{ String(osType) === 'linux' ? 'Linux' : 'Windows' }} 安装脚本</h3>
               <div v-for="item in scriptGroup" :key="item.host_id" style="margin-bottom: 24px">
@@ -409,25 +504,20 @@
                       复制脚本
                     </a-button>
                   </template>
-                  <div style="margin-bottom: 12px;">
-                    <a-alert type="warning">
-                      <template #content>
-                        <div>
-                          <strong>Token:</strong> <code>{{ item.token }}</code>
-                          <a-button type="text" size="mini" @click="copyText(item.token)" style="margin-left: 8px">
+                  <div class="install-script-token-row">
+                    <span class="install-script-token-label"><strong>Agent Token:</strong></span>
+                    <code class="install-script-token-value">{{ item.agent_token || item.register_token }}</code>
+                    <a-button type="text" size="mini" @click="copyText(item.agent_token || item.register_token)" style="margin-left: 8px">
                             <template #icon>
                               <IconCopy />
                             </template>
                           </a-button>
-                        </div>
-                      </template>
-                    </a-alert>
                   </div>
                   <a-textarea
                     :model-value="item.script"
-                    :rows="15"
+                    auto-size
                     readonly
-                    style="font-family: 'Courier New', monospace; font-size: 12px;"
+                    style="font-family: 'Courier New', monospace; font-size: 12px; margin-top: 8px;"
                   />
                 </a-card>
               </div>
@@ -435,7 +525,7 @@
           </div>
         </a-tab-pane>
       </a-tabs>
-    </a-modal>
+    </a-drawer>
 
     <!-- 卸载 Agent 对话框 -->
     <a-modal
@@ -661,6 +751,32 @@ const pagination = reactive({
   showPageSize: true
 })
 
+// 统计信息
+const statistics = reactive({
+  pending: 0,
+  online: 0,
+  offline: 0,
+  disabled: 0
+})
+
+// 表格选择
+const selectedAgentIds = ref<number[]>([])
+const rowSelection = reactive({
+  type: 'checkbox',
+  showCheckedAll: true,
+  onlyCurrent: false
+})
+
+// 计算选中的 pending 状态 Agent 数量
+const selectedPendingCount = computed(() => {
+  return agents.value.filter(a => selectedAgentIds.value.includes(a.id) && a.status === 'pending').length
+})
+
+// 是否有选中的 pending 状态 Agent
+const hasPendingAgents = computed(() => {
+  return selectedPendingCount.value > 0
+})
+
 // 表格列配置
 const columns = [
   {
@@ -748,9 +864,12 @@ const fetchAgents = async () => {
     if (response && response.results) {
       agents.value = response.results
       pagination.total = response.total || 0
+      // 更新统计信息
+      updateStatistics()
     } else {
       agents.value = []
       pagination.total = 0
+      resetStatistics()
     }
   } catch (error: any) {
     console.error('获取 Agent 列表失败:', error)
@@ -1364,6 +1483,148 @@ const copyText = (text: string) => {
   })
 }
 
+// 更新统计信息
+const updateStatistics = () => {
+  statistics.pending = agents.value.filter(a => a.status === 'pending').length
+  statistics.online = agents.value.filter(a => a.status === 'online').length
+  statistics.offline = agents.value.filter(a => a.status === 'offline').length
+  statistics.disabled = agents.value.filter(a => a.status === 'disabled').length
+}
+
+// 重置统计信息
+const resetStatistics = () => {
+  statistics.pending = 0
+  statistics.online = 0
+  statistics.offline = 0
+  statistics.disabled = 0
+}
+
+// 表格选择变化
+const handleSelectionChange = (rowKeys: (string | number)[]) => {
+  selectedAgentIds.value = rowKeys as number[]
+}
+
+// 查看安装脚本（用于 pending 状态的 Agent）
+const handleViewInstallScript = async (agent: any) => {
+  try {
+    const response = await agentsApi.regenerateScript(agent.id)
+    installScripts.value = response.scripts
+    installModalVisible.value = true
+    installTab.value = 'script'
+    
+    if (response.notice) {
+      Message.warning(response.notice)
+    }
+    Message.success('安装脚本已生成')
+  } catch (error: any) {
+    console.error('获取安装脚本失败:', error)
+    const errorMsg = error?.response?.data?.message || error?.message || '获取安装脚本失败'
+    Message.error(errorMsg)
+  }
+}
+
+// 批量重新生成脚本
+const handleBatchRegenerateScript = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请至少选择一个 Agent')
+    return
+  }
+  
+  const pendingAgents = agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && a.status === 'pending'
+  )
+  
+  if (pendingAgents.length === 0) {
+    Message.warning('选中的 Agent 中没有待激活状态的 Agent')
+    return
+  }
+  
+  Modal.confirm({
+    title: '确认批量重新生成脚本',
+    content: `确定要为 ${pendingAgents.length} 个待激活的 Agent 重新生成安装脚本吗？`,
+    onOk: async () => {
+      try {
+        // 为每个 Agent 生成脚本
+        const scripts: any = {}
+        let successCount = 0
+        let failCount = 0
+        
+        for (const agent of pendingAgents) {
+          try {
+            const response = await agentsApi.regenerateScript(agent.id)
+            // 合并脚本
+            for (const [osType, scriptList] of Object.entries(response.scripts)) {
+              if (!scripts[osType]) {
+                scripts[osType] = []
+              }
+              if (Array.isArray(scriptList)) {
+                scripts[osType].push(...scriptList)
+              }
+            }
+            successCount++
+          } catch (error: any) {
+            console.error(`为 Agent ${agent.id} 生成脚本失败:`, error)
+            failCount++
+          }
+        }
+        
+        if (successCount > 0) {
+          installScripts.value = scripts
+          installModalVisible.value = true
+          installTab.value = 'script'
+          Message.success(`成功为 ${successCount} 个 Agent 生成脚本${failCount > 0 ? `，${failCount} 个失败` : ''}`)
+        } else {
+          Message.error('批量生成脚本失败')
+        }
+      } catch (error: any) {
+        console.error('批量生成脚本失败:', error)
+        Message.error('批量生成脚本失败')
+      }
+    }
+  })
+}
+
+// 批量删除待激活的 Agent
+const handleBatchDeletePending = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请至少选择一个 Agent')
+    return
+  }
+  
+  const pendingAgents = agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && a.status === 'pending'
+  )
+  
+  if (pendingAgents.length === 0) {
+    Message.warning('选中的 Agent 中没有待激活状态的 Agent')
+    return
+  }
+  
+  Modal.confirm({
+    title: '确认批量删除',
+    content: `确定要删除 ${pendingAgents.length} 个待激活的 Agent 吗？此操作不可恢复！`,
+    okText: '确认删除',
+    okButtonProps: { status: 'danger' },
+    onOk: async () => {
+      try {
+        const agentIds = pendingAgents.map(a => a.id)
+        const response = await agentsApi.batchDelete({
+          agent_ids: agentIds,
+          confirmed: true
+        })
+        
+        Message.success(`成功删除 ${response.count} 个 Agent`)
+        selectedAgentIds.value = []
+        fetchAgents()
+      } catch (error: any) {
+        console.error('批量删除失败:', error)
+        const errorMsg = error?.response?.data?.message || error?.message || '批量删除失败'
+        Message.error(errorMsg)
+      }
+    }
+  })
+}
+
 // 清理卸载 SSE 连接
 const cleanupUninstallSSE = () => {
   if (uninstallSseEventSource.value) {
@@ -1433,6 +1694,57 @@ onBeforeUnmount(() => {
   background: white;
   border-radius: 6px;
   overflow: hidden;
+}
+
+.install-step-scripts {
+  padding-bottom: 16px;
+}
+
+.install-script-tip {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  background-color: #f7f8fa;
+  border: 1px solid #e5e6eb;
+  font-size: 13px;
+  color: #1d2129;
+}
+
+.install-script-tip-title {
+  margin: 0 0 8px 0;
+}
+
+.install-script-tip-text {
+  margin: 0 0 4px 0;
+}
+
+.install-script-tip-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.install-script-tip-warning {
+  margin: 8px 0 0 0;
+  color: #f53f3f;
+}
+
+.install-script-token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.install-script-token-label {
+  color: #1d2129;
+}
+
+.install-script-token-value {
+  font-family: 'Courier New', monospace;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: #f2f3f5;
 }
 
 .host-info {

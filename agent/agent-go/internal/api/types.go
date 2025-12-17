@@ -8,6 +8,7 @@ type AgentInfo struct {
 	Version string            `json:"version,omitempty"`
 	System  *SystemInfo       `json:"system"`
 	WSURL   string            `json:"ws_url,omitempty"`
+	Token   string            `json:"token,omitempty"` // 注册成功后返回的正式 token（首次注册后由控制面签发）
 }
 
 // TaskSpec 控制面下发的任务定义

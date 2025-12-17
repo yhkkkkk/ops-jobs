@@ -71,10 +71,10 @@ def _validate_compressed_package(file_path: str, os_type: str) -> None:
                 if total > max_total_size:
                     raise ValueError("压缩包解压后总大小超出限制，疑似异常包")
                 base = os.path.basename(m.name).lower()
-                if "ops-job-agent" in base:
+                if "ops-job-agent" in base or base == "agent":
                     has_agent_binary = True
             if not has_agent_binary:
-                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 字样）")
+                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 或 'agent' 字样）")
         return
 
     if ext == ".zip":
@@ -91,10 +91,10 @@ def _validate_compressed_package(file_path: str, os_type: str) -> None:
                 if total > max_total_size:
                     raise ValueError("压缩包解压后总大小超出限制，疑似异常包")
                 base = os.path.basename(info.filename).lower()
-                if "ops-job-agent" in base:
+                if "ops-job-agent" in base or base == "agent":
                     has_agent_binary = True
             if not has_agent_binary:
-                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 字样）")
+                logger.warning("安装包中未检测到明显的 agent 可执行文件（包含 'ops-job-agent' 或 'agent' 字样）")
         return
 
     # 其他类型（如 .exe/.bin）仅做基础存在与大小校验，详细校验后续按需扩展
@@ -174,6 +174,20 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update']:
             return AgentPackageCreateSerializer
         return AgentPackageSerializer
+
+    def create(self, request, *args, **kwargs):
+        """创建安装包"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+            return SycResponse.success(
+                content=serializer.data,
+                message="安装包创建成功"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("创建安装包失败: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"安装包创建失败: {str(exc)}")
 
     def perform_create(self, serializer):
         # 使用事务确保数据一致性
