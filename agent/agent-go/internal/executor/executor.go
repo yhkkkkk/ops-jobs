@@ -78,28 +78,10 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 		e.tasksLock.Unlock()
 	}()
 
-	// 构建命令
-	var cmd *exec.Cmd
-	var shell string
-	var args []string
-
-	switch {
-	case task.Command != "":
-		// 根据操作系统选择 shell
-		if runtime.GOOS == "windows" {
-			shell = "cmd"
-			args = []string{"/c", task.Command}
-		} else {
-			shell = "/bin/sh"
-			args = []string{"-c", task.Command}
-		}
-		cmd = exec.CommandContext(taskCtx, shell, args...)
-	default:
-		// 使用 Command 和 Args
-		if len(task.Args) == 0 {
-			return nil, fmt.Errorf("task command is empty")
-		}
-		cmd = exec.CommandContext(taskCtx, task.Args[0], task.Args[1:]...)
+	// 构建命令（根据 ScriptType 与操作系统选择执行器）
+	cmd, buildErr := buildCommand(taskCtx, task)
+	if buildErr != nil {
+		return nil, buildErr
 	}
 
 	// 设置环境变量
@@ -272,6 +254,71 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 		ErrorMsg:   getErrorMsg(err),
 		ErrorCode:  errorCode,
 	}, nil
+}
+
+// buildCommand 根据 TaskSpec 构建具体要执行的 *exec.Cmd
+// 支持多种脚本类型：
+// - ScriptType 为空：保持兼容，复用历史行为（Linux: /bin/sh -c；Windows: cmd /c）
+// - shell：显式 shell 脚本
+// - powershell：Windows 下使用 powershell.exe；其它系统预留 pwsh（如已安装）
+// - python：使用 python/python3 -c 执行脚本
+// - js：使用 node -e 执行脚本
+func buildCommand(ctx context.Context, task *api.TaskSpec) (*exec.Cmd, error) {
+	// 如果没有 Command，但提供了 Args，则直接按 Args 执行
+	if task.Command == "" {
+		if len(task.Args) == 0 {
+			return nil, fmt.Errorf("task command is empty")
+		}
+		return exec.CommandContext(ctx, task.Args[0], task.Args[1:]...), nil
+	}
+
+	scriptType := strings.ToLower(strings.TrimSpace(task.ScriptType))
+	switch scriptType {
+	case "", "shell":
+		// 兼容默认行为：Windows 用 cmd，Linux/其他用 /bin/sh
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/c", task.Command), nil
+		}
+		return exec.CommandContext(ctx, "/bin/sh", "-c", task.Command), nil
+
+	case "powershell", "pwsh":
+		if runtime.GOOS == "windows" {
+			// Windows 上使用 powershell.exe
+			return exec.CommandContext(ctx,
+				"powershell.exe",
+				"-NoLogo",
+				"-NonInteractive",
+				"-ExecutionPolicy", "Bypass",
+				"-Command", task.Command,
+			), nil
+		}
+		// 非 Windows 环境，优先尝试 pwsh（PowerShell Core）
+		return exec.CommandContext(ctx,
+			"pwsh",
+			"-NoLogo",
+			"-NonInteractive",
+			"-Command", task.Command,
+		), nil
+
+	case "python", "py":
+		// 通过 python/python3 解释执行
+		pythonExe := "python3"
+		if runtime.GOOS == "windows" {
+			pythonExe = "python"
+		}
+		return exec.CommandContext(ctx, pythonExe, "-c", task.Command), nil
+
+	case "js", "node":
+		// 通过 node -e 执行 JS 代码
+		return exec.CommandContext(ctx, "node", "-e", task.Command), nil
+
+	default:
+		// 未知脚本类型，回退到原有行为
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/c", task.Command), nil
+		}
+		return exec.CommandContext(ctx, "/bin/sh", "-c", task.Command), nil
+	}
 }
 
 // streamOutput 实时流式读取输出

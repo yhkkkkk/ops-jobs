@@ -1051,7 +1051,7 @@ class AgentViewSet(viewsets.ModelViewSet):
             if install_record.host not in allowed_hosts:
                 return SycResponse.error(message="无权限访问此安装记录", code=403)
 
-        # 如果安装记录没有关联 Agent，创建一个
+        # 如果安装记录没有关联Agent，创建一个
         if not install_record.agent:
             agent, _ = Agent.objects.get_or_create(
                 host=install_record.host,
@@ -1064,12 +1064,12 @@ class AgentViewSet(viewsets.ModelViewSet):
             install_record.save()
         else:
             agent = install_record.agent
-            # 更新 Agent 状态为 pending
+            # 更新Agent状态为pending
             agent.status = 'pending'
             agent.endpoint = install_record.agent_server_url or ''
             agent.save(update_fields=['status', 'endpoint', 'updated_at'])
 
-        # 重新签发 Agent Token
+        # 重新签发Agent Token
         token_data = AgentService.issue_token(agent, request.user, note="基于安装记录重新生成脚本")
         agent_token = token_data['token']
 
@@ -1151,16 +1151,15 @@ class AgentViewSet(viewsets.ModelViewSet):
                 'scripts': scripts,
                 'install_mode': install_record.install_mode,
                 'agent_server_url': install_record.agent_server_url,
-                'notice': '这是重新生成的安装脚本，旧的 token 已失效，请使用新的 token'
+                'notice': '这是重新生成的安装脚本，旧的tokenn已失效，请使用新的token'
             },
             message="重新生成安装脚本成功"
         )
 
     @action(detail=False, methods=["get"], url_path="download_urls")
     def download_urls(self, request):
-        """获取 Agent 二进制下载地址"""
+        """获取agent二进制下载地址"""
         from .models import AgentPackage
-        from apps.system_config.models import ConfigManager
 
         # 优先使用版本管理
         default_packages = AgentPackage.objects.filter(is_default=True, is_active=True)
@@ -1186,4 +1185,4 @@ class AgentViewSet(viewsets.ModelViewSet):
                 message="获取下载地址成功"
             )
 
-        return SycResponse.error(message="未找到可用的 Agent 包", code=404)
+        return SycResponse.error(message="未找到可用的agent包", code=404)
