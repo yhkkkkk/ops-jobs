@@ -121,7 +121,6 @@ class AgentService:
             host: 主机对象
             package_version: 安装包版本号（可选，不指定则使用默认版本）
             package_id: 安装包ID（可选，优先级最高）
-            raise_if_not_found: 如果找不到安装包是否抛出异常（默认 False，返回默认 URL）
         Returns:
             str: 下载地址
         Raises:

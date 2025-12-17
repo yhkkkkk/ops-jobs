@@ -412,11 +412,11 @@ class AgentViewSet(viewsets.ModelViewSet):
                 message="批量高危操作需要二次确认，请设置 confirmed=true",
                 code=400
             )
-        # 批量操作限流：最多 50 个
+        # 批量操作限流：最多50个
         MAX_BATCH_SIZE = 50
         if len(agent_ids) > MAX_BATCH_SIZE:
             return SycResponse.error(
-                message=f"批量操作最多支持 {MAX_BATCH_SIZE} 个 Agent",
+                message=f"批量操作最多支持{MAX_BATCH_SIZE}个agent",
                 code=400
             )
         agents = Agent.objects.filter(id__in=agent_ids)
@@ -425,14 +425,14 @@ class AgentViewSet(viewsets.ModelViewSet):
         allowed_agents = queryset.filter(id__in=agent_ids)
         if allowed_agents.count() != len(agent_ids):
             return SycResponse.error(
-                message="部分 Agent 无权限操作",
+                message="部分agent无权限操作",
                 code=403
             )
         # 生产环境额外限制
         prod_agents = allowed_agents.filter(host__environment="prod")
         if prod_agents.exists() and len(agent_ids) > 10:
             return SycResponse.error(
-                message="生产环境批量操作最多支持 10 个 Agent",
+                message="生产环境批量操作最多支持10个agent",
                 code=400
             )
         count = 0
@@ -442,7 +442,7 @@ class AgentViewSet(viewsets.ModelViewSet):
             count += 1
         return SycResponse.success(
             content={"count": count},
-            message=f"批量禁用 {count} 个 Agent 成功"
+            message=f"批量禁用{count}个agent成功"
         )
 
     @action(detail=True, methods=["post"], url_path="regenerate_script")
@@ -850,7 +850,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         if not confirmed:
             return SycResponse.error(message="请勾选确认框以执行批量卸载操作", code=400)
 
-        # 权限过滤（基于 get_queryset）
+        # 权限过滤
         allowed_agents = self.get_queryset().filter(id__in=agent_ids).select_related('host')
         if allowed_agents.count() != len(agent_ids):
             return SycResponse.error(message="部分agent无权限操作", code=403)
@@ -938,7 +938,7 @@ class AgentViewSet(viewsets.ModelViewSet):
         """查询安装记录"""
         queryset = AgentInstallRecord.objects.select_related('host', 'agent', 'installed_by').order_by('-installed_at')
 
-        # 权限过滤（基于 Host 权限）
+        # 权限过滤
         if not request.user.is_superuser:
             allowed_hosts = get_objects_for_user(
                 request.user,
@@ -947,7 +947,7 @@ class AgentViewSet(viewsets.ModelViewSet):
             )
             queryset = queryset.filter(host__in=allowed_hosts)
 
-        # 应用过滤器（使用专门的 FilterSet）
+        # 应用过滤器（使用专门的FilterSet）
         backend = DjangoFilterBackend()
         queryset = backend.filter_queryset(request, queryset, self.install_record_filterset_class)
 
