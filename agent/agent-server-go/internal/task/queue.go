@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/pkg/api"
 
@@ -21,7 +22,8 @@ const (
 	// 队列名称
 	QueueDefault  = "default"
 	QueueCritical = "critical"
-	QueueLow      = "low"
+	// QueueLong 长任务队列：用于超长/重任务，避免挤占短任务
+	QueueLong = "long"
 )
 
 // TaskQueue 任务队列管理器
@@ -30,6 +32,7 @@ type TaskQueue struct {
 	server   *asynq.Server
 	mux      *asynq.ServeMux
 	redisOpt asynq.RedisClientOpt
+	cfg      config.AsynqConfig
 }
 
 // TaskPayload 任务负载
@@ -39,14 +42,14 @@ type TaskPayload struct {
 }
 
 // NewTaskQueue 创建任务队列管理器
-func NewTaskQueue(redisAddr, redisPassword string, redisDB int) (*TaskQueue, error) {
+func NewTaskQueue(redisAddr, redisPassword string, redisDB int, cfg config.AsynqConfig) (*TaskQueue, error) {
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     redisAddr,
 		Password: redisPassword,
 		DB:       redisDB,
 	}
 
-	// 创建 Redis 客户端用于健康检查
+	// 创建 redis 客户端用于健康检查
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
@@ -64,12 +67,25 @@ func NewTaskQueue(redisAddr, redisPassword string, redisDB int) (*TaskQueue, err
 	client := asynq.NewClient(redisOpt)
 
 	// 创建 asynq 服务器
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = 10
+	}
+	if cfg.RetryMax <= 0 {
+		cfg.RetryMax = 3
+	}
+	if cfg.RetryDelay <= 0 {
+		cfg.RetryDelay = 1 * time.Second
+	}
+	if cfg.TaskTimeout <= 0 {
+		cfg.TaskTimeout = 5 * time.Minute
+	}
+
 	server := asynq.NewServer(redisOpt, asynq.Config{
-		Concurrency: 10, // 并发处理任务数
+		Concurrency: cfg.Concurrency,
 		Queues: map[string]int{
 			QueueCritical: 10, // 高优先级队列权重
 			QueueDefault:  5,  // 默认队列权重
-			QueueLow:      1,  // 低优先级队列权重
+			QueueLong:     1,  // 长任务队列权重
 		},
 		StrictPriority: false, // 使用加权优先级
 		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, t *asynq.Task, err error) {
@@ -79,7 +95,7 @@ func NewTaskQueue(redisAddr, redisPassword string, redisDB int) (*TaskQueue, err
 		}),
 		RetryDelayFunc: func(n int, err error, task *asynq.Task) time.Duration {
 			// 指数退避：1s, 2s, 4s, 8s, 16s
-			delay := time.Duration(1<<uint(n)) * time.Second
+			delay := time.Duration(1<<uint(n)) * cfg.RetryDelay
 			if delay > 30*time.Second {
 				delay = 30 * time.Second
 			}
@@ -95,6 +111,7 @@ func NewTaskQueue(redisAddr, redisPassword string, redisDB int) (*TaskQueue, err
 		server:   server,
 		mux:      mux,
 		redisOpt: redisOpt,
+		cfg:      cfg,
 	}, nil
 }
 
@@ -126,12 +143,12 @@ func (q *TaskQueue) EnqueueTask(agentID string, task *api.TaskSpec, opts ...asyn
 	// 默认选项
 	defaultOpts := []asynq.Option{
 		asynq.Queue(QueueDefault),
-		asynq.MaxRetry(3),
-		asynq.Timeout(5 * time.Minute),
+		asynq.MaxRetry(q.cfg.RetryMax),
+		asynq.Timeout(q.cfg.TaskTimeout),
 	}
 
-	// 如果task.ID不为空，使用它作为唯一标识（24小时内去重）
-	if task.ID != "" {
+	// 幂等：对“同一 execution_id 的任务”做 24h 去重（依赖 task payload，因此无需显式 uniqueKey）
+	if task.ExecutionID != "" {
 		defaultOpts = append(defaultOpts, asynq.Unique(24*time.Hour))
 	}
 
@@ -163,9 +180,8 @@ func (q *TaskQueue) EnqueueWithPolicy(agentID string, task *api.TaskSpec) (*asyn
 	}
 
 	queue := selectQueue(task)
-	timeout := selectTimeout(task)
-	maxRetry := selectMaxRetry(task)
-	uniqueKey := selectUniqueKey(task)
+	timeout := q.selectTimeout(task)
+	maxRetry := q.selectMaxRetry(task)
 
 	opts := []asynq.Option{
 		asynq.Queue(queue),
@@ -173,7 +189,8 @@ func (q *TaskQueue) EnqueueWithPolicy(agentID string, task *api.TaskSpec) (*asyn
 		asynq.MaxRetry(maxRetry),
 	}
 
-	if uniqueKey != "" {
+	// 仅对具备 execution_id 的任务做去重（避免脚本/文件传输被重复下发）
+	if task.ExecutionID != "" {
 		opts = append(opts, asynq.Unique(24*time.Hour))
 	}
 
@@ -181,8 +198,9 @@ func (q *TaskQueue) EnqueueWithPolicy(agentID string, task *api.TaskSpec) (*asyn
 }
 
 func selectQueue(task *api.TaskSpec) string {
+	// 超长任务进入 long 队列，避免阻塞短任务
 	if task.TimeoutSec >= 900 {
-		return QueueLow // 超长任务放低优先级队列，避免阻塞
+		return QueueLong
 	}
 	if task.TimeoutSec >= 300 {
 		return QueueDefault
@@ -190,25 +208,18 @@ func selectQueue(task *api.TaskSpec) string {
 	return QueueCritical
 }
 
-func selectTimeout(task *api.TaskSpec) time.Duration {
+func (q *TaskQueue) selectTimeout(task *api.TaskSpec) time.Duration {
 	if task.TimeoutSec > 0 {
 		return time.Duration(task.TimeoutSec) * time.Second
 	}
-	return 5 * time.Minute
+	return q.cfg.TaskTimeout
 }
 
-func selectMaxRetry(task *api.TaskSpec) int {
+func (q *TaskQueue) selectMaxRetry(task *api.TaskSpec) int {
 	if task.RetryCount > 0 {
 		return task.RetryCount
 	}
-	return 3
-}
-
-func selectUniqueKey(task *api.TaskSpec) string {
-	if task.ExecutionID != "" {
-		return task.ExecutionID
-	}
-	return task.ID
+	return q.cfg.RetryMax
 }
 
 // EnqueueTaskWithPriority 将任务入队（带优先级）
@@ -218,7 +229,7 @@ func (q *TaskQueue) EnqueueTaskWithPriority(agentID string, task *api.TaskSpec, 
 	case "high", "critical":
 		queue = QueueCritical
 	case "low":
-		queue = QueueLow
+		queue = QueueLong
 	default:
 		queue = QueueDefault
 	}
@@ -250,7 +261,7 @@ func (q *TaskQueue) ListPendingTasks(agentID string) ([]*api.TaskSpec, error) {
 	inspector := asynq.NewInspector(q.redisOpt)
 	defer inspector.Close()
 
-	queues := []string{QueueCritical, QueueDefault, QueueLow}
+	queues := []string{QueueCritical, QueueDefault, QueueLong}
 	var allTasks []TaskWithMetadata
 
 	// 遍历所有队列，查询不同状态的任务
@@ -287,10 +298,10 @@ func (q *TaskQueue) ListPendingTasks(agentID string) ([]*api.TaskSpec, error) {
 // queryTasksByState 按状态查询任务
 func (q *TaskQueue) queryTasksByState(inspector *asynq.Inspector, queueName, agentID, state string) []TaskWithMetadata {
 	var tasks []TaskWithMetadata
-		page := 1
-		pageSize := 100
+	page := 1
+	pageSize := 100
 
-		for {
+	for {
 		var taskInfos []*asynq.TaskInfo
 		var err error
 
@@ -307,50 +318,50 @@ func (q *TaskQueue) queryTasksByState(inspector *asynq.Inspector, queueName, age
 			return tasks
 		}
 
-			if err != nil {
+		if err != nil {
 			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 				"queue": queueName,
 				"state": state,
 			}).Warn("list tasks failed")
-				break
-			}
+			break
+		}
 
 		if len(taskInfos) == 0 {
-				break
-			}
+			break
+		}
 
 		for _, taskInfo := range taskInfos {
-				var payload TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-						"queue":   queueName,
-						"task_id": taskInfo.ID,
-					}).Warn("unmarshal task payload failed")
-					continue
-				}
+			var payload TaskPayload
+			if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
+				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+					"queue":   queueName,
+					"task_id": taskInfo.ID,
+				}).Warn("unmarshal task payload failed")
+				continue
+			}
 
-				// 只返回指定Agent的任务
-				if payload.AgentID == agentID {
+			// 只返回指定Agent的任务
+			if payload.AgentID == agentID {
 				taskMeta := TaskWithMetadata{
-						Task:     payload.Task,
-						Queue:    queueName,
-						TaskID:   taskInfo.ID,
+					Task:     payload.Task,
+					Queue:    queueName,
+					TaskID:   taskInfo.ID,
 					State:    state,
-						Priority: getQueuePriority(queueName),
+					Priority: getQueuePriority(queueName),
 				}
 				if !taskInfo.NextProcessAt.IsZero() {
 					taskMeta.NextProcessAt = taskInfo.NextProcessAt
 				}
 				tasks = append(tasks, taskMeta)
-				}
 			}
-
-			// 如果返回的任务数少于pageSize，说明已经是最后一页
-		if len(taskInfos) < pageSize {
-				break
-			}
-			page++
 		}
+
+		// 如果返回的任务数少于pageSize，说明已经是最后一页
+		if len(taskInfos) < pageSize {
+			break
+		}
+		page++
+	}
 
 	return tasks
 }
@@ -401,7 +412,7 @@ func getQueuePriority(queueName string) int {
 		return 3
 	case QueueDefault:
 		return 2
-	case QueueLow:
+	case QueueLong:
 		return 1
 	default:
 		return 0
@@ -437,7 +448,7 @@ func (q *TaskQueue) GetTaskStats() (map[string]interface{}, error) {
 	inspector := asynq.NewInspector(q.redisOpt)
 	defer inspector.Close()
 
-	queues := []string{QueueCritical, QueueDefault, QueueLow}
+	queues := []string{QueueCritical, QueueDefault, QueueLong}
 	stats := make(map[string]interface{})
 
 	for _, queueName := range queues {

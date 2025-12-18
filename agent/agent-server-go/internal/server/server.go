@@ -62,12 +62,12 @@ func New(cfg *config.Config) (*Server, error) {
 	// 创建控制面客户端
 	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Scope, cfg.ControlPlane.Timeout)
 
-	// 创建任务队列（如果启用）
+	// 创建任务队列
 	var taskQueue *task.TaskQueue
 	asynqEnabled := cfg.Asynq.Enabled && cfg.Redis.Enabled
 	if asynqEnabled {
 		var err error
-		taskQueue, err = task.NewTaskQueue(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+		taskQueue, err = task.NewTaskQueue(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, cfg.Asynq)
 		if err != nil {
 			return nil, fmt.Errorf("create task queue: %w", err)
 		}
@@ -114,26 +114,46 @@ func New(cfg *config.Config) (*Server, error) {
 
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
+	s.setupAgentIngressRoutes()
+	s.setupControlPlaneIngressRoutes()
+	s.setupWebSocketRoutes()
+}
+
+func (s *Server) setupAgentIngressRoutes() {
 	api := s.engine.Group("/api")
+	{
+		// Agent 注册（Agent-Server 模式下，Agent 先注册拿到 ws_url）
+		api.POST("/agents/register", s.handleRegister)
+	}
+}
+
+func (s *Server) setupControlPlaneIngressRoutes() {
+	api := s.engine.Group("/api")
+
+	// 控制面入站：先 scope，再签名（可选）
+	api.Use(s.requireScope())
 	if s.cfg.Auth.RequireSignature && s.cfg.Auth.SharedSecret != "" {
 		api.Use(s.requireSignature())
 	}
-	{
-		// Agent 注册
-		api.POST("/agents/register", s.handleRegister)
-		// Agent 列表
-		api.GET("/agents", s.requireScope(), s.handleListAgents)
-		// Agent 详情
-		api.GET("/agents/:id", s.requireScope(), s.handleGetAgent)
-		// 控制面推送任务到指定 Agent
-		api.POST("/agents/:id/tasks", s.requireScope(), s.handlePushTask)
-		// 取消指定 Agent 的任务
-		api.POST("/agents/:id/tasks/:task_id/cancel", s.requireScope(), s.handleCancelTask)
-		// 任务队列统计信息
-		api.GET("/stats/queues", s.requireScope(), s.handleGetStats)
-	}
 
-	// WebSocket 连接
+	{
+		// Agent 列表
+		api.GET("/agents", s.handleListAgents)
+		// Agent 详情
+		api.GET("/agents/:id", s.handleGetAgent)
+		// 控制面推送任务到指定 Agent
+		api.POST("/agents/:id/tasks", s.handlePushTask)
+		// 取消指定 Agent 的任务
+		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
+		// 任务队列统计信息
+		api.GET("/stats/queues", s.handleGetStats)
+		// 观测指标（JSON）
+		api.GET("/metrics", s.handleMetrics)
+	}
+}
+
+func (s *Server) setupWebSocketRoutes() {
+	// WebSocket 连接（Agent 入站）
 	s.engine.GET("/ws/agent/:id", s.handleWebSocket)
 }
 
@@ -142,7 +162,7 @@ func (s *Server) Start() error {
 	// 启动任务分发器
 	s.taskDispatcher.Start()
 
-	// 启动asynq服务器（如果启用）
+	// 启动asynq服务器
 	if s.taskQueue != nil {
 		go func() {
 			if err := s.taskQueue.Start(); err != nil {
@@ -172,7 +192,7 @@ func (s *Server) Stop() {
 	// 停止任务分发器
 	s.taskDispatcher.Stop()
 
-	// 停止asynq服务器（如果启用）
+	// 停止asynq服务器
 	if s.taskQueue != nil {
 		s.taskQueue.Stop()
 	}
@@ -361,11 +381,11 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 
 	// Agent 在线，尝试通过 WebSocket 发送取消消息
 	if conn.Status == "active" && conn.Conn != nil {
-	if err := conn.SendCancelTask(taskID); err != nil {
-		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  taskID,
-		}).Error("send cancel task message failed")
+		if err := conn.SendCancelTask(taskID); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"agent_id": agentID,
+				"task_id":  taskID,
+			}).Error("send cancel task message failed")
 			// WebSocket 发送失败，尝试从队列中删除
 			if s.taskQueue != nil {
 				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
@@ -378,21 +398,21 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 					return
 				}
 			}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
-	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id": agentID,
-		"task_id":  taskID,
+		logger.GetLogger().WithFields(map[string]interface{}{
+			"agent_id": agentID,
+			"task_id":  taskID,
 		}).Info("cancel task request sent to agent via websocket")
 
-	c.JSON(http.StatusOK, gin.H{
-		"task_id":  taskID,
-		"agent_id": agentID,
-		"status":   "cancelled",
+		c.JSON(http.StatusOK, gin.H{
+			"task_id":  taskID,
+			"agent_id": agentID,
+			"status":   "cancelled",
 			"source":   "websocket",
-	})
+		})
 		return
 	}
 
@@ -422,7 +442,7 @@ func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
 	}
 
 	// 查询所有队列，找到匹配的任务
-	queues := []string{task.QueueCritical, task.QueueDefault, task.QueueLow}
+	queues := []string{task.QueueCritical, task.QueueDefault, task.QueueLong}
 	states := []string{"pending", "active", "retry", "scheduled"}
 
 	for _, queueName := range queues {
@@ -464,11 +484,11 @@ func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
 					// 找到匹配的任务，删除它
 					if err := inspector.DeleteTask(queueName, taskInfo.ID); err != nil {
 						logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-							"agent_id":    agentID,
-							"task_id":     taskID,
-							"asynq_id":    taskInfo.ID,
-							"queue":       queueName,
-							"state":       state,
+							"agent_id": agentID,
+							"task_id":  taskID,
+							"asynq_id": taskInfo.ID,
+							"queue":    queueName,
+							"state":    state,
 						}).Error("delete task from queue failed")
 						return err
 					}
@@ -598,10 +618,8 @@ func (s *Server) requireSignature() gin.HandlerFunc {
 		// 读过 body 之后需要恢复
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		path := c.FullPath()
-		if path == "" {
-			path = c.Request.URL.Path
-		}
+		// IMPORTANT: 使用真实 URL.Path（而不是 gin 的 FullPath 路由模板），保证控制面计算签名稳定一致
+		path := c.Request.URL.Path
 		expected := computeHMAC(secret, c.Request.Method, path, tsStr, bodyBytes)
 		if !hmac.Equal([]byte(expected), []byte(sig)) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid signature"})

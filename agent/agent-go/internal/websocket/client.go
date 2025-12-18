@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"sync"
@@ -32,6 +31,11 @@ type Client struct {
 	// 回调函数
 	onTask   func(*api.TaskSpec)
 	onCancel func(string)
+}
+
+// SendMessage 发送一条协议消息（用于 outbox 冲刷等场景）
+func (c *Client) SendMessage(msg Message) error {
+	return c.writeMessage(msg)
 }
 
 // NewClient 创建 WebSocket 客户端
@@ -124,9 +128,10 @@ func (c *Client) SetOverrideURL(u string) {
 
 // SendHeartbeat 发送心跳
 func (c *Client) SendHeartbeat(timestamp int64, system *api.SystemInfo) error {
-	msg := map[string]interface{}{
-		"type": "heartbeat",
-		"payload": map[string]interface{}{
+	msg := Message{
+		Type:      "heartbeat",
+		Timestamp: time.Now().UnixMilli(),
+		Payload: map[string]interface{}{
 			"timestamp": timestamp,
 			"system":    system,
 		},
@@ -136,20 +141,22 @@ func (c *Client) SendHeartbeat(timestamp int64, system *api.SystemInfo) error {
 
 // SendTaskResult 发送任务结果
 func (c *Client) SendTaskResult(result *api.TaskResult) error {
-	msg := map[string]interface{}{
-		"type":    "task_result",
-		"task_id": result.TaskID,
-		"result":  result,
+	msg := Message{
+		Type:      "task_result",
+		Timestamp: time.Now().UnixMilli(),
+		TaskID:    result.TaskID,
+		Result:    result,
 	}
 	return c.writeMessage(msg)
 }
 
 // SendLogs 发送日志
 func (c *Client) SendLogs(taskID string, logs []api.LogEntry) error {
-	msg := map[string]interface{}{
-		"type":    "log",
-		"task_id": taskID,
-		"logs":    logs,
+	msg := Message{
+		Type:      "log",
+		Timestamp: time.Now().UnixMilli(),
+		TaskID:    taskID,
+		Logs:      logs,
 	}
 	return c.writeMessage(msg)
 }
@@ -174,7 +181,7 @@ func (c *Client) readLoop() {
 			// 设置读取超时
 			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-			var msg map[string]interface{}
+			var msg Message
 			if err := conn.ReadJSON(&msg); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					logger.GetLogger().WithError(err).Error("websocket read error")
@@ -218,45 +225,21 @@ func (c *Client) writeLoop() {
 }
 
 // handleMessage 处理接收到的消息
-func (c *Client) handleMessage(msg map[string]interface{}) {
-	msgType, ok := msg["type"].(string)
-	if !ok {
-		return
-	}
-
-	switch msgType {
+func (c *Client) handleMessage(msg Message) {
+	switch msg.Type {
 	case "task":
-		// 接收任务
-		taskData, ok := msg["task"].(map[string]interface{})
-		if !ok {
+		if msg.Task == nil {
 			return
 		}
-
-		taskJSON, err := json.Marshal(taskData)
-		if err != nil {
-			logger.GetLogger().WithError(err).Error("marshal task failed")
-			return
-		}
-
-		var task api.TaskSpec
-		if err := json.Unmarshal(taskJSON, &task); err != nil {
-			logger.GetLogger().WithError(err).Error("unmarshal task failed")
-			return
-		}
-
 		if c.onTask != nil {
-			c.onTask(&task)
+			c.onTask(msg.Task)
 		}
-
 	case "cancel_task":
-		// 接收取消任务
-		taskID, ok := msg["task_id"].(string)
-		if !ok {
+		if msg.TaskID == "" {
 			return
 		}
-
 		if c.onCancel != nil {
-			c.onCancel(taskID)
+			c.onCancel(msg.TaskID)
 		}
 	}
 }

@@ -24,11 +24,11 @@
 
 ### 📝 脚本模板
 
-- **脚本管理**: 支持 Shell、Python、PowerShell 等多种脚本类型
+- **脚本管理**: 支持 Shell、Python、PowerShell、JavaScript、Go 等多种脚本类型
 - **模板化**: 支持参数化脚本模板，提高脚本复用性
-- **版本控制**: 脚本版本管理，支持历史版本回滚
+- **版本控制**: 脚本版本管理，支持历史版本回滚与版本 Diff
 - **分类标签**: 支持脚本分类和标签管理
-- **代码高亮**: 集成 Monaco Editor，支持语法高亮和智能提示
+- **代码高亮**: 集成 Monaco Editor，支持多语言语法高亮与基础校验
 
 ### 🔧 作业模板
 
@@ -91,14 +91,14 @@
 - **心跳机制**: 自动心跳检测和连接管理
 - **连接恢复**: 自动重连和状态恢复机制
 
-### 🤖 Agent 系统
+### 🤖 Agent / Agent-Server 系统
 
-- **双模式支持**: 支持直连控制面（Direct）和通过 Agent-Server 两种连接模式
-- **跨云跨网络**: Agent-Server 模式支持跨云、跨网络的 Agent 管理
-- **WebSocket 通信**: Agent-Server 模式下使用 WebSocket 实现实时双向通信
+- **双模式支持**: 支持直连控制面（Direct）和经 Agent-Server 转发的两种模式，当前推荐 Agent-Server 模式
+- **控制面集成**: Django 侧提供 Agent 安装/卸载、生命周期管理、版本管理和批量操作，支持基于安装脚本的 `pending → online → offline/disabled` 状态机
+- ****Agent-Server 网关****: 负责维护与 Agent 的 WebSocket 连接，基于 Asynq 队列分发任务，并通过 **Redis Streams 将日志/结果/状态回传控制面**
+- **幂等与取消**: 控制面提供任务取消 API；Agent 侧维护“最近完成任务”缓存避免重复执行，Agent-Server 优先通过 WS 下发取消指令，失败时回退删除队列任务
+- **多语言执行器**: Agent 内置 Shell / Python / PowerShell / JS 等多语言执行器，支持并发与基础重试
 - **任务分发**: Agent-Server 自动从控制面拉取任务并推送给 Agent
-- **日志聚合**: Agent-Server 批量聚合 Agent 日志并推送到控制面
-- **心跳代理**: Agent-Server 管理 Agent 心跳并可选转发到控制面
 - **资源监控**: 实时收集和上报 Agent 系统资源使用情况（CPU、内存、磁盘、网络）
 - **性能指标**: 内置性能监控和指标收集（任务统计、执行时间、网络传输等）
 - **统一错误码**: 完善的错误码体系，便于问题定位和错误处理
@@ -111,7 +111,7 @@
 - **框架**: Django 5.0.1 + Django REST Framework 3.14+
 - **数据库**: SQLite (开发) / PostgreSQL (生产)
 - **缓存**: Redis 6.4+
-- **任务队列**: Celery 5.3+ + Redis
+- **任务调度与队列**: APScheduler + Redis（控制面定时任务与后台任务） / Asynq（Agent-Server 任务队列）
 - **认证**: JWT + Session + Guardian
 - **API 文档**: drf-spectacular (OpenAPI 3.0)
 - **权限**: django-guardian 3.0+
@@ -141,12 +141,12 @@
 
 ### 核心组件
 
-- **SSH 连接**: 基于 Fabric 的安全 SSH 连接
-- **文件传输**: 支持 SFTP 文件上传下载
+- **Agent 执行链路**: 以 Agent / Agent-Server 为统一通道完成脚本执行、作业步骤和文件上传/下发（HTTP + WebSocket）
+- **SSH 能力**: 仍保留 Fabric/SSH 能力，主要用于 Agent 安装/卸载等少量场景
 - **实时通信**: SSE + Redis Stream 实时日志推送
 - **健康检查**: django-health-check 3.20+ 系统监控
 - **日志系统**: 结构化日志记录和轮转
-- **任务队列**: Celery 5.3+ 异步任务处理
+- **任务队列**: Redis + APScheduler 后台任务调度，Agent-Server 侧使用 Asynq 进行任务排队与重试
 - **缓存系统**: Redis 6.4+ 多数据库缓存
 - **权限系统**: django-guardian 3.0+ 对象级权限
 - **API 文档**: drf-spectacular OpenAPI 3.0 文档
@@ -167,7 +167,6 @@
 
 ### ⚡ 异步任务处理
 
-- **Celery 集成**: 基于 Celery 的分布式任务队列
 - **任务监控**: 实时监控任务执行状态和进度
 - **失败重试**: 智能的任务失败重试机制
 - **超时控制**: 可配置的任务执行超时时间
@@ -184,9 +183,11 @@
 ## 🖼️ 系统界面截图
 
 ### 仪表盘
+
 ![仪表盘](images/仪表盘.png)
 
 ### 主机与账号
+
 ![主机管理](images/主机管理.png)
 ![新建主机](images/新建主机.png)
 ![新建分组](images/新建分组.png)
@@ -194,11 +195,13 @@
 ![新建账号](images/新建账号.png)
 
 ### 脚本模板
+
 ![脚本模板](images/脚本模板.png)
 ![新建脚本](images/新建脚本.png)
 ![脚本预览](images/脚本预览.png)
 
 ### 作业与执行
+
 ![作业模板](images/作业模板.png)
 ![新建job](images/新建job.png)
 ![job详情](images/job详情.png)
@@ -206,6 +209,7 @@
 ![快速执行](images/快速执行.png)
 
 ### 定时任务与审计
+
 ![定时任务1](images/定时任务1.png)
 ![定时任务2](images/定时任务2.png)
 ![定时任务3](images/定时任务3.png)
@@ -729,6 +733,7 @@ GET /api/dashboard/stats/
 适用于 Agent 和控制面在同一网络环境，可以直接访问的场景。
 
 **配置示例** (`agent/agent-go/configs/config.yaml`):
+
 ```yaml
 mode: "direct"
 control_plane_url: "http://localhost:8000"
@@ -741,6 +746,7 @@ max_concurrent_tasks: 5
 ```
 
 **特点**:
+
 - Agent 直接通过 HTTP 与控制面通信
 - 使用轮询方式拉取任务（默认 5 秒间隔）
 - 日志通过 HTTP 批量推送到控制面
@@ -751,6 +757,7 @@ max_concurrent_tasks: 5
 适用于跨云、跨网络、NAT 等复杂网络环境。
 
 **配置示例** (`agent/agent-go/configs/config.yaml`):
+
 ```yaml
 mode: "agent-server"
 agent_server_url: "ws://agent-server.example.com:8080"
@@ -761,6 +768,7 @@ heartbeat_interval: 10
 ```
 
 **特点**:
+
 - Agent 通过 WebSocket 连接到 Agent-Server
 - Agent-Server 从控制面拉取任务并推送给 Agent（实时）
 - Agent-Server 批量聚合日志并推送到控制面
@@ -770,6 +778,7 @@ heartbeat_interval: 10
 ### Agent-Server 部署
 
 **配置示例** (`agent/agent-server-go/configs/config.yaml`):
+
 ```yaml
 server:
   host: "0.0.0.0"

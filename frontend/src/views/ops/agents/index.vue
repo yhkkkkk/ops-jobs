@@ -215,7 +215,7 @@
             >
               {{ record.status_display }}
             </a-tag>
-            <a-tooltip v-if="record.status === 'pending'" content="此 Agent 已生成安装脚本但尚未安装，点击「查看安装脚本」可重新获取脚本">
+            <a-tooltip v-if="getStatusHint(record.status)" :content="getStatusHint(record.status)">
               <IconInfoCircle style="color: #ff7d00; cursor: help" />
             </a-tooltip>
           </a-space>
@@ -842,6 +842,15 @@ const getStatusColor = (status: string) => {
     disabled: 'gray'
   }
   return colorMap[status] || 'blue'
+}
+
+// 状态说明（hover 提示）
+const getStatusHint = (status: string) => {
+  const hintMap: Record<string, string> = {
+    pending: '已生成安装脚本但尚未安装/上线，可点击「查看安装脚本」重新获取脚本',
+    offline: '最近未收到心跳，请检查 Agent 与 Agent-Server/控制面的网络或重启 Agent'
+  }
+  return hintMap[status] || ''
 }
 
 // 版本落后提示文案

@@ -19,6 +19,7 @@ type Config struct {
 	WSBackoffInitialMs int               `mapstructure:"ws_backoff_initial_ms"`
 	WSBackoffMaxMs     int               `mapstructure:"ws_backoff_max_ms"`
 	WSMaxRetries       int               `mapstructure:"ws_max_retries"`
+	WSOutboxMaxSize    int               `mapstructure:"ws_outbox_max_size"` // ws 断线本地缓冲上限（消息条数）
 	HTTPAddr           string            `mapstructure:"http_addr"`
 	DirectSharedSecret string            `mapstructure:"direct_shared_secret"` // 直连模式共享密钥（Bearer/HMAC）
 	AgentName          string            `mapstructure:"agent_name"`
@@ -152,6 +153,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ws_backoff_initial_ms", 1000)
 	v.SetDefault("ws_backoff_max_ms", 30000)
 	v.SetDefault("ws_max_retries", 6)
+	v.SetDefault("ws_outbox_max_size", 2000)
 	v.SetDefault("http_addr", ":8080")
 	v.SetDefault("direct_shared_secret", "")
 	v.SetDefault("agent_name", getHostname())
@@ -202,6 +204,9 @@ func bindEnvVars(v *viper.Viper) {
 	}
 	if val := os.Getenv("AGENT_WS_MAX_RETRIES"); val != "" {
 		v.Set("ws_max_retries", val)
+	}
+	if val := os.Getenv("AGENT_WS_OUTBOX_MAX_SIZE"); val != "" {
+		v.Set("ws_outbox_max_size", val)
 	}
 	if val := os.Getenv("AGENT_HTTP_ADDR"); val != "" {
 		v.Set("http_addr", val)

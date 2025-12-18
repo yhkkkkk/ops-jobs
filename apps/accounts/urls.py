@@ -21,7 +21,7 @@ urlpatterns = [
     path('', include(router.urls)),
 ]
 
-# 2FA相关路由（如果启用）
+# 2FA相关路由
 if getattr(settings, 'TWO_FACTOR_ENABLED', False):
     urlpatterns.extend([
         path('check-2fa/', views.check_2fa_required, name='check_2fa_required'),

@@ -46,6 +46,7 @@ type Agent struct {
 	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
 	tasksLock      sync.RWMutex                     // 任务映射锁
 	wsURL          string
+	wsOutbox       *wsclient.Outbox
 	// completedTasks 用于幂等控制的最近已完成任务集合（LRU）
 	completedTasks map[string]time.Time
 	completedLock  sync.Mutex
@@ -80,7 +81,7 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	logStream := logstream.NewLogStream(httpClient, "", batchSize, flushInterval)
 
-	// 创建asynq任务队列（如果启用）
+	// 创建asynq任务队列
 	var taskQueue *taskqueue.TaskQueue
 	if cfg.Asynq.Enabled && cfg.Redis.Enabled {
 		var err error
@@ -97,6 +98,7 @@ func NewAgent(cfg *config.Config) *Agent {
 		client:         httpClient,
 		taskQueue:      taskQueue,
 		system:         collectSystemInfo(),
+		wsOutbox:       wsclient.NewOutbox(cfg.WSOutboxMaxSize),
 		ctx:            ctx,
 		cancel:         cancel,
 		executor:       exec,
@@ -129,7 +131,7 @@ func (a *Agent) Start() error {
 		return err
 	}
 
-	// 启动asynq任务队列服务器（如果启用）
+	// 启动asynq任务队列服务器
 	if a.taskQueue != nil {
 		// 注册任务处理器
 		a.taskQueue.RegisterHandler(func(ctx context.Context, task *api.TaskSpec) error {
@@ -345,18 +347,36 @@ func (a *Agent) createLogCallback(taskID string) func(string) {
 		logger.GetLogger().WithField("task_id", taskID).Info(logLine)
 
 		if a.cfg.Mode == "agent-server" {
-			// Agent-Server 模式：通过 WebSocket 发送日志
+			logEntry := api.LogEntry{
+				Timestamp: time.Now().Unix(),
+				Level:     "info",
+				Content:   logLine,
+				Stream:    "stdout",
+				TaskID:    taskID,
+			}
+
+			// Agent-Server 模式：优先直发，断线则进入 outbox 本地缓冲
 			if a.wsClient != nil && a.wsClient.IsConnected() {
-				logEntry := api.LogEntry{
-					Timestamp: time.Now().Unix(),
-					Content:   logLine,
-					Stream:    "stdout",
-					TaskID:    taskID,
-				}
-				// 直接发送单条日志（Agent-Server 会批量聚合）
 				if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
 					logger.GetLogger().WithError(err).Error("send log via websocket failed")
+					if a.wsOutbox != nil {
+						a.wsOutbox.Enqueue(wsclient.Message{
+							Type:      "log",
+							Timestamp: time.Now().UnixMilli(),
+							TaskID:    taskID,
+							Logs:      []api.LogEntry{logEntry},
+						})
+					}
 				}
+				return
+			}
+			if a.wsOutbox != nil {
+				a.wsOutbox.Enqueue(wsclient.Message{
+					Type:      "log",
+					Timestamp: time.Now().UnixMilli(),
+					TaskID:    taskID,
+					Logs:      []api.LogEntry{logEntry},
+				})
 			}
 		} else {
 			// Direct 模式：通过 HTTP 批量推送
@@ -425,12 +445,30 @@ func (a *Agent) reportTaskResult(result *api.TaskResult) {
 		if a.wsClient != nil && a.wsClient.IsConnected() {
 			if err := a.wsClient.SendTaskResult(result); err != nil {
 				logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result via websocket failed")
+				if a.wsOutbox != nil {
+					a.wsOutbox.Enqueue(wsclient.Message{
+						Type:      "task_result",
+						Timestamp: time.Now().UnixMilli(),
+						TaskID:    result.TaskID,
+						Result:    result,
+					})
+				}
 			} else {
 				logger.GetLogger().WithFields(map[string]interface{}{
 					"task_id": result.TaskID,
 					"status":  result.Status,
 				}).Info("task completed")
 			}
+			return
+		}
+		// 断线期间先落到 outbox，等待重连后补传
+		if a.wsOutbox != nil {
+			a.wsOutbox.Enqueue(wsclient.Message{
+				Type:      "task_result",
+				Timestamp: time.Now().UnixMilli(),
+				TaskID:    result.TaskID,
+				Result:    result,
+			})
 		}
 	} else {
 		// Direct 模式：通过 HTTP 发送结果
@@ -758,6 +796,7 @@ func (a *Agent) connectWithBackoff() error {
 				}).Warn("websocket connect failed")
 				return err
 			}
+			a.flushWSOutbox()
 			return nil
 		},
 		retry.Attempts(uint(attempts)),
@@ -767,6 +806,27 @@ func (a *Agent) connectWithBackoff() error {
 		retry.LastErrorOnly(true),
 		retry.Context(a.ctx),
 	)
+}
+
+func (a *Agent) flushWSOutbox() {
+	if a.cfg.Mode != "agent-server" || a.wsClient == nil || !a.wsClient.IsConnected() || a.wsOutbox == nil {
+		return
+	}
+
+	// 小批量冲刷，避免一次性写太多导致阻塞
+	for {
+		batch := a.wsOutbox.Drain(200)
+		if len(batch) == 0 {
+			return
+		}
+		for _, msg := range batch {
+			if err := a.wsClient.SendMessage(msg); err != nil {
+				// 发送失败：回滚到 outbox（保持顺序）
+				a.wsOutbox.Enqueue(msg)
+				return
+			}
+		}
+	}
 }
 
 // getAgentIDFromInfo 通过 Agent 信息接口获取 Agent ID

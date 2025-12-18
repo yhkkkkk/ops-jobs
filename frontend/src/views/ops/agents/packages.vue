@@ -401,6 +401,7 @@ const columns = ref([
   {
     title: '文件名',
     dataIndex: 'file_name',
+    width: 150,
     ellipsis: true,
     tooltip: true,
   },
