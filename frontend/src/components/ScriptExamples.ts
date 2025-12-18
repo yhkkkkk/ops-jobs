@@ -123,6 +123,71 @@ job_start
 ###### 如果返回值为0，则认为此脚本执行成功，如果非0，则认为脚本执行失败
 ###### 可在此处开始编写您的脚本逻辑代码`,
 
+  javascript: `// JavaScript 脚本示例
+// 说明：在 Node.js 环境下执行，最后一行的退出码决定作业平台中的成功/失败
+
+function jobStart() {
+  const now = new Date().toISOString()
+  console.log(\`[\${now}][PID:\${process.pid}] job_start\`)
+}
+
+function jobSuccess(message = '') {
+  const now = new Date().toISOString()
+  console.log(\`[\${now}][PID:\${process.pid}] job_success:[\${message}]\`)
+  process.exit(0)
+}
+
+function jobFail(message = '') {
+  const now = new Date().toISOString()
+  console.error(\`[\${now}][PID:\${process.pid}] job_fail:[\${message}]\`)
+  process.exit(1)
+}
+
+jobStart()
+
+// TODO: 在此处编写你的业务逻辑
+// 示例：模拟执行
+console.log('hello from javascript script')
+
+// 根据逻辑结果选择调用 jobSuccess 或 jobFail
+jobSuccess('done')`,
+
+  go: `// Go 脚本示例
+// 说明：建议通过 'go run' 执行此文件，最后程序退出码决定作业平台中的成功/失败
+package main
+
+import (
+  "fmt"
+  "os"
+  "time"
+)
+
+func jobStart() {
+  now := time.Now().Format("2006-01-02 15:04:05")
+  fmt.Printf("[%s][PID:%d] job_start\n", now, os.Getpid())
+}
+
+func jobSuccess(message string) {
+  now := time.Now().Format("2006-01-02 15:04:05")
+  fmt.Printf("[%s][PID:%d] job_success:[%s]\n", now, os.Getpid(), message)
+  os.Exit(0)
+}
+
+func jobFail(message string) {
+  now := time.Now().Format("2006-01-02 15:04:05")
+  fmt.Fprintf(os.Stderr, "[%s][PID:%d] job_fail:[%s]\n", now, os.Getpid(), message)
+  os.Exit(1)
+}
+
+func main() {
+  jobStart()
+
+  // TODO: 在此处编写你的业务逻辑
+  fmt.Println("hello from go script")
+
+  // 根据逻辑结果选择调用 jobSuccess 或 jobFail
+  jobSuccess("done")
+}`,
 
 }
 
@@ -141,7 +206,9 @@ export function getScriptExample(scriptType: string): string {
 export const SCRIPT_TYPES = [
   { value: 'shell', label: 'Shell', color: 'blue' },
   { value: 'python', label: 'Python', color: 'green' },
-  { value: 'powershell', label: 'PowerShell', color: 'purple' }
+  { value: 'powershell', label: 'PowerShell', color: 'purple' },
+  { value: 'javascript', label: 'JavaScript', color: 'orange' },
+  { value: 'go', label: 'Go', color: 'cyan' },
 ]
 
 /**

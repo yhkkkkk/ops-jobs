@@ -194,7 +194,7 @@ export interface ScriptTemplate {
   id?: number
   name: string
   description?: string
-  script_type: 'shell' | 'python' | 'powershell'
+  script_type: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
   category?: string
   business_system?: number
   business_system_name?: string

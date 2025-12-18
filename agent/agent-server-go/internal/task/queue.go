@@ -287,10 +287,10 @@ func (q *TaskQueue) ListPendingTasks(agentID string) ([]*api.TaskSpec, error) {
 // queryTasksByState 按状态查询任务
 func (q *TaskQueue) queryTasksByState(inspector *asynq.Inspector, queueName, agentID, state string) []TaskWithMetadata {
 	var tasks []TaskWithMetadata
-	page := 1
-	pageSize := 100
+		page := 1
+		pageSize := 100
 
-	for {
+		for {
 		var taskInfos []*asynq.TaskInfo
 		var err error
 
@@ -307,50 +307,50 @@ func (q *TaskQueue) queryTasksByState(inspector *asynq.Inspector, queueName, age
 			return tasks
 		}
 
-		if err != nil {
+			if err != nil {
 			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 				"queue": queueName,
 				"state": state,
 			}).Warn("list tasks failed")
-			break
-		}
-
-		if len(taskInfos) == 0 {
-			break
-		}
-
-		for _, taskInfo := range taskInfos {
-			var payload TaskPayload
-			if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-					"queue":   queueName,
-					"task_id": taskInfo.ID,
-				}).Warn("unmarshal task payload failed")
-				continue
+				break
 			}
 
-			// 只返回指定Agent的任务
-			if payload.AgentID == agentID {
+		if len(taskInfos) == 0 {
+				break
+			}
+
+		for _, taskInfo := range taskInfos {
+				var payload TaskPayload
+				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
+					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+						"queue":   queueName,
+						"task_id": taskInfo.ID,
+					}).Warn("unmarshal task payload failed")
+					continue
+				}
+
+				// 只返回指定Agent的任务
+				if payload.AgentID == agentID {
 				taskMeta := TaskWithMetadata{
-					Task:     payload.Task,
-					Queue:    queueName,
-					TaskID:   taskInfo.ID,
+						Task:     payload.Task,
+						Queue:    queueName,
+						TaskID:   taskInfo.ID,
 					State:    state,
-					Priority: getQueuePriority(queueName),
+						Priority: getQueuePriority(queueName),
 				}
 				if !taskInfo.NextProcessAt.IsZero() {
 					taskMeta.NextProcessAt = taskInfo.NextProcessAt
 				}
 				tasks = append(tasks, taskMeta)
+				}
 			}
-		}
 
-		// 如果返回的任务数少于pageSize，说明已经是最后一页
+			// 如果返回的任务数少于pageSize，说明已经是最后一页
 		if len(taskInfos) < pageSize {
-			break
+				break
+			}
+			page++
 		}
-		page++
-	}
 
 	return tasks
 }

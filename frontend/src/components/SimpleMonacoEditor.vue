@@ -30,6 +30,15 @@ const emit = defineEmits<Emits>()
 const editorContainer = ref<HTMLElement>()
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 
+const normalizeLanguage = (lang?: string) => {
+  if (!lang) return 'shell'
+  const lower = lang.toLowerCase()
+  if (lower === 'js' || lower === 'javascript') return 'javascript'
+  if (lower === 'ts' || lower === 'typescript') return 'typescript'
+  if (lower === 'golang' || lower === 'go') return 'go'
+  return lower
+}
+
 const initEditor = () => {
   if (!editorContainer.value) return
 
@@ -37,7 +46,7 @@ const initEditor = () => {
     // 创建编辑器
     editor = monaco.editor.create(editorContainer.value, {
       value: props.modelValue,
-      language: props.language,
+      language: normalizeLanguage(props.language),
       theme: props.theme,
       readOnly: props.readonly,
       automaticLayout: true,
@@ -85,7 +94,7 @@ watch(() => props.language, (newLanguage) => {
   if (editor) {
     const model = editor.getModel()
     if (model) {
-      monaco.editor.setModelLanguage(model, newLanguage)
+      monaco.editor.setModelLanguage(model, normalizeLanguage(newLanguage))
     }
   }
 })

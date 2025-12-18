@@ -13,7 +13,7 @@ export interface ScriptValidationResult {
 }
 
 export interface ScriptValidationOptions {
-  language: 'shell' | 'python' | 'powershell'
+  language: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
   strictMode?: boolean
 }
 
@@ -55,6 +55,11 @@ export class ScriptValidator {
           break
         case 'powershell':
           results.push(...this.validatePowerShellLine(line, lineNumber))
+          break
+        case 'javascript':
+        case 'js':
+        case 'go':
+          // 暂不对 JS/Go 做语法级校验，仅预留扩展点
           break
       }
     })

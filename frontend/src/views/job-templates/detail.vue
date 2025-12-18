@@ -364,7 +364,8 @@ const getScriptTypeName = (type?: string) => {
     bash: 'Bash脚本',
     python: 'Python脚本',
     powershell: 'PowerShell脚本',
-    bat: 'Batch脚本'
+    javascript: 'JavaScript脚本',
+    go: 'Go脚本',
   }
   return typeMap[type || 'shell'] || type || 'Shell脚本'
 }
@@ -384,7 +385,9 @@ const getMonacoLanguage = (type?: string) => {
     bash: 'shell',
     python: 'python',
     powershell: 'powershell',
-    bat: 'bat'
+    bat: 'bat',
+    javascript: 'javascript',
+    go: 'go',
   }
   return languageMap[type || 'shell'] || 'shell'
 }

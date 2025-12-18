@@ -41,6 +41,7 @@ const languageMap = {
   powershell: 'powershell',
   sql: 'sql',
   javascript: 'javascript',
+  go: 'go',
   typescript: 'typescript',
   json: 'json',
   yaml: 'yaml',

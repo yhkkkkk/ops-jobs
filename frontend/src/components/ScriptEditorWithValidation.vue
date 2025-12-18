@@ -77,7 +77,7 @@ import { validateScript, type ScriptValidationResult } from '@/utils/scriptValid
 
 interface Props {
   modelValue: string
-  language?: 'shell' | 'python' | 'powershell'
+  language?: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
   theme?: string
   height?: number
   readonly?: boolean

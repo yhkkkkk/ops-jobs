@@ -454,6 +454,8 @@ const getScriptTypeColor = (type: string) => {
     shell: 'blue',
     python: 'green',
     powershell: 'purple',
+    javascript: 'orange',
+    go: 'cyan',
   } as Record<string, string>
   return colors[type] || 'gray'
 }
@@ -463,6 +465,8 @@ const getScriptTypeText = (type: string) => {
     shell: 'Shell',
     python: 'Python',
     powershell: 'PowerShell',
+    javascript: 'JavaScript',
+    go: 'Go',
   } as Record<string, string>
   return texts[type] || type
 }

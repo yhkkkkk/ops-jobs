@@ -62,6 +62,8 @@
             <a-option value="shell">Shell</a-option>
             <a-option value="python">Python</a-option>
             <a-option value="powershell">PowerShell</a-option>
+            <a-option value="javascript">JavaScript</a-option>
+            <a-option value="go">Go</a-option>
           </a-select>
         </a-form-item>
         <a-form-item label="分类">

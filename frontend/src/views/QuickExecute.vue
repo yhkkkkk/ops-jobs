@@ -127,13 +127,15 @@
         <!-- 执行参数 -->
         <a-card title="执行参数">
           <a-form layout="vertical">
-            <a-form-item label="脚本类型">
-              <a-select v-model="scriptType" @change="handleScriptTypeChange">
-                <a-option value="shell">Shell</a-option>
-                <a-option value="python">Python</a-option>
-                <a-option value="powershell">PowerShell</a-option>
-              </a-select>
-            </a-form-item>
+          <a-form-item label="脚本类型">
+            <a-select v-model="scriptType" @change="handleScriptTypeChange">
+              <a-option value="shell">Shell</a-option>
+              <a-option value="python">Python</a-option>
+              <a-option value="powershell">PowerShell</a-option>
+              <a-option value="javascript">JavaScript</a-option>
+              <a-option value="go">Go</a-option>
+            </a-select>
+          </a-form-item>
 
             <a-form-item label="超时时间(秒)">
               <a-input-number
@@ -291,7 +293,7 @@
           <script-editor-with-validation
             ref="editorRef"
             v-model="scriptContent"
-            :language="scriptType as 'shell' | 'python' | 'powershell'"
+            :language="scriptType as any"
             :theme="editorTheme"
             :height="600"
             :readonly="false"

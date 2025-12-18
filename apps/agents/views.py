@@ -8,8 +8,10 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from utils.agent_server_client import AgentServerClient
 from utils.audit_service import AuditLogService
 from utils.responses import SycResponse
+from apps.agents.execution_service import AgentExecutionService
 from .filters import AgentFilter, InstallRecordFilter, UninstallRecordFilter
 from .mixins import BatchOperationMixin
 from .models import Agent, AgentInstallRecord, AgentUninstallRecord
@@ -101,7 +103,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     "page": paginator.page.number,
                     "page_size": paginator.page_size,
                 },
-                message="获取 Agent 列表成功",
+                message="获取agent列表成功",
             )
         serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(
@@ -111,18 +113,18 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 "page": 1,
                 "page_size": len(serializer.data),
             },
-            message="获取 Agent 列表成功",
+            message="获取agent列表成功",
         )
 
     def retrieve(self, request, *args, **kwargs):
         agent = self.get_object()
         serializer = self.get_serializer(agent)
-        return SycResponse.success(content=serializer.data, message="获取 Agent 详情成功")
+        return SycResponse.success(content=serializer.data, message="获取agent详情成功")
 
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
         """
-        通过 token 获取当前 Agent 信息（用于 Agent 首次启动时获取自己的 ID）
+        通过 token 获取当前agent信息（用于agent首次启动时获取自己的 ID）
         """
         # 从 Authorization header 读取 token
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -167,7 +169,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 'status': agent.status,
                 **serializer.data
             },
-            message="获取 Agent 信息成功"
+            message="获取agent信息成功"
         )
 
     @action(detail=True, methods=["post"], url_path="issue_token")
@@ -192,7 +194,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                            extra={"token_last4": data["token_last4"]})
         return SycResponse.success(
             content={"token": data["token"], "expired_at": data["expired_at"], "token_last4": data["token_last4"]},
-            message="签发 Agent Token 成功（仅本次返回明文）",
+            message="签发agent token成功（仅本次返回明文）",
         )
 
     @action(detail=True, methods=["post"], url_path="revoke_token")
@@ -209,14 +211,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         AgentService.audit(request.user, "revoke_agent_token", agent, request=request, success=ok)
         if not ok:
             return SycResponse.error(message="当前无有效 token", code=404)
-        return SycResponse.success(message="吊销 Agent Token 成功")
+        return SycResponse.success(message="吊销agent token成功")
 
     @action(detail=True, methods=["post"], url_path="enable")
     def enable_agent(self, request, pk=None):
         agent = self.get_object()
         AgentService.enable_agent(agent)
         AgentService.audit(request.user, "enable_agent", agent, request=request)
-        return SycResponse.success(message="启用 Agent 成功")
+        return SycResponse.success(message="启用agent成功")
 
     @action(detail=True, methods=["post"], url_path="disable")
     def disable_agent(self, request, pk=None):
@@ -230,7 +232,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             )
         AgentService.disable_agent(agent)
         AgentService.audit(request.user, "disable_agent", agent, request=request)
-        return SycResponse.success(message="禁用 Agent 成功")
+        return SycResponse.success(message="禁用agent成功")
 
     # 辅助方法：构造Agent-Server基础url
     def _normalize_server_url(self, raw_url: str) -> str:
@@ -254,35 +256,32 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="status")
     def status(self, request, pk=None):
-        """获取 Agent 运行状态，只返回 Agent-Server 实时数据"""
+        """获取agent运行状态，只返回agent-server实时数据（经 HMAC 客户端 + X-Scope）"""
         agent = self.get_object()
         server_base = self._get_agent_server_base(agent, request.query_params.get("agent_server_url", ""))
 
         if not server_base:
-            return SycResponse.error(message="未配置 Agent-Server，无法查询实时状态")
-
-        import requests
-        from django.conf import settings
+            return SycResponse.error(message="未配置agent-server，无法查询实时状态")
 
         api_url = f"{server_base}/api/agents/{agent.host_id}"
-        headers = {"Content-Type": "application/json"}
-        token = getattr(settings, "AGENT_SERVER_TOKEN", None)
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        # 使用统一的 Agent-Server HMAC 客户端，并按 Agent 环境设置 X-Scope
+        client = AgentServerClient.from_settings()
+        scope = AgentExecutionService._get_agent_server_scope(agent)
+        headers = {"X-Scope": scope} if scope else {}
 
         try:
-            resp = requests.get(api_url, headers=headers, timeout=5)
+            resp = client.get(api_url, headers=headers, timeout=5)
             if resp.status_code == 200:
-                return SycResponse.success(content=resp.json(), message="获取 Agent 状态成功")
-            logger.warning("查询 Agent 状态失败 %s %s", resp.status_code, resp.text)
-            return SycResponse.error(message=f"Agent-Server 返回异常: HTTP {resp.status_code}")
+                return SycResponse.success(content=resp.json(), message="获取agent状态成功")
+            logger.warning("查询agent状态失败 %s %s", resp.status_code, resp.text)
+            return SycResponse.error(message=f"agent-server返回异常: HTTP {resp.status_code}")
         except Exception as exc:  # noqa: BLE001
-            logger.error("查询 Agent 状态异常: %s", exc, exc_info=True)
-            return SycResponse.error(message=f"查询 Agent 状态异常: {exc}")
+            logger.error("查询agent状态异常: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"查询agent状态异常: {exc}")
 
     @action(detail=True, methods=["post"], url_path="control")
     def control(self, request, pk=None):
-        """管控 Agent（start/stop/restart），调用 Agent-Server 控制接口"""
+        """管控agent（start/stop/restart），调用agent-server控制接口（HMAC + X-Scope）"""
         agent = self.get_object()
         serializer = AgentControlSerializer(data=request.data)
         if not serializer.is_valid():
@@ -290,16 +289,15 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
         server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
         if not server_base:
-            return SycResponse.error(message="未配置 Agent-Server，无法下发管控指令")
-
-        import requests
-        from django.conf import settings
+            return SycResponse.error(message="未配置agent-server，无法下发管控指令")
 
         api_url = f"{server_base}/api/agents/{agent.host_id}/control"
-        headers = {"Content-Type": "application/json"}
-        token = getattr(settings, "AGENT_SERVER_TOKEN", None)
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        # 使用统一 HMAC 客户端，并附带 X-Scope
+        client = AgentServerClient.from_settings()
+        scope = AgentExecutionService._get_agent_server_scope(agent)
+        headers = {}
+        if scope:
+            headers["X-Scope"] = scope
 
         payload = {
             "action": serializer.validated_data["action"],
@@ -307,24 +305,24 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         }
 
         try:
-            resp = requests.post(api_url, json=payload, headers=headers, timeout=5)
+            resp = client.post(api_url, json=payload, headers=headers, timeout=5)
             if resp.status_code == 200:
                 AgentService.audit(request.user, f"control_agent_{payload['action']}", agent, request=request)
                 return SycResponse.success(content=resp.json(), message="管控指令已下发")
-            logger.error("管控 Agent 失败 %s %s", resp.status_code, resp.text)
+            logger.error("管控agent失败 %s %s", resp.status_code, resp.text)
             return SycResponse.error(message=f"管控失败: HTTP {resp.status_code}")
         except Exception as exc:  # noqa: BLE001
-            logger.error("管控 Agent 异常: %s", exc, exc_info=True)
+            logger.error("管控agent异常: %s", exc, exc_info=True)
             return SycResponse.error(message=f"管控异常: {exc}")
 
     def destroy(self, request, *args, **kwargs):
-        """删除 Agent（仅允许删除 pending 状态的 Agent）"""
+        """删除agent（仅允许删除 pending 状态的 agent）"""
         agent = self.get_object()
 
         # 只允许删除 pending 状态的 Agent
         if agent.status != 'pending':
             return SycResponse.error(
-                message=f"只能删除待激活状态的 Agent，当前状态为：{agent.get_status_display()}",
+                message=f"只能删除待激活状态的agent，当前状态为：{agent.get_status_display()}",
                 code=400
             )
 
@@ -352,11 +350,11 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             success=True,
             extra={"host_name": host_name, "host_id": host_id, "agent_id": agent_id}
         )
-        return SycResponse.success(message=f"Agent ({host_name}) 删除成功")
+        return SycResponse.success(message=f"agent ({host_name}) 删除成功")
 
     @action(detail=False, methods=["post"], url_path="batch_disable")
     def batch_disable(self, request):
-        """批量禁用 Agent（带限流）"""
+        """批量禁用agent（带限流）"""
         serializer = BatchOperationSerializer(data=request.data)
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
@@ -402,14 +400,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="regenerate_script")
     def regenerate_script(self, request, pk=None):
         """
-        为指定 Agent 重新生成安装脚本（用于 pending 状态的 Agent）
+        为指定agent重新生成安装脚本（用于 pending 状态的 agent）
         这是备用操作，用于用户生成脚本后没有复制也没有安装的场景
         """
         agent = self.get_object()
 
         # 只有 pending 状态的 Agent 才能重新生成脚本
         if agent.status != 'pending':
-            return SycResponse.error(message="只有待激活状态的 Agent 才能重新生成脚本", code=400)
+            return SycResponse.error(message="只有待激活状态的agent才能重新生成脚本", code=400)
 
         # 查找最新的安装记录
         install_record = AgentInstallRecord.objects.filter(
@@ -418,7 +416,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ).order_by('-installed_at').first()
 
         if not install_record:
-            return SycResponse.error(message="未找到安装记录，无法重新生成脚本", code=404)
+            return SycResponse.error(message="未找到安装记录，无法重新生成安装脚本", code=404)
 
         # 重新签发 token
         token_data = AgentService.issue_token(agent, request.user, note="重新生成安装脚本")

@@ -660,6 +660,26 @@ class DashboardViewSet(viewsets.ViewSet):
                 'unknown': 0,
             }
 
+        # Agent 状态统计
+        try:
+            from apps.agents.models import Agent
+            agent_status = {
+                'total': Agent.objects.count(),
+                'pending': Agent.objects.filter(status='pending').count(),
+                'online': Agent.objects.filter(status='online').count(),
+                'offline': Agent.objects.filter(status='offline').count(),
+                'disabled': Agent.objects.filter(status='disabled').count(),
+            }
+        except Exception as e:
+            logger.error(f"获取 Agent 状态失败: {str(e)}")
+            agent_status = {
+                'total': 0,
+                'pending': 0,
+                'online': 0,
+                'offline': 0,
+                'disabled': 0,
+            }
+
         # 系统信息
         try:
             import psutil
@@ -715,6 +735,7 @@ class DashboardViewSet(viewsets.ViewSet):
 
         return {
             'host_status': host_status,
+            'agent_status': agent_status,
             'system_info': system_info,
             'service_status': service_status,
             'last_check': timezone.now().isoformat()

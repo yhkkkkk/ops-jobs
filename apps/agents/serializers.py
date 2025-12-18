@@ -395,40 +395,40 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         choices=['direct', 'agent-server'],
         default='agent-server',
         required=False,
-        help_text="安装模式"
+        help_text="安装模式：direct/agent-server"
     )
     agent_server_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="Agent-Server 地址（agent-server 模式需要）"
+        help_text="agent-server地址（agent-server模式需要）"
     )
     agent_server_backup_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="Agent-Server 备用地址（可选）"
+        help_text="agent-server备用地址（可选）"
     )
     ws_backoff_initial_ms = serializers.IntegerField(
         required=False,
         min_value=100,
         max_value=60000,
         default=1000,
-        help_text="WS 重连初始退避毫秒（可选，100~60000）"
+        help_text="ws重连初始退避毫秒（可选，100~60000）"
     )
     ws_backoff_max_ms = serializers.IntegerField(
         required=False,
         min_value=1000,
         max_value=600000,
         default=30000,
-        help_text="WS 重连最大退避毫秒（可选，1000~600000）"
+        help_text="ws重连最大退避毫秒（可选，1000~600000）"
     )
     ws_max_retries = serializers.IntegerField(
         required=False,
         min_value=1,
         max_value=20,
         default=6,
-        help_text="WS 重连最大次数（可选，1~20）"
+        help_text="ws重连最大次数（可选，1~20）"
     )
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
@@ -442,58 +442,58 @@ class BatchInstallSerializer(serializers.Serializer):
     account_id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="用于SSH的账号ID（可选）"
+        help_text="用于ssh的账号ID（可选）"
     )
     install_mode = serializers.ChoiceField(
         choices=['direct', 'agent-server'],
         default='agent-server',
         required=False,
-        help_text="安装模式"
+        help_text="安装模式：direct/agent-server"
     )
     agent_server_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="Agent-Server 地址（agent-server 模式需要）"
+        help_text="agent-server地址（agent-server模式需要）"
     )
     agent_server_backup_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="Agent-Server 备用地址（可选）"
+        help_text="agent-server备用地址（可选）"
     )
     ws_backoff_initial_ms = serializers.IntegerField(
         required=False,
         min_value=100,
         max_value=60000,
         default=1000,
-        help_text="WS 重连初始退避毫秒（可选，100~60000）"
+        help_text="ws重连初始退避毫秒（可选，100~60000）"
     )
     ws_backoff_max_ms = serializers.IntegerField(
         required=False,
         min_value=1000,
         max_value=600000,
         default=30000,
-        help_text="WS 重连最大退避毫秒（可选，1000~600000）"
+        help_text="ws重连最大退避毫秒（可选，1000~600000）"
     )
     ws_max_retries = serializers.IntegerField(
         required=False,
         min_value=1,
         max_value=20,
         default=6,
-        help_text="WS 重连最大次数（可选，1~20）"
+        help_text="ws重连最大次数（可选，1~20）"
     )
     ssh_timeout = serializers.IntegerField(
         required=False,
         min_value=60,
         max_value=900,
         default=300,
-        help_text="SSH 安装超时（秒，60~900）"
+        help_text="ssh安装超时（秒，60~900）"
     )
     allow_reinstall = serializers.BooleanField(
         required=False,
         default=False,
-        help_text="如主机已有 Agent 时是否允许覆盖安装"
+        help_text="如主机已有agent，是否允许覆盖安装"
     )
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
