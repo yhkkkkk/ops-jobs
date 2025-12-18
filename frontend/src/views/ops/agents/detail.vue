@@ -503,5 +503,9 @@ onMounted(() => {
 .agent-detail .agent-detail-content .info-grid .info-item .value {
   color: #1d2129;
 }
+
+:deep(.arco-breadcrumb-item) {
+  cursor: pointer;
+}
 </style>
 
