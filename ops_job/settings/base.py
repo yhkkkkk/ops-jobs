@@ -469,16 +469,6 @@ LOGGING = {
             'formatter': 'standard',
             'encoding': 'utf-8',
         },
-        'celery_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'celery.log',
-            'maxBytes': 1024*1024*50,  # 50MB
-            'backupCount': 5,
-            'formatter': 'standard',
-            'encoding': 'utf-8',
-            'delay': False,  # 立即写入，不缓冲
-        },
         'ssh_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
@@ -520,23 +510,8 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'celery': {
-            'handlers': ['console', 'celery_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'celery.task': {
-            'handlers': ['console', 'celery_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
         'hosts.ssh_manager': {
             'handlers': ['ssh_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'executor.tasks': {
-            'handlers': ['console', 'celery_file'],
             'level': 'INFO',
             'propagate': False,
         },

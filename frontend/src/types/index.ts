@@ -361,7 +361,6 @@ export interface ExecutionRecord {
   trigger_type_display: string
   executed_by: number
   executed_by_name: string
-  celery_task_id?: string
   execution_parameters: any
   execution_results: any
   error_message: string

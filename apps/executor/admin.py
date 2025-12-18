@@ -71,10 +71,10 @@ class ExecutionRecordAdmin(PermissionActionsMixin, GuardedModelAdmin):
         ('started_at', admin.DateFieldListFilter),
         ('finished_at', admin.DateFieldListFilter)
     ]
-    search_fields = ['execution_id', 'name', 'executed_by__username', 'celery_task_id']
+    search_fields = ['execution_id', 'name', 'executed_by__username']
     readonly_fields = [
         'execution_id', 'created_at', 'started_at', 'finished_at',
-        'duration_display', 'celery_task_id'
+        'duration_display'
     ]
 
     formfield_overrides = {
@@ -86,7 +86,7 @@ class ExecutionRecordAdmin(PermissionActionsMixin, GuardedModelAdmin):
             'fields': ('execution_id', 'execution_type', 'name', 'description', 'status')
         }),
         ('执行信息', {
-            'fields': ('executed_by', 'trigger_type', 'celery_task_id')
+            'fields': ('executed_by', 'trigger_type')
         }),
         ('执行参数', {
             'fields': ('execution_parameters',),

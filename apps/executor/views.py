@@ -63,7 +63,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         execution_record = self.get_object()
 
         # 如果执行正在运行，返回实时日志连接信息
-        if execution_record.is_running and execution_record.celery_task_id:
+        if execution_record.is_running:
             serializer = self.get_serializer(execution_record)
             return SycResponse.success(
                 content=serializer.data,
@@ -235,26 +235,10 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                         message=cancel_result.get('error', '取消任务失败')
                     )
             else:
-                # SSH方式：使用Celery取消方案
-                if execution_record.celery_task_id:
-                    from celery import current_app
-                    import signal
-
-                    # 第一层：设置redis取消标志（优雅取消）
-                    cache.set(f"cancel:{execution_record.execution_id}", "1", timeout=3600)
-                    logger.info(f"设置取消标志: {execution_record.execution_id}")
-
-                    # 第二层：发送SIGUSR1信号（强制取消）
-                    try:
-                        current_app.control.revoke(
-                            execution_record.celery_task_id,
-                            terminate=True,
-                            signal='SIGUSR1'
-                        )
-                        logger.info(f"发送取消信号: {execution_record.celery_task_id}")
-                    except Exception as e:
-                        logger.warning(f"发送取消信号失败: {e}")
-                        pass
+                # 传统 SSH 方式：仅设置 Redis 取消标志，由执行侧自行检查并退出
+                from django.core.cache import cache
+                cache.set(f"cancel:{execution_record.execution_id}", "1", timeout=3600)
+                logger.info(f"设置取消标志(SSH模式): {execution_record.execution_id}")
 
             # 更新执行记录状态
             execution_record.status = 'cancelled'

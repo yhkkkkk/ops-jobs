@@ -319,7 +319,7 @@ export const executionRecordApi = {
   },
 
   // 重试执行
-  retryExecution(id: number): Promise<{ execution_id: string; execution_record_id: number; task_id: string; celery_task_id: string; message: string }> {
+  retryExecution(id: number): Promise<{ execution_id: string; execution_record_id: number; task_id: string; message: string }> {
     return http.post(`/executor/execution-records/${id}/retry/`)
   },
 

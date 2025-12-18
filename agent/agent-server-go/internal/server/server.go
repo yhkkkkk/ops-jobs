@@ -4,26 +4,26 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"ops-job-agent-server/internal/agent"
+	"ops-job-agent-server/internal/auth"
 	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/internal/controlplane"
 	logstream "ops-job-agent-server/internal/log"
 	"ops-job-agent-server/internal/logger"
+	"ops-job-agent-server/internal/metrics"
 	"ops-job-agent-server/internal/task"
 	"ops-job-agent-server/pkg/api"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hibiken/asynq"
+	"github.com/spf13/cast"
 )
 
 var upgrader = websocket.Upgrader{
@@ -130,7 +130,7 @@ func (s *Server) setupAgentIngressRoutes() {
 func (s *Server) setupControlPlaneIngressRoutes() {
 	api := s.engine.Group("/api")
 
-	// 控制面入站：先 scope，再签名（可选）
+	// 控制面入站：先scope，再签名（可选）
 	api.Use(s.requireScope())
 	if s.cfg.Auth.RequireSignature && s.cfg.Auth.SharedSecret != "" {
 		api.Use(s.requireSignature())
@@ -146,9 +146,13 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		// 取消指定 Agent 的任务
 		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
 		// 任务队列统计信息
-		api.GET("/stats/queues", s.handleGetStats)
+		api.GET("/stats/queues", func(c *gin.Context) {
+			metrics.HandleQueueStats(c, s.taskQueue)
+		})
 		// 观测指标（JSON）
-		api.GET("/metrics", s.handleMetrics)
+		api.GET("/metrics", func(c *gin.Context) {
+			metrics.HandleOverview(c, s.agentManager, s.cfg, s.taskQueue)
+		})
 	}
 }
 
@@ -567,7 +571,7 @@ func (s *Server) requireScope() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		scope := c.GetHeader("X-Scope")
+		scope := c.GetHeader(auth.HeaderScope)
 		if scope == "" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing X-Scope"})
 			return
@@ -593,19 +597,19 @@ func (s *Server) requireSignature() gin.HandlerFunc {
 			return
 		}
 
-		tsStr := c.GetHeader("X-Timestamp")
-		sig := c.GetHeader("X-Signature")
+		tsStr := c.GetHeader(auth.HeaderTimestamp)
+		sig := c.GetHeader(auth.HeaderSignature)
 		if tsStr == "" || sig == "" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing signature headers"})
 			return
 		}
-		ts, err := strconv.ParseInt(tsStr, 10, 64)
+		ts, err := cast.ToInt64E(tsStr)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid timestamp"})
 			return
 		}
 		now := time.Now().Unix()
-		if absInt64(now-ts) > int64(clockSkew.Seconds()) {
+		if auth.AbsInt64(now-ts) > int64(clockSkew.Seconds()) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "timestamp skew too large"})
 			return
 		}
@@ -618,9 +622,9 @@ func (s *Server) requireSignature() gin.HandlerFunc {
 		// 读过 body 之后需要恢复
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		// IMPORTANT: 使用真实 URL.Path（而不是 gin 的 FullPath 路由模板），保证控制面计算签名稳定一致
+		// 使用真实 URL.Path（而不是gin的FullPath路由模板），保证控制面计算签名稳定一致
 		path := c.Request.URL.Path
-		expected := computeHMAC(secret, c.Request.Method, path, tsStr, bodyBytes)
+		expected := auth.ComputeHMAC(secret, c.Request.Method, path, tsStr, bodyBytes)
 		if !hmac.Equal([]byte(expected), []byte(sig)) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid signature"})
 			return
@@ -628,26 +632,6 @@ func (s *Server) requireSignature() gin.HandlerFunc {
 
 		c.Next()
 	}
-}
-
-func computeHMAC(secret, method, path, ts string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	// message = timestamp + "\n" + method + "\n" + path + "\n" + body
-	mac.Write([]byte(ts))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(method))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(path))
-	mac.Write([]byte("\n"))
-	mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func absInt64(v int64) int64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 // handleWebSocketMessages 处理 WebSocket 消息

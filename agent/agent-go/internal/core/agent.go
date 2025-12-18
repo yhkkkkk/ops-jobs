@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -50,6 +51,8 @@ type Agent struct {
 	// completedTasks 用于幂等控制的最近已完成任务集合（LRU）
 	completedTasks map[string]time.Time
 	completedLock  sync.Mutex
+	// heartbeatIntervalSec 支持运行时调整心跳间隔（秒），避免重启 Agent
+	heartbeatIntervalSec int64
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -109,6 +112,13 @@ func NewAgent(cfg *config.Config) *Agent {
 		runningTasks:   make(map[string]*executor.RunningTask),
 		completedTasks: make(map[string]time.Time),
 	}
+
+	// 初始化心跳间隔（秒），为后续动态刷新做准备
+	hb := cfg.HeartbeatInterval
+	if hb <= 0 {
+		hb = 10
+	}
+	agent.heartbeatIntervalSec = int64(hb)
 
 	if cfg.Mode == "agent-server" {
 		wsClient := wsclient.NewClient(cfg.AgentServerURL, cfg.AgentToken)
@@ -176,6 +186,9 @@ func (a *Agent) Start() error {
 		}()
 	}
 
+	// 订阅配置变更（动态调整部分运行参数，如心跳间隔、日志级别）
+	config.Subscribe(a.onConfigChanged)
+
 	a.started = true
 	return nil
 }
@@ -202,16 +215,15 @@ func (a *Agent) Stop() {
 
 func (a *Agent) heartbeatLoop() {
 	defer a.wg.Done()
-	interval := time.Duration(a.cfg.HeartbeatInterval) * time.Second
-	if interval == 0 {
-		interval = 10 * time.Second
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// 基础 ticker：1s，实际心跳间隔由 heartbeatIntervalSec 控制，支持运行时调整
+	baseTicker := time.NewTicker(time.Second)
+	defer baseTicker.Stop()
 
 	// 系统指标更新 ticker（每30秒更新一次）
 	metricsTicker := time.NewTicker(30 * time.Second)
 	defer metricsTicker.Stop()
+
+	var lastHeartbeat time.Time
 
 	for {
 		select {
@@ -221,7 +233,17 @@ func (a *Agent) heartbeatLoop() {
 		case <-metricsTicker.C:
 			// 更新系统指标
 			a.updateSystemMetrics()
-		case <-ticker.C:
+		case <-baseTicker.C:
+			intervalSec := atomic.LoadInt64(&a.heartbeatIntervalSec)
+			if intervalSec <= 0 {
+				intervalSec = 10
+			}
+			interval := time.Duration(intervalSec) * time.Second
+			if !lastHeartbeat.IsZero() && time.Since(lastHeartbeat) < interval {
+				continue
+			}
+			lastHeartbeat = time.Now()
+
 			if a.info == nil {
 				continue
 			}
@@ -826,6 +848,28 @@ func (a *Agent) flushWSOutbox() {
 				return
 			}
 		}
+	}
+}
+
+// onConfigChanged 处理配置变更事件（由 config.Subscribe 调用）。
+// 仅应用安全可热更新的字段，避免影响已有连接和任务流。
+func (a *Agent) onConfigChanged(newCfg *config.Config) {
+	if newCfg == nil {
+		return
+	}
+
+	// 动态调整心跳间隔
+	if hb := newCfg.HeartbeatInterval; hb > 0 {
+		old := atomic.LoadInt64(&a.heartbeatIntervalSec)
+		if int64(hb) != old {
+			atomic.StoreInt64(&a.heartbeatIntervalSec, int64(hb))
+			logger.GetLogger().WithField("heartbeat_interval", hb).Info("heartbeat interval updated from config")
+		}
+	}
+
+	// 动态调整日志级别
+	if newCfg.LogLevel != "" {
+		logger.SetLevel(newCfg.LogLevel)
 	}
 }
 

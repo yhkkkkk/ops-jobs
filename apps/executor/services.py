@@ -6,7 +6,6 @@ from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from .models import ExecutionRecord, ExecutionStep
 from utils.realtime_logs import realtime_log_service
-from celery import chain
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +50,11 @@ class ExecutionRecordService:
             raise
     
     @staticmethod
-    def update_execution_status(execution_record, status, celery_task_id=None, 
+    def update_execution_status(execution_record, status,
                                 error_message=None, execution_results=None):
         """更新执行状态"""
         try:
             execution_record.status = status
-            
-            if celery_task_id:
-                execution_record.celery_task_id = celery_task_id
             
             if status == 'running' and not execution_record.started_at:
                 execution_record.started_at = timezone.now()
@@ -75,52 +71,34 @@ class ExecutionRecordService:
             
             execution_record.save()
             
-            # 推送状态更新到实时日志
-            if execution_record.celery_task_id:
-                # 使用execution_id作为task_id，与fabric_tasks.py保持一致
-                summary = (execution_record.execution_results or {}).get('summary', {})
-                total_hosts = summary.get('total_hosts', 0)
-                success_hosts = summary.get('success_hosts', 0)
-                failed_hosts = summary.get('failed_hosts', 0)
-                realtime_log_service.push_status(str(execution_record.execution_id), {
-                    'status': status,
-                    'progress': 100 if status in ['success', 'failed'] else 0,
-                    'current_step': execution_record.name,
-                    'total_hosts': total_hosts,
-                    'success_hosts': success_hosts,
-                    'failed_hosts': failed_hosts,
-                    'running_hosts': max(total_hosts - success_hosts - failed_hosts, 0),
-                    'message': f'执行状态: {execution_record.get_status_display()}'
-                })
+            # 推送状态更新到实时日志（统一使用 execution_id 作为 task_id）
+            summary = (execution_record.execution_results or {}).get('summary', {})
+            total_hosts = summary.get('total_hosts', 0)
+            success_hosts = summary.get('success_hosts', 0)
+            failed_hosts = summary.get('failed_hosts', 0)
+            realtime_log_service.push_status(str(execution_record.execution_id), {
+                'status': status,
+                'progress': 100 if status in ['success', 'failed'] else 0,
+                'current_step': execution_record.name,
+                'total_hosts': total_hosts,
+                'success_hosts': success_hosts,
+                'failed_hosts': failed_hosts,
+                'running_hosts': max(total_hosts - success_hosts - failed_hosts, 0),
+                'message': f'执行状态: {execution_record.get_status_display()}'
+            })
 
             # 如果执行完成，立即归档日志（同步执行，确保日志不丢失）
-            if status in ['success', 'failed', 'cancelled', 'timeout'] and execution_record.celery_task_id:
+            if status in ['success', 'failed', 'cancelled', 'timeout']:
                 try:
                     from utils.log_archive_service import log_archive_service
-                    # 同步执行归档，确保日志不丢失
-                    # 使用execution_id作为task_id，因为日志推送时使用的是execution_id
                     archive_success = log_archive_service.archive_execution_logs(
                         execution_record.execution_id,
                         str(execution_record.execution_id)
                     )
                     if not archive_success:
                         logger.warning(f"日志归档失败: {execution_record.execution_id}")
-                        # 如果同步归档失败，尝试异步归档
-                        from celery import current_app
-                        current_app.send_task(
-                            'utils.tasks.archive_execution_logs',
-                            args=[execution_record.execution_id, str(execution_record.execution_id)],
-                            countdown=5
-                        )
                 except Exception as e:
                     logger.error(f"日志归档异常: {execution_record.execution_id} - {e}")
-                    # 异步归档作为备选方案
-                    from celery import current_app
-                    current_app.send_task(
-                        'utils.tasks.archive_execution_logs',
-                        args=[execution_record.execution_id, str(execution_record.execution_id)],
-                        countdown=5
-                    )
 
             # 更新ExecutionPlan统计
             if hasattr(execution_record.related_object, 'success_executions'):
@@ -137,25 +115,23 @@ class ExecutionRecordService:
     def update_host_results(execution_record, total_hosts=None, success_hosts=None, failed_hosts=None):
         """更新主机执行结果统计"""
         try:
-            # 推送统计更新到实时日志
-            if execution_record.celery_task_id:
-                # 使用execution_id作为task_id，与fabric_tasks.py保持一致
-                summary = (execution_record.execution_results or {}).get('summary', {})
-                total = total_hosts if total_hosts is not None else summary.get('total_hosts', 0)
-                success = success_hosts if success_hosts is not None else summary.get('success_hosts', 0)
-                failed = failed_hosts if failed_hosts is not None else summary.get('failed_hosts', 0)
-                running = max(total - success - failed, 0)
-                progress = (success + failed) / total * 100 if total > 0 else 0
-                realtime_log_service.push_status(str(execution_record.execution_id), {
-                    'status': execution_record.status,
-                    'progress': progress,
-                    'current_step': execution_record.name,
-                    'total_hosts': total,
-                    'success_hosts': success,
-                    'failed_hosts': failed,
-                    'running_hosts': running,
-                    'message': f'主机执行统计更新'
-                })
+            # 推送统计更新到实时日志（统一使用 execution_id 作为 task_id）
+            summary = (execution_record.execution_results or {}).get('summary', {})
+            total = total_hosts if total_hosts is not None else summary.get('total_hosts', 0)
+            success = success_hosts if success_hosts is not None else summary.get('success_hosts', 0)
+            failed = failed_hosts if failed_hosts is not None else summary.get('failed_hosts', 0)
+            running = max(total - success - failed, 0)
+            progress = (success + failed) / total * 100 if total > 0 else 0
+            realtime_log_service.push_status(str(execution_record.execution_id), {
+                'status': execution_record.status,
+                'progress': progress,
+                'current_step': execution_record.name,
+                'total_hosts': total,
+                'success_hosts': success,
+                'failed_hosts': failed,
+                'running_hosts': running,
+                'message': '主机执行统计更新'
+            })
             
         except Exception as e:
             logger.error(f"更新主机结果失败: {execution_record.execution_id} - {e}")

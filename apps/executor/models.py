@@ -53,9 +53,6 @@ class ExecutionRecord(models.Model):
     # 执行用户
     executed_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="执行用户")
 
-    # celery任务信息
-    celery_task_id = models.CharField(max_length=255, blank=True, null=True, verbose_name="Celery任务ID")
-
     # 执行参数
     execution_parameters = models.JSONField(default=dict, blank=True, verbose_name="执行参数")
 
@@ -96,7 +93,6 @@ class ExecutionRecord(models.Model):
         indexes = [
             models.Index(fields=['execution_type', 'status']),
             models.Index(fields=['executed_by', 'created_at']),
-            models.Index(fields=['celery_task_id']),
             models.Index(fields=['content_type', 'object_id']),
         ]
 

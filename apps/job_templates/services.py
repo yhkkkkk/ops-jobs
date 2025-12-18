@@ -5,7 +5,7 @@ import logging
 from django.utils import timezone
 from django.db import transaction
 from apps.executor.services import ExecutionRecordService
-# 工作流执行现在通过Fabric任务处理
+from apps.agents.execution_service import AgentExecutionService
 
 logger = logging.getLogger(__name__)
 
@@ -107,28 +107,50 @@ class ExecutionPlanService:
                     step_data['account_id'] = step.account_id
                 serializable_template_steps.append(step_data)
 
-            # 启动异步工作流执行
-            from apps.executor.fabric_tasks import start_workflow_execution
-            celery_task = start_workflow_execution(
-                plan_steps=serializable_template_steps,
-                target_hosts=[{
-                    'id': host.id,
-                    'name': host.name,
-                    'ip_address': host.ip_address
-                } for host in all_target_hosts],
-                global_parameters=global_parameters,
-                execution_mode=kwargs.get('execution_mode', 'parallel'),
-                rolling_batch_size=kwargs.get('rolling_batch_size', 1),
-                rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
-                execution_id=execution_record.execution_id,  # 传递执行ID用于SSE日志
-                is_debug=True  # 标识这是调试执行
-            )
+            # 使用 Agent-Server 异步执行调试工作流（与 execute_plan 路径对齐）
+            agent_server_url = kwargs.get('agent_server_url')
+            execution_mode = kwargs.get('execution_mode', 'parallel')
 
-            # 更新执行记录
+            # 更新执行参数，添加执行方式标识
+            execution_record.execution_parameters.update({
+                'execution_mode': execution_mode,
+                'agent_server_url': agent_server_url,
+            })
+            execution_record.save()
+
+            from concurrent.futures import ThreadPoolExecutor
+
+            def execute_workflow_debug():
+                try:
+                    result = AgentExecutionService.execute_workflow_via_agent(
+                        execution_record=execution_record,
+                        plan_steps=serializable_template_steps,
+                        target_hosts=all_target_hosts,
+                        global_parameters=global_parameters,
+                        execution_mode=execution_mode,
+                        rolling_batch_size=kwargs.get('rolling_batch_size', 1),
+                        rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
+                        start_step_order=1,
+                        agent_server_url=agent_server_url,
+                    )
+                    return result
+                except Exception as e:
+                    logger.error(f"模板调试执行异常: {str(e)}", exc_info=True)
+                    ExecutionRecordService.update_execution_status(
+                        execution_record=execution_record,
+                        status='failed',
+                        error_message=f'模板调试执行异常: {str(e)}'
+                    )
+                    return {'success': False, 'error': str(e)}
+
+            executor = ThreadPoolExecutor(max_workers=1)
+            executor.submit(execute_workflow_debug)
+            executor.shutdown(wait=False)
+
+            # 更新执行记录状态
             ExecutionRecordService.update_execution_status(
                 execution_record=execution_record,
                 status='running',
-                celery_task_id=celery_task.id
             )
 
             logger.info(f"模板调试执行已启动: {template.name} (执行ID: {execution_record.execution_id})")
@@ -311,7 +333,6 @@ class ExecutionPlanService:
                 ExecutionRecordService.update_execution_status(
                     execution_record=execution_record,
                     status='running',
-                    celery_task_id=str(execution_record.execution_id)  # 使用execution_id作为task_id
                 )
 
                 # 更新执行方案统计

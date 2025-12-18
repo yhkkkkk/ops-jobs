@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -26,6 +28,7 @@ type Config struct {
 	AgentLabels        map[string]string `mapstructure:"agent_labels"`
 	AgentToken         string            `mapstructure:"agent_token"`
 	LogDir             string            `mapstructure:"log_dir"`
+	LogLevel           string            `mapstructure:"log_level"`
 	LogMaxSize         int               `mapstructure:"log_max_size"`         // 日志文件最大大小（MB）
 	LogMaxFiles        int               `mapstructure:"log_max_files"`        // 最大保留日志文件数
 	LogMaxAge          int               `mapstructure:"log_max_age"`          // 日志保留天数
@@ -63,8 +66,17 @@ type AsynqConfig struct {
 	Concurrency int  `mapstructure:"concurrency"`
 }
 
-// Load 加载配置
-func Load() (*Config, error) {
+var (
+	cfgMu        sync.RWMutex
+	currentCfg   *Config
+	vp           *viper.Viper
+	initOnce     sync.Once
+	subscribers  []func(*Config)
+	subscriberMu sync.Mutex
+)
+
+// initViper 初始化全局 viper，并启用 WatchConfig。
+func initViper() error {
 	v := viper.New()
 
 	// 设置默认值
@@ -90,12 +102,6 @@ func Load() (*Config, error) {
 			}
 		}
 	}
-	if configFile == "" {
-		// 兼容老版本：回退到用户家目录下的 ~/.ops-job-agent/config.yaml
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			configFile = filepath.Join(homeDir, ".ops-job-agent", "config.yaml")
-		}
-	}
 
 	// 如果配置文件存在，读取它
 	if configFile != "" {
@@ -103,15 +109,31 @@ func Load() (*Config, error) {
 			v.SetConfigFile(configFile)
 			v.SetConfigType("yaml")
 			if err := v.ReadInConfig(); err != nil {
-				return nil, fmt.Errorf("read config file failed: %w", err)
+				return fmt.Errorf("read config file failed: %w", err)
 			}
 		}
 	}
 
-	// 解析配置
+	// 第一次解析配置
+	if err := reloadFromViper(v); err != nil {
+		return err
+	}
+
+	// 启用 WatchConfig
+	v.WatchConfig()
+	v.OnConfigChange(func(e fsnotify.Event) {
+		_ = reloadFromViper(v)
+	})
+
+	vp = v
+	return nil
+}
+
+// reloadFromViper 从给定 viper 实例重新解析配置并更新全局快照与订阅者。
+func reloadFromViper(v *viper.Viper) error {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("unmarshal config failed: %w", err)
+		return fmt.Errorf("unmarshal config failed: %w", err)
 	}
 
 	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
@@ -121,14 +143,14 @@ func Load() (*Config, error) {
 	switch cfg.Mode {
 	case "direct":
 		if cfg.ControlPlaneURL == "" {
-			return nil, fmt.Errorf("control_plane_url is required in direct mode")
+			return fmt.Errorf("control_plane_url is required in direct mode")
 		}
 	case "agent-server":
 		if cfg.AgentServerURL == "" {
-			return nil, fmt.Errorf("agent_server_url is required in agent-server mode")
+			return fmt.Errorf("agent_server_url is required in agent-server mode")
 		}
 	default:
-		return nil, fmt.Errorf("invalid mode %q, must be direct or agent-server", cfg.Mode)
+		return fmt.Errorf("invalid mode %q, must be direct or agent-server", cfg.Mode)
 	}
 
 	// 处理标签字符串（如果从环境变量读取）
@@ -141,7 +163,54 @@ func Load() (*Config, error) {
 	// 设置默认值（如果未配置）
 	setConfigDefaults(&cfg)
 
-	return &cfg, nil
+	cfgMu.Lock()
+	currentCfg = &cfg
+	cfgMu.Unlock()
+
+	// 通知订阅者
+	subscriberMu.Lock()
+	subs := append([]func(*Config){}, subscribers...)
+	subscriberMu.Unlock()
+	for _, fn := range subs {
+		fn(&cfg)
+	}
+
+	return nil
+}
+
+// Load 返回当前配置快照（每次返回拷贝，避免被调用方修改内部状态）。
+func Load() (*Config, error) {
+	var err error
+	initOnce.Do(func() {
+		err = initViper()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cfgMu.RLock()
+	defer cfgMu.RUnlock()
+	if currentCfg == nil {
+		return nil, fmt.Errorf("config not initialized")
+	}
+	cpy := *currentCfg
+	return &cpy, nil
+}
+
+// Subscribe 注册配置变更回调，首次注册时会立即收到当前配置一次。
+func Subscribe(fn func(*Config)) {
+	if fn == nil {
+		return
+	}
+	subscriberMu.Lock()
+	subscribers = append(subscribers, fn)
+	subscriberMu.Unlock()
+
+	cfgMu.RLock()
+	defer cfgMu.RUnlock()
+	if currentCfg != nil {
+		fn(currentCfg)
+	}
 }
 
 // setDefaults 设置默认值
@@ -159,6 +228,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("agent_name", getHostname())
 	v.SetDefault("agent_token", "")
 	v.SetDefault("log_dir", "")
+	v.SetDefault("log_level", "info")
 	v.SetDefault("log_max_size", 10) // 10MB
 	v.SetDefault("log_max_files", 5)
 	v.SetDefault("log_max_age", 7)         // 7天
@@ -225,6 +295,9 @@ func bindEnvVars(v *viper.Viper) {
 	}
 	if val := os.Getenv("AGENT_LOG_DIR"); val != "" {
 		v.Set("log_dir", val)
+	}
+	if val := os.Getenv("AGENT_LOG_LEVEL"); val != "" {
+		v.Set("log_level", val)
 	}
 	if val := os.Getenv("AGENT_LOG_MAX_SIZE"); val != "" {
 		v.Set("log_max_size", val)

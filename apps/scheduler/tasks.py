@@ -1,18 +1,15 @@
 """
-调度任务 - Celery任务
+调度任务逻辑（原 Celery 任务，现由 APScheduler / 管理命令触发执行）
 """
 import logging
-from celery import shared_task
 from django.utils import timezone
 from .models import ScheduledJob
 from apps.executor.services import ExecutionRecordService
-# 注意：工作流执行现在通过ExecutionPlanService处理，不再需要直接导入任务
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True)
-def execute_scheduled_job(self, scheduled_job_id):
+def execute_scheduled_job(scheduled_job_id):
     """执行定时作业"""
     try:
         # 获取定时作业
@@ -32,8 +29,6 @@ def execute_scheduled_job(self, scheduled_job_id):
                 'success': False,
                 'error': '定时作业已禁用'
             }
-
-        # 并发控制已在系统配置中处理，无需额外检查
 
         # 直接执行ExecutionPlan，创建ExecutionRecord
         from apps.job_templates.services import ExecutionPlanService
@@ -83,7 +78,6 @@ def execute_scheduled_job(self, scheduled_job_id):
         }
 
 
-@shared_task
 def cleanup_old_executions(days=30):
     """清理旧的执行记录"""
     try:
@@ -113,7 +107,6 @@ def cleanup_old_executions(days=30):
         }
 
 
-@shared_task
 def update_scheduled_job_stats():
     """更新定时作业统计信息"""
     try:

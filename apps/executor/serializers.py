@@ -58,7 +58,7 @@ class ExecutionRecordSerializer(serializers.ModelSerializer):
             'id', 'execution_id', 'execution_type', 'execution_type_display',
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
-            'celery_task_id', 'execution_parameters',
+            'execution_parameters',
             'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'client_ip', 'user_agent', 'is_completed', 'is_running',
@@ -104,7 +104,7 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             'id', 'execution_id', 'execution_type', 'execution_type_display',
             'name', 'description', 'status', 'status_display',
             'trigger_type', 'trigger_type_display', 'executed_by', 'executed_by_name',
-            'celery_task_id', 'execution_parameters',
+            'execution_parameters',
             'execution_results', 'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'is_completed', 'is_running',
@@ -135,8 +135,8 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.DictField(allow_null=True))
     def get_realtime_urls(self, obj):
         """获取实时日志URLs"""
-        if obj.is_running and obj.celery_task_id:
-            task_id = obj.celery_task_id
+        if obj.is_running:
+            task_id = str(obj.execution_id)
             return {
                 'logs': f'/api/realtime/sse/logs/{task_id}/',
                 'status': f'/api/realtime/sse/status/{task_id}/',

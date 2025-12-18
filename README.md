@@ -6,10 +6,9 @@
 [![Vue](https://img.shields.io/badge/Vue-3.4+-brightgreen.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
 [![Redis](https://img.shields.io/badge/Redis-6.4+-red.svg)](https://redis.io/)
-[![Celery](https://img.shields.io/badge/Celery-5.3+-green.svg)](https://celeryproject.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-一个基于 Django 5.0 + DRF + Vue 3 + TypeScript 的现代化运维作业平台，提供主机管理、脚本执行、作业模板、定时任务、实时日志、权限管理等功能。支持 SSE 实时日志推送、Redis Stream 数据流、Celery 异步任务处理等企业级特性。
+一个基于 Django 5.0 + DRF + Vue 3 + TypeScript 的现代化运维作业平台，提供主机管理、脚本执行、作业模板、定时任务、实时日志、权限管理等功能。支持 SSE 实时日志推送、Redis Stream 数据流，以及基于 Agent / Agent-Server 的异步任务处理等企业级特性。
 
 ## ✨ 功能特性
 
@@ -44,15 +43,15 @@
 - **批量操作**: 支持批量主机的并行执行
 - **实时日志**: 基于 SSE 的实时日志推送和查看
 - **结果统计**: 执行结果统计和成功率分析
-- **异步处理**: 基于 Celery 的异步任务处理
-- **执行控制**: 支持执行过程中的暂停、继续、停止操作
+- **异步处理**: 基于 Agent / Agent-Server 的异步任务处理
+- **执行控制**: 支持执行过程中的暂停、继续、停止操作（依托 Agent 取消能力）
 
 ### ⏰ 定时任务
 
 - **Cron 表达式**: 支持标准 Cron 表达式定时调度
 - **任务管理**: 支持任务的启用、禁用、删除等操作
 - **执行历史**: 完整的任务执行历史记录
-- **失败重试**: 支持任务失败自动重试机制
+- **失败重试**: 支持任务失败自动重试机制（基于 APScheduler + 业务侧重试逻辑）
 
 ### 📊 仪表盘
 
@@ -167,9 +166,9 @@
 
 ### ⚡ 异步任务处理
 
-- **任务监控**: 实时监控任务执行状态和进度
-- **失败重试**: 智能的任务失败重试机制
-- **超时控制**: 可配置的任务执行超时时间
+- **任务监控**: 实时监控任务执行状态和进度（ExecutionRecord + Agent 结果流）
+- **失败重试**: 智能的任务失败重试机制（ExecutionService + Agent-Server 重试策略）
+- **超时控制**: 可配置的任务执行超时时间（作业模板/执行方案级别）
 - **资源管理**: 自动资源清理和内存管理
 
 ### 🔐 企业级安全
@@ -273,12 +272,6 @@ uv run python manage.py createsuperuser
 ```bash
 # 启动 Django 服务
 uv run python manage.py runserver
-
-# 启动 Celery Worker (新终端)
-uv run celery -A ops_job worker -l info
-
-# 启动 Celery Beat (新终端)
-uv run celery -A ops_job beat -l info
 
 # 启动前端开发服务器 (新终端)
 cd frontend
@@ -844,23 +837,8 @@ ssh -v user@target_host
 tail -f logs/ssh.log
 ```
 
-**2. Celery 任务失败**
-
-```bash
-# 检查 Celery Worker 状态
-celery -A ops_job inspect active
-
-# 查看任务日志
-tail -f logs/celery.log
-
-# 重启 Worker
-celery -A ops_job worker --purge
-
-# 检查Redis连接
-redis-cli ping
-```
-
-**3. 前端构建失败**
+**2. 前端构建失败**
+**2. 前端构建失败**
 
 ```bash
 # 检查依赖

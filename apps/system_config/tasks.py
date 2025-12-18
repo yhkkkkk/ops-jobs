@@ -2,7 +2,6 @@
 系统配置相关定时任务
 """
 import logging
-from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
 from .models import ConfigManager
@@ -10,7 +9,6 @@ from .models import ConfigManager
 logger = logging.getLogger(__name__)
 
 
-@shared_task
 def cleanup_old_execution_logs():
     """清理过期的执行记录日志"""
     try:
@@ -43,7 +41,6 @@ def cleanup_old_execution_logs():
         }
 
 
-@shared_task
 def check_system_health():
     """检查系统健康状态"""
     try:
@@ -97,7 +94,6 @@ def check_system_health():
         }
 
 
-@shared_task
 def send_system_notifications():
     """发送系统通知"""
     try:
