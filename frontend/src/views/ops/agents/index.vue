@@ -222,7 +222,17 @@
         </template>
 
         <template #version="{ record }">
-          <span>{{ record.version || '-' }}</span>
+          <a-space>
+            <span>{{ record.version || '-' }}</span>
+            <a-tooltip
+              v-if="record.is_version_outdated && record.version"
+              :content="getVersionTooltip(record)"
+            >
+              <a-tag color="red" size="small">
+                版本落后
+              </a-tag>
+            </a-tooltip>
+          </a-space>
         </template>
 
         <template #last_heartbeat_at="{ record }">
@@ -832,6 +842,14 @@ const getStatusColor = (status: string) => {
     disabled: 'gray'
   }
   return colorMap[status] || 'blue'
+}
+
+// 版本落后提示文案
+const getVersionTooltip = (agent: Agent & { expected_min_version?: string }) => {
+  if (agent.expected_min_version) {
+    return `当前版本 ${agent.version} 落后于期望版本 ${agent.expected_min_version}`
+  }
+  return `当前版本 ${agent.version} 落后于平台期望版本`
 }
 
 // 格式化时间

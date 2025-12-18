@@ -33,6 +33,7 @@ type RunningTask struct {
 	Status    string // pending/running/success/failed/cancelled
 	LogBuffer strings.Builder
 	LogLock   sync.Mutex
+	WaitErr   error // 命令等待的错误
 }
 
 // NewExecutor 创建执行器
@@ -49,19 +50,46 @@ func NewExecutor(logDir string) *Executor {
 
 // ExecuteTask 执行任务
 func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallback func(string)) (*api.TaskResult, error) {
-	var err error
-
-	// 创建任务上下文，支持取消
-	taskCtx, cancel := context.WithCancel(ctx)
+	// 设置任务上下文
+	taskCtx, cancel, runningTask := e.setupTaskContext(ctx, task)
 	defer cancel()
+	defer func() {
+		e.tasksLock.Lock()
+		delete(e.tasks, task.ID)
+		e.tasksLock.Unlock()
+	}()
 
-	// 设置超时
-	if task.TimeoutSec > 0 {
-		taskCtx, cancel = context.WithTimeout(taskCtx, time.Duration(task.TimeoutSec)*time.Second)
-		defer cancel()
+	// 构建并配置命令
+	cmd, logFile, err := e.prepareCommand(taskCtx, task, runningTask)
+	if err != nil {
+		return e.buildErrorResult(task.ID, runningTask.StartTime, err.Error()), nil
+	}
+	defer logFile.Close()
+
+	// 启动命令并处理输出
+	if err := e.startCommand(cmd, task.ID, logFile, runningTask, logCallback); err != nil {
+		runningTask.Status = "failed"
+		return e.buildErrorResult(task.ID, runningTask.StartTime, err.Error()), nil
 	}
 
-	// 创建运行任务记录
+	// 等待命令完成
+	result := e.waitForCommand(taskCtx, cmd, runningTask)
+	if result != nil {
+		return result, nil
+	}
+
+	// 构建任务结果（正常完成）
+	finishedAt := time.Now()
+	return e.buildTaskResult(task.ID, runningTask, finishedAt, runningTask.WaitErr), nil
+}
+
+// setupTaskContext 设置任务上下文
+func (e *Executor) setupTaskContext(ctx context.Context, task *api.TaskSpec) (context.Context, context.CancelFunc, *RunningTask) {
+	taskCtx, cancel := context.WithCancel(ctx)
+	if task.TimeoutSec > 0 {
+		taskCtx, cancel = context.WithTimeout(taskCtx, time.Duration(task.TimeoutSec)*time.Second)
+	}
+
 	runningTask := &RunningTask{
 		TaskID:    task.ID,
 		StartTime: time.Now(),
@@ -72,16 +100,15 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 	e.tasks[task.ID] = runningTask
 	e.tasksLock.Unlock()
 
-	defer func() {
-		e.tasksLock.Lock()
-		delete(e.tasks, task.ID)
-		e.tasksLock.Unlock()
-	}()
+	return taskCtx, cancel, runningTask
+}
 
-	// 构建命令（根据 ScriptType 与操作系统选择执行器）
-	cmd, buildErr := buildCommand(taskCtx, task)
-	if buildErr != nil {
-		return nil, buildErr
+// prepareCommand 准备命令
+func (e *Executor) prepareCommand(ctx context.Context, task *api.TaskSpec, runningTask *RunningTask) (*exec.Cmd, *os.File, error) {
+	// 构建命令
+	cmd, err := buildCommand(ctx, task)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// 设置环境变量
@@ -100,38 +127,25 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 	}
 
 	// 创建日志文件
-	var logFile *os.File
-	logFile, err = e.createLogFile(task.ID)
+	logFile, err := e.createLogFile(task.ID)
 	if err != nil {
-		return nil, fmt.Errorf("create log file failed: %w", err)
+		return nil, nil, fmt.Errorf("create log file failed: %w", err)
 	}
-	defer logFile.Close()
 
+	return cmd, logFile, nil
+}
+
+// startCommand 启动命令
+func (e *Executor) startCommand(cmd *exec.Cmd, taskID string, logFile *os.File, runningTask *RunningTask, logCallback func(string)) error {
 	// 创建管道用于实时读取输出
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		runningTask.Status = "failed"
-		return &api.TaskResult{
-			TaskID:     task.ID,
-			Status:     "failed",
-			ExitCode:   -1,
-			StartedAt:  runningTask.StartTime.Unix(),
-			FinishedAt: time.Now().Unix(),
-			ErrorMsg:   fmt.Sprintf("create stdout pipe failed: %v", err),
-		}, nil
+		return fmt.Errorf("create stdout pipe failed: %w", err)
 	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		runningTask.Status = "failed"
-		return &api.TaskResult{
-			TaskID:     task.ID,
-			Status:     "failed",
-			ExitCode:   -1,
-			StartedAt:  runningTask.StartTime.Unix(),
-			FinishedAt: time.Now().Unix(),
-			ErrorMsg:   fmt.Sprintf("create stderr pipe failed: %v", err),
-		}, nil
+		return fmt.Errorf("create stderr pipe failed: %w", err)
 	}
 
 	// 创建多写入器：同时写入日志文件和缓冲区
@@ -140,92 +154,85 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 	// 启动命令
 	runningTask.Status = "running"
 	if err := cmd.Start(); err != nil {
-		runningTask.Status = "failed"
-		return &api.TaskResult{
-			TaskID:     task.ID,
-			Status:     "failed",
-			ExitCode:   -1,
-			StartedAt:  runningTask.StartTime.Unix(),
-			FinishedAt: time.Now().Unix(),
-			ErrorMsg:   err.Error(),
-		}, nil
+		return err
 	}
 
 	runningTask.Command = cmd
 
 	// 实时读取输出（stdout 和 stderr）
-	go e.streamOutput(task.ID, stdoutPipe, multiWriter, logCallback, "stdout")
-	go e.streamOutput(task.ID, stderrPipe, multiWriter, logCallback, "stderr")
+	go e.streamOutput(taskID, stdoutPipe, multiWriter, logCallback, "stdout")
+	go e.streamOutput(taskID, stderrPipe, multiWriter, logCallback, "stderr")
 
-	// 等待命令完成（在单独的 goroutine 中，以便可以响应取消）
+	return nil
+}
+
+// waitForCommand 等待命令完成，如果被取消或超时则返回结果，否则返回 nil
+func (e *Executor) waitForCommand(taskCtx context.Context, cmd *exec.Cmd, runningTask *RunningTask) *api.TaskResult {
 	doneCh := make(chan error, 1)
 	go func() {
 		doneCh <- cmd.Wait()
 	}()
 
-	var finishedAt time.Time
-	var waitErr error
-
-	// 等待命令完成或取消
 	select {
 	case <-taskCtx.Done():
+		return e.handleContextDone(taskCtx, cmd, runningTask, doneCh)
+	case waitErr := <-doneCh:
+		// 正常完成，返回 nil 让调用者构建结果
+		runningTask.WaitErr = waitErr
+		return nil
+	}
+}
+
+// handleContextDone 处理上下文取消
+func (e *Executor) handleContextDone(taskCtx context.Context, cmd *exec.Cmd, runningTask *RunningTask, doneCh chan error) *api.TaskResult {
+	finishedAt := time.Now()
+	if taskCtx.Err() == context.Canceled {
 		// 任务被取消
-		if taskCtx.Err() == context.Canceled {
-			// 尝试终止进程
-			if cmd.Process != nil {
-				// 先尝试优雅终止
-				cmd.Process.Signal(os.Interrupt)
-				// 等待一小段时间让进程有机会清理
-				time.Sleep(100 * time.Millisecond)
-				// 如果还在运行，强制终止
-				if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
-					cmd.Process.Kill()
-				}
-			}
-			// 等待 Wait 返回
-			<-doneCh
-			finishedAt = time.Now()
-			runningTask.Status = "cancelled"
-			return &api.TaskResult{
-				TaskID:     task.ID,
-				Status:     "cancelled",
-				ExitCode:   -1,
-				StartedAt:  runningTask.StartTime.Unix(),
-				FinishedAt: finishedAt.Unix(),
-				ErrorMsg:   "task cancelled",
-				ErrorCode:  int(errors.ErrCodeProcessKilled),
-			}, nil
-		}
-		// 超时
-		if taskCtx.Err() == context.DeadlineExceeded {
-			// 超时，终止进程
-			if cmd.Process != nil {
+		if cmd.Process != nil {
+			cmd.Process.Signal(os.Interrupt)
+			time.Sleep(100 * time.Millisecond)
+			if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 				cmd.Process.Kill()
 			}
-			<-doneCh
-			finishedAt = time.Now()
-			runningTask.Status = "failed"
-			return &api.TaskResult{
-				TaskID:     task.ID,
-				Status:     "failed",
-				ExitCode:   -1,
-				StartedAt:  runningTask.StartTime.Unix(),
-				FinishedAt: finishedAt.Unix(),
-				ErrorMsg:   "task timeout",
-				ErrorCode:  int(errors.ErrCodeTimeout),
-			}, nil
 		}
-	case waitErr = <-doneCh:
-		// 命令正常完成
-		finishedAt = time.Now()
-		err = waitErr
+		<-doneCh
+		runningTask.Status = "cancelled"
+		return e.buildTaskResult(runningTask.TaskID, runningTask, finishedAt, nil)
+	}
+	// 超时
+	if cmd.Process != nil {
+		cmd.Process.Kill()
+	}
+	<-doneCh
+	runningTask.Status = "failed"
+	return e.buildTaskResult(runningTask.TaskID, runningTask, finishedAt, nil)
+}
+
+// buildTaskResult 构建任务结果
+func (e *Executor) buildTaskResult(taskID string, runningTask *RunningTask, finishedAt time.Time, waitErr error) *api.TaskResult {
+	// 如果状态已经是 cancelled 或 failed（由 handleContextDone 设置），直接使用
+	if runningTask.Status == "cancelled" {
+		runningTask.LogLock.Lock()
+		logContent := runningTask.LogBuffer.String()
+		runningTask.LogLock.Unlock()
+		return &api.TaskResult{
+			TaskID:     taskID,
+			Status:     "cancelled",
+			ExitCode:   -1,
+			Log:        logContent,
+			StartedAt:  runningTask.StartTime.Unix(),
+			FinishedAt: finishedAt.Unix(),
+			ErrorMsg:   "task cancelled",
+			ErrorCode:  int(errors.ErrCodeProcessKilled),
+		}
 	}
 
 	// 获取退出码和错误码
 	exitCode := 0
 	errorCode := 0
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
+	errorMsg := getErrorMsg(waitErr)
+	if waitErr != nil {
+		if exitError, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitError.ExitCode()
 			if exitCode != 0 {
 				errorCode = int(errors.ErrCodeExitCodeNonZero)
@@ -234,7 +241,9 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 			exitCode = -1
 			errorCode = int(errors.ErrCodeExecutionFailed)
 		}
-		runningTask.Status = "failed"
+		if runningTask.Status != "failed" {
+			runningTask.Status = "failed"
+		}
 	} else {
 		runningTask.Status = "success"
 	}
@@ -245,15 +254,27 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *api.TaskSpec, logCallb
 	runningTask.LogLock.Unlock()
 
 	return &api.TaskResult{
-		TaskID:     task.ID,
+		TaskID:     taskID,
 		Status:     runningTask.Status,
 		ExitCode:   exitCode,
 		Log:        logContent,
 		StartedAt:  runningTask.StartTime.Unix(),
 		FinishedAt: finishedAt.Unix(),
-		ErrorMsg:   getErrorMsg(err),
+		ErrorMsg:   errorMsg,
 		ErrorCode:  errorCode,
-	}, nil
+	}
+}
+
+// buildErrorResult 构建错误结果
+func (e *Executor) buildErrorResult(taskID string, startTime time.Time, errorMsg string) *api.TaskResult {
+	return &api.TaskResult{
+		TaskID:     taskID,
+		Status:     "failed",
+		ExitCode:   -1,
+		StartedAt:  startTime.Unix(),
+		FinishedAt: time.Now().Unix(),
+		ErrorMsg:   errorMsg,
+	}
 }
 
 // buildCommand 根据 TaskSpec 构建具体要执行的 *exec.Cmd

@@ -68,7 +68,8 @@ class AgentServerClient:
         headers.setdefault("Content-Type", "application/json")
 
         ts = str(int(time.time()))
-        headers["X-Scope"] = self.scope
+        # 允许调用方预先设置 X-Scope（按环境/业务多租户），否则使用默认 scope
+        headers.setdefault("X-Scope", self.scope)
         headers["X-Timestamp"] = ts
 
         if self.shared_secret:

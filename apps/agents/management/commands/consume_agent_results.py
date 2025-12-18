@@ -74,14 +74,19 @@ class Command(BaseCommand):
         if not task_id or not status:
             raise ValueError("task_id/status required")
 
-        # 从 Stream 字段构造与 HTTP 回调兼容的 result 结构
+        # 从 stream 字段构造与 http 回调兼容的 result 结构
+        # started_at/finished_at 是 Unix 秒时间戳（int64），需要转换为 datetime
+        started_at = fields.get("started_at")
+        finished_at = fields.get("finished_at")
+        
         result = {
             "status": status,
             "exit_code": fields.get("exit_code"),
             "error_msg": fields.get("error_msg") or "",
+            "error_code": fields.get("error_code"),
             "log_size": fields.get("log_size"),
-            "started_at": fields.get("started_at"),
-            "finished_at": fields.get("finished_at"),
+            "started_at": started_at,
+            "finished_at": finished_at,
         }
 
         resp = ExecutionService.handle_task_result(task_id=str(task_id), result=result)

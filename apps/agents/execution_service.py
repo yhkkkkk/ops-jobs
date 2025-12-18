@@ -13,6 +13,7 @@ from apps.executor.services import ExecutionRecordService
 from apps.hosts.models import Host
 from apps.agents.models import Agent
 from utils.realtime_logs import realtime_log_service
+from apps.system_config.models import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,33 @@ class AgentExecutionService:
         return task_spec
 
     @staticmethod
+    def _get_agent_server_scope(agent: Agent) -> str:
+        """
+        根据 Agent 所在环境/业务生成调用 Agent-Server 时使用的 X-Scope。
+        优先级：
+          1) SystemConfig.agent.scope_by_env: {"prod": "prod-scope", "test": "test-scope", "default": "default-scope"}
+          2) settings.AGENT_SERVER_SCOPE
+          3) "default"
+        """
+        from django.conf import settings
+
+        default_scope = getattr(settings, "AGENT_SERVER_SCOPE", "default") or "default"
+        scope_by_env = ConfigManager.get("agent.scope_by_env", {}) or {}
+
+        if isinstance(scope_by_env, dict):
+            env = getattr(agent, "environment", None)
+            if env and env in scope_by_env:
+                val = scope_by_env.get(env)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+            # default 兜底
+            default_val = scope_by_env.get("default")
+            if isinstance(default_val, str) and default_val.strip():
+                return default_val.strip()
+
+        return default_scope
+
+    @staticmethod
     def push_task_to_agent(
         agent: Agent,
         task_spec: Dict[str, Any],
@@ -126,8 +154,12 @@ class AgentExecutionService:
             
                 # 构造带 HMAC 签名的请求
                 from utils.agent_server_client import AgentServerClient
+
                 client = AgentServerClient.from_settings()
-                response = client.post(api_url, json=task_spec)
+                # 根据 Agent 环境设置 X-Scope，支持多租户/多环境的 Agent-Server 集群
+                scope = AgentExecutionService._get_agent_server_scope(agent)
+                headers = {"X-Scope": scope} if scope else {}
+                response = client.post(api_url, json=task_spec, headers=headers)
 
                 if response.status_code == 200:
                     result = response.json()
@@ -787,7 +819,18 @@ class AgentExecutionService:
             elif status == 'cancelled':
                 execution_record.status = 'cancelled'
 
-            execution_record.finished_at = timezone.now()
+            # 使用传入的时间戳（Unix 秒），如果不存在则使用当前时间
+            finished_at_ts = result.get('finished_at')
+            if finished_at_ts:
+                try:
+                    execution_record.finished_at = timezone.datetime.fromtimestamp(
+                        int(finished_at_ts), tz=timezone.utc
+                    )
+                except (ValueError, TypeError, OSError):
+                    execution_record.finished_at = timezone.now()
+            else:
+                execution_record.finished_at = timezone.now()
+            
             execution_record.save()
 
             # 如果是工作流，更新步骤状态和主机结果
@@ -797,7 +840,18 @@ class AgentExecutionService:
                     step.status = status
                     if status == 'failed':
                         step.error_message = result.get('error_msg', '步骤执行失败')
-                    step.finished_at = timezone.now()
+                    
+                    # 使用传入的时间戳（Unix 秒），如果不存在则使用当前时间
+                    finished_at_ts = result.get('finished_at')
+                    if finished_at_ts:
+                        try:
+                            step.finished_at = timezone.datetime.fromtimestamp(
+                                int(finished_at_ts), tz=timezone.utc
+                            )
+                        except (ValueError, TypeError, OSError):
+                            step.finished_at = timezone.now()
+                    else:
+                        step.finished_at = timezone.now()
                     
                     # 更新主机结果
                     if host_id:
@@ -1300,7 +1354,6 @@ class AgentExecutionService:
             Dict: 取消结果
         """
         try:
-            import requests
             from django.conf import settings
             
             # 确保URL格式正确
@@ -1314,11 +1367,11 @@ class AgentExecutionService:
             # 获取Agent-Server的认证Token（如果需要）
             agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
             
-            headers = {
+            headers_base = {
                 'Content-Type': 'application/json',
             }
             if agent_server_token:
-                headers['Authorization'] = f'Bearer {agent_server_token}'
+                headers_base['Authorization'] = f'Bearer {agent_server_token}'
             
             cancelled_count = 0
             failed_count = 0
@@ -1337,9 +1390,14 @@ class AgentExecutionService:
                     api_url = f"{server_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
                     
                     try:
-                        # 使用 HMAC 客户端发起请求
+                        # 使用 HMAC 客户端发起请求，并按 Agent 环境附加合适的 X-Scope
                         from utils.agent_server_client import AgentServerClient
+
                         client = AgentServerClient.from_settings()
+                        scope = AgentExecutionService._get_agent_server_scope(agent)
+                        headers = headers_base.copy()
+                        if scope:
+                            headers["X-Scope"] = scope
                         response = client.post(api_url, json=None, headers=headers)
                         
                         if response.status_code == 200:

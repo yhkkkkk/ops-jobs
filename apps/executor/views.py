@@ -148,22 +148,38 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
             return SycResponse.error(message=f'已达到最大重试次数 ({execution_record.max_retries})')
 
         try:
-            logger.info(f"开始重做执行记录: {execution_record.execution_id}, 类型: {execution_record.execution_type}")
+            # 获取重试参数
+            retry_type = request.data.get('retry_type', 'full')  # full: 完整重试, step: 步骤重试
+            step_id = request.data.get('step_id')
+            failed_only = request.data.get('failed_only', True)
+            agent_server_url = request.data.get('agent_server_url')
 
-            # 根据执行类型进行重做
-            if execution_record.execution_type == 'job_workflow':
-                result = self._retry_job_workflow(execution_record, request.user)
-            elif execution_record.execution_type == 'quick_script':
-                result = self._retry_quick_script(execution_record, request.user)
-            elif execution_record.execution_type == 'quick_file_transfer':
-                result = self._retry_file_transfer(execution_record, request.user)
-            else:
-                return SycResponse.error(message=f'不支持重做执行类型: {execution_record.execution_type}')
+            logger.info(
+                f"开始重做执行记录: {execution_record.execution_id}, "
+                f"类型: {execution_record.execution_type}, 重试类型: {retry_type}"
+            )
+
+            # 优先使用 AgentExecutionService 的重试方法（支持 Agent 方式和步骤重试）
+            from apps.agents.execution_service import AgentExecutionService
+            result = AgentExecutionService.retry_execution_record(
+                execution_record=execution_record,
+                user=request.user,
+                retry_type=retry_type,
+                step_id=step_id,
+                failed_only=failed_only,
+                agent_server_url=agent_server_url,
+            )
 
             logger.info(f"重做结果: {result}")
 
             if result['success']:
-                return SycResponse.success(content=result, message='重做任务启动成功')
+                return SycResponse.success(
+                    content={
+                        'execution_record_id': result.get('execution_record_id'),
+                        'execution_id': result.get('execution_id'),
+                    },
+                    message=result.get('message', '重做任务启动成功')
+                )
             else:
                 return SycResponse.error(
                     message=result.get('error', '重做任务启动失败')
@@ -267,6 +283,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
+    @action(detail=True, methods=['post'], url_path='retry_step')
     def retry_step_inplace(self, request, pk=None):
         """步骤原地重试 - 不创建新的执行记录，在原记录上重试"""
         execution_record = self.get_object()

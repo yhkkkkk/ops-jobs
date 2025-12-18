@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/hibiken/asynq"
 )
 
 var upgrader = websocket.Upgrader{
@@ -330,41 +332,161 @@ func (s *Server) handlePushTask(c *gin.Context) {
 }
 
 // handleCancelTask 处理取消任务请求
+// 支持两种情况：
+// 1. Agent 在线：通过 WebSocket 发送取消消息
+// 2. Agent 离线：从 asynq 队列中删除任务
 func (s *Server) handleCancelTask(c *gin.Context) {
 	agentID := c.Param("id")
 	taskID := c.Param("task_id")
 
 	conn, exists := s.agentManager.Get(agentID)
 	if !exists {
+		// Agent 不存在，尝试从队列中删除任务
+		if s.taskQueue != nil {
+			if err := s.cancelTaskFromQueue(agentID, taskID); err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "agent not found and task not found in queue"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"task_id":  taskID,
+				"agent_id": agentID,
+				"status":   "cancelled",
+				"source":   "queue",
+			})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 		return
 	}
 
-	if conn.Status != "active" || conn.Conn == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active"})
-		return
-	}
+	// Agent 在线，尝试通过 WebSocket 发送取消消息
+	if conn.Status == "active" && conn.Conn != nil {
+		if err := conn.SendCancelTask(taskID); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"agent_id": agentID,
+				"task_id":  taskID,
+			}).Error("send cancel task message failed")
+			// WebSocket 发送失败，尝试从队列中删除
+			if s.taskQueue != nil {
+				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
+					c.JSON(http.StatusOK, gin.H{
+						"task_id":  taskID,
+						"agent_id": agentID,
+						"status":   "cancelled",
+						"source":   "queue",
+					})
+					return
+				}
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
-	// 通过 WebSocket 发送取消任务消息
-	if err := conn.SendCancelTask(taskID); err != nil {
-		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+		logger.GetLogger().WithFields(map[string]interface{}{
 			"agent_id": agentID,
 			"task_id":  taskID,
-		}).Error("send cancel task message failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}).Info("cancel task request sent to agent via websocket")
+
+		c.JSON(http.StatusOK, gin.H{
+			"task_id":  taskID,
+			"agent_id": agentID,
+			"status":   "cancelled",
+			"source":   "websocket",
+		})
 		return
 	}
 
-	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id": agentID,
-		"task_id":  taskID,
-	}).Info("cancel task request sent to agent")
+	// Agent 连接不活跃，尝试从队列中删除
+	if s.taskQueue != nil {
+		if err := s.cancelTaskFromQueue(agentID, taskID); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active and task not found in queue"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"task_id":  taskID,
+			"agent_id": agentID,
+			"status":   "cancelled",
+			"source":   "queue",
+		})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"task_id":  taskID,
-		"agent_id": agentID,
-		"status":   "cancelled",
-	})
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active"})
+}
+
+// cancelTaskFromQueue 从队列中取消任务
+// 需要先查询任务找到 asynq 的 taskID，然后删除
+func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
+	if s.taskQueue == nil {
+		return fmt.Errorf("task queue not enabled")
+	}
+
+	// 查询所有队列，找到匹配的任务
+	queues := []string{task.QueueCritical, task.QueueDefault, task.QueueLow}
+	states := []string{"pending", "active", "retry", "scheduled"}
+
+	for _, queueName := range queues {
+		inspector := asynq.NewInspector(s.taskQueue.GetRedisOpt())
+		defer inspector.Close()
+
+		for _, state := range states {
+			// 查询该状态的任务
+			var taskInfos []*asynq.TaskInfo
+			var err error
+
+			switch state {
+			case "pending":
+				taskInfos, err = inspector.ListPendingTasks(queueName, asynq.PageSize(100), asynq.Page(1))
+			case "active":
+				taskInfos, err = inspector.ListActiveTasks(queueName, asynq.PageSize(100), asynq.Page(1))
+			case "retry":
+				taskInfos, err = inspector.ListRetryTasks(queueName, asynq.PageSize(100), asynq.Page(1))
+			case "scheduled":
+				taskInfos, err = inspector.ListScheduledTasks(queueName, asynq.PageSize(100), asynq.Page(1))
+			default:
+				continue
+			}
+
+			if err != nil {
+				continue
+			}
+
+			// 遍历任务，找到匹配的
+			for _, taskInfo := range taskInfos {
+				// 解析任务负载
+				var payload task.TaskPayload
+				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
+					continue
+				}
+
+				// 检查是否匹配 agentID 和 taskID
+				if payload.AgentID == agentID && payload.Task != nil && payload.Task.ID == taskID {
+					// 找到匹配的任务，删除它
+					if err := inspector.DeleteTask(queueName, taskInfo.ID); err != nil {
+						logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+							"agent_id":    agentID,
+							"task_id":     taskID,
+							"asynq_id":    taskInfo.ID,
+							"queue":       queueName,
+							"state":       state,
+						}).Error("delete task from queue failed")
+						return err
+					}
+
+					logger.GetLogger().WithFields(map[string]interface{}{
+						"agent_id": agentID,
+						"task_id":  taskID,
+						"asynq_id": taskInfo.ID,
+						"queue":    queueName,
+						"state":    state,
+					}).Info("task cancelled from queue")
+					return nil
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("task not found in any queue")
 }
 
 // handleWebSocket 处理 WebSocket 连接

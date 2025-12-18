@@ -13,6 +13,7 @@ from utils.pagination import CustomPagination
 from utils.audit_service import AuditLogService
 from apps.permissions.permissions import BasePermissionMixin
 from .models import Agent, AgentInstallRecord, AgentUninstallRecord
+from .mixins import BatchOperationMixin
 from .serializers import (
     AgentSerializer,
     AgentDetailSerializer,
@@ -84,7 +85,7 @@ class AgentPagination(CustomPagination):
     page_size = 20
 
 
-class AgentViewSet(viewsets.ModelViewSet):
+class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
     """Agent 管理"""
 
     queryset = Agent.objects.select_related("host").prefetch_related("tokens", "host__groups")
@@ -738,28 +739,17 @@ class AgentViewSet(viewsets.ModelViewSet):
         ssh_timeout = data.get('ssh_timeout', 300)
         allow_reinstall = data.get('allow_reinstall', False)
 
-        if not confirmed:
-            return SycResponse.error(message="请勾选确认框以执行批量安装操作", code=400)
         if install_mode == 'agent-server' and not agent_server_url:
             return SycResponse.error(message="agent_server_url不能为空（agent-server模式）", code=400)
 
-        # 批量操作限流
-        MAX_BATCH_SIZE = 50
-        PROD_MAX_BATCH_SIZE = 10
-
-        from apps.hosts.models import Host
-        hosts = Host.objects.filter(id__in=host_ids)
-
-        # 检查是否有生产环境主机
-        prod_hosts = hosts.filter(environment='prod')
-        is_prod_env = prod_hosts.exists()
-        current_max_batch_size = PROD_MAX_BATCH_SIZE if is_prod_env else MAX_BATCH_SIZE
-
-        if len(host_ids) > current_max_batch_size:
-            return SycResponse.error(
-                message=f"批量安装数量超过限制，当前环境最多允许安装{current_max_batch_size}个Agent",
-                code=400
-            )
+        # 使用统一的批量操作验证
+        is_valid, error_msg, hosts = self.validate_batch_operation_with_hosts(
+            request=request,
+            host_ids=host_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
 
         # 生成安装任务ID
         import uuid
@@ -847,24 +837,19 @@ class AgentViewSet(viewsets.ModelViewSet):
         account_id = data.get('account_id')
         confirmed = data.get('confirmed', False)
 
-        if not confirmed:
-            return SycResponse.error(message="请勾选确认框以执行批量卸载操作", code=400)
-
         # 权限过滤
         allowed_agents = self.get_queryset().filter(id__in=agent_ids).select_related('host')
         if allowed_agents.count() != len(agent_ids):
             return SycResponse.error(message="部分agent无权限操作", code=403)
 
-        # 批量操作限流
-        MAX_BATCH_SIZE = 50
-        PROD_MAX_BATCH_SIZE = 10
-        prod_agents = allowed_agents.filter(host__environment='prod')
-        current_max_batch_size = PROD_MAX_BATCH_SIZE if prod_agents.exists() else MAX_BATCH_SIZE
-        if len(agent_ids) > current_max_batch_size:
-            return SycResponse.error(
-                message=f"批量卸载数量超过限制，当前环境最多允许卸载 {current_max_batch_size} 个agent",
-                code=400
-            )
+        # 使用统一的批量操作验证
+        is_valid, error_msg, _ = self.validate_batch_operation_with_agents(
+            request=request,
+            agent_ids=agent_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
 
         import uuid
         from concurrent.futures import ThreadPoolExecutor

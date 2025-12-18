@@ -435,6 +435,20 @@
                           <a-tag :color="getHostStatusColor(hostLog.status)">
                             {{ getHostStatusText(hostLog.status) }}
                           </a-tag>
+                          <a-tag
+                            v-if="executionMode === 'agent'"
+                            color="blue"
+                            size="small"
+                          >
+                            Agent 模式
+                          </a-tag>
+                          <a-tag
+                            v-else-if="executionMode === 'ssh'"
+                            color="gray"
+                            size="small"
+                          >
+                            SSH 模式
+                          </a-tag>
                           <a-button
                             size="small"
                             type="text"
@@ -471,7 +485,7 @@
                     <!-- 错误日志 -->
                     <div v-if="hostLog.stderr || hostLog.error_logs" class="log-section error-section">
                       <div class="log-section-header">
-                        <h5>错误输出</h5>
+                        <h5>{{ getErrorTitle() }}</h5>
                         <a-space>
                           <a-button size="small" @click="zoomLogs(hostLog.stderr || hostLog.error_logs, '错误输出')">
                             <template #icon><IconEye /></template>
@@ -694,6 +708,18 @@ const displayName = computed(() => {
 // 计算属性 - 获取执行ID（用于SSE连接）
 const executionId = computed(() => {
   return executionInfo.value.execution_id || null
+})
+
+// 计算属性 - 执行模式（用于区分 SSH / Agent 视角）
+const executionMode = computed(() => {
+  const params = executionInfo.value.execution_parameters || {}
+  if (params.execution_mode === 'agent' || params.agent_server_url) {
+    return 'agent'
+  }
+  if (params.execution_mode === 'ssh') {
+    return 'ssh'
+  }
+  return null
 })
 
 // 计算属性 - 兼容旧格式的主机日志
@@ -1327,6 +1353,17 @@ const getHostStatusText = (status) => {
     'unknown': '未知'
   }
   return textMap[status] || status
+}
+
+// 获取错误输出标题（区分 SSH / Agent）
+const getErrorTitle = () => {
+  if (executionMode.value === 'agent') {
+    return 'Agent 错误输出'
+  }
+  if (executionMode.value === 'ssh') {
+    return 'SSH 错误输出'
+  }
+  return '错误输出'
 }
 
 

@@ -44,6 +44,7 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 		"status":      result.Status,
 		"exit_code":   result.ExitCode,
 		"error_msg":   result.ErrorMsg,
+		"error_code":  result.ErrorCode,
 		"started_at":  result.StartedAt,
 		"finished_at": result.FinishedAt,
 		"log_size":    result.LogSize,
@@ -54,4 +55,3 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 		Values: values,
 	}).Err()
 }
-

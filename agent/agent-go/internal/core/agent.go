@@ -46,6 +46,9 @@ type Agent struct {
 	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
 	tasksLock      sync.RWMutex                     // 任务映射锁
 	wsURL          string
+	// completedTasks 用于幂等控制的最近已完成任务集合（LRU）
+	completedTasks map[string]time.Time
+	completedLock  sync.Mutex
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -102,6 +105,7 @@ func NewAgent(cfg *config.Config) *Agent {
 		taskSemaphore:  taskSemaphore,
 		logStream:      logStream,
 		runningTasks:   make(map[string]*executor.RunningTask),
+		completedTasks: make(map[string]time.Time),
 	}
 
 	if cfg.Mode == "agent-server" {
@@ -258,6 +262,11 @@ func (a *Agent) heartbeatLoop() {
 
 // executeTask 执行任务
 func (a *Agent) executeTask(task *TaskSpec) {
+	// 检查并跳过重复任务
+	if a.checkAndSkipDuplicatedTask(task) {
+		return
+	}
+
 	// 获取信号量（控制并发）
 	if err := a.taskSemaphore.Acquire(a.ctx, 1); err != nil {
 		logger.GetLogger().WithError(err).Error("acquire semaphore failed")
@@ -275,71 +284,15 @@ func (a *Agent) executeTask(task *TaskSpec) {
 	metrics.GetMetrics().RecordTaskStart()
 	startTime := time.Now()
 
-	// 日志回调函数 - 根据模式选择推送方式
-	logCallback := func(logLine string) {
-		// 记录到本地日志
-		logger.GetLogger().WithField("task_id", task.ID).Info(logLine)
+	// 创建日志回调函数
+	logCallback := a.createLogCallback(task.ID)
 
-		if a.cfg.Mode == "agent-server" {
-			// Agent-Server 模式：通过 WebSocket 发送日志
-			if a.wsClient != nil && a.wsClient.IsConnected() {
-				logEntry := api.LogEntry{
-					Timestamp: time.Now().Unix(),
-					Content:   logLine,
-					Stream:    "stdout",
-					TaskID:    task.ID,
-				}
-				// 直接发送单条日志（Agent-Server 会批量聚合）
-				if err := a.wsClient.SendLogs(task.ID, []api.LogEntry{logEntry}); err != nil {
-					logger.GetLogger().WithError(err).Error("send log via websocket failed")
-				}
-			}
-		} else {
-			// Direct 模式：通过 HTTP 批量推送
-			if a.logStream != nil && a.info != nil {
-				a.logStream.PushLog(task.ID, logstream.LogEntry{
-					Timestamp: time.Now().Unix(),
-					Level:     "info",
-					Content:   logLine,
-				})
-			}
-		}
-	}
+	// 执行任务
+	result, err := a.executeTaskByType(task, logCallback)
 
-	var result *TaskResult
-	var err error
-
-	// 启动任务状态跟踪协程（仅对脚本任务）
-	var stopTracking chan struct{}
-	if task.Type == "script" || task.Type == "" {
-		stopTracking = make(chan struct{})
-		go a.trackTaskStatus(task.ID, stopTracking)
-	}
-
-	// 根据任务类型选择执行器
-	switch task.Type {
-	case "file_transfer":
-		result, err = a.fileExecutor.ExecuteTransfer(a.ctx, task, logCallback)
-	case "script":
-		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
-	default:
-		// 默认使用脚本执行器
-		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
-	}
-
-	// 停止任务状态跟踪
-	if stopTracking != nil {
-		close(stopTracking)
-	}
-
-	// 从运行任务映射中移除
-	a.tasksLock.Lock()
-	delete(a.runningTasks, task.ID)
-	a.tasksLock.Unlock()
-
+	// 处理执行错误
 	if err != nil {
 		logger.GetLogger().WithError(err).WithField("task_id", task.ID).Error("execute task error")
-		// 上报错误结果
 		result = &api.TaskResult{
 			TaskID:     task.ID,
 			Status:     "failed",
@@ -351,8 +304,110 @@ func (a *Agent) executeTask(task *TaskSpec) {
 		}
 	}
 
-	// 记录任务完成
-	duration := time.Since(startTime)
+	// 记录任务指标
+	a.recordTaskMetrics(result, time.Since(startTime))
+
+	// 上报结果
+	a.reportTaskResult(result)
+
+	// 记录任务已完成，用于后续幂等判断
+	a.markTaskCompleted(task.ID)
+}
+
+// checkAndSkipDuplicatedTask 检查并跳过重复任务
+func (a *Agent) checkAndSkipDuplicatedTask(task *TaskSpec) bool {
+	if !a.isTaskCompleted(task.ID) {
+		return false
+	}
+
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"task_id": task.ID,
+	}).Warn("skip duplicated task (already completed recently)")
+
+	// 仍然上报一个标记为 cancelled 的结果，避免控制面长时间等待
+	now := time.Now().Unix()
+	result := &api.TaskResult{
+		TaskID:     task.ID,
+		Status:     "cancelled",
+		ExitCode:   -1,
+		StartedAt:  now,
+		FinishedAt: now,
+		ErrorMsg:   "task skipped as duplicated (already completed)",
+	}
+	a.reportTaskResult(result)
+	return true
+}
+
+// createLogCallback 创建日志回调函数
+func (a *Agent) createLogCallback(taskID string) func(string) {
+	return func(logLine string) {
+		// 记录到本地日志
+		logger.GetLogger().WithField("task_id", taskID).Info(logLine)
+
+		if a.cfg.Mode == "agent-server" {
+			// Agent-Server 模式：通过 WebSocket 发送日志
+			if a.wsClient != nil && a.wsClient.IsConnected() {
+				logEntry := api.LogEntry{
+					Timestamp: time.Now().Unix(),
+					Content:   logLine,
+					Stream:    "stdout",
+					TaskID:    taskID,
+				}
+				// 直接发送单条日志（Agent-Server 会批量聚合）
+				if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
+					logger.GetLogger().WithError(err).Error("send log via websocket failed")
+				}
+			}
+		} else {
+			// Direct 模式：通过 HTTP 批量推送
+			if a.logStream != nil && a.info != nil {
+				a.logStream.PushLog(taskID, logstream.LogEntry{
+					Timestamp: time.Now().Unix(),
+					Level:     "info",
+					Content:   logLine,
+				})
+			}
+		}
+	}
+}
+
+// executeTaskByType 根据任务类型执行任务
+func (a *Agent) executeTaskByType(task *TaskSpec, logCallback func(string)) (*api.TaskResult, error) {
+	// 启动任务状态跟踪协程（仅对脚本任务）
+	var stopTracking chan struct{}
+	if task.Type == "script" || task.Type == "" {
+		stopTracking = make(chan struct{})
+		go a.trackTaskStatus(task.ID, stopTracking)
+		defer func() {
+			if stopTracking != nil {
+				close(stopTracking)
+			}
+		}()
+	}
+
+	// 根据任务类型选择执行器
+	var result *api.TaskResult
+	var err error
+	switch task.Type {
+	case "file_transfer":
+		result, err = a.fileExecutor.ExecuteTransfer(a.ctx, task, logCallback)
+	case "script":
+		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
+	default:
+		// 默认使用脚本执行器
+		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
+	}
+
+	// 从运行任务映射中移除
+	a.tasksLock.Lock()
+	delete(a.runningTasks, task.ID)
+	a.tasksLock.Unlock()
+
+	return result, err
+}
+
+// recordTaskMetrics 记录任务指标
+func (a *Agent) recordTaskMetrics(result *api.TaskResult, duration time.Duration) {
 	switch result.Status {
 	case "success":
 		metrics.GetMetrics().RecordTaskSuccess(duration)
@@ -361,35 +416,88 @@ func (a *Agent) executeTask(task *TaskSpec) {
 	case "cancelled":
 		metrics.GetMetrics().RecordTaskCancelled(duration)
 	}
+}
 
-	// 上报结果
+// reportTaskResult 上报任务结果
+func (a *Agent) reportTaskResult(result *api.TaskResult) {
 	if a.cfg.Mode == "agent-server" {
 		// Agent-Server 模式：通过 WebSocket 发送结果
 		if a.wsClient != nil && a.wsClient.IsConnected() {
 			if err := a.wsClient.SendTaskResult(result); err != nil {
-				logger.GetLogger().WithError(err).WithField("task_id", task.ID).Error("report result via websocket failed")
+				logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result via websocket failed")
 			} else {
 				logger.GetLogger().WithFields(map[string]interface{}{
-					"task_id": task.ID,
+					"task_id": result.TaskID,
 					"status":  result.Status,
 				}).Info("task completed")
 			}
 		}
 	} else {
 		// Direct 模式：通过 HTTP 发送结果
-		if err := a.client.ReportResult(a.ctx, a.info.ID, *result); err != nil {
-			logger.GetLogger().WithError(err).WithField("task_id", task.ID).Error("report result error")
-		} else {
-			logger.GetLogger().WithFields(map[string]interface{}{
-				"task_id": task.ID,
-				"status":  result.Status,
-			}).Info("task completed")
+		if a.info != nil {
+			if err := a.client.ReportResult(a.ctx, a.info.ID, *result); err != nil {
+				logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result error")
+			} else {
+				logger.GetLogger().WithFields(map[string]interface{}{
+					"task_id": result.TaskID,
+					"status":  result.Status,
+				}).Info("task completed")
+			}
 		}
 		// 任务完成后，清理日志流缓冲区
 		if a.logStream != nil {
-			a.logStream.RemoveTask(task.ID)
+			a.logStream.RemoveTask(result.TaskID)
 		}
 	}
+}
+
+// isTaskCompleted 判断任务是否在最近已完成集合中（简易LRU）
+func (a *Agent) isTaskCompleted(taskID string) bool {
+	if taskID == "" {
+		return false
+	}
+	a.completedLock.Lock()
+	defer a.completedLock.Unlock()
+
+	// 清理过期记录（超过5分钟的任务视为无效，以免集合无限增长）
+	now := time.Now()
+	const ttl = 5 * time.Minute
+	for id, t := range a.completedTasks {
+		if now.Sub(t) > ttl {
+			delete(a.completedTasks, id)
+		}
+	}
+
+	_, exists := a.completedTasks[taskID]
+	return exists
+}
+
+// markTaskCompleted 将任务标记为已完成
+func (a *Agent) markTaskCompleted(taskID string) {
+	if taskID == "" {
+		return
+	}
+	a.completedLock.Lock()
+	defer a.completedLock.Unlock()
+
+	// 限制集合大小，最多保留 1000 个最近任务
+	const maxSize = 1000
+	if len(a.completedTasks) >= maxSize {
+		// 简单删除最早的一批（不严格LRU，够用即可）
+		oldestID := ""
+		var oldestTime time.Time
+		for id, t := range a.completedTasks {
+			if oldestID == "" || t.Before(oldestTime) {
+				oldestID = id
+				oldestTime = t
+			}
+		}
+		if oldestID != "" {
+			delete(a.completedTasks, oldestID)
+		}
+	}
+
+	a.completedTasks[taskID] = time.Now()
 }
 
 // SubmitTask 实现 httpserver.TaskService 接口，用于接收 HTTP 推送任务

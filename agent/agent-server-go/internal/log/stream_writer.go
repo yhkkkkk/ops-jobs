@@ -14,6 +14,8 @@ import (
 type StreamWriter struct {
 	client *redis.Client
 	key    string
+	// 简易内存缓冲区：在 Redis 短暂不可用时暂存少量日志，下一次写入成功时一并刷新
+	buffer []map[string]interface{}
 }
 
 // NewStreamWriter 创建流写入器，复用 redis 配置
@@ -34,6 +36,7 @@ func NewStreamWriter(cfg *config.Config) (*StreamWriter, error) {
 	return &StreamWriter{
 		client: rdb,
 		key:    cfg.LogStream.Key,
+		buffer: make([]map[string]interface{}, 0),
 	}, nil
 }
 
@@ -43,13 +46,32 @@ func (w *StreamWriter) PushLogs(ctx context.Context, entries []map[string]interf
 	if w == nil || w.client == nil || len(entries) == 0 {
 		return nil
 	}
+
+	// 先把之前缓冲的日志拼接上
+	all := make([]map[string]interface{}, 0, len(w.buffer)+len(entries))
+	all = append(all, w.buffer...)
+	all = append(all, entries...)
+
 	pipe := w.client.Pipeline()
-	for _, entry := range entries {
+	for _, entry := range all {
 		pipe.XAdd(ctx, &redis.XAddArgs{
 			Stream: w.key,
 			Values: entry,
 		})
 	}
 	_, err := pipe.Exec(ctx)
-	return err
+	if err != nil {
+		// 写入失败：更新缓冲区，限制最大长度，避免内存无限增长
+		const maxBufferSize = 1000
+		if len(all) > maxBufferSize {
+			w.buffer = all[len(all)-maxBufferSize:]
+		} else {
+			w.buffer = all
+		}
+		return err
+	}
+
+	// 写入成功后清空缓冲区
+	w.buffer = w.buffer[:0]
+	return nil
 }

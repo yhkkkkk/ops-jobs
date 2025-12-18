@@ -161,7 +161,7 @@
     <a-modal
       v-model:visible="detailVisible"
       title="安装记录详情"
-      width="700px"
+      width="800px"
       :footer="false"
     >
       <a-descriptions
@@ -182,9 +182,22 @@
           </a-tag>
         </a-descriptions-item>
         <a-descriptions-item label="安装状态">
-          <a-tag :color="getStatusColor(currentRecord.status)">
-            {{ currentRecord.status_display }}
-          </a-tag>
+          <a-space>
+            <a-tag :color="getStatusColor(currentRecord.status)">
+              {{ currentRecord.status_display }}
+            </a-tag>
+            <a-button
+              v-if="currentRecord.status === 'failed'"
+              type="primary"
+              size="small"
+              @click="handleRetryInstall(currentRecord)"
+            >
+              <template #icon>
+                <IconRefresh />
+              </template>
+              重试安装
+            </a-button>
+          </a-space>
         </a-descriptions-item>
         <a-descriptions-item label="安装用户">
           {{ currentRecord.installed_by_name }}
@@ -198,8 +211,18 @@
           </a-button>
         </a-descriptions-item>
         <a-descriptions-item v-if="currentRecord.error_message" label="错误信息">
-          <div style="color: #f53f3f; white-space: pre-wrap; word-break: break-all;">
+          <div style="color: #f53f3f; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; padding: 8px; background: #fff2f0; border-radius: 4px;">
             {{ currentRecord.error_message }}
+          </div>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.error_detail" label="错误详情">
+          <div style="color: #f53f3f; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; padding: 8px; background: #fff2f0; border-radius: 4px; font-family: monospace; font-size: 12px;">
+            {{ currentRecord.error_detail }}
+          </div>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.message" label="安装消息">
+          <div style="white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; padding: 8px; background: #f7f8fa; border-radius: 4px;">
+            {{ currentRecord.message }}
           </div>
         </a-descriptions-item>
       </a-descriptions>
@@ -273,7 +296,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import {
   IconSearch,
   IconRefresh,
@@ -482,6 +505,45 @@ const handleRegenerateScript = async (record: any) => {
     scriptDrawerVisible.value = false
   } finally {
     regeneratingScript.value = false
+  }
+}
+
+// 重试安装
+const handleRetryInstall = async (record: any) => {
+  try {
+    Modal.confirm({
+      title: '确认重试安装',
+      content: `确定要重新安装 Agent 到主机 ${record.host_name} (${record.host_ip}) 吗？`,
+      onOk: async () => {
+        try {
+          // 调用批量安装 API，但只针对当前主机
+          const response = await agentsApi.batchInstall({
+            host_ids: [record.host_id],
+            install_mode: record.install_mode || 'agent-server',
+            agent_server_url: record.agent_server_url || '',
+            agent_server_backup_url: record.agent_server_backup_url || '',
+            package_version: record.package_version || '',
+            package_id: record.package_id || null,
+            confirmed: true,
+            allow_reinstall: true, // 允许重新安装
+          })
+          
+          Message.success('重试安装任务已提交，请查看安装记录')
+          
+          // 关闭详情对话框
+          detailVisible.value = false
+          
+          // 刷新列表
+          await fetchRecords()
+        } catch (error: any) {
+          console.error('重试安装失败:', error)
+          const errorMsg = error?.response?.data?.message || error?.message || '重试安装失败'
+          Message.error(errorMsg)
+        }
+      },
+    })
+  } catch (error: any) {
+    console.error('重试安装失败:', error)
   }
 }
 

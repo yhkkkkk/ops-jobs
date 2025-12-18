@@ -253,191 +253,18 @@ func (q *TaskQueue) ListPendingTasks(agentID string) ([]*api.TaskSpec, error) {
 	queues := []string{QueueCritical, QueueDefault, QueueLow}
 	var allTasks []TaskWithMetadata
 
-	// 遍历所有队列
+	// 遍历所有队列，查询不同状态的任务
 	for _, queueName := range queues {
-		// 1. 查询待处理任务（pending）
-		page := 1
-		pageSize := 100
-		for {
-			pending, err := inspector.ListPendingTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
-			if err != nil {
-				logger.GetLogger().WithError(err).WithField("queue", queueName).Warn("list pending tasks failed")
-				break
-			}
-
-			if len(pending) == 0 {
-				break
-			}
-
-			for _, taskInfo := range pending {
-				// 解析任务负载
-				var payload TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-						"queue":   queueName,
-						"task_id": taskInfo.ID,
-					}).Warn("unmarshal task payload failed")
-					continue
-				}
-
-				// 只返回指定Agent的任务
-				if payload.AgentID == agentID {
-					allTasks = append(allTasks, TaskWithMetadata{
-						Task:     payload.Task,
-						Queue:    queueName,
-						TaskID:   taskInfo.ID,
-						State:    "pending",
-						Priority: getQueuePriority(queueName),
-					})
-				}
-			}
-
-			// 如果返回的任务数少于pageSize，说明已经是最后一页
-			if len(pending) < pageSize {
-				break
-			}
-			page++
-		}
-
-		// 2. 查询活跃任务（active）- 可能正在处理但Agent已离线
-		page = 1
-		for {
-			active, err := inspector.ListActiveTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
-			if err != nil {
-				logger.GetLogger().WithError(err).WithField("queue", queueName).Warn("list active tasks failed")
-				break
-			}
-
-			if len(active) == 0 {
-				break
-			}
-
-			for _, taskInfo := range active {
-				var payload TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					continue
-				}
-
-				if payload.AgentID == agentID {
-					allTasks = append(allTasks, TaskWithMetadata{
-						Task:     payload.Task,
-						Queue:    queueName,
-						TaskID:   taskInfo.ID,
-						State:    "active",
-						Priority: getQueuePriority(queueName),
-					})
-				}
-			}
-
-			if len(active) < pageSize {
-				break
-			}
-			page++
-		}
-
-		// 3. 查询重试任务（retry）
-		page = 1
-		for {
-			retry, err := inspector.ListRetryTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
-			if err != nil {
-				logger.GetLogger().WithError(err).WithField("queue", queueName).Warn("list retry tasks failed")
-				break
-			}
-
-			if len(retry) == 0 {
-				break
-			}
-
-			for _, taskInfo := range retry {
-				var payload TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					continue
-				}
-
-				if payload.AgentID == agentID {
-					allTasks = append(allTasks, TaskWithMetadata{
-						Task:          payload.Task,
-						Queue:         queueName,
-						TaskID:        taskInfo.ID,
-						State:         "retry",
-						Priority:      getQueuePriority(queueName),
-						NextProcessAt: taskInfo.NextProcessAt,
-					})
-				}
-			}
-
-			if len(retry) < pageSize {
-				break
-			}
-			page++
-		}
-
-		// 4. 查询计划任务（scheduled）- 延迟执行的任务
-		page = 1
-		for {
-			scheduled, err := inspector.ListScheduledTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
-			if err != nil {
-				logger.GetLogger().WithError(err).WithField("queue", queueName).Warn("list scheduled tasks failed")
-				break
-			}
-
-			if len(scheduled) == 0 {
-				break
-			}
-
-			for _, taskInfo := range scheduled {
-				var payload TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					continue
-				}
-
-				if payload.AgentID == agentID {
-					allTasks = append(allTasks, TaskWithMetadata{
-						Task:          payload.Task,
-						Queue:         queueName,
-						TaskID:        taskInfo.ID,
-						State:         "scheduled",
-						Priority:      getQueuePriority(queueName),
-						NextProcessAt: taskInfo.NextProcessAt,
-					})
-				}
-			}
-
-			if len(scheduled) < pageSize {
-				break
-			}
-			page++
-		}
+		allTasks = append(allTasks, q.queryTasksByState(inspector, queueName, agentID, "pending")...)
+		allTasks = append(allTasks, q.queryTasksByState(inspector, queueName, agentID, "active")...)
+		allTasks = append(allTasks, q.queryTasksByState(inspector, queueName, agentID, "retry")...)
+		allTasks = append(allTasks, q.queryTasksByState(inspector, queueName, agentID, "scheduled")...)
 	}
 
-	// 5. 按优先级和状态排序
-	// 优先级：critical > default > low
-	// 状态：pending > active > retry > scheduled
-	sort.Slice(allTasks, func(i, j int) bool {
-		// 先按优先级排序
-		if allTasks[i].Priority != allTasks[j].Priority {
-			return allTasks[i].Priority > allTasks[j].Priority
-		}
-		// 再按状态排序
-		stateOrder := map[string]int{
-			"pending":   0,
-			"active":    1,
-			"retry":     2,
-			"scheduled": 3,
-		}
-		orderI := stateOrder[allTasks[i].State]
-		orderJ := stateOrder[allTasks[j].State]
-		if orderI != orderJ {
-			return orderI < orderJ
-		}
-		// 最后按NextProcessAt排序（如果有）
-		if !allTasks[i].NextProcessAt.IsZero() && !allTasks[j].NextProcessAt.IsZero() {
-			return allTasks[i].NextProcessAt.Before(allTasks[j].NextProcessAt)
-		}
-		return false
-	})
+	// 按优先级和状态排序
+	q.sortTasksByPriority(allTasks)
 
-	// 6. 提取TaskSpec列表
+	// 提取TaskSpec列表
 	tasks := make([]*api.TaskSpec, 0, len(allTasks))
 	for _, taskMeta := range allTasks {
 		tasks = append(tasks, taskMeta.Task)
@@ -455,6 +282,105 @@ func (q *TaskQueue) ListPendingTasks(agentID string) ([]*api.TaskSpec, error) {
 	}).Info("listed pending tasks for agent")
 
 	return tasks, nil
+}
+
+// queryTasksByState 按状态查询任务
+func (q *TaskQueue) queryTasksByState(inspector *asynq.Inspector, queueName, agentID, state string) []TaskWithMetadata {
+	var tasks []TaskWithMetadata
+	page := 1
+	pageSize := 100
+
+	for {
+		var taskInfos []*asynq.TaskInfo
+		var err error
+
+		switch state {
+		case "pending":
+			taskInfos, err = inspector.ListPendingTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
+		case "active":
+			taskInfos, err = inspector.ListActiveTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
+		case "retry":
+			taskInfos, err = inspector.ListRetryTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
+		case "scheduled":
+			taskInfos, err = inspector.ListScheduledTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
+		default:
+			return tasks
+		}
+
+		if err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"queue": queueName,
+				"state": state,
+			}).Warn("list tasks failed")
+			break
+		}
+
+		if len(taskInfos) == 0 {
+			break
+		}
+
+		for _, taskInfo := range taskInfos {
+			var payload TaskPayload
+			if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
+				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+					"queue":   queueName,
+					"task_id": taskInfo.ID,
+				}).Warn("unmarshal task payload failed")
+				continue
+			}
+
+			// 只返回指定Agent的任务
+			if payload.AgentID == agentID {
+				taskMeta := TaskWithMetadata{
+					Task:     payload.Task,
+					Queue:    queueName,
+					TaskID:   taskInfo.ID,
+					State:    state,
+					Priority: getQueuePriority(queueName),
+				}
+				if !taskInfo.NextProcessAt.IsZero() {
+					taskMeta.NextProcessAt = taskInfo.NextProcessAt
+				}
+				tasks = append(tasks, taskMeta)
+			}
+		}
+
+		// 如果返回的任务数少于pageSize，说明已经是最后一页
+		if len(taskInfos) < pageSize {
+			break
+		}
+		page++
+	}
+
+	return tasks
+}
+
+// sortTasksByPriority 按优先级和状态排序任务
+func (q *TaskQueue) sortTasksByPriority(allTasks []TaskWithMetadata) {
+	stateOrder := map[string]int{
+		"pending":   0,
+		"active":    1,
+		"retry":     2,
+		"scheduled": 3,
+	}
+
+	sort.Slice(allTasks, func(i, j int) bool {
+		// 先按优先级排序
+		if allTasks[i].Priority != allTasks[j].Priority {
+			return allTasks[i].Priority > allTasks[j].Priority
+		}
+		// 再按状态排序
+		orderI := stateOrder[allTasks[i].State]
+		orderJ := stateOrder[allTasks[j].State]
+		if orderI != orderJ {
+			return orderI < orderJ
+		}
+		// 最后按NextProcessAt排序（如果有）
+		if !allTasks[i].NextProcessAt.IsZero() && !allTasks[j].NextProcessAt.IsZero() {
+			return allTasks[i].NextProcessAt.Before(allTasks[j].NextProcessAt)
+		}
+		return false
+	})
 }
 
 // TaskWithMetadata 带元数据的任务
@@ -491,6 +417,11 @@ func countByState(tasks []TaskWithMetadata, state string) int {
 		}
 	}
 	return count
+}
+
+// GetRedisOpt 获取 Redis 配置（用于创建 Inspector）
+func (q *TaskQueue) GetRedisOpt() asynq.RedisClientOpt {
+	return q.redisOpt
 }
 
 // DeleteTask 删除任务

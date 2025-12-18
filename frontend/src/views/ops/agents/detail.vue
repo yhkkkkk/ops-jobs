@@ -62,7 +62,19 @@
           </div>
           <div class="info-item">
             <span class="label">版本：</span>
-            <span class="value">{{ agentDetail.version || '-' }}</span>
+            <span class="value">
+              <a-space>
+                <span>{{ agentDetail.version || '-' }}</span>
+                <a-tooltip
+                  v-if="agentDetail.is_version_outdated && agentDetail.version"
+                  :content="getVersionTooltip(agentDetail)"
+                >
+                  <a-tag color="red" size="small">
+                    版本落后
+                  </a-tag>
+                </a-tooltip>
+              </a-space>
+            </span>
           </div>
           <div class="info-item">
             <span class="label">接入点：</span>
@@ -302,6 +314,14 @@ const getStatusColor = (status: string) => {
     disabled: 'gray'
   }
   return colorMap[status] || 'blue'
+}
+
+// 版本落后提示文案
+const getVersionTooltip = (agent: AgentDetail & { expected_min_version?: string }) => {
+  if (agent.expected_min_version) {
+    return `当前版本 ${agent.version} 落后于期望版本 ${agent.expected_min_version}`
+  }
+  return `当前版本 ${agent.version} 落后于平台期望版本`
 }
 
 // 格式化时间

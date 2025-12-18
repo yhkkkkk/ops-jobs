@@ -4,6 +4,7 @@ Agent 序列化器
 from rest_framework import serializers
 
 from apps.hosts.serializers import HostSerializer, HostSimpleSerializer
+from apps.system_config.models import ConfigManager
 from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage
 
 
@@ -29,6 +30,8 @@ class AgentSerializer(serializers.ModelSerializer):
     host = HostSimpleSerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     tokens = AgentTokenSerializer(many=True, read_only=True)
+    is_version_outdated = serializers.SerializerMethodField()
+    expected_min_version = serializers.SerializerMethodField()
 
     class Meta:
         model = Agent
@@ -38,6 +41,8 @@ class AgentSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'version',
+            'is_version_outdated',
+            'expected_min_version',
             'endpoint',
             'last_heartbeat_at',
             'last_error_code',
@@ -47,6 +52,55 @@ class AgentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_is_version_outdated(self, obj: Agent) -> bool:
+        """
+        判断 Agent 版本是否落后于期望版本。
+        期望版本来源（按优先级）：
+          1) SystemConfig.agent.min_version_by_env: {"prod": "1.2.0", "default": "1.0.0"}
+          2) SystemConfig.agent.min_version: "1.0.0"
+        未配置或 Agent 未上报版本则视为不落后。
+        """
+        expected = self._get_expected_min_version(obj)
+        if not expected:
+            return False
+        if not obj.version:
+            # 未上报版本，保守视为不落后，只在 UI 提示“未知版本”
+            return False
+        try:
+            return _compare_semver(obj.version, expected) < 0
+        except Exception:
+            # 格式异常时不做判定，避免影响接口
+            return False
+
+    def get_expected_min_version(self, obj: Agent) -> str | None:
+        return self._get_expected_min_version(obj)
+
+    @staticmethod
+    def _get_expected_min_version(agent: Agent) -> str | None:
+        """
+        根据环境读取期望最小版本：
+          - agent.min_version_by_env: dict, key 为环境（dev/test/staging/prod），可包含 'default'
+          - agent.min_version: 全局字符串
+        """
+        # 按环境配置
+        by_env = ConfigManager.get("agent.min_version_by_env", {}) or {}
+        env = getattr(agent, "environment", None)
+        if isinstance(by_env, dict):
+            if env and env in by_env:
+                val = by_env.get(env)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+            # default 兜底
+            default_val = by_env.get("default")
+            if isinstance(default_val, str) and default_val.strip():
+                return default_val.strip()
+
+        # 全局配置
+        global_min = ConfigManager.get("agent.min_version", None)
+        if isinstance(global_min, str) and global_min.strip():
+            return global_min.strip()
+        return None
+
 
 class AgentDetailSerializer(serializers.ModelSerializer):
     host = HostSerializer(read_only=True)
@@ -54,6 +108,8 @@ class AgentDetailSerializer(serializers.ModelSerializer):
     tokens = AgentTokenSerializer(many=True, read_only=True)
     business_system = serializers.ReadOnlyField()
     environment = serializers.ReadOnlyField()
+    is_version_outdated = serializers.SerializerMethodField()
+    expected_min_version = serializers.SerializerMethodField()
 
     class Meta:
         model = Agent
@@ -63,6 +119,8 @@ class AgentDetailSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'version',
+            'is_version_outdated',
+            'expected_min_version',
             'endpoint',
             'last_heartbeat_at',
             'last_error_code',
@@ -73,6 +131,57 @@ class AgentDetailSerializer(serializers.ModelSerializer):
             'tokens',
         ]
         read_only_fields = fields
+
+    def get_is_version_outdated(self, obj: Agent) -> bool:
+        # 与列表序列化保持一致的逻辑
+        return AgentSerializer(context=self.context).get_is_version_outdated(obj)
+
+    def get_expected_min_version(self, obj: Agent) -> str | None:
+        return AgentSerializer._get_expected_min_version(obj)
+
+
+def _parse_semver(ver: str) -> tuple[int, int, int]:
+    """
+    解析简单的语义化版本号：major.minor.patch
+    非法或缺失部分按 0 处理，不支持预发布/构建后缀，但足够用于“是否落后”的粗略比较。
+    """
+    if not ver:
+        return 0, 0, 0
+    parts = ver.strip().split(".")
+    nums: list[int] = []
+    for i in range(3):
+        if i < len(parts):
+            p = parts[i]
+            # 去掉可能的后缀，例如 "1.2.3-beta" -> 只取数字前缀
+            num_str = ""
+            for ch in p:
+                if ch.isdigit():
+                    num_str += ch
+                else:
+                    break
+            try:
+                nums.append(int(num_str) if num_str else 0)
+            except ValueError:
+                nums.append(0)
+        else:
+            nums.append(0)
+    return nums[0], nums[1], nums[2]
+
+
+def _compare_semver(a: str, b: str) -> int:
+    """
+    比较两个简单语义化版本：
+      - 返回 -1 表示 a < b
+      - 返回 0  表示 a == b
+      - 返回 1  表示 a > b
+    """
+    ma, na, pa = _parse_semver(a)
+    mb, nb, pb = _parse_semver(b)
+    if (ma, na, pa) < (mb, nb, pb):
+        return -1
+    if (ma, na, pa) > (mb, nb, pb):
+        return 1
+    return 0
 
 
 class IssueTokenSerializer(serializers.Serializer):
@@ -114,6 +223,8 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'error_message',
+            'error_detail',
+            'message',
             'installed_by',
             'installed_by_name',
             'installed_at',
