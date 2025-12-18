@@ -1,88 +1,37 @@
 import logging
+
+from django.db import transaction
+from django.utils import timezone
+from django_filters.rest_framework import DjangoFilterBackend
+from guardian.shortcuts import get_objects_for_user
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from django_filters.rest_framework import DjangoFilterBackend
-from django_filters import rest_framework as filters
-from django.utils import timezone
-from django.db import transaction
-from guardian.shortcuts import get_objects_for_user
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from utils.responses import SycResponse
-from utils.pagination import CustomPagination
 from utils.audit_service import AuditLogService
-from apps.permissions.permissions import BasePermissionMixin
-from .models import Agent, AgentInstallRecord, AgentUninstallRecord
+from utils.responses import SycResponse
+from .filters import AgentFilter, InstallRecordFilter, UninstallRecordFilter
 from .mixins import BatchOperationMixin
+from .models import Agent, AgentInstallRecord, AgentUninstallRecord
+from .pagination import AgentPagination
+from .permissions import AgentPermission
 from .serializers import (
-    AgentSerializer,
-    AgentDetailSerializer,
-    AgentTokenSerializer,
-    IssueTokenSerializer,
-    AgentEnableSerializer,
-    BatchOperationSerializer,
-    AgentInstallRecordSerializer,
-    GenerateInstallScriptSerializer,
-    BatchInstallSerializer,
-    AgentUninstallRecordSerializer,
-    BatchUninstallSerializer,
     AgentControlSerializer,
+    AgentDetailSerializer,
+    AgentEnableSerializer,
+    AgentInstallRecordSerializer,
+    AgentSerializer,
+    AgentTokenSerializer,
+    BatchInstallSerializer,
+    BatchOperationSerializer,
+    BatchUninstallSerializer,
+    GenerateInstallScriptSerializer,
+    IssueTokenSerializer,
+    AgentUninstallRecordSerializer,
 )
-from .filters import AgentFilter
 from .services import AgentService
 
 logger = logging.getLogger(__name__)
-
-
-class InstallRecordFilter(filters.FilterSet):
-    host_id = filters.NumberFilter(field_name="host_id")
-    status = filters.ChoiceFilter(choices=AgentInstallRecord.STATUS_CHOICES)
-
-    class Meta:
-        model = AgentInstallRecord
-        fields = ["host_id", "status", "install_mode"]
-
-
-class UninstallRecordFilter(filters.FilterSet):
-    host_id = filters.NumberFilter(field_name="host_id")
-    status = filters.ChoiceFilter(choices=AgentUninstallRecord.STATUS_CHOICES)
-
-    class Meta:
-        model = AgentUninstallRecord
-        fields = ["host_id", "status"]
-
-
-class AgentPermission(BasePermissionMixin):
-    """Agent 权限：列表/详情允许，敏感操作需具备对应模型权限"""
-
-    def has_permission(self, request, view):
-        if not request.user.is_authenticated:
-            return False
-        if getattr(view, "action", None) in ["list", "retrieve"]:
-            return True
-        return True
-
-    def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user.is_authenticated:
-            return False
-        action = getattr(view, "action", None)
-        # 细粒度控制
-        if action == "retrieve":
-            return user.has_perm("agents.view_agent", obj) or user.is_superuser
-        if action == "issue_token":
-            return user.has_perm("agents.issue_agent_token", obj) or user.is_superuser
-        if action == "revoke_token":
-            return user.has_perm("agents.revoke_agent_token", obj) or user.is_superuser
-        if action == "enable_agent":
-            return user.has_perm("agents.enable_agent", obj) or user.is_superuser
-        if action == "disable_agent":
-            return user.has_perm("agents.disable_agent", obj) or user.is_superuser
-        return user.has_perm("agents.view_agent", obj) or user.is_superuser
-
-
-class AgentPagination(CustomPagination):
-    page_size = 20
 
 
 class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
@@ -94,8 +43,13 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
     pagination_class = AgentPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = AgentFilter
-    install_record_filterset_class = InstallRecordFilter
-    uninstall_record_filterset_class = UninstallRecordFilter
+
+    def get_filterset_class(self):
+        if self.action == 'install_records':
+            return InstallRecordFilter
+        elif self.action == 'uninstall_records':
+            return UninstallRecordFilter
+        return self.filterset_class
 
     def get_queryset(self):
         """基于用户权限过滤查询集"""
@@ -420,7 +374,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 message=f"批量操作最多支持{MAX_BATCH_SIZE}个agent",
                 code=400
             )
-        agents = Agent.objects.filter(id__in=agent_ids)
         # 权限过滤
         queryset = self.get_queryset()
         allowed_agents = queryset.filter(id__in=agent_ids)
@@ -578,7 +531,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             return SycResponse.error(message="未找到指定的主机", code=404)
 
         scripts = {}
-        tokens = {}
         errors = []
 
         for host in hosts:
@@ -933,8 +885,10 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(host__in=allowed_hosts)
 
         # 应用过滤器（使用专门的FilterSet）
-        backend = DjangoFilterBackend()
-        queryset = backend.filter_queryset(request, queryset, self.install_record_filterset_class)
+        filterset_class = self.get_filterset_class()
+        if filterset_class:
+            filterset = filterset_class(request.query_params, queryset=queryset)
+            queryset = filterset.qs
 
         # 分页与序列化
         page = self.paginate_queryset(queryset)
@@ -977,8 +931,11 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             )
             queryset = queryset.filter(host__in=allowed_hosts)
 
-        backend = DjangoFilterBackend()
-        queryset = backend.filter_queryset(request, queryset, self.uninstall_record_filterset_class)
+        # 应用过滤器
+        filterset_class = self.get_filterset_class()
+        if filterset_class:
+            filterset = filterset_class(request.query_params, queryset=queryset)
+            queryset = filterset.qs
 
         page = self.paginate_queryset(queryset)
         if page is not None:

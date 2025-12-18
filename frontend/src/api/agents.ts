@@ -198,6 +198,8 @@ export const agentsApi = {
     page_size?: number
     host_id?: number
     status?: string
+    install_mode?: string
+    search?: string
   }): Promise<PaginatedResponse<any>> {
     return http.get('/agents/install_records/', { params })
   },

@@ -1,30 +1,38 @@
 """
 用户认证相关视图 - 支持Session + JWT混合认证
 """
-from rest_framework import viewsets, serializers
-from rest_framework.decorators import api_view, action, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework import serializers, viewsets
 from rest_framework.authentication import BasicAuthentication
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework.decorators import (
+    action,
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_extensions.cache.mixins import CacheResponseMixin
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
 from django.conf import settings
-from rest_framework_extensions.cache.mixins import CacheResponseMixin
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate, logout, login
-from utils.responses import SycResponse
-from utils.pagination import LogPagination
+
 from drf_spectacular.utils import extend_schema
+
+from utils.audit_service import AuditLogService
+from utils.responses import SycResponse
 from .models import UserProfile
+from .pagination import UserPagination
 from .serializers import (
-    UserSerializer,
+    CustomTokenObtainPairSerializer,
     UserRegistrationSerializer,
+    UserSerializer,
     UserUpdateSerializer,
-    CustomTokenObtainPairSerializer
 )
 from .utils import get_user_profile_data
-from utils.audit_service import AuditLogService
 
 # 条件导入 2FA 相关模块
 TWO_FACTOR_ENABLED = getattr(settings, 'TWO_FACTOR_ENABLED', False)
@@ -109,10 +117,6 @@ def logout_view(request):
 
     except Exception as e:
         return SycResponse.error(message=f"登出失败: {str(e)}")
-
-class UserPagination(LogPagination):
-    """用户分页类 - 使用正确的排序字段"""
-    ordering = '-date_joined'
 
 class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
     """用户管理ViewSet"""

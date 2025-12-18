@@ -399,8 +399,7 @@ const fetchRecords = async () => {
       params.install_mode = searchForm.install_mode
     }
     if (searchForm.search) {
-      // 后端可能需要支持搜索，暂时通过 host_id 或其他方式
-      // 这里先不传，等后端支持搜索后再添加
+      params.search = searchForm.search
     }
 
     const response = await agentsApi.getInstallRecords(params)

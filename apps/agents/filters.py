@@ -5,11 +5,11 @@ import django_filters
 from django.db import models
 
 from apps.hosts.models import Host, HostGroup
-from .models import Agent
+from .models import Agent, AgentInstallRecord, AgentUninstallRecord
 
 
 class AgentFilter(django_filters.FilterSet):
-    """Agent 过滤器"""
+    """Agent 过滤器（列表页用）"""
 
     search = django_filters.CharFilter(method='filter_search', label='搜索')
     status = django_filters.ChoiceFilter(choices=Agent.STATUS_CHOICES, label='状态')
@@ -78,4 +78,53 @@ class AgentFilter(django_filters.FilterSet):
             return queryset.none()
         group_ids = [g.id for g in group.get_descendants(include_self=True)]
         return queryset.filter(host__groups__in=group_ids).distinct()
+
+
+class InstallRecordFilter(django_filters.FilterSet):
+    """Agent 安装记录过滤器"""
+
+    host_id = django_filters.NumberFilter(field_name="host_id")
+    status = django_filters.ChoiceFilter(choices=AgentInstallRecord.STATUS_CHOICES)
+    install_mode = django_filters.ChoiceFilter(choices=AgentInstallRecord.INSTALL_MODE_CHOICES)
+    # 搜索过滤器 - 支持主机名、IP地址的模糊搜索
+    search = django_filters.CharFilter(method="filter_search", label="搜索")
+
+    class Meta:
+        model = AgentInstallRecord
+        fields = ["host_id", "status", "install_mode", "search"]
+
+    def filter_search(self, queryset, name, value):
+        """自定义搜索过滤方法 - 支持主机名、IP地址搜索"""
+        if not value:
+            return queryset
+
+        # 将搜索值按空格分割，支持多关键词搜索
+        search_terms = [term.strip() for term in value.split() if term.strip()]
+        if not search_terms:
+            return queryset
+
+        # 对每个搜索词构建查询条件
+        query = models.Q()
+        for term in search_terms:
+            term_query = (
+                models.Q(host__name__icontains=term)
+                | models.Q(host__ip_address__icontains=term)
+                | models.Q(host__hostname__icontains=term)
+                | models.Q(host__public_ip__icontains=term)
+                | models.Q(host__internal_ip__icontains=term)
+            )
+            query |= term_query
+
+        return queryset.filter(query)
+
+
+class UninstallRecordFilter(django_filters.FilterSet):
+    """Agent 卸载记录过滤器"""
+
+    host_id = django_filters.NumberFilter(field_name="host_id")
+    status = django_filters.ChoiceFilter(choices=AgentUninstallRecord.STATUS_CHOICES)
+
+    class Meta:
+        model = AgentUninstallRecord
+        fields = ["host_id", "status"]
 
