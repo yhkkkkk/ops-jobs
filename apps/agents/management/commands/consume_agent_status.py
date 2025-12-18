@@ -1,6 +1,7 @@
 import logging
 import time
 from typing import Dict, Any
+from datetime import datetime
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -92,7 +93,7 @@ class Command(BaseCommand):
         # 更新时间
         ts_ms = fields.get("last_heartbeat")
         if isinstance(ts_ms, (int, float)):
-            dt = timezone.datetime.fromtimestamp(float(ts_ms) / 1000.0, tz=timezone.utc)
+            dt = datetime.fromtimestamp(float(ts_ms) / 1000.0, tz=timezone.utc)
         else:
             dt = timezone.now()
 

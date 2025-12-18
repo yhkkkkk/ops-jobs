@@ -361,11 +361,11 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 
 	// Agent 在线，尝试通过 WebSocket 发送取消消息
 	if conn.Status == "active" && conn.Conn != nil {
-		if err := conn.SendCancelTask(taskID); err != nil {
-			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-				"agent_id": agentID,
-				"task_id":  taskID,
-			}).Error("send cancel task message failed")
+	if err := conn.SendCancelTask(taskID); err != nil {
+		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+			"agent_id": agentID,
+			"task_id":  taskID,
+		}).Error("send cancel task message failed")
 			// WebSocket 发送失败，尝试从队列中删除
 			if s.taskQueue != nil {
 				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
@@ -378,21 +378,21 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 					return
 				}
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  taskID,
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id": agentID,
+		"task_id":  taskID,
 		}).Info("cancel task request sent to agent via websocket")
 
-		c.JSON(http.StatusOK, gin.H{
-			"task_id":  taskID,
-			"agent_id": agentID,
-			"status":   "cancelled",
+	c.JSON(http.StatusOK, gin.H{
+		"task_id":  taskID,
+		"agent_id": agentID,
+		"status":   "cancelled",
 			"source":   "websocket",
-		})
+	})
 		return
 	}
 

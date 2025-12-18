@@ -183,9 +183,9 @@
         </a-descriptions-item>
         <a-descriptions-item label="安装状态">
           <a-space>
-            <a-tag :color="getStatusColor(currentRecord.status)">
-              {{ currentRecord.status_display }}
-            </a-tag>
+          <a-tag :color="getStatusColor(currentRecord.status)">
+            {{ currentRecord.status_display }}
+          </a-tag>
             <a-button
               v-if="currentRecord.status === 'failed'"
               type="primary"

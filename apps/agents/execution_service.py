@@ -5,6 +5,7 @@ Agent 执行服务
 import logging
 import uuid
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 from django.utils import timezone
 from django.db import transaction
 
@@ -823,7 +824,7 @@ class AgentExecutionService:
             finished_at_ts = result.get('finished_at')
             if finished_at_ts:
                 try:
-                    execution_record.finished_at = timezone.datetime.fromtimestamp(
+                    execution_record.finished_at = datetime.fromtimestamp(
                         int(finished_at_ts), tz=timezone.utc
                     )
                 except (ValueError, TypeError, OSError):
@@ -845,7 +846,7 @@ class AgentExecutionService:
                     finished_at_ts = result.get('finished_at')
                     if finished_at_ts:
                         try:
-                            step.finished_at = timezone.datetime.fromtimestamp(
+                            step.finished_at = datetime.fromtimestamp(
                                 int(finished_at_ts), tz=timezone.utc
                             )
                         except (ValueError, TypeError, OSError):
