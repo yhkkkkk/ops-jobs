@@ -189,17 +189,6 @@
               </a-form-item>
             </div>
 
-            <a-form-item label="执行引擎">
-              <a-select v-model="executionEngine">
-                <a-option value="fabric">Fabric (推荐)</a-option>
-              </a-select>
-              <template #help>
-                <div style="font-size: 12px; color: #666;">
-                  Fabric引擎提供稳定的SSH连接和真正的实时日志输出
-                </div>
-              </template>
-            </a-form-item>
-
             <a-form-item label="执行账号">
               <a-select
                 v-model="selectedAccountId"
@@ -341,12 +330,12 @@
 
           <!-- 选择摘要 -->
           <div class="host-selection-summary">
-            <div v-if="selectedGroups.length === 0 && selectedHosts.length === 0" class="empty-selection">
+            <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedIPs.length === 0)" class="empty-selection">
               <div class="empty-icon">
                 <icon-computer />
               </div>
-              <div class="empty-text">请选择目标主机</div>
-              <div class="empty-desc">点击上方"选择主机"按钮选择目标主机或主机分组</div>
+              <div class="empty-text">{{ selectionType === 'dynamic' ? '请输入动态IP' : '请选择目标主机' }}</div>
+              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态IP"标签页输入IP地址' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
             </div>
 
             <div v-else class="selection-content">
@@ -750,11 +739,6 @@
             {{ getScriptTypeText(scriptType) }}
           </a-tag>
         </a-descriptions-item>
-        <a-descriptions-item label="执行引擎">
-          <a-tag color="blue">
-            {{ executionEngine === 'fabric' ? 'Fabric (推荐)' : 'Paramiko' }}
-          </a-tag>
-        </a-descriptions-item>
         <a-descriptions-item label="执行目标">
           <a-tag color="green">{{ allTargetHosts.length }} 台主机</a-tag>
           <span v-if="selectedGroups.length > 0" class="ml-2 text-gray-500">
@@ -844,6 +828,10 @@ const showHostSelector = ref(false)
 const hostGroups = ref<HostGroup[]>([])
 const selectedGroups = ref<number[]>([])
 
+// 动态IP相关
+const selectedIPs = ref<string[]>([])
+const selectionType = ref<'static' | 'dynamic'>('static')
+
 // 服务器账号相关
 const serverAccounts = ref<ServerAccount[]>([])
 const selectedAccountId = ref<number | undefined>()
@@ -854,7 +842,6 @@ const scriptContent = ref('')
 const scriptType = ref('shell')
 const editorTheme = ref('vs-dark')
 const timeout = ref(300)
-const executionEngine = ref('fabric')
 
 // 执行方式相关
 const executionMode = ref<'parallel' | 'serial' | 'rolling'>('parallel')
@@ -1310,8 +1297,13 @@ const handleSelectLocalPath = () => {
 
 // 文件传输相关函数
 const handleFileTransfer = async () => {
-  if (selectedHosts.value.length === 0 && selectedGroups.value.length === 0) {
+  if (selectionType.value === 'static' && selectedHosts.value.length === 0 && selectedGroups.value.length === 0) {
     Message.warning('请选择至少一台主机或一个主机分组')
+    return
+  }
+  
+  if (selectionType.value === 'dynamic' && selectedIPs.value.length === 0) {
+    Message.warning('请输入至少一个IP地址')
     return
   }
 
@@ -1322,37 +1314,66 @@ const handleFileTransfer = async () => {
 
   executing.value = true
   try {
-    // 构建目标列表
-    const targets: any[] = []
+    let targetHostIds: number[] = []
     
-    // 添加选中的主机
-    selectedHosts.value.forEach(hostId => {
-      targets.push({ type: 'host', id: hostId })
-    })
-    
-    // 添加选中的分组
-    selectedGroups.value.forEach(groupId => {
-      targets.push({ type: 'group', id: groupId })
-    })
+    if (selectionType.value === 'dynamic') {
+      // 动态IP模式：将IP匹配到主机ID
+      const matchedHostIds = new Set<number>()
+      
+      selectedIPs.value.forEach(ip => {
+        const matchedHost = hosts.value.find(host => 
+          host.ip_address === ip || 
+          host.internal_ip === ip || 
+          host.public_ip === ip
+        )
+        if (matchedHost) {
+          matchedHostIds.add(matchedHost.id)
+        }
+      })
+      
+      targetHostIds = Array.from(matchedHostIds)
+    } else {
+      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机）
+      const allSelectedHostIds = new Set(selectedHosts.value)
+      
+      // 将分组内的主机也添加到集合中（去重）
+      selectedGroups.value.forEach(groupId => {
+        hosts.value.forEach(host => {
+          if (host.groups_info && Array.isArray(host.groups_info)) {
+            const isInGroup = host.groups_info.some(g => g && g.id === groupId)
+            if (isInGroup) {
+              allSelectedHostIds.add(host.id)
+            }
+          }
+        })
+      })
+      
+      targetHostIds = Array.from(allSelectedHostIds)
+    }
 
     // 构建请求数据
-    const data = {
+    const data: any = {
       name: `快速文件${transferType.value === 'local_upload' ? '上传' : '传输'}`,
       transfer_type: transferType.value,
       local_path: transferType.value === 'local_upload' ? localPath.value : '',
       remote_path: remotePath.value,
       overwrite_policy: overwritePolicy.value,
-      timeout: timeout.value,  // 添加超时配置
-      bandwidth_limit: bandwidthLimit.value || null,  // 添加带宽限制
-      execution_mode: executionMode.value,  // 添加执行模式
-      rolling_strategy: rollingStrategy.value,  // 添加滚动策略
-      rolling_batch_size: rollingBatchSize.value,  // 添加批次大小
-      rolling_batch_delay: rollingBatchDelay.value,  // 添加批次延迟
-      targets: targets,
+      timeout: timeout.value,
+      bandwidth_limit: bandwidthLimit.value || null,
+      execution_mode: executionMode.value,
+      rolling_strategy: rollingStrategy.value,
+      rolling_batch_size: rollingBatchSize.value,
+      rolling_batch_delay: rollingBatchDelay.value,
+      target_host_ids: targetHostIds,
       // 服务器上传相关参数
       source_server_host: transferType.value === 'server_upload' ? sourceServerHost.value : '',
       source_server_user: transferType.value === 'server_upload' ? sourceServerUser.value : '',
       source_server_path: transferType.value === 'server_upload' ? sourceServerPath.value : '',
+    }
+    
+    // 如果是动态IP模式且有未匹配的IP，添加动态IP列表
+    if (selectionType.value === 'dynamic' && selectedIPs.value.length > 0) {
+      data.dynamic_ips = selectedIPs.value
     }
 
     console.log('文件传输请求数据:', data)
@@ -1424,28 +1445,58 @@ const handleConfirmExecute = async () => {
     // 过滤空的位置参数
     const filteredPositionalArgs = positionalArgs.value.filter(arg => arg.trim() !== '')
 
-    // 获取所有选中的主机ID（包括分组内的主机）
-    const allSelectedHostIds = new Set(selectedHosts.value)
+    let targetHostIds: number[] = []
     
-    // 将分组内的主机也添加到集合中（去重）
-    // 通过主机数据中的分组信息来查找
-    selectedGroups.value.forEach(groupId => {
-      hosts.value.forEach(host => {
-        if (host.groups_info && Array.isArray(host.groups_info)) {
-          const isInGroup = host.groups_info.some(g => g && g.id === groupId)
-          if (isInGroup) {
-            allSelectedHostIds.add(host.id)
-          }
+    if (selectionType.value === 'dynamic') {
+      // 动态IP模式：将IP匹配到主机ID，未匹配的IP也传递
+      const matchedHostIds = new Set<number>()
+      const unmatchedIPs: string[] = []
+      
+      selectedIPs.value.forEach(ip => {
+        const matchedHost = hosts.value.find(host => 
+          host.ip_address === ip || 
+          host.internal_ip === ip || 
+          host.public_ip === ip
+        )
+        if (matchedHost) {
+          matchedHostIds.add(matchedHost.id)
+        } else {
+          unmatchedIPs.push(ip)
         }
       })
-    })
+      
+      targetHostIds = Array.from(matchedHostIds)
+      
+      // 如果有未匹配的IP，需要特殊处理（后端需要支持动态IP）
+      if (unmatchedIPs.length > 0) {
+        // 暂时只使用匹配的主机，未匹配的IP需要后端支持
+        console.warn('以下IP未匹配到主机:', unmatchedIPs)
+      }
+    } else {
+      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机）
+      const allSelectedHostIds = new Set(selectedHosts.value)
+      
+      // 将分组内的主机也添加到集合中（去重）
+      // 通过主机数据中的分组信息来查找
+      selectedGroups.value.forEach(groupId => {
+        hosts.value.forEach(host => {
+          if (host.groups_info && Array.isArray(host.groups_info)) {
+            const isInGroup = host.groups_info.some(g => g && g.id === groupId)
+            if (isInGroup) {
+              allSelectedHostIds.add(host.id)
+            }
+          }
+        })
+      })
+      
+      targetHostIds = Array.from(allSelectedHostIds)
+    }
 
-    const data = {
-      target_host_ids: Array.from(allSelectedHostIds),
+    const data: any = {
+      target_host_ids: targetHostIds,
       script_content: scriptContent.value,
       script_type: scriptType.value,
       timeout: timeout.value,
-      use_fabric: executionEngine.value === 'fabric',
       execution_mode: executionMode.value,
       rolling_strategy: rollingStrategy.value,
       rolling_batch_size: rollingBatchSize.value,
@@ -1455,6 +1506,11 @@ const handleConfirmExecute = async () => {
         execute_user: selectedAccount.value?.username || '',
         account_id: selectedAccountId.value,
       },
+    }
+    
+    // 如果是动态IP模式且有未匹配的IP，添加动态IP列表
+    if (selectionType.value === 'dynamic' && selectedIPs.value.length > 0) {
+      data.dynamic_ips = selectedIPs.value
     }
 
     const result = await quickExecuteApi.execute(data)
@@ -1499,9 +1555,25 @@ const getRollingStrategyText = (strategy: string) => {
 }
 
 // 主机选择处理方法
-const handleHostSelection = (selection: { selectedHosts: number[], selectedGroups: number[] }) => {
-  selectedHosts.value = selection.selectedHosts
-  selectedGroups.value = selection.selectedGroups
+const handleHostSelection = (selection: { 
+  selection_type?: 'static' | 'dynamic',
+  selectedHosts?: number[], 
+  selectedGroups?: number[],
+  selectedIPs?: string[]
+}) => {
+  if (selection.selection_type === 'dynamic') {
+    // 动态IP模式
+    selectionType.value = 'dynamic'
+    selectedIPs.value = selection.selectedIPs || []
+    selectedHosts.value = []
+    selectedGroups.value = []
+  } else {
+    // 静态选择模式
+    selectionType.value = 'static'
+    selectedHosts.value = selection.selectedHosts || []
+    selectedGroups.value = selection.selectedGroups || []
+    selectedIPs.value = []
+  }
   console.log('主机选择完成:', selection)
 }
 

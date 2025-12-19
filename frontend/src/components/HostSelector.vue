@@ -9,8 +9,11 @@
     class="host-selector-modal"
   >
     <div class="host-selector">
-      <!-- 主要内容区域：左右分栏 -->
-      <div class="selector-content">
+      <!-- Tab切换：静态选择 / 动态IP -->
+      <a-tabs v-model:active-key="selectionMode" class="selection-mode-tabs">
+        <a-tab-pane key="static" title="静态选择">
+          <!-- 静态选择内容：左右分栏 -->
+          <div class="selector-content">
         <!-- 左侧：主机分组树 -->
         <div class="groups-panel">
           <div class="panel-header">
@@ -187,22 +190,114 @@
           </a-table>
         </div>
       </div>
+        </a-tab-pane>
+        
+        <a-tab-pane key="dynamic" title="动态IP">
+          <!-- 动态IP输入面板 -->
+          <div class="dynamic-ip-panel">
+            <div class="panel-header">
+              <h4>动态IP输入</h4>
+              <span class="ip-count">{{ parsedIPs.length }} 个IP</span>
+            </div>
+            
+            <div class="ip-input-section">
+              <a-textarea
+                v-model="dynamicIPInput"
+                placeholder="支持输入多个IP地址，每行一个，或使用逗号、空格分隔&#10;例如：&#10;192.168.1.1&#10;192.168.1.2,192.168.1.3&#10;192.168.1.4 192.168.1.5&#10;2001:db8::1"
+                :auto-size="{ minRows: 8, maxRows: 15 }"
+                allow-clear
+                @input="handleDynamicIPInput"
+                @press-enter="parseIPInput(dynamicIPInput)"
+                class="ip-input-textarea"
+              />
+              <div class="ip-actions">
+                <a-button type="primary" size="small" @click="parseIPInput(dynamicIPInput)">
+                  <template #icon><icon-search /></template>
+                  解析IP
+                </a-button>
+                <a-button size="small" @click="clearDynamicIPs">
+                  <template #icon><icon-close-circle /></template>
+                  清空
+                </a-button>
+              </div>
+              <div class="ip-input-help">
+                <a-alert type="info" :closable="false">
+                  <template #title>提示</template>
+                  <template #default>
+                    <div>• 支持 IPv4 和 IPv6 地址</div>
+                    <div>• 每行一个IP，或使用逗号、空格分隔</div>
+                    <div>• 点击"解析IP"按钮或按Enter键进行解析</div>
+                    <div>• 系统会自动匹配已存在的主机</div>
+                  </template>
+                </a-alert>
+              </div>
+            </div>
+            
+            <!-- 解析错误提示 -->
+            <div v-if="parseErrors.length > 0" class="parse-errors">
+              <a-alert type="warning" :closable="true" @close="parseErrors = []">
+                <template #title>解析警告</template>
+                <template #default>
+                  <div v-for="(error, index) in parseErrors" :key="index">{{ error }}</div>
+                </template>
+              </a-alert>
+            </div>
+            
+            <!-- 解析结果 -->
+            <div v-if="parsedIPs.length > 0" class="parsed-ips-section">
+              <div class="section-header">
+                <h5>解析结果 ({{ parsedIPs.length }} 个IP)</h5>
+                <a-button size="small" @click="clearDynamicIPs">
+                  <template #icon><icon-close-circle /></template>
+                  清空所有
+                </a-button>
+              </div>
+              <div class="parsed-ips-list">
+                <a-tag
+                  v-for="(ip, index) in parsedIPs"
+                  :key="index"
+                  :color="getIPMatchStatus(ip).color"
+                  closable
+                  @close="removeIP(ip)"
+                  class="ip-tag"
+                >
+                  {{ ip }}
+                  <span v-if="getIPMatchStatus(ip).matched" class="matched-badge">已匹配</span>
+                </a-tag>
+              </div>
+            </div>
+            <a-empty v-else-if="dynamicIPInput && !parsing" description='请输入IP地址并点击"解析IP"按钮进行解析' />
+          </div>
+        </a-tab-pane>
+      </a-tabs>
 
       <!-- 选择统计 -->
       <div class="selection-summary">
         <div class="summary-info">
-          <div class="summary-item">
-            <span>已选择分组:</span>
-            <span class="summary-count">{{ selectedGroupIds.length }}</span>
-          </div>
-          <div class="summary-item" v-if="totalGroupHosts > 0">
-            <span>分组内主机:</span>
-            <span class="summary-count">{{ totalGroupHosts }}</span>
-          </div>
-          <div class="summary-item">
-            <span>已选择主机:</span>
-            <span class="summary-count">{{ selectedHostIds.length }}</span>
-          </div>
+          <template v-if="selectionMode === 'static'">
+            <div class="summary-item">
+              <span>已选择分组:</span>
+              <span class="summary-count">{{ selectedGroupIds.length }}</span>
+            </div>
+            <div class="summary-item" v-if="totalGroupHosts > 0">
+              <span>分组内主机:</span>
+              <span class="summary-count">{{ totalGroupHosts }}</span>
+            </div>
+            <div class="summary-item">
+              <span>已选择主机:</span>
+              <span class="summary-count">{{ selectedHostIds.length }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="summary-item">
+              <span>动态IP数量:</span>
+              <span class="summary-count">{{ parsedIPs.length }}</span>
+            </div>
+            <div class="summary-item">
+              <span>已匹配主机:</span>
+              <span class="summary-count">{{ matchedHostCount }}</span>
+            </div>
+          </template>
         </div>
         <div class="summary-total">
           <a-tag color="red" size="small">
@@ -218,7 +313,7 @@
         <a-button
           type="primary"
           @click="handleConfirm"
-          :disabled="selectedGroupIds.length === 0 && selectedHostIds.length === 0"
+          :disabled="(selectionMode === 'static' && selectedGroupIds.length === 0 && selectedHostIds.length === 0) || (selectionMode === 'dynamic' && parsedIPs.length === 0)"
         >
           确定 ({{ totalSelectedCount }})
         </a-button>
@@ -263,9 +358,16 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['update:visible', 'confirm'])
 
+// 选择模式：static（静态选择）或 dynamic（动态IP）
+const selectionMode = ref('static')
+
 // 响应式数据
 const selectedHostIds = ref([...props.selectedHosts])
 const selectedGroupIds = ref([...props.selectedGroups])
+const dynamicIPInput = ref('') // 动态IP输入文本
+const parsedIPs = ref([]) // 解析后的IP列表
+const parseErrors = ref([]) // 解析错误列表
+const parsing = ref(false) // 是否正在解析
 
 // 搜索相关
 const groupSearchText = ref('')
@@ -697,12 +799,153 @@ const getDeduplicatedHostCount = () => {
   return selectedHostIds.value.filter(hostId => !groupHostIds.has(hostId)).length
 }
 
+// 动态IP输入处理（不自动解析，等待用户点击按钮）
+const handleDynamicIPInput = (value) => {
+  dynamicIPInput.value = value
+  // 清空之前的解析结果和错误
+  if (!value || !value.trim()) {
+    parsedIPs.value = []
+    parseErrors.value = []
+  }
+}
+
+// 解析IP地址（手动触发）
+const parseIPInput = (input) => {
+  if (!input || !input.trim()) {
+    parsedIPs.value = []
+    parseErrors.value = []
+    return
+  }
+  
+  parsing.value = true
+  parseErrors.value = []
+  
+  try {
+    // 先按多种分隔符分割：换行、逗号、空格
+    const parts = input
+      .split(/[,，\s\n\r]+/)
+      .map(part => part.trim())
+      .filter(part => part.length > 0)
+    
+    const validIPs = new Set()
+    const invalidIPs = []
+    
+    parts.forEach(part => {
+      // 移除可能的端口号（如 192.168.1.1:22）
+      const ipPart = part.split(':').length > 2 
+        ? part // IPv6地址，保留所有冒号
+        : part.split(':')[0] // IPv4地址，移除端口号
+      
+      if (isValidIP(ipPart)) {
+        validIPs.add(ipPart)
+      } else {
+        invalidIPs.push(part)
+      }
+    })
+    
+    parsedIPs.value = Array.from(validIPs)
+    
+    // 记录无效的IP
+    if (invalidIPs.length > 0) {
+      parseErrors.value = [
+        `以下 ${invalidIPs.length} 个输入无法识别为有效的IP地址：${invalidIPs.slice(0, 5).join(', ')}${invalidIPs.length > 5 ? '...' : ''}`
+      ]
+    }
+  } catch (error) {
+    console.error('解析IP失败:', error)
+    parseErrors.value = ['解析IP地址时发生错误，请检查输入格式']
+  } finally {
+    parsing.value = false
+  }
+}
+
+// 验证IP地址格式（使用ipaddress库的逻辑）
+const isValidIP = (ip) => {
+  if (!ip || typeof ip !== 'string') return false
+  
+  const trimmed = ip.trim()
+  if (!trimmed) return false
+  
+  // IPv4验证
+  const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+  
+  // IPv6验证（支持压缩格式）
+  const ipv6Pattern = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::1$|^::$|^(?:[0-9a-fA-F]{1,4}:)*::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)+::$/
+  
+  // 检查是否是有效的IPv4
+  if (ipv4Pattern.test(trimmed)) {
+    return true
+  }
+  
+  // 检查是否是有效的IPv6
+  if (ipv6Pattern.test(trimmed)) {
+    // 进一步验证IPv6格式（确保压缩格式正确）
+    const parts = trimmed.split(':')
+    const hasDoubleColon = trimmed.includes('::')
+    
+    if (hasDoubleColon) {
+      // 压缩格式：只能有一个 ::
+      if ((trimmed.match(/::/g) || []).length > 1) {
+        return false
+      }
+      // 压缩格式：总段数应该 <= 8
+      const totalParts = parts.filter(p => p).length
+      return totalParts <= 7
+    } else {
+      // 完整格式：应该有8段
+      return parts.length === 8 && parts.every(p => /^[0-9a-fA-F]{1,4}$/.test(p))
+    }
+  }
+  
+  return false
+}
+
+// 获取IP匹配状态
+const getIPMatchStatus = (ip) => {
+  const matched = props.hosts.some(host => 
+    host.ip_address === ip || 
+    host.internal_ip === ip || 
+    host.public_ip === ip
+  )
+  return {
+    matched,
+    color: matched ? 'green' : 'orange'
+  }
+}
+
+// 移除IP
+const removeIP = (ip) => {
+  const index = parsedIPs.value.indexOf(ip)
+  if (index > -1) {
+    parsedIPs.value.splice(index, 1)
+    // 更新输入框
+    dynamicIPInput.value = parsedIPs.value.join('\n')
+  }
+}
+
+// 清空动态IP
+const clearDynamicIPs = () => {
+  dynamicIPInput.value = ''
+  parsedIPs.value = []
+  parseErrors.value = []
+}
+
 // 确认选择
 const handleConfirm = () => {
-  emit('confirm', {
-    selectedHosts: selectedHostIds.value,
-    selectedGroups: selectedGroupIds.value
-  })
+  if (selectionMode.value === 'static') {
+    // 静态选择：只传分组ID或主机ID（不自动展开）
+    emit('confirm', {
+      selection_type: 'static',
+      selectedHosts: selectedHostIds.value,
+      selectedGroups: selectedGroupIds.value
+    })
+  } else {
+    // 动态IP：传IP列表
+    emit('confirm', {
+      selection_type: 'dynamic',
+      selectedIPs: parsedIPs.value
+    })
+  }
   visible.value = false
 }
 

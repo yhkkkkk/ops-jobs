@@ -36,14 +36,21 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
     # 目标选择（统一使用target_host_ids格式）
     target_host_ids = serializers.ListField(
         child=serializers.IntegerField(),
-        required=True,
-        allow_empty=False,
+        required=False,
+        allow_empty=True,
         help_text="目标主机ID列表"
+    )
+    
+    # 动态IP列表（可选，用于动态IP输入）
+    dynamic_ips = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        help_text="动态IP地址列表"
     )
     
     # 执行配置
     timeout = serializers.IntegerField(default=300, min_value=1, max_value=3600, help_text="超时时间(秒)")
-    use_fabric = serializers.BooleanField(default=False, help_text="是否使用Fabric执行引擎")
     execution_mode = serializers.ChoiceField(
         choices=[
             ('parallel', '并行执行'),
@@ -66,15 +73,26 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
     
     def validate(self, attrs):
         """验证数据"""
-        target_host_ids = attrs.get('target_host_ids', [])
+        target_host_ids = attrs.get('target_host_ids', []) or []
+        dynamic_ips = attrs.get('dynamic_ips', []) or []
+        
+        # 必须至少指定一种目标选择方式
+        if not target_host_ids and not dynamic_ips:
+            raise serializers.ValidationError("必须指定至少一个目标主机或IP地址")
         
         # 验证target_host_ids格式
-        if not target_host_ids:
-            raise serializers.ValidationError("必须指定至少一个目标主机")
-        
         for host_id in target_host_ids:
             if not isinstance(host_id, int) or host_id <= 0:
                 raise serializers.ValidationError("主机ID必须是正整数")
+        
+        # 验证dynamic_ips格式
+        from utils.validators import validate_host_ip
+        from django.core.exceptions import ValidationError
+        for ip in dynamic_ips:
+            try:
+                validate_host_ip(ip)
+            except ValidationError as e:
+                raise serializers.ValidationError(f"无效的IP地址: {ip}")
         
         script_content = attrs.get('script_content', '').strip()
         if not script_content:
@@ -119,9 +137,17 @@ class QuickFileTransferSerializer(serializers.Serializer):
     # 目标选择（统一使用target_host_ids格式）
     target_host_ids = serializers.ListField(
         child=serializers.IntegerField(),
-        required=True,
-        allow_empty=False,
+        required=False,
+        allow_empty=True,
         help_text="目标主机ID列表"
+    )
+    
+    # 动态IP列表（可选，用于动态IP输入）
+    dynamic_ips = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        help_text="动态IP地址列表"
     )
     
     # 执行配置
@@ -155,15 +181,26 @@ class QuickFileTransferSerializer(serializers.Serializer):
     
     def validate(self, attrs):
         """验证数据"""
-        target_host_ids = attrs.get('target_host_ids', [])
+        target_host_ids = attrs.get('target_host_ids', []) or []
+        dynamic_ips = attrs.get('dynamic_ips', []) or []
         
-        if not target_host_ids:
-            raise serializers.ValidationError("必须指定至少一个目标主机")
+        # 必须至少指定一种目标选择方式
+        if not target_host_ids and not dynamic_ips:
+            raise serializers.ValidationError("必须指定至少一个目标主机或IP地址")
         
         # 验证主机ID格式
         for host_id in target_host_ids:
             if not isinstance(host_id, int) or host_id <= 0:
                 raise serializers.ValidationError("主机ID必须是正整数")
+        
+        # 验证dynamic_ips格式
+        from utils.validators import validate_host_ip
+        from django.core.exceptions import ValidationError
+        for ip in dynamic_ips:
+            try:
+                validate_host_ip(ip)
+            except ValidationError as e:
+                raise serializers.ValidationError(f"无效的IP地址: {ip}")
         
         transfer_type = attrs.get('transfer_type')
         local_path = attrs.get('local_path', '').strip()

@@ -2,6 +2,7 @@
 快速执行服务层
 """
 import logging
+from django.db.models import Q
 from django.utils import timezone
 from apps.hosts.models import Host, HostGroup
 from apps.agents.execution_service import AgentExecutionService
@@ -136,26 +137,13 @@ class QuickExecuteService:
     def transfer_file(user, transfer_data, client_ip=None, user_agent=None):
         """快速文件传输"""
         try:
-            # 获取目标主机 - 使用统一的target_host_ids格式
-            target_host_ids = transfer_data.get('target_host_ids', [])
-            if not target_host_ids:
-                return {
-                    'success': False,
-                    'message': '没有指定目标主机'
-                }
+            # 获取目标主机 - 使用统一的_get_target_hosts_from_data方法
+            target_hosts = QuickExecuteService._get_target_hosts_from_data(transfer_data)
             
-            try:
-                target_hosts = Host.objects.filter(id__in=target_host_ids)
-                if not target_hosts.exists():
-                    return {
-                        'success': False,
-                        'message': '没有找到目标主机'
-                    }
-            except Exception as e:
-                logger.error(f"获取主机列表失败: {e}")
+            if not target_hosts:
                 return {
                     'success': False,
-                    'message': f'获取主机列表失败: {str(e)}'
+                    'message': '没有找到目标主机'
                 }
 
             # 构建主机信息列表
@@ -285,17 +273,53 @@ class QuickExecuteService:
     
     @staticmethod
     def _get_target_hosts_from_data(script_data):
-        """从脚本数据中获取目标主机列表，支持两种格式"""
+        """从脚本数据中获取目标主机列表，支持target_host_ids和dynamic_ips两种格式"""
         target_hosts = []
         
-        # 优先使用target_host_ids格式（新格式）
-        target_host_ids = script_data.get('target_host_ids', [])
+        # 优先使用target_host_ids格式（静态选择）
+        target_host_ids = script_data.get('target_host_ids', []) or []
         if target_host_ids:
             try:
-                target_hosts = Host.objects.filter(id__in=target_host_ids)
-                return list(target_hosts)
+                target_hosts = list(Host.objects.filter(id__in=target_host_ids))
             except Exception as e:
                 logger.error(f"获取主机列表失败: {e}")
-                return []
+                target_hosts = []
         
-        return []
+        # 处理动态IP列表
+        dynamic_ips = script_data.get('dynamic_ips', []) or []
+        if dynamic_ips:
+            try:
+                # 通过IP地址匹配主机
+                matched_hosts = Host.objects.filter(
+                    Q(ip_address__in=dynamic_ips) |
+                    Q(internal_ip__in=dynamic_ips) |
+                    Q(public_ip__in=dynamic_ips)
+                )
+                
+                # 添加到目标主机列表（去重）
+                existing_host_ids = {h.id for h in target_hosts}
+                for host in matched_hosts:
+                    if host.id not in existing_host_ids:
+                        target_hosts.append(host)
+                        existing_host_ids.add(host.id)
+                
+                # 记录未匹配的IP（用于日志或警告）
+                matched_ips = set()
+                for host in matched_hosts:
+                    if host.ip_address in dynamic_ips:
+                        matched_ips.add(host.ip_address)
+                    if host.internal_ip in dynamic_ips:
+                        matched_ips.add(host.internal_ip)
+                    if host.public_ip in dynamic_ips:
+                        matched_ips.add(host.public_ip)
+                
+                unmatched_ips = set(dynamic_ips) - matched_ips
+                if unmatched_ips:
+                    logger.warning(f"以下IP地址未匹配到主机: {', '.join(unmatched_ips)}")
+                    # 注意：未匹配的IP暂时不处理，因为执行需要主机对象
+                    # 如果需要支持未匹配的IP，需要创建临时主机记录或使用其他方式
+                    
+            except Exception as e:
+                logger.error(f"处理动态IP列表失败: {e}")
+        
+        return target_hosts

@@ -114,29 +114,29 @@
 
       <div v-else class="execution-flow-layout" :class="{ 'has-selected-step': selectedStepId }">
         <!-- 流程头部 -->
-        <div class="timeline-header">
+            <div class="timeline-header">
           <h4>步骤进度</h4>
-          <div class="timeline-progress">
-            <span class="progress-text">
-              已完成 {{ completedStepsCount }} / {{ sortedSteps.length }} 步骤
-            </span>
-            <div class="progress-bar">
-              <div 
-                class="progress-fill" 
-                :style="{ width: `${progressPercentage}%` }"
-              ></div>
+              <div class="timeline-progress">
+                <span class="progress-text">
+                  已完成 {{ completedStepsCount }} / {{ sortedSteps.length }} 步骤
+                </span>
+                <div class="progress-bar">
+                  <div 
+                    class="progress-fill" 
+                    :style="{ width: `${progressPercentage}%` }"
+                  ></div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-
+            
         <!-- 主容器：单栏或双栏布局 -->
         <div class="execution-flow-container">
           <!-- 左侧：时间线（始终显示） -->
           <div class="timeline-sidebar" :class="{ 'collapsed': selectedStepId }">
             <div class="vertical-timeline" ref="timelineRef">
-              <div
-                v-for="(step, index) in sortedSteps"
-                :key="step.id"
+                <div
+                  v-for="(step, index) in sortedSteps"
+                  :key="step.id"
                 class="timeline-step-item"
               >
                 <!-- 时间线连接线 -->
@@ -180,7 +180,7 @@
                           <icon-user /> {{ getTotalHostCountInStep(step.id) }} 台主机
                         </span>
                         <span v-if="step.finished_at || step.end_time" class="step-duration">
-                          耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
+                        耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
                         </span>
                       </div>
                     </div>
@@ -291,30 +291,30 @@
                 </div>
               </div>
 
-              <!-- 搜索栏 -->
-              <div class="search-bar">
-                <a-space>
-                  <a-input-search
-                    :value="hostSearchTexts[selectedStepId] || ''"
-                    placeholder="搜索主机名称或IP"
-                    size="small"
-                    style="width: 200px;"
-                    @change="(value) => updateSearchText(selectedStepId, value)"
-                    @search="(value) => updateSearchText(selectedStepId, value)"
-                    @update:value="(value) => updateSearchText(selectedStepId, value)"
-                    allow-clear
-                  />
-                  <a-input-search
-                    :value="logSearchTexts[selectedStepId] || ''"
-                    placeholder="搜索日志内容"
-                    size="small"
-                    style="width: 200px;"
-                    @change="(value) => updateLogSearchText(selectedStepId, value)"
-                    @search="(value) => updateLogSearchText(selectedStepId, value)"
-                    @update:value="(value) => updateLogSearchText(selectedStepId, value)"
-                    allow-clear
-                  />
-                </a-space>
+                <!-- 搜索栏 -->
+                <div class="search-bar">
+                  <a-space>
+                    <a-input-search
+                      :value="hostSearchTexts[selectedStepId] || ''"
+                      placeholder="搜索主机名称或IP"
+                      size="small"
+                      style="width: 200px;"
+                      @change="(value) => updateSearchText(selectedStepId, value)"
+                      @search="(value) => updateSearchText(selectedStepId, value)"
+                      @update:value="(value) => updateSearchText(selectedStepId, value)"
+                      allow-clear
+                    />
+                    <a-input-search
+                      :value="logSearchTexts[selectedStepId] || ''"
+                      placeholder="搜索日志内容"
+                      size="small"
+                      style="width: 200px;"
+                      @change="(value) => updateLogSearchText(selectedStepId, value)"
+                      @search="(value) => updateLogSearchText(selectedStepId, value)"
+                      @update:value="(value) => updateLogSearchText(selectedStepId, value)"
+                      allow-clear
+                    />
+                  </a-space>
               </div>
 
               <!-- 主机分组显示 -->
@@ -351,10 +351,10 @@
                         @click.stop="toggleGroupInStep(selectedStepId, status)"
                         title="展开/收起分组"
                       >
-                        <IconDown
-                          :class="{ 'rotate-180': group.expanded }"
-                          class="expand-icon"
-                        />
+                      <IconDown
+                        :class="{ 'rotate-180': group.expanded }"
+                        class="expand-icon"
+                      />
                       </a-button>
                     </div>
                   </div>
@@ -383,98 +383,98 @@
                           </div>
                         </template>
 
-                        <!-- 主机日志内容 -->
-                        <div class="host-log-content">
-                          <!-- 主机信息头部 -->
-                          <div class="host-info-header">
-                            <div class="host-info">
-                              <h5>{{ getHostDisplayName(hostLog) }}</h5>
-                              <a-space>
-                                <a-tag :color="getHostStatusColor(hostLog.status)">
-                                  {{ getHostStatusText(hostLog.status) }}
-                                </a-tag>
-                                <a-tag
-                                  v-if="executionMode === 'agent'"
-                                  color="blue"
-                                  size="small"
-                                >
-                                  Agent 模式
-                                </a-tag>
-                                <a-tag
-                                  v-else-if="executionMode === 'ssh'"
-                                  color="gray"
-                                  size="small"
-                                >
-                                  SSH 模式
-                                </a-tag>
-                                <a-button
-                                  size="small"
-                                  type="text"
-                                  @click="copyHostIP(getHostIP(hostLog))"
-                                  title="复制IP地址"
-                                >
-                                  <template #icon><IconCopy /></template>
-                                  {{ getHostIP(hostLog) }}
-                                </a-button>
-                              </a-space>
-                            </div>
-                          </div>
+                  <!-- 主机日志内容 -->
+                  <div class="host-log-content">
+                    <!-- 主机信息头部 -->
+                    <div class="host-info-header">
+                      <div class="host-info">
+                        <h5>{{ getHostDisplayName(hostLog) }}</h5>
+                        <a-space>
+                          <a-tag :color="getHostStatusColor(hostLog.status)">
+                            {{ getHostStatusText(hostLog.status) }}
+                          </a-tag>
+                          <a-tag
+                            v-if="executionMode === 'agent'"
+                            color="blue"
+                            size="small"
+                          >
+                            Agent 模式
+                          </a-tag>
+                          <a-tag
+                            v-else-if="executionMode === 'ssh'"
+                            color="gray"
+                            size="small"
+                          >
+                            SSH 模式
+                          </a-tag>
+                          <a-button
+                            size="small"
+                            type="text"
+                            @click="copyHostIP(getHostIP(hostLog))"
+                            title="复制IP地址"
+                          >
+                            <template #icon><IconCopy /></template>
+                            {{ getHostIP(hostLog) }}
+                          </a-button>
+                        </a-space>
+                      </div>
+                    </div>
 
-                          <!-- 标准输出日志 -->
-                          <div v-if="hostLog.stdout || hostLog.logs" class="log-section">
-                            <div class="log-section-header">
-                              <h5>标准输出</h5>
-                              <a-space>
-                                <a-button size="small" @click="zoomLogs(hostLog.stdout || hostLog.logs, '标准输出')">
-                                  <template #icon><IconEye /></template>
-                                  放大查看
-                                </a-button>
-                                <a-button size="small" @click="copyLogs(hostLog.stdout || hostLog.logs)">
-                                  <template #icon><IconCopy /></template>
-                                  复制日志
-                                </a-button>
-                              </a-space>
-                            </div>
-                            <div class="log-text-container">
+                    <!-- 标准输出日志 -->
+                    <div v-if="hostLog.stdout || hostLog.logs" class="log-section">
+                      <div class="log-section-header">
+                        <h5>标准输出</h5>
+                        <a-space>
+                          <a-button size="small" @click="zoomLogs(hostLog.stdout || hostLog.logs, '标准输出')">
+                            <template #icon><IconEye /></template>
+                            放大查看
+                          </a-button>
+                          <a-button size="small" @click="copyLogs(hostLog.stdout || hostLog.logs)">
+                            <template #icon><IconCopy /></template>
+                            复制日志
+                          </a-button>
+                        </a-space>
+                      </div>
+                      <div class="log-text-container">
                               <pre class="log-text" v-html="highlightLogContent(hostLog.stdout || hostLog.logs, selectedStepId)"></pre>
-                            </div>
-                          </div>
+                      </div>
+                    </div>
 
-                          <!-- 错误日志 -->
-                          <div v-if="hostLog.stderr || hostLog.error_logs" class="log-section error-section">
-                            <div class="log-section-header">
-                              <h5>{{ getErrorTitle() }}</h5>
-                              <a-space>
-                                <a-button size="small" @click="zoomLogs(hostLog.stderr || hostLog.error_logs, '错误输出')">
-                                  <template #icon><IconEye /></template>
-                                  放大查看
-                                </a-button>
-                                <a-button size="small" @click="copyLogs(hostLog.stderr || hostLog.error_logs)">
-                                  <template #icon><IconCopy /></template>
-                                  复制
-                                </a-button>
-                              </a-space>
-                            </div>
-                            <div class="log-text-container">
+                    <!-- 错误日志 -->
+                    <div v-if="hostLog.stderr || hostLog.error_logs" class="log-section error-section">
+                      <div class="log-section-header">
+                        <h5>{{ getErrorTitle() }}</h5>
+                        <a-space>
+                          <a-button size="small" @click="zoomLogs(hostLog.stderr || hostLog.error_logs, '错误输出')">
+                            <template #icon><IconEye /></template>
+                            放大查看
+                          </a-button>
+                          <a-button size="small" @click="copyLogs(hostLog.stderr || hostLog.error_logs)">
+                            <template #icon><IconCopy /></template>
+                            复制
+                          </a-button>
+                        </a-space>
+                      </div>
+                      <div class="log-text-container">
                               <pre class="log-text error-text" v-html="highlightLogContent(hostLog.stderr || hostLog.error_logs, selectedStepId)"></pre>
-                            </div>
-                          </div>
+                      </div>
+                    </div>
 
-                          <!-- 如果没有日志 -->
-                          <div v-if="!(hostLog.stdout || hostLog.logs) && !(hostLog.stderr || hostLog.error_logs)" class="no-logs">
-                            <a-empty description="该主机在此步骤暂无日志数据" />
-                          </div>
-                        </div>
-                      </a-tab-pane>
-                    </a-tabs>
+                    <!-- 如果没有日志 -->
+                    <div v-if="!(hostLog.stdout || hostLog.logs) && !(hostLog.stderr || hostLog.error_logs)" class="no-logs">
+                      <a-empty description="该主机在此步骤暂无日志数据" />
+                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
+                </a-tab-pane>
+              </a-tabs>
           </div>
         </div>
       </div>
-    </a-card>
+      </div>
+    </div>
+  </div>
+</div>
+</a-card>
   </div>
 
   <!-- 日志放大模态框 -->
@@ -1168,21 +1168,21 @@ const selectStep = (stepId) => {
   if (selectedStepId.value === stepId) {
     selectedStepId.value = null
   } else {
-    selectedStepId.value = stepId
-    
-    // 自动选择该步骤的第一个主机
-    const step = stepLogs.value[stepId]
-    if (step) {
-      // 兼容新旧格式：优先使用hosts，其次使用host_logs
-      const hosts = step.hosts || step.host_logs
-      if (hosts) {
-        const hostIds = Object.keys(hosts)
-        if (hostIds.length > 0) {
-          // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
-          if (!selectedHostIds.value[stepId] || !hostIds.includes(selectedHostIds.value[stepId])) {
-            selectedHostIds.value[stepId] = hostIds[0]
-          }
-          selectedHostId.value = selectedHostIds.value[stepId]
+  selectedStepId.value = stepId
+
+  // 自动选择该步骤的第一个主机
+  const step = stepLogs.value[stepId]
+  if (step) {
+    // 兼容新旧格式：优先使用hosts，其次使用host_logs
+    const hosts = step.hosts || step.host_logs
+    if (hosts) {
+      const hostIds = Object.keys(hosts)
+      if (hostIds.length > 0) {
+        // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
+        if (!selectedHostIds.value[stepId] || !hostIds.includes(selectedHostIds.value[stepId])) {
+          selectedHostIds.value[stepId] = hostIds[0]
+        }
+        selectedHostId.value = selectedHostIds.value[stepId]
         }
       }
     }
@@ -2780,7 +2780,7 @@ onMounted(() => {
   justify-content: space-between;
   padding: 16px 20px;
   background-color: #fff;
-}
+  }
 
 .step-card-content {
   flex: 1;
