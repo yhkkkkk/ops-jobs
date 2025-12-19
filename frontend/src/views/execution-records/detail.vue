@@ -113,101 +113,96 @@
       </div>
 
       <div v-else class="execution-flow-layout">
-        <!-- 左右分栏布局 -->
+        <!-- 水平时间线布局 -->
         <div class="execution-flow-container">
-          <!-- 左侧步骤列表 -->
-          <div class="steps-sidebar">
-            <div class="steps-header">
-              <div class="steps-header-content">
-                <h4>执行流程</h4>
-                <span class="steps-count">总步骤数 {{ Object.keys(stepLogs).length }}</span>
-            </div>
+          <!-- 顶部时间线 -->
+          <div class="timeline-container">
+            <div class="timeline-header">
+              <h4>执行流程</h4>
+              <div class="timeline-progress">
+                <span class="progress-text">
+                  已完成 {{ completedStepsCount }} / {{ sortedSteps.length }} 步骤
+                </span>
+                <div class="progress-bar">
+                  <div 
+                    class="progress-fill" 
+                    :style="{ width: `${progressPercentage}%` }"
+                  ></div>
+                </div>
+              </div>
             </div>
             
-            <!-- 步骤流程连接线 -->
-            <div class="steps-flow">
-              <div
-                v-for="(stepLog, stepId, index) in stepLogs"
-                :key="stepId"
-                class="step-flow-item"
-                :class="{ 'step-active': selectedStepId === stepId }"
-                @click="selectStep(stepId)"
-              >
-                <!-- 步骤连接线 -->
-                <div v-if="index > 0" class="step-connector"></div>
-                
-                <!-- 步骤节点 -->
-                <div class="step-node">
-                  <div class="step-node-content">
-                  <div class="step-order">步骤 {{ stepLog.step_order }}</div>
-                    <div class="step-name">{{ stepLog.step_name }}</div>
-                <div class="step-status">
-                  <a-tag
-                    :color="getStepStatusColor(stepLog.status)"
-                    size="small"
-                        class="step-status-tag"
+            <!-- 流程主体 -->
+            <div class="flow-body" ref="timelineRef">
+              <div class="flow-track">
+                <div
+                  v-for="(step, index) in sortedSteps"
+                  :key="step.id"
+                  class="flow-step-wrapper"
+                >
+                  <!-- 步骤卡片 -->
+                  <div
+                    class="flow-step-card"
+                    :class="{ 
+                      'step-active': selectedStepId === step.id,
+                      [`step-${step.status}`]: true
+                    }"
+                    @click="selectStep(step.id)"
                   >
-                    {{ getStepStatusText(stepLog.status) }}
-                  </a-tag>
-                </div>
-                    <!-- 步骤时间信息 -->
-                    <div class="step-timing">
-                      <div v-if="stepLog.started_at || stepLog.start_time" class="step-start-time">
-                        开始: {{ formatDateTime(stepLog.started_at || stepLog.start_time) }}
-                      </div>
-                      <div v-if="stepLog.finished_at || stepLog.end_time" class="step-duration">
-                        耗时: {{ formatDuration(stepLog.started_at || stepLog.start_time, stepLog.finished_at || stepLog.end_time) }}
+                    <!-- 步骤图标区域 -->
+                    <div class="step-icon-area">
+                      <div class="step-icon-circle" :class="`icon-${step.status}`">
+                        <span class="step-number">{{ String(step.step_order).padStart(2, '0') }}</span>
+                        <div class="step-status-icon">
+                          <icon-check-circle v-if="step.status === 'success'" />
+                          <icon-close-circle v-else-if="step.status === 'failed'" />
+                          <icon-clock-circle v-else-if="step.status === 'running'" />
+                          <icon-minus-circle v-else-if="step.status === 'pending'" />
+                        </div>
                       </div>
                     </div>
-                    <!-- 主机统计 -->
-                    <div class="step-host-stats">
-                      <div class="host-count-circle">
-                        <span class="host-count">{{ getTotalHostCountInStep(stepId) }}</span>
+                    
+                    <!-- 步骤内容区域 -->
+                    <div class="step-content-area">
+                      <div class="step-title">{{ step.step_name }}</div>
+                      <div class="step-info">
+                        <a-tag
+                          :color="getStepStatusColor(step.status)"
+                          size="small"
+                          class="step-status-tag"
+                        >
+                          {{ getStepStatusText(step.status) }}
+                        </a-tag>
+                        <span class="step-hosts">
+                          <icon-user /> {{ getTotalHostCountInStep(step.id) }} 台主机
+                        </span>
+                      </div>
+                      <div v-if="step.finished_at || step.end_time" class="step-duration-text">
+                        耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
                       </div>
                     </div>
                   </div>
                   
-                  <!-- 步骤操作按钮 -->
-                  <div class="step-actions">
-                    <a-dropdown 
-                      v-if="canRetryStep(stepLog)" 
-                      trigger="click" 
-                      @click.stop
-                    >
-                      <a-button size="small" type="text" title="步骤操作">
-                        <template #icon><icon-settings /></template>
-                      </a-button>
-                      <template #content>
-                        <a-doption 
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepRetry('failed_only', stepId)"
-                        >
-                          <IconExclamation /> 仅重试失败主机
-                        </a-doption>
-                        <a-doption 
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepRetry('all', stepId)"
-                        >
-                          <IconRefresh /> 重试该步骤
-                        </a-doption>
-                        <a-doption 
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepIgnoreError(stepId)"
-                        >
-                          <IconCheck /> 忽略错误继续
-                        </a-doption>
-                      </template>
-                    </a-dropdown>
+                  <!-- 连接线（箭头） -->
+                  <div 
+                    v-if="index < sortedSteps.length - 1" 
+                    class="flow-connector"
+                    :class="getConnectorClass(step.status, sortedSteps[index + 1]?.status)"
+                  >
+                    <div class="connector-line"></div>
+                    <div class="connector-arrow">
+                      <icon-right />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 右侧步骤详情 -->
+          <!-- 步骤详情面板 -->
           <div class="step-detail-panel">
             <div v-if="!selectedStepId" class="no-step-selected">
-              <a-empty description="请选择左侧步骤查看详情" />
+              <a-empty description="请点击上方时间线中的步骤节点查看详情" />
             </div>
             <div v-else class="step-detail-content">
               <!-- 步骤详情头部 -->
@@ -223,18 +218,6 @@
                 </div>
                 <div class="step-detail-actions">
                   <a-space>
-                    <a-button 
-                      type="primary" 
-                      size="small"
-                      @click="toggleLogDisplay(selectedStepId)"
-                    >
-                      <template #icon>
-                        <icon-eye v-if="!showLogsForStep[selectedStepId]" />
-                        <icon-eye-invisible v-else />
-                      </template>
-                      {{ showLogsForStep[selectedStepId] ? '隐藏日志' : '查询日志' }}
-                    </a-button>
-                    
                     <a-dropdown 
                       v-if="canRetryStep(stepLogs[selectedStepId])" 
                       trigger="click"
@@ -320,19 +303,8 @@
                 </div>
               </div>
 
-              <!-- 日志提示区域 -->
-              <div v-if="!showLogsForStep[selectedStepId]" class="logs-prompt-area">
-                <div class="prompt-content">
-                  <div class="prompt-icon">
-                    <icon-eye />
-                  </div>
-                  <h3>查看执行日志</h3>
-                  <p>点击上方的"查询日志"按钮查看该步骤的详细执行日志</p>
-                </div>
-              </div>
-
               <!-- 日志详情区域 -->
-              <div v-if="showLogsForStep[selectedStepId]" class="logs-detail-area">
+              <div class="logs-detail-area">
                 <!-- 搜索栏 -->
                 <div class="search-bar">
                   <a-space>
@@ -569,7 +541,9 @@ import {
   IconMinusCircle,
   IconExclamation,
   IconEye,
-  IconEyeInvisible
+  IconEyeInvisible,
+  IconRight,
+  IconUser
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
@@ -597,6 +571,9 @@ const logZoomVisible = ref(false)
 const logZoomTitle = ref('')
 const logZoomContent = ref('')
 const logZoomRawContent = ref('')
+
+// 时间线引用
+const timelineRef = ref(null)
 
 // 获取步骤的主机分组（带搜索过滤）
 const getHostGroupsForStep = (stepId) => {
@@ -720,6 +697,32 @@ const executionMode = computed(() => {
     return 'ssh'
   }
   return null
+})
+
+// 计算属性 - 排序后的步骤列表
+const sortedSteps = computed(() => {
+  const steps = Object.entries(stepLogs.value).map(([id, step]) => ({
+    id,
+    ...step
+  }))
+  return steps.sort((a, b) => {
+    const orderA = a.step_order || 0
+    const orderB = b.step_order || 0
+    return orderA - orderB
+  })
+})
+
+// 计算属性 - 已完成步骤数
+const completedStepsCount = computed(() => {
+  return sortedSteps.value.filter(step => 
+    ['success', 'failed', 'cancelled'].includes(step.status)
+  ).length
+})
+
+// 计算属性 - 流程进度百分比
+const progressPercentage = computed(() => {
+  if (sortedSteps.value.length === 0) return 0
+  return (completedStepsCount.value / sortedSteps.value.length) * 100
 })
 
 // 计算属性 - 兼容旧格式的主机日志
@@ -1146,12 +1149,13 @@ const fetchExecutionDetail = async () => {
 
       stepLogs.value = normalizedStepLogs
 
-      console.log('Final stepLogs (normalized from steps):', stepLogs.value)
-
       // 自动选择第一个步骤
       const stepIds = Object.keys(stepLogs.value)
       if (stepIds.length > 0 && !selectedStepId.value) {
         selectedStepId.value = stepIds[0]
+        
+        // 自动显示第一个步骤的日志
+        showLogsForStep.value[stepIds[0]] = true
 
         // 自动选择第一个主机
         const firstStep = stepLogs.value[stepIds[0]]
@@ -1192,6 +1196,9 @@ const refreshLogs = () => {
 // 选择步骤
 const selectStep = (stepId) => {
   selectedStepId.value = stepId
+
+  // 自动显示该步骤的日志
+  showLogsForStep.value[stepId] = true
 
   // 自动选择该步骤的第一个主机
   const step = stepLogs.value[stepId]
@@ -1329,6 +1336,35 @@ const getStepStatusText = (status) => {
     'pending': '等待中'
   }
   return textMap[status] || status
+}
+
+// 获取步骤状态图标
+const getStepStatusIcon = (status) => {
+  const iconMap = {
+    'success': 'IconCheckCircle',
+    'failed': 'IconCloseCircle',
+    'running': 'IconClockCircle',
+    'pending': 'IconMinusCircle'
+  }
+  return iconMap[status] || null
+}
+
+// 获取连接线样式类
+const getConnectorClass = (currentStatus, nextStatus) => {
+  // 如果当前步骤失败，连接线显示为失败状态
+  if (currentStatus === 'failed') {
+    return 'connector-failed'
+  }
+  // 如果当前步骤成功且下一步骤存在，连接线显示为成功状态
+  if (currentStatus === 'success' && nextStatus) {
+    return 'connector-success'
+  }
+  // 如果当前步骤运行中，连接线显示为运行中状态
+  if (currentStatus === 'running') {
+    return 'connector-running'
+  }
+  // 默认等待状态
+  return 'connector-pending'
 }
 
 // 获取主机状态颜色
@@ -1755,11 +1791,6 @@ const getHostCountByStatusInStep = (stepId, status) => {
   
   console.log(`Step ${stepId} status ${status} count:`, count, hosts)
   return count
-}
-
-// 切换步骤日志显示状态
-const toggleLogDisplay = (stepId) => {
-  showLogsForStep.value[stepId] = !showLogsForStep.value[stepId]
 }
 
 // 获取步骤中的总主机数量
@@ -2497,6 +2528,7 @@ onMounted(() => {
 
 .execution-flow-container {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 900px;
   border: 1px solid #e8e8e8;
@@ -2506,203 +2538,437 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* 左侧步骤侧边栏 */
-.steps-sidebar {
-  width: 280px;
-  border-right: 1px solid #e8e8e8;
-  background-color: #fafafa;
+/* 时间线容器 */
+.timeline-container {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-bottom: 2px solid #e8e8e8;
+  padding: 16px;
 }
 
-.steps-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid #e8e8e8;
-  background-color: #fff;
+.timeline-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.steps-header-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.steps-header-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.steps-header h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #262626;
-}
-
-.steps-count {
-  font-size: 12px;
-  color: #666;
-  background-color: #f0f0f0;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-.steps-flow {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  position: relative;
-}
-
-.step-flow-item {
-  position: relative;
   margin-bottom: 12px;
 }
 
-.step-flow-item:last-child {
-  margin-bottom: 0;
+.timeline-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
 }
 
-.step-connector {
+.timeline-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-text {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.progress-bar {
+  width: 200px;
+  height: 8px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  box-shadow: 0 2px 4px rgba(82, 196, 26, 0.3);
+}
+
+/* 流程主体 */
+.flow-body {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px 0;
+  background: linear-gradient(to bottom, #fafafa 0%, #ffffff 100%);
+}
+
+.flow-body::-webkit-scrollbar {
+  height: 6px;
+}
+
+.flow-body::-webkit-scrollbar-track {
+  background-color: #f1f1f1;
+  border-radius: 3px;
+}
+
+.flow-body::-webkit-scrollbar-thumb {
+  background-color: #c1c1c1;
+  border-radius: 3px;
+}
+
+.flow-body::-webkit-scrollbar-thumb:hover {
+  background-color: #a8a8a8;
+}
+
+.flow-track {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: row;
+  min-width: max-content;
+  padding: 0 16px;
+  gap: 0;
+}
+
+.flow-step-wrapper {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 步骤卡片 */
+.flow-step-card {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 2px solid #e8e8e8;
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 160px;
+  max-width: 220px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  position: relative;
+  z-index: 2;
+}
+
+.flow-step-card:hover {
+  border-color: #40a9ff;
+  box-shadow: 0 4px 16px rgba(64, 169, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.flow-step-card.step-active {
+  border-color: #1890ff;
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
+  box-shadow: 0 6px 20px rgba(24, 144, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.flow-step-card.step-success {
+  border-color: #52c41a;
+}
+
+.flow-step-card.step-success:hover {
+  border-color: #73d13d;
+  box-shadow: 0 4px 16px rgba(82, 196, 26, 0.2);
+}
+
+.flow-step-card.step-failed {
+  border-color: #ff4d4f;
+}
+
+.flow-step-card.step-failed:hover {
+  border-color: #ff7875;
+  box-shadow: 0 4px 16px rgba(255, 77, 79, 0.2);
+}
+
+.flow-step-card.step-running {
+  border-color: #1890ff;
+  animation: cardPulse 2s infinite;
+}
+
+@keyframes cardPulse {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(24, 144, 255, 0.4);
+  }
+}
+
+/* 步骤图标区域 */
+.step-icon-area {
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.step-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 2px solid;
+  background: #ffffff;
+  transition: all 0.3s ease;
+}
+
+.step-icon-circle.icon-success {
+  border-color: #52c41a;
+  background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.step-icon-circle.icon-failed {
+  border-color: #ff4d4f;
+  background: linear-gradient(135deg, #fff2f0 0%, #ffffff 100%);
+}
+
+.step-icon-circle.icon-running {
+  border-color: #1890ff;
+  background: linear-gradient(135deg, #e6f7ff 0%, #ffffff 100%);
+  animation: iconPulse 2s infinite;
+}
+
+.step-icon-circle.icon-pending {
+  border-color: #d9d9d9;
+  background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%);
+}
+
+.flow-step-card.step-active .step-icon-circle {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+.step-number {
+  font-size: 13px;
+  font-weight: 700;
+  color: #262626;
   position: absolute;
-  left: 20px;
-  top: -20px;
-  width: 2px;
-  height: 20px;
-  background: linear-gradient(180deg, #d9d9d9 0%, #e8e8e8 100%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 1;
 }
 
-.step-flow-item.step-active .step-connector {
-  background: linear-gradient(180deg, #1890ff 0%, #40a9ff 100%);
+.step-icon-circle.icon-success .step-number {
+  color: #52c41a;
 }
 
-.step-node {
-  position: relative;
-  background-color: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  padding: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+.step-icon-circle.icon-failed .step-number {
+  color: #ff4d4f;
 }
 
-.step-node:hover {
-  border-color: #40a9ff;
-  box-shadow: 0 4px 12px rgba(64, 169, 255, 0.2);
-  transform: translateY(-2px);
+.step-icon-circle.icon-running .step-number {
+  color: #1890ff;
 }
 
-.step-flow-item.step-active .step-node {
-  border-color: #1890ff;
-  background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
-  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.3);
-  transform: translateY(-2px);
+.step-icon-circle.icon-pending .step-number {
+  color: #666;
 }
 
-.step-flow-item.step-active .step-node::before {
-  content: '';
+.step-status-icon {
   position: absolute;
-  left: -2px;
-  top: -2px;
-  bottom: -2px;
-  width: 4px;
-  background: linear-gradient(180deg, #1890ff 0%, #40a9ff 100%);
-  border-radius: 2px;
+  bottom: -3px;
+  right: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 2px solid #ffffff;
 }
 
-.step-node-content {
+.step-status-icon .arco-icon {
+  font-size: 10px;
+}
+
+.step-icon-circle.icon-success .step-status-icon {
+  color: #52c41a;
+}
+
+.step-icon-circle.icon-failed .step-status-icon {
+  color: #ff4d4f;
+}
+
+.step-icon-circle.icon-running .step-status-icon {
+  color: #1890ff;
+}
+
+.step-icon-circle.icon-pending .step-status-icon {
+  color: #d9d9d9;
+}
+
+@keyframes iconPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(24, 144, 255, 0);
+  }
+}
+
+/* 步骤内容区域 */
+.step-content-area {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
 }
 
-.step-order {
-  font-size: 10px;
-  color: #666;
-  font-weight: 500;
-}
-
-.step-name {
-  font-size: 12px;
+.step-title {
+  font-size: 13px;
   font-weight: 600;
   color: #262626;
-  line-height: 1.2;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
-.step-status {
+.step-info {
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .step-status-tag {
   font-weight: 500;
+  border-radius: 4px;
 }
 
-.step-timing {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: 9px;
+.step-hosts {
+  font-size: 11px;
   color: #666;
-}
-
-.step-start-time,
-.step-duration {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
-.step-host-stats {
+.step-hosts .arco-icon {
+  font-size: 11px;
+}
+
+.step-duration-text {
+  font-size: 10px;
+  color: #999;
+}
+
+/* 连接线 */
+.flow-connector {
+  position: relative;
+  width: 40px;
+  height: 2px;
+  margin: 0 6px;
   display: flex;
+  align-items: center;
   justify-content: center;
-  margin-top: 2px;
+  z-index: 1;
+  flex-shrink: 0;
 }
 
-.host-count-circle {
-  width: 20px;
-  height: 20px;
+.connector-line {
+  flex: 1;
+  height: 3px;
+  background-color: #d9d9d9;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.connector-arrow {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
   border-radius: 50%;
-  background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.connector-arrow .arco-icon {
+  font-size: 10px;
+}
+
+.connector-success .connector-line {
+  background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+  box-shadow: 0 0 6px rgba(82, 196, 26, 0.3);
+}
+
+.connector-success .connector-arrow {
+  color: #52c41a;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+}
+
+.connector-failed .connector-line {
+  background: linear-gradient(90deg, #ff4d4f 0%, #ff7875 100%);
+  border-style: dashed;
+  box-shadow: 0 0 6px rgba(255, 77, 79, 0.3);
+}
+
+.connector-failed .connector-arrow {
+  color: #ff4d4f;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+}
+
+.connector-running .connector-line {
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+  animation: flowAnimation 2s infinite;
+  box-shadow: 0 0 8px rgba(24, 144, 255, 0.4);
+}
+
+.connector-running .connector-arrow {
+  color: #1890ff;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  animation: arrowPulse 2s infinite;
+}
+
+.connector-pending .connector-line {
+  background-color: #d9d9d9;
+}
+
+.connector-pending .connector-arrow {
+  color: #d9d9d9;
+  background: #f5f5f5;
   border: 1px solid #d9d9d9;
 }
 
-.step-flow-item.step-active .host-count-circle {
-  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
-  border-color: #40a9ff;
+@keyframes arrowPulse {
+  0%, 100% {
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.1);
+  }
 }
 
-.host-count {
-  font-size: 9px;
-  font-weight: 600;
-  color: #262626;
+@keyframes flowAnimation {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
-.step-flow-item.step-active .host-count {
-  color: #1890ff;
-}
+/* 旧样式已移除，改用卡片式流程布局 */
 
-.step-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.step-node:hover .step-actions,
-.step-flow-item.step-active .step-actions {
-  opacity: 1;
-}
+/* 旧样式已移除，改用时间线布局 */
 
 .step-item {
   margin-bottom: 8px;
@@ -2879,13 +3145,14 @@ onMounted(() => {
   }
 }
 
-/* 右侧步骤详情面板 */
+/* 步骤详情面板 */
 .step-detail-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   background-color: #fff;
   overflow: hidden;
+  border-top: 1px solid #e8e8e8;
 }
 
 .no-step-selected {
@@ -3138,11 +3405,27 @@ onMounted(() => {
     min-height: 1000px;
   }
   
-  .steps-sidebar {
-    width: 100%;
-    height: 500px;
-    border-right: none;
-    border-bottom: 1px solid #e8e8e8;
+  .flow-step-card {
+    min-width: 180px;
+    max-width: 240px;
+    padding: 12px 16px;
+  }
+  
+  .step-icon-circle {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .step-number {
+    font-size: 14px;
+  }
+  
+  .step-title {
+    font-size: 14px;
+  }
+  
+  .flow-connector {
+    width: 40px;
   }
   
   .step-detail-panel {
@@ -3157,6 +3440,43 @@ onMounted(() => {
   .status-summary-item {
     min-width: 70px;
     padding: 8px 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .flow-body {
+    padding: 16px 0;
+  }
+  
+  .flow-track {
+    padding: 0 16px;
+  }
+  
+  .flow-step-card {
+    min-width: 160px;
+    max-width: 200px;
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .step-icon-area {
+    margin-right: 0;
+    margin-bottom: 8px;
+  }
+  
+  .step-content-area {
+    width: 100%;
+  }
+  
+  .flow-connector {
+    width: 30px;
+    margin: 0 4px;
+  }
+  
+  .connector-arrow {
+    display: none;
   }
 }
 
