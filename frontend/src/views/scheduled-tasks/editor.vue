@@ -87,20 +87,42 @@
               :key="index"
               class="parameter-override-item"
             >
-              <div class="param-info">
-                <div class="param-key">{{ param.key }}</div>
-                <div v-if="param.description" class="param-description">{{ param.description }}</div>
-                <div class="param-default">
-                  <span class="label">默认值:</span>
-                  <span class="value">{{ formatParameterValue(param.defaultValue) }}</span>
+              <div class="parameter-content">
+                <div class="parameter-row">
+                  <div class="parameter-key">
+                    <div class="param-key-label">{{ param.key }}</div>
+                    <a-tag v-if="param.type === 'secret'" size="small" color="orange" style="margin-left: 8px">
+                      密文
+                    </a-tag>
+                  </div>
+                  <div class="parameter-value">
+                    <a-input
+                      v-model="param.overrideValue"
+                      :type="param.type === 'secret' && !parameterVisibility[param.key] ? 'password' : 'text'"
+                      :placeholder="param.type === 'secret' ? '密文覆盖值（留空使用默认值）' : `覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue)}）`"
+                    />
+                    <a-button
+                      v-if="param.type === 'secret'"
+                      type="text"
+                      size="small"
+                      @click="toggleParameterVisibility(param.key)"
+                      class="visibility-toggle"
+                    >
+                      <template #icon>
+                        <icon-eye v-if="parameterVisibility[param.key]" />
+                        <icon-eye-invisible v-else />
+                      </template>
+                    </a-button>
+                  </div>
+                </div>
+                <div class="parameter-description">
+                  <div v-if="param.description" class="param-description-text">{{ param.description }}</div>
+                  <div class="param-default">
+                    <span class="label">默认值:</span>
+                    <span class="value">{{ formatParameterValue(param.defaultValue) }}</span>
+                  </div>
                 </div>
               </div>
-              <a-input
-                v-model="param.overrideValue"
-                :placeholder="`覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue)}）`"
-                style="flex: 1"
-                allow-clear
-              />
             </div>
           </div>
         </a-form-item>
@@ -183,7 +205,9 @@ import { Message } from '@arco-design/web-vue'
 import {
   IconInfoCircle,
   IconExclamationCircle,
-  IconClockCircle
+  IconClockCircle,
+  IconEye,
+  IconEyeInvisible
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi, executionPlanApi, cronApi } from '@/api/scheduler'
 import CronHelper from './components/CronHelper.vue'
@@ -219,6 +243,7 @@ const form = reactive({
 // 全局变量覆盖
 const globalParameters = ref([])
 const loadingPlanDetail = ref(false)
+const parameterVisibility = ref({})
 
 // 表单验证规则
 const rules = {
@@ -288,6 +313,9 @@ const handleExecutionPlanChange = async (planId) => {
         ? paramValue.type
         : 'text'
 
+      // 初始化可见性状态（密文默认隐藏）
+      parameterVisibility.value[key] = type !== 'secret'
+
       return {
         key,
         defaultValue,
@@ -312,6 +340,14 @@ const formatParameterValue = (value) => {
     return '******'
   }
   return String(value)
+}
+
+// 切换参数可见性
+const toggleParameterVisibility = (key) => {
+  if (!(key in parameterVisibility.value)) {
+    parameterVisibility.value[key] = false
+  }
+  parameterVisibility.value[key] = !parameterVisibility.value[key]
 }
 
 // Cron表达式验证和描述
@@ -536,29 +572,58 @@ onMounted(() => {
 }
 
 .parameter-override-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  background: var(--color-fill-1);
   border: 1px solid var(--color-border-2);
-  border-radius: 4px;
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--color-bg-1);
 }
 
-.param-info {
-  min-width: 200px;
+.parameter-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.param-key {
+.parameter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.parameter-key {
+  flex: 0 0 300px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-key-label {
   font-weight: 600;
   color: var(--color-text-1);
   font-size: 14px;
 }
 
-.param-description {
+.parameter-value {
+  flex: 1;
+  position: relative;
+}
+
+.parameter-value .visibility-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.parameter-description {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.param-description-text {
   font-size: 12px;
   color: var(--color-text-3);
   line-height: 1.4;
@@ -569,7 +634,6 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  margin-top: 4px;
 }
 
 .param-default .label {
