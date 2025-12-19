@@ -112,60 +112,61 @@
         <a-empty :description="getEmptyLogsDescription()" />
       </div>
 
-      <div v-else class="execution-flow-layout">
-        <!-- 水平时间线布局 -->
-        <div class="execution-flow-container">
-          <!-- 顶部时间线 -->
-          <div class="timeline-container">
-            <div class="timeline-header">
-              <h4>执行流程</h4>
-              <div class="timeline-progress">
-                <span class="progress-text">
-                  已完成 {{ completedStepsCount }} / {{ sortedSteps.length }} 步骤
-                </span>
-                <div class="progress-bar">
-                  <div 
-                    class="progress-fill" 
-                    :style="{ width: `${progressPercentage}%` }"
-                  ></div>
-                </div>
-              </div>
+      <div v-else class="execution-flow-layout" :class="{ 'has-selected-step': selectedStepId }">
+        <!-- 流程头部 -->
+        <div class="timeline-header">
+          <h4>步骤进度</h4>
+          <div class="timeline-progress">
+            <span class="progress-text">
+              已完成 {{ completedStepsCount }} / {{ sortedSteps.length }} 步骤
+            </span>
+            <div class="progress-bar">
+              <div 
+                class="progress-fill" 
+                :style="{ width: `${progressPercentage}%` }"
+              ></div>
             </div>
-            
-            <!-- 流程主体 -->
-            <div class="flow-body" ref="timelineRef">
-              <div class="flow-track">
-                <div
-                  v-for="(step, index) in sortedSteps"
-                  :key="step.id"
-                  class="flow-step-wrapper"
-                >
-                  <!-- 步骤卡片 -->
+          </div>
+        </div>
+
+        <!-- 主容器：单栏或双栏布局 -->
+        <div class="execution-flow-container">
+          <!-- 左侧：时间线（始终显示） -->
+          <div class="timeline-sidebar" :class="{ 'collapsed': selectedStepId }">
+            <div class="vertical-timeline" ref="timelineRef">
+              <div
+                v-for="(step, index) in sortedSteps"
+                :key="step.id"
+                class="timeline-step-item"
+              >
+                <!-- 时间线连接线 -->
+                <div 
+                  v-if="index < sortedSteps.length - 1" 
+                  class="timeline-connector"
+                  :class="getConnectorClass(step.status, sortedSteps[index + 1]?.status)"
+                ></div>
+                
+                <!-- 步骤节点 -->
+                <div class="timeline-step-node">
+                  <!-- 左侧时间线圆点 -->
+                  <div class="timeline-dot" :class="`dot-${step.status}`">
+                    <div class="dot-inner">
+                      <span class="step-number">{{ step.step_order }}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- 右侧步骤卡片 -->
                   <div
-                    class="flow-step-card"
+                    class="timeline-step-card"
                     :class="{ 
                       'step-active': selectedStepId === step.id,
                       [`step-${step.status}`]: true
                     }"
                     @click="selectStep(step.id)"
                   >
-                    <!-- 步骤图标区域 -->
-                    <div class="step-icon-area">
-                      <div class="step-icon-circle" :class="`icon-${step.status}`">
-                        <span class="step-number">{{ String(step.step_order).padStart(2, '0') }}</span>
-                        <div class="step-status-icon">
-                          <icon-check-circle v-if="step.status === 'success'" />
-                          <icon-close-circle v-else-if="step.status === 'failed'" />
-                          <icon-clock-circle v-else-if="step.status === 'running'" />
-                          <icon-minus-circle v-else-if="step.status === 'pending'" />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <!-- 步骤内容区域 -->
-                    <div class="step-content-area">
-                      <div class="step-title">{{ step.step_name }}</div>
-                      <div class="step-info">
+                    <div class="step-card-content">
+                      <div class="step-title-row">
+                        <h5 class="step-title">{{ step.step_name }}</h5>
                         <a-tag
                           :color="getStepStatusColor(step.status)"
                           size="small"
@@ -173,25 +174,15 @@
                         >
                           {{ getStepStatusText(step.status) }}
                         </a-tag>
+                      </div>
+                      <div class="step-meta-row">
                         <span class="step-hosts">
                           <icon-user /> {{ getTotalHostCountInStep(step.id) }} 台主机
                         </span>
+                        <span v-if="step.finished_at || step.end_time" class="step-duration">
+                          耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
+                        </span>
                       </div>
-                      <div v-if="step.finished_at || step.end_time" class="step-duration-text">
-                        耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- 连接线（箭头） -->
-                  <div 
-                    v-if="index < sortedSteps.length - 1" 
-                    class="flow-connector"
-                    :class="getConnectorClass(step.status, sortedSteps[index + 1]?.status)"
-                  >
-                    <div class="connector-line"></div>
-                    <div class="connector-arrow">
-                      <icon-right />
                     </div>
                   </div>
                 </div>
@@ -199,13 +190,10 @@
             </div>
           </div>
 
-          <!-- 步骤详情面板 -->
-          <div class="step-detail-panel">
-            <div v-if="!selectedStepId" class="no-step-selected">
-              <a-empty description="请点击上方时间线中的步骤节点查看详情" />
-            </div>
-            <div v-else class="step-detail-content">
-              <!-- 步骤详情头部 -->
+          <!-- 右侧：日志详情面板（仅当选中步骤时显示） -->
+          <div v-if="selectedStepId && stepLogs[selectedStepId]" class="logs-detail-panel">
+            <div class="step-detail-content">
+              <!-- 步骤信息头部 -->
               <div class="step-detail-header">
                 <div class="step-detail-info">
                   <h3>{{ stepLogs[selectedStepId].step_name }}</h3>
@@ -228,19 +216,19 @@
                       <template #content>
                         <a-doption 
                           :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepRetry('failed_only', selectedStepId)"
+                          @click.stop="() => handleClickStepRetry('failed_only', selectedStepId)"
                         >
                           <IconExclamation /> 仅重试失败主机
                         </a-doption>
                         <a-doption 
                           :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepRetry('all', selectedStepId)"
+                          @click.stop="() => handleClickStepRetry('all', selectedStepId)"
                         >
                           <IconRefresh /> 重试该步骤
                         </a-doption>
                         <a-doption 
                           :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click="() => handleClickStepIgnoreError(selectedStepId)"
+                          @click.stop="() => handleClickStepIgnoreError(selectedStepId)"
                         >
                           <IconCheck /> 忽略错误继续
                         </a-doption>
@@ -252,19 +240,19 @@
                         批量复制 <IconDown />
                       </a-button>
                       <template #content>
-                        <a-doption @click="() => copyHostsByStatusInStep(selectedStepId, 'success')">
+                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepId, 'success')">
                           <IconCopy /> 复制成功主机IP
                         </a-doption>
-                        <a-doption @click="() => copyHostsByStatusInStep(selectedStepId, 'failed')">
+                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepId, 'failed')">
                           <IconCopy /> 复制失败主机IP
                         </a-doption>
-                        <a-doption @click="() => copyHostsByStatusInStep(selectedStepId, 'running')">
+                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepId, 'running')">
                           <IconCopy /> 复制运行中主机IP
                         </a-doption>
-                        <a-doption @click="() => copyHostsByStatusInStep(selectedStepId, 'pending')">
+                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepId, 'pending')">
                           <IconCopy /> 复制等待中主机IP
                         </a-doption>
-                        <a-doption @click="() => copyHostsByStatusInStep(selectedStepId, 'all')">
+                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepId, 'all')">
                           <IconCopy /> 复制所有主机IP
                         </a-doption>
                       </template>
@@ -303,32 +291,30 @@
                 </div>
               </div>
 
-              <!-- 日志详情区域 -->
-              <div class="logs-detail-area">
-                <!-- 搜索栏 -->
-                <div class="search-bar">
-                  <a-space>
-                    <a-input-search
-                      :value="hostSearchTexts[selectedStepId] || ''"
-                      placeholder="搜索主机名称或IP"
-                      size="small"
-                      style="width: 200px;"
-                      @change="(value) => updateSearchText(selectedStepId, value)"
-                      @search="(value) => updateSearchText(selectedStepId, value)"
-                      @update:value="(value) => updateSearchText(selectedStepId, value)"
-                      allow-clear
-                    />
-                    <a-input-search
-                      :value="logSearchTexts[selectedStepId] || ''"
-                      placeholder="搜索日志内容"
-                      size="small"
-                      style="width: 200px;"
-                      @change="(value) => updateLogSearchText(selectedStepId, value)"
-                      @search="(value) => updateLogSearchText(selectedStepId, value)"
-                      @update:value="(value) => updateLogSearchText(selectedStepId, value)"
-                      allow-clear
-                    />
-                  </a-space>
+              <!-- 搜索栏 -->
+              <div class="search-bar">
+                <a-space>
+                  <a-input-search
+                    :value="hostSearchTexts[selectedStepId] || ''"
+                    placeholder="搜索主机名称或IP"
+                    size="small"
+                    style="width: 200px;"
+                    @change="(value) => updateSearchText(selectedStepId, value)"
+                    @search="(value) => updateSearchText(selectedStepId, value)"
+                    @update:value="(value) => updateSearchText(selectedStepId, value)"
+                    allow-clear
+                  />
+                  <a-input-search
+                    :value="logSearchTexts[selectedStepId] || ''"
+                    placeholder="搜索日志内容"
+                    size="small"
+                    style="width: 200px;"
+                    @change="(value) => updateLogSearchText(selectedStepId, value)"
+                    @search="(value) => updateLogSearchText(selectedStepId, value)"
+                    @update:value="(value) => updateLogSearchText(selectedStepId, value)"
+                    allow-clear
+                  />
+                </a-space>
               </div>
 
               <!-- 主机分组显示 -->
@@ -365,10 +351,10 @@
                         @click.stop="toggleGroupInStep(selectedStepId, status)"
                         title="展开/收起分组"
                       >
-                      <IconDown
-                        :class="{ 'rotate-180': group.expanded }"
-                        class="expand-icon"
-                      />
+                        <IconDown
+                          :class="{ 'rotate-180': group.expanded }"
+                          class="expand-icon"
+                        />
                       </a-button>
                     </div>
                   </div>
@@ -397,101 +383,98 @@
                           </div>
                         </template>
 
-                  <!-- 主机日志内容 -->
-                  <div class="host-log-content">
-                    <!-- 主机信息头部 -->
-                    <div class="host-info-header">
-                      <div class="host-info">
-                        <h5>{{ getHostDisplayName(hostLog) }}</h5>
-                        <a-space>
-                          <a-tag :color="getHostStatusColor(hostLog.status)">
-                            {{ getHostStatusText(hostLog.status) }}
-                          </a-tag>
-                          <a-tag
-                            v-if="executionMode === 'agent'"
-                            color="blue"
-                            size="small"
-                          >
-                            Agent 模式
-                          </a-tag>
-                          <a-tag
-                            v-else-if="executionMode === 'ssh'"
-                            color="gray"
-                            size="small"
-                          >
-                            SSH 模式
-                          </a-tag>
-                          <a-button
-                            size="small"
-                            type="text"
-                            @click="copyHostIP(getHostIP(hostLog))"
-                            title="复制IP地址"
-                          >
-                            <template #icon><IconCopy /></template>
-                            {{ getHostIP(hostLog) }}
-                          </a-button>
-                        </a-space>
-                      </div>
-                    </div>
+                        <!-- 主机日志内容 -->
+                        <div class="host-log-content">
+                          <!-- 主机信息头部 -->
+                          <div class="host-info-header">
+                            <div class="host-info">
+                              <h5>{{ getHostDisplayName(hostLog) }}</h5>
+                              <a-space>
+                                <a-tag :color="getHostStatusColor(hostLog.status)">
+                                  {{ getHostStatusText(hostLog.status) }}
+                                </a-tag>
+                                <a-tag
+                                  v-if="executionMode === 'agent'"
+                                  color="blue"
+                                  size="small"
+                                >
+                                  Agent 模式
+                                </a-tag>
+                                <a-tag
+                                  v-else-if="executionMode === 'ssh'"
+                                  color="gray"
+                                  size="small"
+                                >
+                                  SSH 模式
+                                </a-tag>
+                                <a-button
+                                  size="small"
+                                  type="text"
+                                  @click="copyHostIP(getHostIP(hostLog))"
+                                  title="复制IP地址"
+                                >
+                                  <template #icon><IconCopy /></template>
+                                  {{ getHostIP(hostLog) }}
+                                </a-button>
+                              </a-space>
+                            </div>
+                          </div>
 
-                    <!-- 标准输出日志 -->
-                    <div v-if="hostLog.stdout || hostLog.logs" class="log-section">
-                      <div class="log-section-header">
-                        <h5>标准输出</h5>
-                        <a-space>
-                          <a-button size="small" @click="zoomLogs(hostLog.stdout || hostLog.logs, '标准输出')">
-                            <template #icon><IconEye /></template>
-                            放大查看
-                          </a-button>
-                          <a-button size="small" @click="copyLogs(hostLog.stdout || hostLog.logs)">
-                            <template #icon><IconCopy /></template>
-                            复制日志
-                          </a-button>
-                        </a-space>
-                      </div>
-                      <div class="log-text-container">
+                          <!-- 标准输出日志 -->
+                          <div v-if="hostLog.stdout || hostLog.logs" class="log-section">
+                            <div class="log-section-header">
+                              <h5>标准输出</h5>
+                              <a-space>
+                                <a-button size="small" @click="zoomLogs(hostLog.stdout || hostLog.logs, '标准输出')">
+                                  <template #icon><IconEye /></template>
+                                  放大查看
+                                </a-button>
+                                <a-button size="small" @click="copyLogs(hostLog.stdout || hostLog.logs)">
+                                  <template #icon><IconCopy /></template>
+                                  复制日志
+                                </a-button>
+                              </a-space>
+                            </div>
+                            <div class="log-text-container">
                               <pre class="log-text" v-html="highlightLogContent(hostLog.stdout || hostLog.logs, selectedStepId)"></pre>
-                      </div>
-                    </div>
+                            </div>
+                          </div>
 
-                    <!-- 错误日志 -->
-                    <div v-if="hostLog.stderr || hostLog.error_logs" class="log-section error-section">
-                      <div class="log-section-header">
-                        <h5>{{ getErrorTitle() }}</h5>
-                        <a-space>
-                          <a-button size="small" @click="zoomLogs(hostLog.stderr || hostLog.error_logs, '错误输出')">
-                            <template #icon><IconEye /></template>
-                            放大查看
-                          </a-button>
-                          <a-button size="small" @click="copyLogs(hostLog.stderr || hostLog.error_logs)">
-                            <template #icon><IconCopy /></template>
-                            复制
-                          </a-button>
-                        </a-space>
-                      </div>
-                      <div class="log-text-container">
+                          <!-- 错误日志 -->
+                          <div v-if="hostLog.stderr || hostLog.error_logs" class="log-section error-section">
+                            <div class="log-section-header">
+                              <h5>{{ getErrorTitle() }}</h5>
+                              <a-space>
+                                <a-button size="small" @click="zoomLogs(hostLog.stderr || hostLog.error_logs, '错误输出')">
+                                  <template #icon><IconEye /></template>
+                                  放大查看
+                                </a-button>
+                                <a-button size="small" @click="copyLogs(hostLog.stderr || hostLog.error_logs)">
+                                  <template #icon><IconCopy /></template>
+                                  复制
+                                </a-button>
+                              </a-space>
+                            </div>
+                            <div class="log-text-container">
                               <pre class="log-text error-text" v-html="highlightLogContent(hostLog.stderr || hostLog.error_logs, selectedStepId)"></pre>
-                      </div>
-                    </div>
+                            </div>
+                          </div>
 
-                    <!-- 如果没有日志 -->
-                    <div v-if="!(hostLog.stdout || hostLog.logs) && !(hostLog.stderr || hostLog.error_logs)" class="no-logs">
-                      <a-empty description="该主机在此步骤暂无日志数据" />
-                    </div>
+                          <!-- 如果没有日志 -->
+                          <div v-if="!(hostLog.stdout || hostLog.logs) && !(hostLog.stderr || hostLog.error_logs)" class="no-logs">
+                            <a-empty description="该主机在此步骤暂无日志数据" />
+                          </div>
+                        </div>
+                      </a-tab-pane>
+                    </a-tabs>
                   </div>
-                </a-tab-pane>
-              </a-tabs>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      </div>
-    </div>
-  </div>
-</div>
-</a-card>
-
-
+    </a-card>
   </div>
 
   <!-- 日志放大模态框 -->
@@ -565,6 +548,7 @@ const logSearchTexts = ref({}) // 每个步骤的日志搜索文本
 const selectedHostIds = ref({}) // 每个步骤选中的主机ID
 const groupExpandedState = ref({})
 const showLogsForStep = ref({}) // 控制每个步骤的日志显示状态
+const expandedSteps = ref({}) // 控制每个步骤的展开/收起状态
 
 // 日志放大相关
 const logZoomVisible = ref(false)
@@ -1149,35 +1133,20 @@ const fetchExecutionDetail = async () => {
 
       stepLogs.value = normalizedStepLogs
 
-      // 自动选择第一个步骤
+      // 初始化所有步骤的状态
       const stepIds = Object.keys(stepLogs.value)
-      if (stepIds.length > 0 && !selectedStepId.value) {
-        selectedStepId.value = stepIds[0]
-        
-        // 自动显示第一个步骤的日志
-        showLogsForStep.value[stepIds[0]] = true
-
-        // 自动选择第一个主机
-        const firstStep = stepLogs.value[stepIds[0]]
-        if (firstStep && firstStep.host_logs) {
-          const hostIds = Object.keys(firstStep.host_logs)
-          if (hostIds.length > 0) {
-            selectedHostId.value = hostIds[0]
-            // 设置选中主机ID
-            if (!selectedHostIds.value[stepIds[0]]) {
-              selectedHostIds.value[stepIds[0]] = hostIds[0]
-            }
-          }
-        }
-      }
       
-      // 初始化所有步骤的搜索文本
+      // 初始化所有步骤的搜索文本和展开状态
       stepIds.forEach(stepId => {
         if (!hostSearchTexts.value[stepId]) {
           hostSearchTexts.value[stepId] = ''
         }
         if (!logSearchTexts.value[stepId]) {
           logSearchTexts.value[stepId] = ''
+        }
+        // 默认不展开任何步骤
+        if (expandedSteps.value[stepId] === undefined) {
+          expandedSteps.value[stepId] = false
         }
       })
     }
@@ -1193,29 +1162,36 @@ const refreshLogs = () => {
   fetchExecutionDetail()
 }
 
-// 选择步骤
+// 选择步骤（点击步骤时切换选中状态）
 const selectStep = (stepId) => {
-  selectedStepId.value = stepId
-
-  // 自动显示该步骤的日志
-  showLogsForStep.value[stepId] = true
-
-  // 自动选择该步骤的第一个主机
-  const step = stepLogs.value[stepId]
-  if (step) {
-    // 兼容新旧格式：优先使用hosts，其次使用host_logs
-    const hosts = step.hosts || step.host_logs
-    if (hosts) {
-      const hostIds = Object.keys(hosts)
-      if (hostIds.length > 0) {
-        // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
-        if (!selectedHostIds.value[stepId] || !hostIds.includes(selectedHostIds.value[stepId])) {
-          selectedHostIds.value[stepId] = hostIds[0]
+  // 如果点击的是已选中的步骤，则取消选中（回到单栏布局）
+  if (selectedStepId.value === stepId) {
+    selectedStepId.value = null
+  } else {
+    selectedStepId.value = stepId
+    
+    // 自动选择该步骤的第一个主机
+    const step = stepLogs.value[stepId]
+    if (step) {
+      // 兼容新旧格式：优先使用hosts，其次使用host_logs
+      const hosts = step.hosts || step.host_logs
+      if (hosts) {
+        const hostIds = Object.keys(hosts)
+        if (hostIds.length > 0) {
+          // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
+          if (!selectedHostIds.value[stepId] || !hostIds.includes(selectedHostIds.value[stepId])) {
+            selectedHostIds.value[stepId] = hostIds[0]
+          }
+          selectedHostId.value = selectedHostIds.value[stepId]
         }
-        selectedHostId.value = selectedHostIds.value[stepId]
       }
     }
   }
+}
+
+// 切换步骤展开/收起（保留兼容性，但不再使用）
+const toggleStep = (stepId) => {
+  selectStep(stepId)
 }
 
 // 复制日志
@@ -1884,7 +1860,7 @@ const highlightLogContent = (content, stepId) => {
 onMounted(() => {
   fetchExecutionDetail()
   
-  // 初始化搜索文本
+  // 初始化搜索文本和展开状态
   nextTick(() => {
     Object.keys(stepLogs.value).forEach(stepId => {
       if (!hostSearchTexts.value[stepId]) {
@@ -1892,6 +1868,10 @@ onMounted(() => {
       }
       if (!logSearchTexts.value[stepId]) {
         logSearchTexts.value[stepId] = ''
+      }
+      // 默认不展开任何步骤
+      if (expandedSteps.value[stepId] === undefined) {
+        expandedSteps.value[stepId] = false
       }
     })
   })
@@ -2177,6 +2157,7 @@ onMounted(() => {
   overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: #d9d9d9 transparent;
+  max-width: 100%;
 }
 
 .host-tabs :deep(.ant-tabs-nav-wrap)::-webkit-scrollbar {
@@ -2199,6 +2180,7 @@ onMounted(() => {
 .host-tabs :deep(.ant-tabs-nav-list) {
   display: flex;
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .host-tabs :deep(.ant-tabs-tab) {
@@ -2321,8 +2303,11 @@ onMounted(() => {
   flex-direction: column;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   background-color: #fafafa;
+  min-height: 0;
+  max-width: 100%;
 }
 
 .host-group {
@@ -2526,11 +2511,12 @@ onMounted(() => {
   min-height: 0;
 }
 
+/* 主容器：单栏或双栏布局 */
 .execution-flow-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1;
-  min-height: 900px;
+  min-height: 600px;
   border: 1px solid #e8e8e8;
   border-radius: 8px;
   overflow: hidden;
@@ -2538,20 +2524,41 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* 时间线容器 */
-.timeline-container {
+/* 左侧：时间线侧边栏 */
+.timeline-sidebar {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-  border-bottom: 2px solid #e8e8e8;
-  padding: 16px;
+  min-width: 0;
+  transition: all 0.3s ease;
+  border-right: 1px solid #e8e8e8;
 }
 
+/* 当选中步骤时，左侧时间线收缩 */
+.timeline-sidebar.collapsed {
+  flex: 0 0 350px;
+  min-width: 350px;
+  max-width: 350px;
+}
+
+/* 右侧：日志详情面板 */
+.logs-detail-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: #fff;
+  overflow: hidden;
+}
+
+/* 流程头部 */
 .timeline-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-bottom: 2px solid #e8e8e8;
 }
 
 .timeline-header h4 {
@@ -2591,219 +2598,129 @@ onMounted(() => {
   box-shadow: 0 2px 4px rgba(82, 196, 26, 0.3);
 }
 
-/* 流程主体 */
-.flow-body {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 16px 0;
-  background: linear-gradient(to bottom, #fafafa 0%, #ffffff 100%);
+/* 垂直时间线主体 */
+.vertical-timeline {
+  flex: 1;
+  padding: 24px 40px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: #fafafa;
 }
 
-.flow-body::-webkit-scrollbar {
-  height: 6px;
-}
-
-.flow-body::-webkit-scrollbar-track {
-  background-color: #f1f1f1;
-  border-radius: 3px;
-}
-
-.flow-body::-webkit-scrollbar-thumb {
-  background-color: #c1c1c1;
-  border-radius: 3px;
-}
-
-.flow-body::-webkit-scrollbar-thumb:hover {
-  background-color: #a8a8a8;
-}
-
-.flow-track {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  flex-direction: row;
-  min-width: max-content;
-  padding: 0 16px;
-  gap: 0;
-}
-
-.flow-step-wrapper {
-  display: flex;
-  align-items: center;
+.timeline-step-item {
   position: relative;
-  flex-shrink: 0;
-}
-
-/* 步骤卡片 */
-.flow-step-card {
   display: flex;
-  align-items: center;
-  background: #ffffff;
-  border: 2px solid #e8e8e8;
-  border-radius: 10px;
-  padding: 12px 16px;
-  min-width: 160px;
-  max-width: 220px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+}
+
+.timeline-step-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 时间线连接线 */
+.timeline-connector {
+  position: absolute;
+  left: 20px;
+  top: 40px; /* 从圆点底部开始（圆点高度40px） */
+  width: 2px;
+  height: calc(100% - 40px + 24px); /* 覆盖整个步骤项高度 + margin-bottom间距 */
+  background-color: #e8e8e8;
+  z-index: 0;
+}
+
+.timeline-connector.connector-success {
+  background: linear-gradient(180deg, #52c41a 0%, #73d13d 100%);
+}
+
+.timeline-connector.connector-failed {
+  background: linear-gradient(180deg, #ff4d4f 0%, #ff7875 100%);
+  border-style: dashed;
+}
+
+.timeline-connector.connector-running {
+  background: linear-gradient(180deg, #1890ff 0%, #40a9ff 100%);
+  animation: flowAnimation 2s infinite;
+}
+
+.timeline-connector.connector-pending {
+  background-color: #e8e8e8;
+}
+
+/* 时间线节点容器 */
+.timeline-step-node {
   position: relative;
-  z-index: 2;
+  display: flex;
+  width: 100%;
+  z-index: 1;
 }
 
-.flow-step-card:hover {
-  border-color: #40a9ff;
-  box-shadow: 0 4px 16px rgba(64, 169, 255, 0.2);
-  transform: translateY(-2px);
-}
-
-.flow-step-card.step-active {
-  border-color: #1890ff;
-  background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
-  box-shadow: 0 6px 20px rgba(24, 144, 255, 0.3);
-  transform: translateY(-2px);
-}
-
-.flow-step-card.step-success {
-  border-color: #52c41a;
-}
-
-.flow-step-card.step-success:hover {
-  border-color: #73d13d;
-  box-shadow: 0 4px 16px rgba(82, 196, 26, 0.2);
-}
-
-.flow-step-card.step-failed {
-  border-color: #ff4d4f;
-}
-
-.flow-step-card.step-failed:hover {
-  border-color: #ff7875;
-  box-shadow: 0 4px 16px rgba(255, 77, 79, 0.2);
-}
-
-.flow-step-card.step-running {
-  border-color: #1890ff;
-  animation: cardPulse 2s infinite;
-}
-
-@keyframes cardPulse {
-  0%, 100% {
-    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
-  }
-  50% {
-    box-shadow: 0 4px 16px rgba(24, 144, 255, 0.4);
-  }
-}
-
-/* 步骤图标区域 */
-.step-icon-area {
-  margin-right: 12px;
-  flex-shrink: 0;
-}
-
-.step-icon-circle {
-  width: 44px;
-  height: 44px;
+/* 时间线圆点 */
+.timeline-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
+  border: 3px solid;
+  background-color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  border: 2px solid;
-  background: #ffffff;
-  transition: all 0.3s ease;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.step-icon-circle.icon-success {
+.timeline-dot.dot-success {
   border-color: #52c41a;
   background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
 }
 
-.step-icon-circle.icon-failed {
+.timeline-dot.dot-failed {
   border-color: #ff4d4f;
   background: linear-gradient(135deg, #fff2f0 0%, #ffffff 100%);
 }
 
-.step-icon-circle.icon-running {
+.timeline-dot.dot-running {
   border-color: #1890ff;
   background: linear-gradient(135deg, #e6f7ff 0%, #ffffff 100%);
-  animation: iconPulse 2s infinite;
+  animation: dotPulse 2s infinite;
 }
 
-.step-icon-circle.icon-pending {
+.timeline-dot.dot-pending {
   border-color: #d9d9d9;
   background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%);
 }
 
-.flow-step-card.step-active .step-icon-circle {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
-}
-
-.step-number {
-  font-size: 13px;
-  font-weight: 700;
-  color: #262626;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1;
-}
-
-.step-icon-circle.icon-success .step-number {
-  color: #52c41a;
-}
-
-.step-icon-circle.icon-failed .step-number {
-  color: #ff4d4f;
-}
-
-.step-icon-circle.icon-running .step-number {
-  color: #1890ff;
-}
-
-.step-icon-circle.icon-pending .step-number {
-  color: #666;
-}
-
-.step-status-icon {
-  position: absolute;
-  bottom: -3px;
-  right: -3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #ffffff;
+.dot-inner {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 2px solid #ffffff;
 }
 
-.step-status-icon .arco-icon {
-  font-size: 10px;
+.step-number {
+  font-size: 14px;
+  font-weight: 700;
+  color: #262626;
 }
 
-.step-icon-circle.icon-success .step-status-icon {
+.timeline-dot.dot-success .step-number {
   color: #52c41a;
 }
 
-.step-icon-circle.icon-failed .step-status-icon {
+.timeline-dot.dot-failed .step-number {
   color: #ff4d4f;
 }
 
-.step-icon-circle.icon-running .step-status-icon {
+.timeline-dot.dot-running .step-number {
   color: #1890ff;
 }
 
-.step-icon-circle.icon-pending .step-status-icon {
-  color: #d9d9d9;
+.timeline-dot.dot-pending .step-number {
+  color: #666;
 }
 
-@keyframes iconPulse {
+@keyframes dotPulse {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4);
   }
@@ -2812,28 +2729,76 @@ onMounted(() => {
   }
 }
 
-/* 步骤内容区域 */
-.step-content-area {
-  flex: 1;
+/* 步骤卡片 */
+.timeline-step-card {
+  margin-left: 60px;
+  width: calc(100% - 60px);
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  padding: 12px 16px;
+}
+
+.timeline-step-card:hover {
+  border-color: #40a9ff;
+  box-shadow: 0 4px 12px rgba(64, 169, 255, 0.15);
+}
+
+.timeline-step-card.step-active {
+  border-color: #1890ff;
+  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
+}
+
+.timeline-step-card.step-expanded {
+  border-color: #1890ff;
+  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
+}
+
+.timeline-step-card.step-success {
+  border-left: 3px solid #52c41a;
+}
+
+.timeline-step-card.step-failed {
+  border-left: 3px solid #ff4d4f;
+}
+
+.timeline-step-card.step-running {
+  border-left: 3px solid #1890ff;
+}
+
+.timeline-step-card.step-pending {
+  border-left: 3px solid #d9d9d9;
+}
+
+.step-card-header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background-color: #fff;
+}
+
+.step-card-content {
+  flex: 1;
+}
+
+.step-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .step-title {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   color: #262626;
-  line-height: 1.3;
-  word-break: break-word;
-}
-
-.step-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  margin: 0;
+  flex: 1;
 }
 
 .step-status-tag {
@@ -2841,129 +2806,75 @@ onMounted(() => {
   border-radius: 4px;
 }
 
-.step-hosts {
-  font-size: 11px;
-  color: #666;
+.step-meta-row {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 16px;
+  font-size: 13px;
+  color: #666;
 }
 
-.step-hosts .arco-icon {
-  font-size: 11px;
+.step-hosts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.step-duration-text {
-  font-size: 10px;
+.step-duration {
   color: #999;
 }
 
-/* 连接线 */
-.flow-connector {
-  position: relative;
-  width: 40px;
-  height: 2px;
-  margin: 0 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-  flex-shrink: 0;
+.step-card-arrow {
+  color: #999;
+  transition: transform 0.3s ease;
 }
 
-.connector-line {
+.step-card-arrow .rotate-180 {
+  transform: rotate(180deg);
+}
+
+/* 步骤详情内容 */
+.step-detail-content {
   flex: 1;
-  height: 3px;
-  background-color: #d9d9d9;
-  border-radius: 2px;
-  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: #fff;
 }
 
-.connector-arrow {
-  position: absolute;
-  right: -6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 12px;
-  height: 12px;
+.step-detail-header {
+  padding: 20px;
+  border-bottom: 1px solid #e8e8e8;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.step-detail-info h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.step-detail-meta {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
+  gap: 12px;
 }
 
-.connector-arrow .arco-icon {
-  font-size: 10px;
+.step-order-text {
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
 }
 
-.connector-success .connector-line {
-  background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
-  box-shadow: 0 0 6px rgba(82, 196, 26, 0.3);
-}
-
-.connector-success .connector-arrow {
-  color: #52c41a;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-}
-
-.connector-failed .connector-line {
-  background: linear-gradient(90deg, #ff4d4f 0%, #ff7875 100%);
-  border-style: dashed;
-  box-shadow: 0 0 6px rgba(255, 77, 79, 0.3);
-}
-
-.connector-failed .connector-arrow {
-  color: #ff4d4f;
-  background: #fff2f0;
-  border: 1px solid #ffccc7;
-}
-
-.connector-running .connector-line {
-  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
-  animation: flowAnimation 2s infinite;
-  box-shadow: 0 0 8px rgba(24, 144, 255, 0.4);
-}
-
-.connector-running .connector-arrow {
-  color: #1890ff;
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
-  animation: arrowPulse 2s infinite;
-}
-
-.connector-pending .connector-line {
-  background-color: #d9d9d9;
-}
-
-.connector-pending .connector-arrow {
-  color: #d9d9d9;
-  background: #f5f5f5;
-  border: 1px solid #d9d9d9;
-}
-
-@keyframes arrowPulse {
-  0%, 100% {
-    transform: translateY(-50%) scale(1);
-  }
-  50% {
-    transform: translateY(-50%) scale(1.1);
-  }
-}
-
-@keyframes flowAnimation {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+.step-detail-actions {
+  padding: 16px 0;
+  border-bottom: 1px solid #e8e8e8;
 }
 
 /* 旧样式已移除，改用卡片式流程布局 */
@@ -3531,18 +3442,39 @@ onMounted(() => {
 
 .log-zoom-content {
   flex: 1;
-  overflow: auto;
-  background-color: #f8f9fa;
+  overflow-y: auto;
+  overflow-x: auto;
+  background-color: #1e1e1e;
   border: 1px solid #e8e8e8;
   border-radius: 6px;
   padding: 16px;
+  min-height: 0;
+}
+
+.log-zoom-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.log-zoom-content::-webkit-scrollbar-track {
+  background-color: #2d2d2d;
+  border-radius: 4px;
+}
+
+.log-zoom-content::-webkit-scrollbar-thumb {
+  background-color: #555;
+  border-radius: 4px;
+}
+
+.log-zoom-content::-webkit-scrollbar-thumb:hover {
+  background-color: #777;
 }
 
 .log-zoom-text {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 14px;
   line-height: 1.5;
-  color: #333;
+  color: #d4d4d4;
   white-space: pre-wrap;
   word-wrap: break-word;
   margin: 0;
@@ -3550,7 +3482,8 @@ onMounted(() => {
 }
 
 .log-zoom-text .highlight {
-  background-color: #fff3cd;
+  background-color: #ffeb3b;
+  color: #000;
   padding: 2px 4px;
   border-radius: 3px;
 }

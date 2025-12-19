@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError
 from croniter import croniter
-import re
+import ipaddress
 
 
 def validate_cron_expression(value):
@@ -8,7 +8,7 @@ def validate_cron_expression(value):
     验证cron表达式的有效性
     """
     if not value or not isinstance(value, str):
-        raise ValidationError('Cron表达式不能为空')
+        raise ValidationError('cron表达式不能为空')
     
     # 去除首尾空格
     value = value.strip()
@@ -17,7 +17,7 @@ def validate_cron_expression(value):
     fields = value.split()
     if len(fields) not in [5, 6]:
         raise ValidationError(
-            'Cron表达式格式错误，应该包含5个字段（分 时 日 月 周）或6个字段（秒 分 时 日 月 周）'
+            'cron表达式格式错误，应该包含5个字段（分 时 日 月 周）或6个字段（秒 分 时 日 月 周）'
         )
     
     try:
@@ -25,9 +25,9 @@ def validate_cron_expression(value):
         if croniter.is_valid(value):
             return value
         else:
-            raise ValidationError('无效的Cron表达式')
+            raise ValidationError('无效的cron表达式')
     except Exception as e:
-        raise ValidationError(f'Cron表达式验证失败: {str(e)}')
+        raise ValidationError(f'cron表达式验证失败: {str(e)}')
 
 
 def validate_timezone(value):
@@ -47,21 +47,23 @@ def validate_timezone(value):
 
 def validate_host_ip(value):
     """
-    验证ip地址格式
+    验证IP地址格式（支持IPv4和IPv6）
     """
     if not value:
         return value
     
-    # IPv4地址正则表达式
-    ipv4_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    if not isinstance(value, str):
+        raise ValidationError('IP地址必须是字符串类型')
     
-    # IPv6地址正则表达式（简化版）
-    ipv6_pattern = r'^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$'
+    # 去除首尾空格
+    value = value.strip()
     
-    if not (re.match(ipv4_pattern, value) or re.match(ipv6_pattern, value)):
-        raise ValidationError('无效的IP地址格式')
-    
-    return value
+    try:
+        # 使用ipaddress库验证IP地址（自动支持IPv4和IPv6）
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        raise ValidationError(f'无效的IP地址格式: {value}')
 
 
 def validate_port(value):

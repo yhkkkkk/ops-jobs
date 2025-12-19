@@ -45,6 +45,7 @@ declare module 'vue' {
     IconDown: typeof import('@arco-design/web-vue/es/icon')['IconDown']
     IconExclamationCircle: typeof import('@arco-design/web-vue/es/icon')['IconExclamationCircle']
     IconEye: typeof import('@arco-design/web-vue/es/icon')['IconEye']
+    IconUser: typeof import('@arco-design/web-vue/es/icon')['IconUser']
     IconWifi: typeof import('@arco-design/web-vue/es/icon')['IconWifi']
     LightweightMonacoEditor: typeof import('./components/LightweightMonacoEditor.vue')['default']
     MonacoEditor: typeof import('./components/MonacoEditor.vue')['default']
