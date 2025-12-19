@@ -97,7 +97,7 @@
 - ****Agent-Server 网关****: 负责维护与 Agent 的 WebSocket 连接，基于 Asynq 队列分发任务，并通过 **Redis Streams 将日志/结果/状态回传控制面**
 - **幂等与取消**: 控制面提供任务取消 API；Agent 侧维护“最近完成任务”缓存避免重复执行，Agent-Server 优先通过 WS 下发取消指令，失败时回退删除队列任务
 - **多语言执行器**: Agent 内置 Shell / Python / PowerShell / JS 等多语言执行器，支持并发与基础重试
-- **任务分发**: Agent-Server 自动从控制面拉取任务并推送给 Agent
+- **任务分发**: 控制面主动推送任务到 Agent-Server，Agent-Server 通过 WebSocket 实时推送给 Agent（Agent 在线时）或入队到 Asynq 队列（Agent 离线时）
 - **资源监控**: 实时收集和上报 Agent 系统资源使用情况（CPU、内存、磁盘、网络）
 - **性能指标**: 内置性能监控和指标收集（任务统计、执行时间、网络传输等）
 - **统一错误码**: 完善的错误码体系，便于问题定位和错误处理

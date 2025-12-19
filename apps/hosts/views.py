@@ -33,7 +33,7 @@ from .filters import HostFilter, HostGroupFilter, ServerAccountFilter
 
 class HostViewSet(viewsets.ModelViewSet):
     """主机管理API"""
-    queryset = Host.objects.select_related('created_by').prefetch_related('groups')
+    queryset = Host.objects.select_related('created_by', 'agent').prefetch_related('groups')
     serializer_class = HostSerializer
     permission_classes = [HostManagementPermission]
     pagination_class = HostPagination
@@ -46,12 +46,12 @@ class HostViewSet(viewsets.ModelViewSet):
 
         # 如果是超级用户，返回所有主机
         if self.request.user.is_superuser:
-            return queryset.order_by('-created_at')
+            return queryset.select_related('created_by', 'agent').prefetch_related('groups').order_by('-created_at')
         
         # 检查用户是否有模型级别的 view_host 权限
         # 如果有模型级别权限，返回所有主机
         if self.request.user.has_perm('hosts.view_host'):
-            return queryset.select_related('created_by').prefetch_related('groups').order_by('-created_at')
+            return queryset.select_related('created_by', 'agent').prefetch_related('groups').order_by('-created_at')
         
         # 否则，只返回有对象级别权限的主机
         queryset = get_objects_for_user(
@@ -61,7 +61,7 @@ class HostViewSet(viewsets.ModelViewSet):
             accept_global_perms=False
         )
 
-        return queryset.select_related('created_by').prefetch_related('groups').order_by('-created_at')
+        return queryset.select_related('created_by', 'agent').prefetch_related('groups').order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         """获取主机列表"""

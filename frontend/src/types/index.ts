@@ -122,6 +122,15 @@ export interface Host {
   // === 管理信息 ===
   owner?: string
   department?: string
+
+  // === Agent信息 ===
+  agent_info?: {
+    id: number
+    status: 'pending' | 'online' | 'offline' | 'disabled'
+    status_display: string
+    version: string
+    last_heartbeat_at: string | null
+  }
 }
 
 export interface HostImportSummary {

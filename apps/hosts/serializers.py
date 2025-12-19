@@ -150,6 +150,7 @@ class HostSerializer(serializers.ModelSerializer):
     business_system_name = serializers.CharField(source='business_system.name', read_only=True)
     account_info = serializers.SerializerMethodField()
     ip_address = serializers.SerializerMethodField()
+    agent_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Host
@@ -158,6 +159,8 @@ class HostSerializer(serializers.ModelSerializer):
             'id', 'name', 'ip_address', 'port', 'os_type', 'os_type_display',
             'account', 'account_info',
             'status', 'status_display', 'groups', 'groups_info', 'description',
+            # Agent信息
+            'agent_info',
             # 网络信息
             'public_ip', 'internal_ip', 'internal_mac', 'external_mac', 'gateway', 'dns_servers',
             # 云厂商信息
@@ -190,6 +193,21 @@ class HostSerializer(serializers.ModelSerializer):
                 'auth_type': 'password' if obj.account.password else ('key' if obj.account.private_key else 'none'),
             }
         return None
+    
+    def get_agent_info(self, obj):
+        """获取Agent信息"""
+        try:
+            agent = obj.agent
+            return {
+                'id': agent.id,
+                'status': agent.status,
+                'status_display': agent.get_status_display(),
+                'version': agent.version or '',
+                'last_heartbeat_at': agent.last_heartbeat_at.isoformat() if agent.last_heartbeat_at else None,
+            }
+        except:
+            # 如果没有关联的Agent，返回None
+            return None
 
 
 class HostSimpleSerializer(serializers.ModelSerializer):

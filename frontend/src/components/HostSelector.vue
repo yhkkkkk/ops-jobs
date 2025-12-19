@@ -126,9 +126,21 @@
                   </div>
                 </template>
               </a-table-column>
-              <a-table-column title="IPv6" data-index="ipv6" width="100">
+              <a-table-column title="Agent状态" data-index="agent_info" width="100">
                 <template #cell="{ record }">
-                  <span class="text-gray-400">--</span>
+                  <div v-if="record.agent_info" class="agent-status-cell">
+                    <a-tag 
+                      size="small" 
+                      :color="getAgentStatusColor(record.agent_info.status)"
+                      class="agent-status-tag"
+                    >
+                      <template #icon>
+                        <div class="agent-status-dot" :class="`agent-status-${record.agent_info.status}`"></div>
+                      </template>
+                      {{ record.agent_info.status_display }}
+                    </a-tag>
+                  </div>
+                  <span v-else class="text-gray-400">未安装</span>
                 </template>
               </a-table-column>
               <a-table-column title="OS 名称" data-index="os_type" width="100">
@@ -718,6 +730,16 @@ const getHostStatusText = (status) => {
   return texts[status] || status
 }
 
+const getAgentStatusColor = (status) => {
+  const colors = {
+    'pending': 'orange',
+    'online': 'green',
+    'offline': 'red',
+    'disabled': 'gray'
+  }
+  return colors[status] || 'gray'
+}
+
 const formatDateTime = (dateTime) => {
   if (!dateTime) return '-'
   return new Date(dateTime).toLocaleString('zh-CN', {
@@ -995,6 +1017,48 @@ onMounted(() => {
 }
 
 .status-dot.status-unknown {
+  background-color: #d9d9d9;
+  box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
+}
+
+/* Agent状态标签样式 */
+.agent-status-cell {
+  display: flex;
+  align-items: center;
+}
+
+.agent-status-tag {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+}
+
+.agent-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.agent-status-dot.agent-status-pending {
+  background-color: #ff9800;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.2);
+}
+
+.agent-status-dot.agent-status-online {
+  background-color: #52c41a;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
+}
+
+.agent-status-dot.agent-status-offline {
+  background-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+}
+
+.agent-status-dot.agent-status-disabled {
   background-color: #d9d9d9;
   box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
 }
