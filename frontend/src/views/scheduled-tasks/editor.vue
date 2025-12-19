@@ -57,6 +57,7 @@
             :loading="loadingPlans"
             allow-search
             @search="handleSearchPlans"
+            @change="handleExecutionPlanChange"
           >
             <a-option
               v-for="plan in executionPlans"
@@ -72,6 +73,36 @@
               </div>
             </a-option>
           </a-select>
+        </a-form-item>
+
+        <!-- 全局变量覆盖 -->
+        <a-form-item v-if="form.execution_plan && globalParameters.length > 0" label="全局变量覆盖（可选）">
+          <div class="global-parameters-override">
+            <div class="form-tip">
+              <icon-info-circle />
+              可以覆盖执行方案的默认全局变量，不填写则使用执行方案的默认值
+            </div>
+            <div
+              v-for="(param, index) in globalParameters"
+              :key="index"
+              class="parameter-override-item"
+            >
+              <div class="param-info">
+                <div class="param-key">{{ param.key }}</div>
+                <div v-if="param.description" class="param-description">{{ param.description }}</div>
+                <div class="param-default">
+                  <span class="label">默认值:</span>
+                  <span class="value">{{ formatParameterValue(param.defaultValue) }}</span>
+                </div>
+              </div>
+              <a-input
+                v-model="param.overrideValue"
+                :placeholder="`覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue)}）`"
+                style="flex: 1"
+                allow-clear
+              />
+            </div>
+          </div>
         </a-form-item>
 
         <a-row :gutter="24">
@@ -181,8 +212,13 @@ const form = reactive({
   execution_plan: undefined,
   cron_expression: '',
   timezone: 'Asia/Shanghai',
-  is_active: false
+  is_active: false,
+  execution_parameters: {}
 })
+
+// 全局变量覆盖
+const globalParameters = ref([])
+const loadingPlanDetail = ref(false)
 
 // 表单验证规则
 const rules = {
@@ -222,6 +258,60 @@ const fetchExecutionPlans = async (search = '') => {
 // 搜索执行方案
 const handleSearchPlans = (search) => {
   fetchExecutionPlans(search)
+}
+
+// 处理执行方案变化
+const handleExecutionPlanChange = async (planId) => {
+  if (!planId) {
+    globalParameters.value = []
+    return
+  }
+
+  loadingPlanDetail.value = true
+  try {
+    const response = await executionPlanApi.get(planId)
+    const plan = response
+
+    // 获取执行方案的全局变量
+    const templateGlobalParams = plan.template_global_parameters || {}
+    
+    // 构建全局变量列表
+    globalParameters.value = Object.keys(templateGlobalParams).map(key => {
+      const paramValue = templateGlobalParams[key]
+      const defaultValue = typeof paramValue === 'object' && paramValue !== null
+        ? paramValue.value
+        : paramValue
+      const description = typeof paramValue === 'object' && paramValue !== null
+        ? paramValue.description
+        : ''
+      const type = typeof paramValue === 'object' && paramValue !== null
+        ? paramValue.type
+        : 'text'
+
+      return {
+        key,
+        defaultValue,
+        description,
+        type,
+        overrideValue: form.execution_parameters[key] || ''
+      }
+    })
+  } catch (error) {
+    console.error('获取执行方案详情失败:', error)
+    Message.error('获取执行方案详情失败')
+    globalParameters.value = []
+  } finally {
+    loadingPlanDetail.value = false
+  }
+}
+
+// 格式化参数值（对密文做掩码处理）
+const formatParameterValue = (value) => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object' && value.type === 'secret') {
+    return '******'
+  }
+  return String(value)
 }
 
 // Cron表达式验证和描述
@@ -264,6 +354,15 @@ const handleSave = async () => {
   try {
     // ArcoDesign的validate方法：成功时resolve undefined，失败时reject错误
     await formRef.value.validate()
+
+    // 构建执行参数覆盖（只包含有覆盖值的参数）
+    const executionParameters = {}
+    globalParameters.value.forEach(param => {
+      if (param.overrideValue !== null && param.overrideValue !== undefined && param.overrideValue !== '') {
+        executionParameters[param.key] = param.overrideValue
+      }
+    })
+    form.execution_parameters = Object.keys(executionParameters).length > 0 ? executionParameters : {}
 
     saving.value = true
 
@@ -310,8 +409,14 @@ const loadTask = async () => {
       execution_plan: task.execution_plan,
       cron_expression: task.cron_expression,
       timezone: task.timezone,
-      is_active: task.is_active
+      is_active: task.is_active,
+      execution_parameters: task.execution_parameters || {}
     })
+
+    // 加载执行方案的全局变量
+    if (task.execution_plan) {
+      await handleExecutionPlanChange(task.execution_plan)
+    }
 
     // 验证Cron表达式
     handleCronValidation()
@@ -408,4 +513,76 @@ onMounted(() => {
 .next-run-item svg {
   color: #1890ff;
 }
+
+.global-parameters-override {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.global-parameters-override .form-tip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.global-parameters-override .form-tip .arco-icon {
+  color: var(--color-primary-6);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.parameter-override-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-fill-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+
+.param-info {
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.param-key {
+  font-weight: 600;
+  color: var(--color-text-1);
+  font-size: 14px;
+}
+
+.param-description {
+  font-size: 12px;
+  color: var(--color-text-3);
+  line-height: 1.4;
+}
+
+.param-default {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.param-default .label {
+  color: var(--color-text-3);
+}
+
+.param-default .value {
+  color: var(--color-text-2);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  background: var(--color-bg-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
 </style>
+
+

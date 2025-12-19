@@ -43,6 +43,10 @@ class AuditLog(models.Model):
         ('manage_host', '管理主机'),
         ('test_connection', '测试连接'),
         
+        # Agent管理
+        ('enable_agent', '启用Agent'),
+        ('disable_agent', '禁用Agent'),
+        
         # 模板管理
         ('manage_template', '管理模板'),
         ('create_template', '创建模板'),

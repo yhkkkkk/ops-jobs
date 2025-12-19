@@ -166,7 +166,6 @@ class QuickExecuteService:
                     'local_path': transfer_data.get('local_path'),
                     'remote_path': transfer_data.get('remote_path'),
                     'source_server_host': transfer_data.get('source_server_host'),
-                    'source_server_user': transfer_data.get('source_server_user'),
                     'source_server_path': transfer_data.get('source_server_path'),
                     'timeout': transfer_data.get('timeout'),
                     'execution_mode': transfer_data.get('execution_mode', 'parallel'),
@@ -174,6 +173,7 @@ class QuickExecuteService:
                     'rolling_batch_delay': transfer_data.get('rolling_batch_delay', 0),
                     'overwrite_policy': transfer_data.get('overwrite_policy', 'overwrite'),
                     'target_host_ids': [host.id for host in target_hosts],
+                    'global_variables': transfer_data.get('global_variables', {}),
                 },
                 trigger_type='manual',
                 client_ip=client_ip,
@@ -273,53 +273,42 @@ class QuickExecuteService:
     
     @staticmethod
     def _get_target_hosts_from_data(script_data):
-        """从脚本数据中获取目标主机列表，支持target_host_ids和dynamic_ips两种格式"""
+        """从脚本数据中获取目标主机列表，支持target_host_ids（静态）和target_group_ids（动态）两种格式"""
         target_hosts = []
+        existing_host_ids = set()
         
-        # 优先使用target_host_ids格式（静态选择）
+        # 1. 处理静态选择：直接指定的主机ID
         target_host_ids = script_data.get('target_host_ids', []) or []
         if target_host_ids:
             try:
-                target_hosts = list(Host.objects.filter(id__in=target_host_ids))
-            except Exception as e:
-                logger.error(f"获取主机列表失败: {e}")
-                target_hosts = []
-        
-        # 处理动态IP列表
-        dynamic_ips = script_data.get('dynamic_ips', []) or []
-        if dynamic_ips:
-            try:
-                # 通过IP地址匹配主机
-                matched_hosts = Host.objects.filter(
-                    Q(ip_address__in=dynamic_ips) |
-                    Q(internal_ip__in=dynamic_ips) |
-                    Q(public_ip__in=dynamic_ips)
-                )
-                
-                # 添加到目标主机列表（去重）
-                existing_host_ids = {h.id for h in target_hosts}
-                for host in matched_hosts:
+                static_hosts = Host.objects.filter(id__in=target_host_ids)
+                for host in static_hosts:
                     if host.id not in existing_host_ids:
                         target_hosts.append(host)
                         existing_host_ids.add(host.id)
-                
-                # 记录未匹配的IP（用于日志或警告）
-                matched_ips = set()
-                for host in matched_hosts:
-                    if host.ip_address in dynamic_ips:
-                        matched_ips.add(host.ip_address)
-                    if host.internal_ip in dynamic_ips:
-                        matched_ips.add(host.internal_ip)
-                    if host.public_ip in dynamic_ips:
-                        matched_ips.add(host.public_ip)
-                
-                unmatched_ips = set(dynamic_ips) - matched_ips
-                if unmatched_ips:
-                    logger.warning(f"以下IP地址未匹配到主机: {', '.join(unmatched_ips)}")
-                    # 注意：未匹配的IP暂时不处理，因为执行需要主机对象
-                    # 如果需要支持未匹配的IP，需要创建临时主机记录或使用其他方式
-                    
             except Exception as e:
-                logger.error(f"处理动态IP列表失败: {e}")
+                logger.error(f"获取静态主机列表失败: {e}")
+        
+        # 2. 处理动态选择：分组ID，执行时动态获取分组内的所有主机
+        target_group_ids = script_data.get('target_group_ids', []) or []
+        if target_group_ids:
+            try:
+                from apps.hosts.models import HostGroup
+                # 获取分组对象
+                groups = HostGroup.objects.filter(id__in=target_group_ids)
+                
+                # 遍历每个分组，获取分组内的所有主机（动态获取，包括执行时新增的主机）
+                for group in groups:
+                    # 使用ManyToMany关系的host_set获取分组内的所有主机
+                    group_hosts = group.host_set.all()
+                    for host in group_hosts:
+                        if host.id not in existing_host_ids:
+                            target_hosts.append(host)
+                            existing_host_ids.add(host.id)
+                    
+                    logger.info(f"动态选择分组 '{group.name}' (ID: {group.id})，获取到 {group_hosts.count()} 台主机")
+                
+            except Exception as e:
+                logger.error(f"处理动态分组列表失败: {e}")
         
         return target_hosts

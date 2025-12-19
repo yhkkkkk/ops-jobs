@@ -225,7 +225,10 @@ class ExecutionPlanService:
                     all_target_hosts = valid_hosts
 
                 # 合并全局变量和执行参数
-                global_parameters = execution_parameters or {}
+                # 先使用执行方案的全局变量快照作为默认值
+                default_global_parameters = execution_plan.global_parameters_snapshot or {}
+                # 然后用传入的执行参数覆盖（定时任务的execution_parameters会覆盖默认值）
+                global_parameters = {**default_global_parameters, **(execution_parameters or {})}
 
                 # 创建统一的执行记录
                 execution_record = ExecutionRecordService.create_execution_record(

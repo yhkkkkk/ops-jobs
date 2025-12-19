@@ -54,17 +54,62 @@
 
           <!-- 选择摘要 -->
           <div class="host-selection-summary">
-            <div v-if="selectedGroups.length === 0 && selectedHosts.length === 0" class="empty-selection">
+            <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)" class="empty-selection">
               <div class="empty-icon">
                 <icon-computer />
               </div>
-              <div class="empty-text">请选择执行主机</div>
-              <div class="empty-desc">点击上方"选择主机"按钮选择目标主机或主机分组</div>
+              <div class="empty-text">{{ selectionType === 'dynamic' ? '请选择动态分组' : '请选择执行主机' }}</div>
+              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
             </div>
             
             <div v-else class="selection-content">
-              <!-- 所有目标主机 -->
-              <div class="selection-section">
+              <!-- 动态选择模式：显示分组信息 -->
+              <div v-if="selectionType === 'dynamic'" class="selection-section">
+                <div class="section-title">
+                  <icon-computer />
+                  动态选择分组 ({{ selectedGroups.length }})
+                  <div class="section-actions">
+                    <a-button type="text" size="mini" @click="clearAllSelections">
+                      <template #icon>
+                        <icon-close />
+                      </template>
+                      清空
+                    </a-button>
+                  </div>
+                </div>
+                <div class="host-group-section">
+                  <div class="host-list">
+                    <div
+                      v-for="groupId in selectedGroups"
+                      :key="`group-${groupId}`"
+                      class="host-item"
+                    >
+                      <div class="host-info">
+                        <div class="host-name">{{ getGroupName(groupId) }}</div>
+                        <div class="host-ip">分组ID: {{ groupId }}</div>
+                        <div class="host-meta">
+                          <div class="host-status status-info">
+                            执行时动态获取分组内所有主机
+                          </div>
+                        </div>
+                      </div>
+                      <a-button
+                        type="text"
+                        size="mini"
+                        @click.stop="removeGroup(groupId)"
+                        class="remove-host-btn"
+                      >
+                        <template #icon>
+                          <icon-close />
+                        </template>
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 静态选择模式：显示所有目标主机 -->
+              <div v-else class="selection-section">
                 <div class="section-title">
                   <icon-computer />
                   目标主机 ({{ allTargetHosts.length }})
@@ -330,17 +375,62 @@
 
           <!-- 选择摘要 -->
           <div class="host-selection-summary">
-            <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedIPs.length === 0)" class="empty-selection">
+            <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)" class="empty-selection">
               <div class="empty-icon">
                 <icon-computer />
               </div>
-              <div class="empty-text">{{ selectionType === 'dynamic' ? '请输入动态IP' : '请选择目标主机' }}</div>
-              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态IP"标签页输入IP地址' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
+              <div class="empty-text">{{ selectionType === 'dynamic' ? '请选择动态分组' : '请选择目标主机' }}</div>
+              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
             </div>
 
             <div v-else class="selection-content">
-              <!-- 所有目标主机（包含分组展开的主机和直接选择的主机） -->
-              <div class="selection-section">
+              <!-- 动态选择模式：显示分组信息 -->
+              <div v-if="selectionType === 'dynamic'" class="selection-section">
+                <div class="section-title">
+                  <icon-computer />
+                  动态选择分组 ({{ selectedGroups.length }})
+                  <div class="section-actions">
+                    <a-button type="text" size="mini" @click="clearAllSelections">
+                      <template #icon>
+                        <icon-close />
+                      </template>
+                      清空
+                    </a-button>
+                  </div>
+                </div>
+                <div class="host-group-section">
+                  <div class="host-list">
+                    <div
+                      v-for="groupId in selectedGroups"
+                      :key="`group-${groupId}`"
+                      class="host-item"
+                    >
+                      <div class="host-info">
+                        <div class="host-name">{{ getGroupName(groupId) }}</div>
+                        <div class="host-ip">分组ID: {{ groupId }}</div>
+                        <div class="host-meta">
+                          <div class="host-status status-info">
+                            执行时动态获取分组内所有主机
+                          </div>
+                        </div>
+                      </div>
+                      <a-button
+                        type="text"
+                        size="mini"
+                        @click.stop="removeGroup(groupId)"
+                        class="remove-host-btn"
+                      >
+                        <template #icon>
+                          <icon-close />
+                        </template>
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 静态选择模式：显示所有目标主机 -->
+              <div v-else class="selection-section">
                 <div class="section-title">
                   <icon-computer />
                   目标主机 ({{ allTargetHosts.length }})
@@ -479,13 +569,6 @@
                         <template #prepend>服务器地址</template>
                       </a-input>
                       <a-input
-                        v-model="sourceServerUser"
-                        placeholder="SSH用户名，例如：root"
-                        allow-clear
-                      >
-                        <template #prepend>用户名</template>
-                      </a-input>
-                      <a-input
                         v-model="sourceServerPath"
                         placeholder="源文件路径，例如：/data/files/app.tar.gz"
                         allow-clear
@@ -496,14 +579,13 @@
                     <div class="path-examples">
                       <div class="example-title">配置示例：</div>
                       <div class="example-item">服务器: <code>192.168.1.100</code> 或 <code>file-server.company.com</code></div>
-                      <div class="example-item">用户名: <code>root</code> 或 <code>deploy</code></div>
                       <div class="example-item">文件路径: <code>/data/releases/app-v1.2.3.tar.gz</code></div>
                     </div>
                   </div>
 
                   <template #extra>
                     <div class="text-xs text-gray-500">
-                      {{ transferType === 'local_upload' ? '支持选择单个文件或多个文件' : '配置源服务器的SSH连接信息和文件路径' }}
+                      {{ transferType === 'local_upload' ? '支持选择单个文件或多个文件' : '配置源服务器地址和文件路径' }}
                     </div>
                     <div v-if="transferType === 'local_upload' && localPath && hasVariables(localPath)" class="text-xs text-blue-600 mt-1">
                       预览: {{ previewPath(localPath) }}
@@ -611,6 +693,28 @@
               </a-col>
             </a-row>
 
+            <!-- 执行账号 -->
+            <a-form-item label="执行账号">
+              <a-select
+                v-model="selectedAccountId"
+                placeholder="选择服务器账号（可选）"
+                allow-clear
+                :loading="accountLoading"
+              >
+                <a-option
+                  v-for="account in serverAccounts"
+                  :key="account.id"
+                  :value="account.id"
+                >
+                  {{ account.name }} ({{ account.username }})
+                </a-option>
+              </a-select>
+              <div class="form-tip">
+                <icon-info-circle />
+                不选择时将使用主机配置的默认用户
+              </div>
+            </a-form-item>
+
             <!-- 通配符和变量使用说明 -->
             <a-alert
               type="info"
@@ -669,7 +773,7 @@
               size="large"
               @click="handleFileTransfer"
               :loading="executing"
-              :disabled="(selectedHosts.length === 0 && selectedGroups.length === 0) || !isTransferFormValid || !remotePath"
+              :disabled="((selectionType === 'static' && selectedHosts.length === 0 && selectedGroups.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)) || !isTransferFormValid || !remotePath"
             >
               <template #icon>
                 <icon-upload />
@@ -828,8 +932,7 @@ const showHostSelector = ref(false)
 const hostGroups = ref<HostGroup[]>([])
 const selectedGroups = ref<number[]>([])
 
-// 动态IP相关
-const selectedIPs = ref<string[]>([])
+// 选择类型：static（静态选择主机）或 dynamic（动态选择分组）
 const selectionType = ref<'static' | 'dynamic'>('static')
 
 // 服务器账号相关
@@ -862,7 +965,6 @@ const fileList = ref<any[]>([]) // a-upload 的文件列表
 
 // 服务器上传相关
 const sourceServerHost = ref('')
-const sourceServerUser = ref('')
 const sourceServerPath = ref('')
 
 // 模板相关
@@ -884,11 +986,21 @@ const totalGroupHosts = computed(() => {
 })
 
 const totalTargetCount = computed(() => {
+  if (selectionType.value === 'dynamic') {
+    // 动态选择：只返回分组数量，不计算主机数量（因为执行时动态获取）
+    return selectedGroups.value.length
+  }
+  
+  // 静态选择：返回主机数量
   return allTargetHosts.value.length
 })
 
 const canExecute = computed(() => {
-  return (selectedHosts.value.length > 0 || selectedGroups.value.length > 0) &&
+  const hasTargets = selectionType.value === 'dynamic' 
+    ? selectedGroups.value.length > 0
+    : (selectedHosts.value.length > 0 || selectedGroups.value.length > 0)
+  
+  return hasTargets &&
          scriptContent.value.trim().length > 0 &&
          !hasValidationErrors.value
 })
@@ -899,6 +1011,13 @@ const selectedAccount = computed(() => {
 
 // 获取所有目标主机（合并分组和直接选择的主机，去重）
 const allTargetHosts = computed(() => {
+  if (selectionType.value === 'dynamic') {
+    // 动态选择：不显示具体主机，只显示分组信息（因为执行时动态获取）
+    // 返回空数组，或者可以根据分组ID显示分组信息
+    return []
+  }
+  
+  // 静态选择：合并分组和直接选择的主机
   const allHostIds = new Set<number>()
   const result: any[] = []
 
@@ -953,7 +1072,6 @@ const isTransferFormValid = computed(() => {
     return localPath.value.trim() !== ''
   } else if (transferType.value === 'server_upload') {
     return sourceServerHost.value.trim() !== '' &&
-           sourceServerUser.value.trim() !== '' &&
            sourceServerPath.value.trim() !== ''
   }
   return false
@@ -992,6 +1110,19 @@ const getHostGroupNames = (hostId: number) => {
     .map(g => g.name)
 
   return selectedGroupNames.join(', ')
+}
+
+const getGroupName = (groupId: number) => {
+  const group = hostGroups.value.find(g => g.id === groupId)
+  return group?.name || `分组 ${groupId}`
+}
+
+const removeGroup = (groupId: number) => {
+  const index = selectedGroups.value.indexOf(groupId)
+  if (index > -1) {
+    selectedGroups.value.splice(index, 1)
+    Message.success(`已移除分组: ${getGroupName(groupId)}`)
+  }
 }
 
 // 获取主机列表
@@ -1302,8 +1433,8 @@ const handleFileTransfer = async () => {
     return
   }
   
-  if (selectionType.value === 'dynamic' && selectedIPs.value.length === 0) {
-    Message.warning('请输入至少一个IP地址')
+  if (selectionType.value === 'dynamic' && selectedGroups.value.length === 0) {
+    Message.warning('请至少选择一个分组')
     return
   }
 
@@ -1314,26 +1445,35 @@ const handleFileTransfer = async () => {
 
   executing.value = true
   try {
-    let targetHostIds: number[] = []
+    // 构建请求数据
+    const data: any = {
+      name: `快速文件${transferType.value === 'local_upload' ? '上传' : '传输'}`,
+      transfer_type: transferType.value,
+      local_path: transferType.value === 'local_upload' ? localPath.value : '',
+      remote_path: remotePath.value,
+      overwrite_policy: overwritePolicy.value,
+      timeout: timeout.value,
+      bandwidth_limit: bandwidthLimit.value || null,
+      execution_mode: executionMode.value,
+      rolling_strategy: rollingStrategy.value,
+      rolling_batch_size: rollingBatchSize.value,
+      rolling_batch_delay: rollingBatchDelay.value,
+      // 服务器上传相关参数
+      source_server_host: transferType.value === 'server_upload' ? sourceServerHost.value : '',
+      source_server_path: transferType.value === 'server_upload' ? sourceServerPath.value : '',
+      // 执行账号
+      global_variables: {
+        execute_user: selectedAccount.value?.username || '',
+        account_id: selectedAccountId.value,
+      },
+    }
     
     if (selectionType.value === 'dynamic') {
-      // 动态IP模式：将IP匹配到主机ID
-      const matchedHostIds = new Set<number>()
-      
-      selectedIPs.value.forEach(ip => {
-        const matchedHost = hosts.value.find(host => 
-          host.ip_address === ip || 
-          host.internal_ip === ip || 
-          host.public_ip === ip
-        )
-        if (matchedHost) {
-          matchedHostIds.add(matchedHost.id)
-        }
-      })
-      
-      targetHostIds = Array.from(matchedHostIds)
+      // 动态选择模式：只传递分组ID，后端执行时动态获取分组内的所有主机
+      data.target_group_ids = selectedGroups.value
+      data.target_host_ids = [] // 动态选择不传递主机ID
     } else {
-      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机）
+      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机，前端展开）
       const allSelectedHostIds = new Set(selectedHosts.value)
       
       // 将分组内的主机也添加到集合中（去重）
@@ -1348,32 +1488,8 @@ const handleFileTransfer = async () => {
         })
       })
       
-      targetHostIds = Array.from(allSelectedHostIds)
-    }
-
-    // 构建请求数据
-    const data: any = {
-      name: `快速文件${transferType.value === 'local_upload' ? '上传' : '传输'}`,
-      transfer_type: transferType.value,
-      local_path: transferType.value === 'local_upload' ? localPath.value : '',
-      remote_path: remotePath.value,
-      overwrite_policy: overwritePolicy.value,
-      timeout: timeout.value,
-      bandwidth_limit: bandwidthLimit.value || null,
-      execution_mode: executionMode.value,
-      rolling_strategy: rollingStrategy.value,
-      rolling_batch_size: rollingBatchSize.value,
-      rolling_batch_delay: rollingBatchDelay.value,
-      target_host_ids: targetHostIds,
-      // 服务器上传相关参数
-      source_server_host: transferType.value === 'server_upload' ? sourceServerHost.value : '',
-      source_server_user: transferType.value === 'server_upload' ? sourceServerUser.value : '',
-      source_server_path: transferType.value === 'server_upload' ? sourceServerPath.value : '',
-    }
-    
-    // 如果是动态IP模式且有未匹配的IP，添加动态IP列表
-    if (selectionType.value === 'dynamic' && selectedIPs.value.length > 0) {
-      data.dynamic_ips = selectedIPs.value
+      data.target_host_ids = Array.from(allSelectedHostIds)
+      data.target_group_ids = [] // 静态选择不传递分组ID（已展开为主机ID）
     }
 
     console.log('文件传输请求数据:', data)
@@ -1415,12 +1531,12 @@ const handleClear = () => {
 
   // 清空服务器上传相关
   sourceServerHost.value = ''
-  sourceServerUser.value = ''
   sourceServerPath.value = ''
 
   // 清空主机和分组选择
   selectedHosts.value = []
   selectedGroups.value = []
+  selectionType.value = 'static'
 
   Message.success('已清空所有内容')
 }
@@ -1445,55 +1561,7 @@ const handleConfirmExecute = async () => {
     // 过滤空的位置参数
     const filteredPositionalArgs = positionalArgs.value.filter(arg => arg.trim() !== '')
 
-    let targetHostIds: number[] = []
-    
-    if (selectionType.value === 'dynamic') {
-      // 动态IP模式：将IP匹配到主机ID，未匹配的IP也传递
-      const matchedHostIds = new Set<number>()
-      const unmatchedIPs: string[] = []
-      
-      selectedIPs.value.forEach(ip => {
-        const matchedHost = hosts.value.find(host => 
-          host.ip_address === ip || 
-          host.internal_ip === ip || 
-          host.public_ip === ip
-        )
-        if (matchedHost) {
-          matchedHostIds.add(matchedHost.id)
-        } else {
-          unmatchedIPs.push(ip)
-        }
-      })
-      
-      targetHostIds = Array.from(matchedHostIds)
-      
-      // 如果有未匹配的IP，需要特殊处理（后端需要支持动态IP）
-      if (unmatchedIPs.length > 0) {
-        // 暂时只使用匹配的主机，未匹配的IP需要后端支持
-        console.warn('以下IP未匹配到主机:', unmatchedIPs)
-      }
-    } else {
-      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机）
-      const allSelectedHostIds = new Set(selectedHosts.value)
-      
-      // 将分组内的主机也添加到集合中（去重）
-      // 通过主机数据中的分组信息来查找
-      selectedGroups.value.forEach(groupId => {
-        hosts.value.forEach(host => {
-          if (host.groups_info && Array.isArray(host.groups_info)) {
-            const isInGroup = host.groups_info.some(g => g && g.id === groupId)
-            if (isInGroup) {
-              allSelectedHostIds.add(host.id)
-            }
-          }
-        })
-      })
-      
-      targetHostIds = Array.from(allSelectedHostIds)
-    }
-
     const data: any = {
-      target_host_ids: targetHostIds,
       script_content: scriptContent.value,
       script_type: scriptType.value,
       timeout: timeout.value,
@@ -1508,9 +1576,28 @@ const handleConfirmExecute = async () => {
       },
     }
     
-    // 如果是动态IP模式且有未匹配的IP，添加动态IP列表
-    if (selectionType.value === 'dynamic' && selectedIPs.value.length > 0) {
-      data.dynamic_ips = selectedIPs.value
+    if (selectionType.value === 'dynamic') {
+      // 动态选择模式：只传递分组ID，后端执行时动态获取分组内的所有主机
+      data.target_group_ids = selectedGroups.value
+      data.target_host_ids = [] // 动态选择不传递主机ID
+    } else {
+      // 静态选择模式：获取所有选中的主机ID（包括分组内的主机，前端展开）
+      const allSelectedHostIds = new Set(selectedHosts.value)
+      
+      // 将分组内的主机也添加到集合中（去重）
+      selectedGroups.value.forEach(groupId => {
+        hosts.value.forEach(host => {
+          if (host.groups_info && Array.isArray(host.groups_info)) {
+            const isInGroup = host.groups_info.some(g => g && g.id === groupId)
+            if (isInGroup) {
+              allSelectedHostIds.add(host.id)
+            }
+          }
+        })
+      })
+      
+      data.target_host_ids = Array.from(allSelectedHostIds)
+      data.target_group_ids = [] // 静态选择不传递分组ID（已展开为主机ID）
     }
 
     const result = await quickExecuteApi.execute(data)
@@ -1558,21 +1645,18 @@ const getRollingStrategyText = (strategy: string) => {
 const handleHostSelection = (selection: { 
   selection_type?: 'static' | 'dynamic',
   selectedHosts?: number[], 
-  selectedGroups?: number[],
-  selectedIPs?: string[]
+  selectedGroups?: number[]
 }) => {
   if (selection.selection_type === 'dynamic') {
-    // 动态IP模式
+    // 动态选择模式：只选择分组，执行时动态获取分组内的所有主机
     selectionType.value = 'dynamic'
-    selectedIPs.value = selection.selectedIPs || []
-    selectedHosts.value = []
-    selectedGroups.value = []
+    selectedGroups.value = selection.selectedGroups || []
+    selectedHosts.value = [] // 动态选择不选择具体主机
   } else {
-    // 静态选择模式
+    // 静态选择模式：选择具体主机和分组（分组会展开为主机ID）
     selectionType.value = 'static'
     selectedHosts.value = selection.selectedHosts || []
     selectedGroups.value = selection.selectedGroups || []
-    selectedIPs.value = []
   }
   console.log('主机选择完成:', selection)
 }
@@ -1581,6 +1665,7 @@ const handleHostSelection = (selection: {
 const clearAllSelections = () => {
   selectedHosts.value = []
   selectedGroups.value = []
+  selectionType.value = 'static'
   Message.success('已清空所有选择')
 }
 
@@ -1877,6 +1962,11 @@ onMounted(() => {
 .status-unknown {
   background-color: var(--color-warning-light-1);
   color: var(--color-warning);
+}
+
+.status-info {
+  background-color: var(--color-info-light-1);
+  color: var(--color-info);
 }
 
 .remove-host-btn {

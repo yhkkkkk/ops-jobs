@@ -21,7 +21,7 @@ class ScheduledJobSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'execution_plan', 'template_id',
             'template_name', 'plan_name',
-            'cron_expression', 'timezone', 'is_active',
+            'cron_expression', 'timezone', 'is_active', 'execution_parameters',
             'total_runs', 'success_runs', 'failed_runs', 'success_rate',
             'last_run_time', 'next_run_time', 'created_by', 'created_by_name',
             'created_at', 'updated_at'
@@ -38,7 +38,7 @@ class ScheduledJobCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScheduledJob
         fields = [
-            'name', 'description', 'execution_plan', 'cron_expression', 'timezone', 'is_active'
+            'name', 'description', 'execution_plan', 'cron_expression', 'timezone', 'is_active', 'execution_parameters'
         ]
 
     def validate_cron_expression(self, value):

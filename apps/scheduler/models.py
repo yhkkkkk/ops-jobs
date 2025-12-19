@@ -44,6 +44,14 @@ class ScheduledJob(models.Model):
     # 状态控制
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
 
+    # 执行参数覆盖（可选，用于覆盖执行方案的默认全局变量）
+    execution_parameters = models.JSONField(
+        default=dict, 
+        blank=True, 
+        verbose_name="执行参数覆盖",
+        help_text="用于覆盖执行方案的默认全局变量，如果为空则使用执行方案的默认全局变量"
+    )
+
     # 元数据
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")

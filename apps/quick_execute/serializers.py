@@ -74,25 +74,21 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
     def validate(self, attrs):
         """验证数据"""
         target_host_ids = attrs.get('target_host_ids', []) or []
-        dynamic_ips = attrs.get('dynamic_ips', []) or []
+        target_group_ids = attrs.get('target_group_ids', []) or []
         
         # 必须至少指定一种目标选择方式
-        if not target_host_ids and not dynamic_ips:
-            raise serializers.ValidationError("必须指定至少一个目标主机或IP地址")
+        if not target_host_ids and not target_group_ids:
+            raise serializers.ValidationError("必须指定至少一个目标主机或分组")
         
         # 验证target_host_ids格式
         for host_id in target_host_ids:
             if not isinstance(host_id, int) or host_id <= 0:
                 raise serializers.ValidationError("主机ID必须是正整数")
         
-        # 验证dynamic_ips格式
-        from utils.validators import validate_host_ip
-        from django.core.exceptions import ValidationError
-        for ip in dynamic_ips:
-            try:
-                validate_host_ip(ip)
-            except ValidationError as e:
-                raise serializers.ValidationError(f"无效的IP地址: {ip}")
+        # 验证target_group_ids格式
+        for group_id in target_group_ids:
+            if not isinstance(group_id, int) or group_id <= 0:
+                raise serializers.ValidationError("分组ID必须是正整数")
         
         script_content = attrs.get('script_content', '').strip()
         if not script_content:
@@ -119,8 +115,10 @@ class QuickFileTransferSerializer(serializers.Serializer):
 
     # 服务器上传相关字段
     source_server_host = serializers.CharField(required=False, allow_blank=True, help_text="源服务器地址")
-    source_server_user = serializers.CharField(required=False, allow_blank=True, help_text="源服务器用户名")
     source_server_path = serializers.CharField(required=False, allow_blank=True, help_text="源服务器文件路径")
+    
+    # 执行账号相关
+    global_variables = serializers.DictField(required=False, allow_null=True, help_text="全局变量（包含执行账号信息）")
     
     # 传输选项
     overwrite_policy = serializers.ChoiceField(
@@ -216,13 +214,10 @@ class QuickFileTransferSerializer(serializers.Serializer):
                 raise serializers.ValidationError("本地上传模式下，本地路径不能为空")
         elif transfer_type == 'server_upload':
             source_server_host = attrs.get('source_server_host', '').strip()
-            source_server_user = attrs.get('source_server_user', '').strip()
             source_server_path = attrs.get('source_server_path', '').strip()
 
             if not source_server_host:
                 raise serializers.ValidationError("服务器上传模式下，源服务器地址不能为空")
-            if not source_server_user:
-                raise serializers.ValidationError("服务器上传模式下，源服务器用户名不能为空")
             if not source_server_path:
                 raise serializers.ValidationError("服务器上传模式下，源服务器文件路径不能为空")
 

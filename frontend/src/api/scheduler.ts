@@ -94,6 +94,14 @@ export const executionPlanApi = {
       method: 'get',
       params
     })
+  },
+
+  // 获取执行方案详情
+  get(id: number) {
+    return request({
+      url: `/job-templates/plans/${id}/`,
+      method: 'get'
+    })
   }
 }
 
