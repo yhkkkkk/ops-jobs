@@ -200,10 +200,10 @@ func (a *Agent) Stop() {
 	if a.logStream != nil {
 		a.logStream.Stop()
 	}
-	// HTTP Server 会在 ctx 取消后优雅退出（Start 中监听 ctx.Done）
+	// HTTP Server 会在 ctx 取消后优雅退出
 	// 断开 WebSocket 连接（agent-server 模式）
 	if a.wsClient != nil {
-		//nolint:errcheck // 现阶段断开失败无需强制处理
+		// 现阶段断开失败无需强制处理
 		a.wsClient.Disconnect()
 	}
 	// 停止asynq任务队列
