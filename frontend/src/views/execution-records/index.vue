@@ -626,6 +626,7 @@ const handleClickCancel = (record) => {
   handleCancel(record)
 }
 
+// 批量选择变化
 const handleClickShowRetryHistory = (record) => {
   if (!canView(record.id)) {
     showNoPermissionMessage()

@@ -340,6 +340,9 @@ class AgentPackageSerializer(serializers.ModelSerializer):
         """获取文件名"""
         if obj.file:
             return obj.file.name.split('/')[-1]
+        # 如果使用对象存储，从storage_path中提取文件名
+        if obj.storage_path:
+            return obj.storage_path.split('/')[-1]
         return ''
 
 

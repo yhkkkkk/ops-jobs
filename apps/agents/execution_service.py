@@ -39,6 +39,7 @@ class AgentExecutionService:
         is_retry: bool = False,
         retry_count: int = 0,
         parent_task_id: str = None,
+        run_as: str = None,  # 执行用户（用户名）
     ) -> Dict[str, Any]:
         """
         创建任务规范（TaskSpec）
@@ -80,6 +81,9 @@ class AgentExecutionService:
             "retry_count": retry_count,
             "parent_task_id": parent_task_id,
         }
+        # 如果指定了执行用户，添加到task_spec
+        if run_as:
+            task_spec["run_as"] = run_as
         return task_spec
 
     @staticmethod
@@ -248,6 +252,7 @@ class AgentExecutionService:
         global_variables: Dict[str, Any] = None,
         step_id: str = None,
         agent_server_url: str = None,
+        account_id: int = None,  # 执行账号ID
     ) -> Dict[str, Any]:
         """
         通过Agent执行脚本
@@ -299,6 +304,18 @@ class AgentExecutionService:
                 # 生成任务ID
                 task_id = f"{execution_record.execution_id}_{step_id or 'main'}_{host.id}_{uuid.uuid4().hex[:8]}"
 
+                # 获取执行用户名（如果有account_id）
+                run_as = None
+                if account_id:
+                    try:
+                        from apps.hosts.models import ServerAccount
+                        account = ServerAccount.objects.get(id=account_id)
+                        run_as = account.username
+                    except ServerAccount.DoesNotExist:
+                        logger.warning(f"执行账号不存在: account_id={account_id}，将使用Agent默认用户")
+                    except Exception as e:
+                        logger.warning(f"获取执行账号失败: account_id={account_id}, 错误: {str(e)}，将使用Agent默认用户")
+
                 # 创建任务规范
                 task_spec = AgentExecutionService.create_task_spec(
                     task_id=task_id,
@@ -311,6 +328,7 @@ class AgentExecutionService:
                     execution_id=str(execution_record.execution_id),
                     step_id=step_id,
                     host_id=host.id,
+                    run_as=run_as,
                 )
 
                 # 推送任务到Agent
@@ -364,6 +382,7 @@ class AgentExecutionService:
         bandwidth_limit: int = 0,
         step_id: str = None,
         agent_server_url: str = None,
+        account_id: int = None,  # 执行账号ID
     ) -> Dict[str, Any]:
         """
         通过Agent执行文件传输
@@ -417,6 +436,18 @@ class AgentExecutionService:
                 # 生成任务ID
                 task_id = f"{execution_record.execution_id}_{step_id or 'main'}_{host.id}_{uuid.uuid4().hex[:8]}"
 
+                # 获取执行用户名（如果有account_id）
+                run_as = None
+                if account_id:
+                    try:
+                        from apps.hosts.models import ServerAccount
+                        account = ServerAccount.objects.get(id=account_id)
+                        run_as = account.username
+                    except ServerAccount.DoesNotExist:
+                        logger.warning(f"执行账号不存在: account_id={account_id}，将使用Agent默认用户")
+                    except Exception as e:
+                        logger.warning(f"获取执行账号失败: account_id={account_id}, 错误: {str(e)}，将使用Agent默认用户")
+
                 # 创建文件传输规范
                 # 对于大文件，如果文件太大，可以考虑只传递local_path，让Agent端自己读取
                 import base64
@@ -449,6 +480,7 @@ class AgentExecutionService:
                     execution_id=str(execution_record.execution_id),
                     step_id=step_id,
                     host_id=host.id,
+                    run_as=run_as,
                 )
 
                 # 添加文件传输规范
@@ -597,6 +629,7 @@ class AgentExecutionService:
                         global_variables=step_global_variables,
                         step_id=str(step.id),
                         agent_server_url=agent_server_url,
+                        account_id=step_data.get('account_id'),  # 传递执行账号ID
                     )
 
                     # 更新步骤结果
@@ -693,6 +726,7 @@ class AgentExecutionService:
                         bandwidth_limit=step_data.get('bandwidth_limit', 0),
                         step_id=str(step.id),
                         agent_server_url=agent_server_url,
+                        account_id=step_data.get('account_id'),  # 传递执行账号ID
                     )
 
                     # 更新步骤结果
@@ -1194,6 +1228,7 @@ class AgentExecutionService:
                         global_variables=execution_record.execution_parameters.get('global_variables', {}),
                         step_id=str(step.id),
                         agent_server_url=agent_server_url,
+                        account_id=step_params.get('account_id'),  # 传递执行账号ID
                     )
                 elif step_type == 'file_transfer':
                     # 文件传输步骤重试
@@ -1235,6 +1270,7 @@ class AgentExecutionService:
                         bandwidth_limit=step_params.get('bandwidth_limit', 0),
                         step_id=str(step.id),
                         agent_server_url=agent_server_url,
+                        account_id=step_params.get('account_id'),  # 传递执行账号ID
                     )
                 else:
                     return {

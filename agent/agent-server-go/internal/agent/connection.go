@@ -21,6 +21,7 @@ type Connection struct {
 	System        *api.SystemInfo
 	TaskQueue     chan *api.TaskSpec
 	LogBuffer     chan *api.LogEntry
+	Scope         string // 多租户隔离：Agent所属的scope（从控制面获取或配置）
 	mu            sync.RWMutex
 	closed        bool
 }
@@ -98,4 +99,11 @@ func (c *Connection) SendCancelTask(taskID string) error {
 		TaskID: taskID,
 	}
 	return c.Conn.WriteJSON(msg)
+}
+
+// GetScope 返回连接的scope
+func (c *Connection) GetScope() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Scope
 }

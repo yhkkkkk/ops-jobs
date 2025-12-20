@@ -334,6 +334,23 @@
                         {{ getHostStatusText(status) }}
                       </a-tag>
                       <span class="group-count">{{ group.hosts.length }}台主机</span>
+                      <!-- 失败主机分组显示选中数量和批量重试按钮 -->
+                      <template v-if="status === 'failed' && group.expanded">
+                        <span class="selected-count" v-if="getSelectedFailedHostIds(selectedStepId).length > 0">
+                          已选中 {{ getSelectedFailedHostIds(selectedStepId).length }} 台
+                        </span>
+                        <a-button
+                          v-if="getSelectedFailedHostIds(selectedStepId).length > 0"
+                          size="small"
+                          type="primary"
+                          status="warning"
+                          @click.stop="handleBatchRetrySelectedHosts(selectedStepId)"
+                          :loading="batchRetrying[selectedStepId]"
+                        >
+                          <template #icon><IconRefresh /></template>
+                          批量重试选中主机
+                        </a-button>
+                      </template>
                     </div>
                     <div class="group-actions">
                       <a-button
@@ -363,6 +380,38 @@
                     <div v-if="group.hosts.length === 0" class="no-hosts">
                       <a-empty description="该状态下暂无主机" />
                     </div>
+                    <!-- 失败主机分组：显示复选框列表 -->
+                    <div v-else-if="status === 'failed'" class="failed-hosts-list">
+                      <div class="failed-hosts-header">
+                        <a-checkbox
+                          :model-value="isAllFailedHostsSelected(selectedStepId)"
+                          :indeterminate="isIndeterminateFailedHosts(selectedStepId)"
+                          @change="handleToggleAllFailedHosts(selectedStepId, $event)"
+                        >
+                          全选
+                        </a-checkbox>
+                        <span class="selected-info">
+                          已选中 {{ getSelectedFailedHostIds(selectedStepId).length }} / {{ group.hosts.length }} 台主机
+                        </span>
+                      </div>
+                      <div class="failed-hosts-checkboxes">
+                        <a-checkbox-group
+                          :model-value="selectedFailedHostIds[selectedStepId] || []"
+                          @change="(values) => handleFailedHostSelectionChange(selectedStepId, values)"
+                        >
+                          <div
+                            v-for="hostLog in group.hosts"
+                            :key="hostLog.host_id"
+                            class="failed-host-item"
+                          >
+                            <a-checkbox :value="hostLog.host_id">
+                              {{ getHostDisplayName(hostLog) }}
+                            </a-checkbox>
+                          </div>
+                        </a-checkbox-group>
+                      </div>
+                    </div>
+                    <!-- 其他状态的主机：使用标签页显示 -->
                     <a-tabs
                       v-else
                       v-model:active-key="selectedHostIds[selectedStepId]"
@@ -546,6 +595,8 @@ const selectedHostId = ref(null)
 const hostSearchTexts = ref({}) // 每个步骤的主机搜索文本
 const logSearchTexts = ref({}) // 每个步骤的日志搜索文本
 const selectedHostIds = ref({}) // 每个步骤选中的主机ID
+const selectedFailedHostIds = ref({}) // 每个步骤选中的失败主机ID列表
+const batchRetrying = ref({}) // 每个步骤的批量重试状态
 const groupExpandedState = ref({})
 const showLogsForStep = ref({}) // 控制每个步骤的日志显示状态
 const expandedSteps = ref({}) // 控制每个步骤的展开/收起状态
@@ -1484,7 +1535,10 @@ const handleStepRetry = async (retryType, stepId) => {
       content: `确定要${retryTypeText[retryType]}执行步骤"${step.step_name}"吗？`,
       onOk: async () => {
         try {
-          await executionRecordApi.retryStepInplace(route.params.id, stepId, retryType)
+          await executionRecordApi.retryStepInplace(route.params.id, {
+            step_id: stepId,
+            retry_type: retryType
+          })
           Message.success('步骤重试成功')
           fetchExecutionDetail()
         } catch (error) {
@@ -1510,6 +1564,100 @@ const canExecuteStep = (recordId) => {
 // 显示无权限提示
 const showNoPermissionMessage = () => {
   Message.warning('没有权限执行此操作，请联系管理员开放权限')
+}
+
+// 获取选中失败主机ID列表
+const getSelectedFailedHostIds = (stepId) => {
+  return selectedFailedHostIds.value[stepId] || []
+}
+
+// 判断是否所有失败主机都被选中
+const isAllFailedHostsSelected = (stepId) => {
+  const stepLog = stepLogs.value[stepId]
+  if (!stepLog) return false
+  
+  const failedHosts = stepHostGroups.value[stepId]?.failed?.hosts || []
+  const selectedIds = getSelectedFailedHostIds(stepId)
+  
+  return failedHosts.length > 0 && selectedIds.length === failedHosts.length
+}
+
+// 判断是否为部分选中状态
+const isIndeterminateFailedHosts = (stepId) => {
+  const stepLog = stepLogs.value[stepId]
+  if (!stepLog) return false
+  
+  const failedHosts = stepHostGroups.value[stepId]?.failed?.hosts || []
+  const selectedIds = getSelectedFailedHostIds(stepId)
+  
+  return selectedIds.length > 0 && selectedIds.length < failedHosts.length
+}
+
+// 切换全选/取消全选失败主机
+const handleToggleAllFailedHosts = (stepId, checked) => {
+  const failedHosts = stepHostGroups.value[stepId]?.failed?.hosts || []
+  
+  if (checked) {
+    // 全选
+    selectedFailedHostIds.value[stepId] = failedHosts.map(h => h.host_id)
+  } else {
+    // 取消全选
+    selectedFailedHostIds.value[stepId] = []
+  }
+}
+
+// 处理失败主机选择变化
+const handleFailedHostSelectionChange = (stepId, values) => {
+  selectedFailedHostIds.value[stepId] = values
+}
+
+// 批量重试选中的失败主机
+const handleBatchRetrySelectedHosts = async (stepId) => {
+  if (!canExecuteStep(executionInfo.value?.id)) {
+    showNoPermissionMessage()
+    return
+  }
+  
+  const selectedIds = getSelectedFailedHostIds(stepId)
+  if (selectedIds.length === 0) {
+    Message.warning('请先选择要重试的主机')
+    return
+  }
+  
+  const step = stepLogs.value[stepId]
+  if (!step) {
+    Message.warning('步骤不存在')
+    return
+  }
+  
+  try {
+    await Modal.confirm({
+      title: '确认批量重试',
+      content: `确定要重试选中的 ${selectedIds.length} 台失败主机吗？`,
+      onOk: async () => {
+        batchRetrying.value[stepId] = true
+        try {
+          await executionRecordApi.retryStepInplace(route.params.id, {
+            step_id: stepId,
+            retry_type: 'failed_only',
+            host_ids: selectedIds
+          })
+          Message.success(`批量重试已启动，共 ${selectedIds.length} 台主机`)
+          // 清空选择
+          selectedFailedHostIds.value[stepId] = []
+          // 刷新详情
+          fetchExecutionDetail()
+        } catch (error) {
+          console.error('批量重试失败:', error)
+          Message.error(error?.message || '批量重试失败')
+        } finally {
+          batchRetrying.value[stepId] = false
+        }
+      }
+    })
+  } catch (error) {
+    // 用户取消
+  }
 }
 
 // 点击处理函数（带权限检查）
@@ -2243,6 +2391,54 @@ onMounted(() => {
   font-weight: 600;
   font-size: 14px;
   color: inherit;
+}
+
+/* 失败主机复选框列表样式 */
+.failed-hosts-list {
+  padding: 16px;
+}
+
+.failed-hosts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background-color: var(--color-fill-1);
+  border-radius: 6px;
+}
+
+.selected-info {
+  font-size: 14px;
+  color: var(--color-text-2);
+  margin-left: 12px;
+}
+
+.failed-hosts-checkboxes {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background-color: var(--color-bg-1);
+}
+
+.failed-host-item {
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.failed-host-item:hover {
+  background-color: var(--color-fill-1);
+}
+
+.selected-count {
+  font-size: 14px;
+  color: var(--color-text-2);
+  margin-left: 12px;
+  margin-right: 8px;
 }
 
 .host-status-tag {

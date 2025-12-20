@@ -303,7 +303,7 @@ if LDAP_ENABLED:
 
 
 # 双因子认证（2FA）配置
-TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'True').lower() == 'true'
+TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'False').lower() == 'true'
 
 # 双因子认证（2FA/TOTP）配置
 if TWO_FACTOR_ENABLED:

@@ -22,6 +22,7 @@ type TaskSpec struct {
 	Env        map[string]string `json:"env,omitempty"`         // 环境变量
 	TimeoutSec int               `json:"timeout_sec,omitempty"` // 超时时间
 	WorkDir    string            `json:"work_dir,omitempty"`    // 工作目录
+	RunAs      string            `json:"run_as,omitempty"`       // 执行用户（用户名）
 	// 文件传输相关
 	FileTransfer *FileTransferSpec `json:"file_transfer,omitempty"`
 }

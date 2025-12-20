@@ -329,10 +329,11 @@ export const executionRecordApi = {
   },
 
   // 步骤原地重试
-  retryStepInplace(id: number, stepId: string, retryType: 'failed_only' | 'all'): Promise<any> {
-    return http.post(`/executor/execution-records/${id}/retry_step_inplace/`, {
-      step_id: stepId,
-      retry_type: retryType
+  retryStepInplace(id: number, data: { step_id: string | number; retry_type: 'failed_only' | 'all'; host_ids?: number[] }): Promise<any> {
+    return http.post(`/executor/execution-records/${id}/retry_step/`, {
+      step_id: data.step_id,
+      retry_type: data.retry_type,
+      ...(data.host_ids && { host_ids: data.host_ids })
     })
   },
 

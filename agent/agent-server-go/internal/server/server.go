@@ -149,6 +149,10 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		api.GET("/stats/queues", func(c *gin.Context) {
 			metrics.HandleQueueStats(c, s.taskQueue)
 		})
+		// 死信队列（归档任务）列表
+		api.GET("/stats/dead-letters", func(c *gin.Context) {
+			metrics.HandleDeadLetterTasks(c, s.taskQueue)
+		})
 		// 观测指标（JSON）
 		api.GET("/metrics", func(c *gin.Context) {
 			metrics.HandleOverview(c, s.agentManager, s.cfg, s.taskQueue)
@@ -270,7 +274,14 @@ func (s *Server) handleRegister(c *gin.Context) {
 		return
 	}
 
-	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System)
+	// 从请求中获取scope（如果控制面传递了scope信息，用于多租户隔离）
+	// 如果没有传递，使用Agent-Server配置的scope
+	scope := s.cfg.ControlPlane.Scope
+	if req.Scope != "" {
+		scope = req.Scope
+	}
+	
+	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, scope)
 	if err != nil {
 		if err == agent.ErrMaxConnections {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "max connections reached"})
@@ -335,7 +346,14 @@ func (s *Server) handlePushTask(c *gin.Context) {
 		return
 	}
 
-	if err := s.taskDispatcher.DispatchTaskToAgent(agentID, &taskSpec); err != nil {
+	// 从请求头中获取scope（用于多租户隔离检查）
+	requestScope := c.GetHeader(auth.HeaderScope)
+	if requestScope == "" {
+		// 如果没有传递scope，使用Agent-Server配置的scope
+		requestScope = s.cfg.ControlPlane.Scope
+	}
+	
+	if err := s.taskDispatcher.DispatchTaskToAgent(agentID, &taskSpec, requestScope); err != nil {
 		if err == agent.ErrAgentNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 			return

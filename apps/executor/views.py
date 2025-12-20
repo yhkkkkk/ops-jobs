@@ -273,6 +273,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         execution_record = self.get_object()
         step_id = request.data.get('step_id')
         retry_type = request.data.get('retry_type', 'failed_only')
+        host_ids = request.data.get('host_ids')  # 可选，指定要重试的主机ID列表
 
         if not step_id:
             return SycResponse.error(message='步骤ID不能为空')
@@ -283,6 +284,13 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         if execution_record.status not in ['failed', 'running']:
             return SycResponse.error(message='只有失败或运行中的执行记录才能进行原地重试')
 
+        # 如果指定了主机ID列表，验证格式
+        if host_ids is not None:
+            if not isinstance(host_ids, list):
+                return SycResponse.error(message='主机ID列表必须是数组')
+            if len(host_ids) == 0:
+                return SycResponse.error(message='主机ID列表不能为空')
+
         try:
             # 调用服务层进行原地重试
             from .services import ExecutionRecordService
@@ -290,7 +298,8 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 execution_record=execution_record,
                 step_id=step_id,
                 retry_type=retry_type,
-                user=request.user
+                user=request.user,
+                host_ids=host_ids
             )
 
             if result['success']:

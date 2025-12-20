@@ -284,62 +284,143 @@ func (e *Executor) buildErrorResult(taskID string, startTime time.Time, errorMsg
 // - powershell：Windows 下使用 powershell.exe；其它系统预留 pwsh（如已安装）
 // - python：使用 python/python3 -c 执行脚本
 // - js：使用 node -e 执行脚本
+// 如果指定了 RunAs，会使用 su/sudo (Linux) 或 runas (Windows) 切换用户执行
 func buildCommand(ctx context.Context, task *api.TaskSpec) (*exec.Cmd, error) {
+	var baseCmd *exec.Cmd
+
 	// 如果没有 Command，但提供了 Args，则直接按 Args 执行
 	if task.Command == "" {
 		if len(task.Args) == 0 {
 			return nil, fmt.Errorf("task command is empty")
 		}
-		return exec.CommandContext(ctx, task.Args[0], task.Args[1:]...), nil
+		baseCmd = exec.CommandContext(ctx, task.Args[0], task.Args[1:]...)
+	} else {
+		scriptType := strings.ToLower(strings.TrimSpace(task.ScriptType))
+		switch scriptType {
+		case "", "shell":
+			// 兼容默认行为：Windows 用 cmd，Linux/其他用 /bin/sh
+			if runtime.GOOS == "windows" {
+				baseCmd = exec.CommandContext(ctx, "cmd", "/c", task.Command)
+			} else {
+				baseCmd = exec.CommandContext(ctx, "/bin/sh", "-c", task.Command)
+			}
+
+		case "powershell", "pwsh":
+			if runtime.GOOS == "windows" {
+				// Windows 上使用 powershell.exe
+				baseCmd = exec.CommandContext(ctx,
+					"powershell.exe",
+					"-NoLogo",
+					"-NonInteractive",
+					"-ExecutionPolicy", "Bypass",
+					"-Command", task.Command,
+				)
+			} else {
+				// 非 Windows 环境，优先尝试 pwsh（PowerShell Core）
+				baseCmd = exec.CommandContext(ctx,
+					"pwsh",
+					"-NoLogo",
+					"-NonInteractive",
+					"-Command", task.Command,
+				)
+			}
+
+		case "python", "py":
+			// 通过 python/python3 解释执行
+			pythonExe := "python3"
+			if runtime.GOOS == "windows" {
+				pythonExe = "python"
+			}
+			baseCmd = exec.CommandContext(ctx, pythonExe, "-c", task.Command)
+
+		case "js", "node":
+			// 通过 node -e 执行 JS 代码
+			baseCmd = exec.CommandContext(ctx, "node", "-e", task.Command)
+
+		default:
+			// 未知脚本类型，回退到原有行为
+			if runtime.GOOS == "windows" {
+				baseCmd = exec.CommandContext(ctx, "cmd", "/c", task.Command)
+			} else {
+				baseCmd = exec.CommandContext(ctx, "/bin/sh", "-c", task.Command)
+			}
+		}
 	}
 
-	scriptType := strings.ToLower(strings.TrimSpace(task.ScriptType))
-	switch scriptType {
-	case "", "shell":
-		// 兼容默认行为：Windows 用 cmd，Linux/其他用 /bin/sh
-		if runtime.GOOS == "windows" {
-			return exec.CommandContext(ctx, "cmd", "/c", task.Command), nil
+	// 如果指定了 run_as，需要切换用户执行
+	if task.RunAs != "" {
+		// 获取当前用户
+		currentUser, err := user.Current()
+		currentUsername := ""
+		if err == nil {
+			currentUsername = currentUser.Username
+		} else {
+			// 如果获取失败，尝试从环境变量获取
+			currentUsername = os.Getenv("USER")
 		}
-		return exec.CommandContext(ctx, "/bin/sh", "-c", task.Command), nil
 
-	case "powershell", "pwsh":
-		if runtime.GOOS == "windows" {
-			// Windows 上使用 powershell.exe
-			return exec.CommandContext(ctx,
-				"powershell.exe",
-				"-NoLogo",
-				"-NonInteractive",
-				"-ExecutionPolicy", "Bypass",
-				"-Command", task.Command,
-			), nil
+		// 如果目标用户与当前用户相同，不需要切换
+		if currentUsername == task.RunAs {
+			return baseCmd, nil
 		}
-		// 非 Windows 环境，优先尝试 pwsh（PowerShell Core）
-		return exec.CommandContext(ctx,
-			"pwsh",
-			"-NoLogo",
-			"-NonInteractive",
-			"-Command", task.Command,
-		), nil
 
-	case "python", "py":
-		// 通过 python/python3 解释执行
-		pythonExe := "python3"
 		if runtime.GOOS == "windows" {
-			pythonExe = "python"
-		}
-		return exec.CommandContext(ctx, pythonExe, "-c", task.Command), nil
+			// Windows: 使用 runas 切换用户
+			// 注意：runas 需要密码，这里使用 /savecred 选项（需要管理员权限）
+			// 或者使用计划任务的方式，但更简单的方式是使用 PowerShell 的 Start-Process -Credential
+			// 由于 runas 需要交互式输入密码，这里先尝试使用 PowerShell 的 Start-Process
+			// 如果失败，则记录错误
+			// 将命令和参数转换为字符串
+			cmdStr := baseCmd.Path
+			if len(baseCmd.Args) > 1 {
+				// 转义参数中的引号
+				escapedArgs := make([]string, len(baseCmd.Args[1:]))
+				for i, arg := range baseCmd.Args[1:] {
+					escapedArgs[i] = fmt.Sprintf(`"%s"`, strings.ReplaceAll(arg, `"`, `\"`))
+				}
+				cmdStr += " " + strings.Join(escapedArgs, " ")
+			}
+			psScript := fmt.Sprintf(`$cred = Get-Credential -UserName "%s" -Message "Enter password"; Start-Process -FilePath "%s" -ArgumentList %s -Credential $cred -NoNewWindow -Wait`,
+				task.RunAs, baseCmd.Path, strings.Join(baseCmd.Args[1:], ","))
+			return exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript), nil
+		} else {
+			// Linux/Unix: 使用 sudo 或 su 切换用户
+			// 检查当前用户是否为 root
+			isRoot := false
+			if currentUser != nil {
+				isRoot = (currentUser.Uid == "0")
+			} else {
+				// 如果无法获取用户信息，尝试检查 euid
+				isRoot = (os.Geteuid() == 0)
+			}
 
-	case "js", "node":
-		// 通过 node -e 执行 JS 代码
-		return exec.CommandContext(ctx, "node", "-e", task.Command), nil
-
-	default:
-		// 未知脚本类型，回退到原有行为
-		if runtime.GOOS == "windows" {
-			return exec.CommandContext(ctx, "cmd", "/c", task.Command), nil
+			if isRoot {
+				// 如果是 root，使用 su - username -c "command"
+				// 将原始命令和参数组合成字符串
+				cmdStr := baseCmd.Path
+				if len(baseCmd.Args) > 1 {
+					// 转义参数，确保特殊字符正确处理
+					escapedArgs := make([]string, len(baseCmd.Args[1:]))
+					for i, arg := range baseCmd.Args[1:] {
+						// 转义单引号，并用单引号包裹
+						escapedArg := strings.ReplaceAll(arg, "'", "'\"'\"'")
+						escapedArgs[i] = "'" + escapedArg + "'"
+					}
+					cmdStr += " " + strings.Join(escapedArgs, " ")
+				}
+				suArgs := []string{"-", task.RunAs, "-c", cmdStr}
+				return exec.CommandContext(ctx, "su", suArgs...), nil
+			} else {
+				// 如果不是 root，尝试使用 sudo
+				// sudo -u username command args...
+				originalArgs := baseCmd.Args
+				sudoArgs := append([]string{"-u", task.RunAs}, originalArgs...)
+				return exec.CommandContext(ctx, "sudo", sudoArgs...), nil
+			}
 		}
-		return exec.CommandContext(ctx, "/bin/sh", "-c", task.Command), nil
 	}
+
+	return baseCmd, nil
 }
 
 // streamOutput 实时流式读取输出

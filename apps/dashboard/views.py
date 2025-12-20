@@ -318,7 +318,10 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取执行热力图数据",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
+    @cache_response(
+        timeout=60 * 15,
+        key_func=lambda request, *args, **kwargs: f"execution_heatmap_{request.GET.get('time_range','')}_{request.GET.get('start_date','')}_{request.GET.get('end_date','')}"
+    )
     @action(detail=False, methods=['get'])
     def execution_heatmap(self, request):
         """获取执行热力图数据（按小时和星期统计）"""
@@ -326,38 +329,144 @@ class DashboardViewSet(viewsets.ViewSet):
             from apps.executor.models import ExecutionRecord
             from django.db.models import Count
             from collections import defaultdict
+            # 支持自定义时间范围查询：start_date/end_date 或 time_range (today/week/month/30)
+            time_range = request.GET.get('time_range', '')
+            start_date_str = request.GET.get('start_date', '')
+            end_date_str = request.GET.get('end_date', '')
 
-            # 最近30天的数据
-            thirty_days_ago = timezone.now() - timedelta(days=30)
+            now = timezone.now()
+            clamped = False
+            # 默认最近7天
+            if time_range == 'today':
+                start_dt = timezone.make_aware(datetime.combine(now.date(), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'week' or time_range == '':
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'month':
+                # 使用当前月的第一天到当前日期（而不是固定30天）
+                first_day_of_month = now.replace(day=1).date()
+                start_dt = timezone.make_aware(datetime.combine(first_day_of_month, datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range.isdigit():
+                days = int(time_range)
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=days-1)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'custom' and start_date_str and end_date_str:
+                try:
+                    start_dt = timezone.make_aware(datetime.strptime(start_date_str, '%Y-%m-%d'))
+                    end_dt = timezone.make_aware(datetime.strptime(end_date_str, '%Y-%m-%d')) + timedelta(days=1) - timedelta(seconds=1)
+                    # 限制自定义时间范围不超过 3 个月（约 92 天）；超出则截断到 max_days
+                    max_days = 92
+                    delta_days = (end_dt.date() - start_dt.date()).days + 1
+                    if delta_days > max_days:
+                        # 截断 end_dt 到 start_dt + (max_days-1)
+                        end_dt = timezone.make_aware(datetime.combine((start_dt.date() + timedelta(days=max_days-1)), datetime.max.time()))
+                        clamped = True
+                except Exception:
+                    start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                    end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            else:
+                # 默认最近7天
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
 
-            # 查询最近30天的执行记录
+            # 查询执行记录
             executions = ExecutionRecord.objects.filter(
-                created_at__gte=thirty_days_ago
+                created_at__gte=start_dt,
+                created_at__lte=end_dt
             ).select_related()
 
-            # 使用Python处理时间提取，避免数据库兼容性问题
+            # 处理时间提取，依据时间范围决定返回模式
             stats_dict = defaultdict(int)
 
-            for execution in executions:
-                # 提取小时和星期几
-                created_time = execution.created_at
-                if created_time:
-                    # 使用Django的timezone.localtime()自动转换为设置的时区
+            total_days = (end_dt.date() - start_dt.date()).days + 1
+            # 如果时间窗口较短（<=7天），返回小时x星期模式；否则返回周列（日历）模式（类似 GitHub）
+            if total_days <= 7:
+                # 对于小时间窗口（<=7天），按日期顺序返回行：每一行代表一个日期
+                # 先统计每个 (hour, day_index) 的次数
+                for execution in executions:
+                    created_time = execution.created_at
+                    if created_time:
+                        local_time = timezone.localtime(created_time)
+                        hour = local_time.hour  # 0-23
+                        day_index = (local_time.date() - start_dt.date()).days
+                        if 0 <= day_index < total_days:
+                            stats_dict[(hour, day_index)] += 1
+
+                # 生成完整的热力图数据（24小时 x total_days）
+                heatmap_data = []
+                for day_index in range(total_days):
+                    for hour in range(24):
+                        count = stats_dict.get((hour, day_index), 0)
+                        heatmap_data.append([hour, day_index, count])
+
+                # 生成 y_labels：例如 "周一 11-23" 或 "11-23"
+                weekday_names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+                y_labels = []
+                for i in range(total_days):
+                    d = (start_dt.date() + timedelta(days=i))
+                    weekday = d.weekday()
+                    # weekday: Monday=0 ... Sunday=6; map to weekday_names where index 0 is 周日
+                    wk_label = weekday_names[(weekday + 1) % 7]
+                    y_labels.append(f"{wk_label} {d.strftime('%m-%d')}")
+
+                return SycResponse.success(content={
+                    'mode': 'hourly',
+                    'data': heatmap_data,
+                    'x_labels': [f"{i}:00" for i in range(24)],
+                    'y_labels': y_labels,
+                    'start_date': start_dt.date().strftime('%Y-%m-%d'),
+                    'end_date': end_dt.date().strftime('%Y-%m-%d'),
+                    'total_days': total_days,
+                    'clamped': clamped
+                }, message="获取执行热力图成功")
+            else:
+                # Calendar mode (GitHub-like): columns = weeks (starting Monday), rows = weekdays (Mon..Sun)
+                # Align first column to the Monday of the week containing start_dt
+                first_monday = start_dt.date() - timedelta(days=start_dt.date().weekday())
+                last_sunday = end_dt.date() + timedelta(days=(6 - end_dt.date().weekday()))
+                num_weeks = ((last_sunday - first_monday).days // 7) + 1
+
+                # Aggregate counts per (week_index, weekday) where weekday: 0=Mon .. 6=Sun
+                for execution in executions:
+                    created_time = execution.created_at
+                    if not created_time:
+                        continue
                     local_time = timezone.localtime(created_time)
-                    hour = local_time.hour  # 0-23 (本地时间)
-                    weekday = local_time.weekday()  # 0=Monday, 6=Sunday
-                    # 转换为0=Sunday, 1=Monday的格式
-                    weekday = (weekday + 1) % 7
-                    stats_dict[(hour, weekday)] += 1
+                    local_date = local_time.date()
+                    if local_date < start_dt.date() or local_date > end_dt.date():
+                        continue
+                    week_idx = (local_date - first_monday).days // 7
+                    weekday = local_time.weekday()  # Monday=0 .. Sunday=6
+                    stats_dict[(week_idx, weekday)] += 1
 
-            # 生成完整的热力图数据（24小时 x 7天）
-            heatmap_data = []
-            for weekday in range(7):  # 0-6 (Sunday to Saturday)
-                for hour in range(24):  # 0-23
-                    count = stats_dict.get((hour, weekday), 0)
-                    heatmap_data.append([hour, weekday, count])
+                # Build heatmap data: iterate weeks (columns) then weekdays (rows)
+                heatmap_data = []
+                for w in range(num_weeks):
+                    for weekday in range(7):
+                        count = stats_dict.get((w, weekday), 0)
+                        heatmap_data.append([w, weekday, count])
 
-            return SycResponse.success(content=heatmap_data, message="获取执行热力图成功")
+                # x_labels: use week start dates (MM-DD) and also return ISO week_start_dates for exact date computation in frontend
+                x_labels = []
+                week_start_dates = []
+                for w in range(num_weeks):
+                    week_start_date = first_monday + timedelta(days=w * 7)
+                    x_labels.append(week_start_date.strftime('%m-%d'))
+                    week_start_dates.append(week_start_date.strftime('%Y-%m-%d'))
+
+                return SycResponse.success(content={
+                    'mode': 'calendar',
+                    'data': heatmap_data,
+                    'x_labels': x_labels,
+                    'week_start_dates': week_start_dates,
+                    'y_labels': ['周一','周二','周三','周四','周五','周六','周日'],
+                    'start_date': start_dt.date().strftime('%Y-%m-%d'),
+                    'end_date': end_dt.date().strftime('%Y-%m-%d'),
+                    'total_days': total_days,
+                    'clamped': clamped
+                }, message="获取执行热力图成功")
 
         except Exception as e:
             return SycResponse.error(message=f"获取执行热力图失败: {str(e)}")

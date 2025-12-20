@@ -37,6 +37,28 @@
               </template>
               批量删除待激活 ({{ selectedPendingCount }})
             </a-button>
+            <a-button 
+              v-if="selectedAgentIds.length > 0 && hasDisableableAgents"
+              type="primary" 
+              status="warning"
+              @click="handleBatchDisable"
+            >
+              <template #icon>
+                <icon-close-circle />
+              </template>
+              批量禁用 ({{ selectedDisableableCount }})
+            </a-button>
+            <a-button 
+              v-if="selectedAgentIds.length > 0 && hasEnableableAgents"
+              type="primary" 
+              status="success"
+              @click="handleBatchEnable"
+            >
+              <template #icon>
+                <icon-check-circle />
+              </template>
+              批量启用 ({{ selectedEnableableCount }})
+            </a-button>
             <a-button type="primary" status="danger" @click="handleUninstallAgent">
               <template #icon>
                 <icon-delete />
@@ -787,6 +809,33 @@ const hasPendingAgents = computed(() => {
   return selectedPendingCount.value > 0
 })
 
+// 计算选中的可禁用 Agent 数量（非 disabled 且非 pending）
+const selectedDisableableCount = computed(() => {
+  return agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && 
+    a.status !== 'disabled' && 
+    a.status !== 'pending'
+  ).length
+})
+
+// 是否有选中的可禁用 Agent
+const hasDisableableAgents = computed(() => {
+  return selectedDisableableCount.value > 0
+})
+
+// 计算选中的可启用 Agent 数量（disabled 状态）
+const selectedEnableableCount = computed(() => {
+  return agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && 
+    a.status === 'disabled'
+  ).length
+})
+
+// 是否有选中的可启用 Agent
+const hasEnableableAgents = computed(() => {
+  return selectedEnableableCount.value > 0
+})
+
 // 表格列配置
 const columns = [
   {
@@ -847,8 +896,10 @@ const getStatusColor = (status: string) => {
 // 状态说明（hover 提示）
 const getStatusHint = (status: string) => {
   const hintMap: Record<string, string> = {
-    pending: '已生成安装脚本但尚未安装/上线，可点击「查看安装脚本」重新获取脚本',
-    offline: '最近未收到心跳，请检查 Agent 与 Agent-Server/控制面的网络或重启 Agent'
+    pending: '已生成安装脚本但尚未安装/上线，可点击「查看安装脚本」重新获取脚本并执行安装',
+    online: 'Agent 正常运行中，正在接收和执行任务',
+    offline: '最近未收到心跳，请检查：1) Agent 进程是否运行 2) Agent 与 Agent-Server/控制面的网络连接 3) 防火墙规则 4) 可尝试重启 Agent',
+    disabled: 'Agent 已被禁用，不会接收新任务。如需恢复，请点击「启用」按钮'
   }
   return hintMap[status] || ''
 }
@@ -1612,6 +1663,103 @@ const handleBatchRegenerateScript = async () => {
 }
 
 // 批量删除待激活的 Agent
+// 批量禁用 Agent
+const handleBatchDisable = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请先选择要禁用的 Agent')
+    return
+  }
+
+  const disableableAgents = agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && 
+    a.status !== 'disabled' && 
+    a.status !== 'pending'
+  )
+
+  if (disableableAgents.length === 0) {
+    Message.warning('选中的 Agent 中没有可禁用的（只有非 pending 且非 disabled 状态的 Agent 可以禁用）')
+    return
+  }
+
+  // 检查生产环境
+  const prodAgents = disableableAgents.filter(a => a.host?.environment === 'prod')
+  if (prodAgents.length > 0 && disableableAgents.length > 10) {
+    Message.warning('生产环境批量操作最多支持 10 个 Agent')
+    return
+  }
+
+  try {
+    await Modal.confirm({
+      title: '确认批量禁用',
+      content: `确定要禁用选中的 ${disableableAgents.length} 个 Agent 吗？禁用后这些 Agent 将不再接收新任务。`,
+      onOk: async () => {
+        try {
+          const result = await agentsApi.batchDisable({
+            agent_ids: disableableAgents.map(a => a.id),
+            confirmed: true
+          })
+          Message.success(`批量禁用成功，共 ${result.count} 个 Agent`)
+          selectedAgentIds.value = []
+          fetchAgents()
+        } catch (error: any) {
+          console.error('批量禁用失败:', error)
+          Message.error(error?.message || '批量禁用失败')
+        }
+      }
+    })
+  } catch (error) {
+    // 用户取消
+  }
+}
+
+// 批量启用 Agent
+const handleBatchEnable = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请先选择要启用的 Agent')
+    return
+  }
+
+  const enableableAgents = agents.value.filter(a => 
+    selectedAgentIds.value.includes(a.id) && 
+    a.status === 'disabled'
+  )
+
+  if (enableableAgents.length === 0) {
+    Message.warning('选中的 Agent 中没有可启用的（只有 disabled 状态的 Agent 可以启用）')
+    return
+  }
+
+  // 检查生产环境
+  const prodAgents = enableableAgents.filter(a => a.host?.environment === 'prod')
+  if (prodAgents.length > 0 && enableableAgents.length > 10) {
+    Message.warning('生产环境批量操作最多支持 10 个 Agent')
+    return
+  }
+
+  try {
+    await Modal.confirm({
+      title: '确认批量启用',
+      content: `确定要启用选中的 ${enableableAgents.length} 个 Agent 吗？启用后这些 Agent 将恢复接收新任务。`,
+      onOk: async () => {
+        try {
+          const result = await agentsApi.batchEnable({
+            agent_ids: enableableAgents.map(a => a.id),
+            confirmed: true
+          })
+          Message.success(`批量启用成功，共 ${result.count} 个 Agent`)
+          selectedAgentIds.value = []
+          fetchAgents()
+        } catch (error: any) {
+          console.error('批量启用失败:', error)
+          Message.error(error?.message || '批量启用失败')
+        }
+      }
+    })
+  } catch (error) {
+    // 用户取消
+  }
+}
+
 const handleBatchDeletePending = async () => {
   if (selectedAgentIds.value.length === 0) {
     Message.warning('请至少选择一个 Agent')

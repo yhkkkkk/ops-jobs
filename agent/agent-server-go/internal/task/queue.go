@@ -463,9 +463,54 @@ func (q *TaskQueue) GetTaskStats() (map[string]interface{}, error) {
 			"active":    queueInfo.Active,
 			"scheduled": queueInfo.Scheduled,
 			"retry":     queueInfo.Retry,
-			"archived":  queueInfo.Archived,
+			"archived":  queueInfo.Archived, // 归档队列（死信队列）
 		}
 	}
 
 	return stats, nil
+}
+
+// GetDeadLetterTasks 获取死信队列（归档队列）中的任务列表
+func (q *TaskQueue) GetDeadLetterTasks(queueName string, page, pageSize int) ([]map[string]interface{}, int, error) {
+	inspector := asynq.NewInspector(q.redisOpt)
+	defer inspector.Close()
+
+	// 获取归档任务列表
+	tasks, err := inspector.ListArchivedTasks(queueName, asynq.PageSize(pageSize), asynq.Page(page))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 获取归档任务总数
+	queueInfo, err := inspector.GetQueueInfo(queueName)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(tasks))
+	for _, task := range tasks {
+		// 解析任务负载
+		var payload TaskPayload
+		payloadData := make(map[string]interface{})
+		if err := json.Unmarshal(task.Payload, &payload); err == nil {
+			payloadData["agent_id"] = payload.AgentID
+			if payload.Task != nil {
+				payloadData["task_id"] = payload.Task.ID
+				payloadData["task_name"] = payload.Task.Name
+				payloadData["task_type"] = payload.Task.Type
+			}
+		}
+
+		result = append(result, map[string]interface{}{
+			"id":           task.ID,
+			"type":         task.Type,
+			"payload":      payloadData,
+			"last_error":   task.LastErr,
+			"retry_count":  task.Retried,
+			"max_retry":    task.MaxRetry,
+			"next_process": task.NextProcessAt,
+		})
+	}
+
+	return result, int(queueInfo.Archived), nil
 }

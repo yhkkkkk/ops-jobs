@@ -127,6 +127,11 @@ export const agentsApi = {
     return http.post('/agents/batch_disable/', data)
   },
 
+  // 批量启用 Agent
+  batchEnable(data: BatchOperationParams): Promise<{ count: number }> {
+    return http.post('/agents/batch_enable/', data)
+  },
+
   // 删除 Agent（仅允许删除 pending 状态）
   deleteAgent(id: number, data: { confirmed: boolean }): Promise<void> {
     return http.delete(`/agents/${id}/`, { data })

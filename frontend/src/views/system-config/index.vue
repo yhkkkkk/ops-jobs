@@ -230,8 +230,11 @@
           <a-textarea
             v-model="editForm.valueText"
             :rows="6"
-            placeholder="请输入JSON格式的配置值"
+            placeholder="字符串直接输入，对象/数组请输入json格式（如: {&quot;key&quot;: &quot;value&quot;} 或 [1, 2, 3]）"
           />
+          <div class="form-help">
+            提示：字符串直接输入即可，无需引号；对象或数组请输入有效的json格式
+          </div>
         </a-form-item>
 
         <a-form-item label="描述" field="description">
@@ -445,7 +448,12 @@ const handleEdit = (record: SystemConfig) => {
   editForm.id = record.id
   editForm.key = record.key
   editForm.value = record.value
-  editForm.valueText = JSON.stringify(record.value, null, 2)
+  // 智能格式化显示：字符串直接显示（不带引号），其他类型显示格式化的JSON
+  if (typeof record.value === 'string') {
+    editForm.valueText = record.value
+  } else {
+    editForm.valueText = JSON.stringify(record.value, null, 2)
+  }
   editForm.description = record.description
   editForm.is_active = record.is_active
   editModalVisible.value = true
@@ -453,8 +461,28 @@ const handleEdit = (record: SystemConfig) => {
 
 const handleSaveEdit = async () => {
   try {
-    // 验证JSON格式
-    const value = JSON.parse(editForm.valueText)
+    let value: any
+    
+    // 智能解析：先尝试解析JSON，如果失败且不是JSON格式，当作字符串处理
+    const trimmedText = editForm.valueText.trim()
+    
+    // 如果以 { 或 [ 开头，尝试解析为JSON
+    if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
+      try {
+        value = JSON.parse(trimmedText)
+      } catch (e) {
+        Message.error('配置值格式错误，请输入有效的json')
+        return
+      }
+    } else {
+      // 尝试解析为JSON（可能是数字、布尔值、null等）
+      try {
+        value = JSON.parse(trimmedText)
+      } catch (e) {
+        // 解析失败，当作字符串处理
+        value = editForm.valueText
+      }
+    }
     
     await systemConfigApi.updateConfig(editForm.id, {
       value,
@@ -465,11 +493,11 @@ const handleSaveEdit = async () => {
     Message.success('配置更新成功')
     editModalVisible.value = false
     fetchConfigs()
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof SyntaxError) {
-      Message.error('配置值格式错误，请输入有效的JSON')
+      Message.error('配置值格式错误，请输入有效的json')
     } else {
-      Message.error('配置更新失败')
+      Message.error(error.message || '配置更新失败')
     }
   }
 }
@@ -480,13 +508,11 @@ const handleCancelEdit = () => {
 
 const handlePageChange = (page: number) => {
   pagination.current = page
-  // 前端分页，不需要重新请求数据
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
-  // 前端分页，不需要重新请求数据
 }
 
 const handleSearch = () => {

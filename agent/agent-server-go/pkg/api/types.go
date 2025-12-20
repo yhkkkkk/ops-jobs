@@ -98,6 +98,7 @@ type WebSocketMessage struct {
 
 // RegisterRequest Agent 注册请求
 type RegisterRequest struct {
+	Scope string `json:"scope,omitempty"` // 多租户隔离：Agent所属的scope（可选，用于更细粒度的隔离）
 	Name   string            `json:"name"`
 	Token  string            `json:"token,omitempty"`
 	Labels map[string]string `json:"labels,omitempty"`

@@ -434,7 +434,7 @@ class FabricSSHManager:
     
     def execute_script(self, host, script_content: str, script_type: str = 'shell', 
                       timeout: int = None, task_id: Optional[str] = None, 
-                      account_id: Optional[int] = None) -> Dict[str, Any]:
+                      account_id: Optional[int] = None, connection_timeout: int = None) -> Dict[str, Any]:
         """
         在远程主机上执行脚本
         
@@ -462,7 +462,7 @@ class FabricSSHManager:
             conn_info = self._get_connection_info(host, account_id=account_id)
             
             # 创建Fabric连接
-            with self._create_connection(conn_info, timeout) as conn:
+            with self._create_connection(conn_info, timeout, connection_timeout) as conn:
                 
                 # 推送开始执行日志
                 if task_id:
@@ -609,12 +609,13 @@ class FabricSSHManager:
         from .utils import decrypt_password
         return decrypt_password(encrypted_password)
 
-    def _create_connection_config(self, conn_info: Dict[str, Any], timeout: int) -> Config:
+    def _create_connection_config(self, conn_info: Dict[str, Any], timeout: int, connection_timeout: int = None) -> Config:
         """创建Fabric连接配置"""
         from apps.system_config.models import ConfigManager
         
-        # 获取连接超时配置
-        connection_timeout = ConfigManager.get('fabric.connection_timeout', 30)
+        # 获取连接超时配置，如果未指定则使用配置的默认值
+        if connection_timeout is None:
+            connection_timeout = ConfigManager.get('fabric.connection_timeout', 30)
         
         return Config(overrides={
             'connect_kwargs': {
@@ -670,9 +671,9 @@ class FabricSSHManager:
             return False
     
     @contextmanager
-    def _create_connection(self, conn_info: Dict[str, Any], timeout: int):
+    def _create_connection(self, conn_info: Dict[str, Any], timeout: int, connection_timeout: int = None):
         """创建Fabric连接（支持连接池）"""
-        config = self._create_connection_config(conn_info, timeout)
+        config = self._create_connection_config(conn_info, timeout, connection_timeout)
         
         # 动态检查连接池是否启用
         pool_enabled = self._is_connection_pool_enabled()

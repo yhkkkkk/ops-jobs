@@ -7,6 +7,7 @@ import os
 import tarfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -14,6 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.conf import settings
 from django.http import FileResponse, Http404
+from urllib.parse import unquote
 
 from utils.responses import SycResponse
 from utils.pagination import CustomPagination
@@ -258,6 +260,26 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                 )
                 _schedule_package_validation(package.id)
 
+    def update(self, request, *args, **kwargs):
+        """更新安装包"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            self.perform_update(serializer)
+            # 重新获取更新后的实例
+            updated_instance = self.get_object()
+            response_serializer = self.get_serializer(updated_instance)
+            return SycResponse.success(
+                content=response_serializer.data,
+                message="安装包更新成功"
+            )
+        except Exception as exc:
+            logger.error("更新安装包失败: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"安装包更新失败: {str(exc)}")
+
     def perform_update(self, serializer):
         # 使用事务确保数据一致性
         with transaction.atomic():
@@ -271,16 +293,63 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                 sha256_hash = hashlib.sha256(file_content).hexdigest()
                 file_obj.seek(0)
                 
-                package = serializer.save(
-                    file_size=file_size,
-                    md5_hash=md5_hash,
-                    sha256_hash=sha256_hash,
-                    validate_status='pending',
-                    validate_message='',
-                )
+                # 获取存储类型（更新时不传，使用现有的）
+                storage_type = self.request.data.get('storage_type', serializer.instance.storage_type)
+                
+                # 生成统一的存储路径
+                version = serializer.validated_data.get('version', serializer.instance.version)
+                os_type = serializer.validated_data.get('os_type', serializer.instance.os_type)
+                arch = serializer.validated_data.get('arch', serializer.instance.arch)
+                filename = file_obj.name
+                storage_path = StorageServiceFactory.generate_storage_path(version, os_type, arch, filename)
+                
+                # 获取存储后端并上传文件
+                backend = StorageServiceFactory.get_backend(storage_type)
+                if backend is None:
+                    logger.warning(f"无法获取存储后端: {storage_type}，将使用本地存储")
+                    storage_type = 'local'
+                    backend = StorageServiceFactory.get_backend('local')
+                
+                # 上传文件
+                if storage_type == 'local':
+                    # 本地存储由Django FileField处理，不需要手动上传
+                    pass
+                else:
+                    # 对象存储，上传文件
+                    success, error = backend.upload_file(file_obj, storage_path)
+                    if not success:
+                        logger.warning(f"对象存储上传失败: {error}，将使用本地存储")
+                        storage_type = 'local'
+                        backend = StorageServiceFactory.get_backend('local')
+                        storage_path = StorageServiceFactory.generate_storage_path(version, os_type, arch, filename)
+                        # 不保存文件字段（从validated_data中移除）
+                        serializer.validated_data.pop('file', None)
+                    else:
+                        # 对象存储上传成功，不保存文件字段
+                        serializer.validated_data.pop('file', None)
+                
+                # 保存数据
+                save_kwargs = {
+                    'file_size': file_size,
+                    'md5_hash': md5_hash,
+                    'sha256_hash': sha256_hash,
+                    'storage_type': storage_type,
+                    'storage_path': storage_path,
+                    'validate_status': 'pending',
+                    'validate_message': '',
+                }
+                
+                package = serializer.save(**save_kwargs)
                 _schedule_package_validation(package.id)
             else:
-                serializer.save()
+                # 如果没有上传新文件，保持已有的存储相关字段不变（前端更新不包含存储类型）
+                serializer.save(
+                    storage_type=serializer.instance.storage_type,
+                    storage_path=serializer.instance.storage_path,
+                    file_size=serializer.instance.file_size,
+                    md5_hash=serializer.instance.md5_hash,
+                    sha256_hash=serializer.instance.sha256_hash,
+                )
 
     def destroy(self, request, *args, **kwargs):
         """删除安装包"""
@@ -319,7 +388,7 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                     )
                     # 设置文件名，支持中文
                     filename = package.file.name.split('/')[-1]
-                    response['Content-Disposition'] = f'attachment; filename="{urlquote(filename)}"; filename*=UTF-8\'\'{urlquote(filename)}'
+                    response['Content-Disposition'] = f'attachment; filename="{unquote(filename)}"; filename*=UTF-8\'\'{unquote(filename)}'
                     response['Content-Length'] = package.file_size
                     return response
                 else:
@@ -331,7 +400,7 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                         as_attachment=True
                     )
                     filename = os.path.basename(file_path)
-                    response['Content-Disposition'] = f'attachment; filename="{urlquote(filename)}"; filename*=UTF-8\'\'{urlquote(filename)}'
+                    response['Content-Disposition'] = f'attachment; filename="{unquote(filename)}"; filename*=UTF-8\'\'{unquote(filename)}'
                     response['Content-Length'] = package.file_size
                     return response
             except Exception as e:

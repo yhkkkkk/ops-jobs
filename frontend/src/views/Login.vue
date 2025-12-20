@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, computed } from 'vue'
+import { reactive, ref, onMounted, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconApps, IconTool, IconUser, IconLock, IconSafe, IconRefresh } from '@arco-design/web-vue/es/icon'
@@ -312,6 +312,8 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
 
     try {
       await authStore.login(loginData)
+      // 等待 Vue 微任务队列让 authStore 更新用户信息，避免随后读取 user 时发生竞态
+      await nextTick()
       Message.success('登录成功')
       
       // 记住用户选择的平台

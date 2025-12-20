@@ -233,6 +233,27 @@
           <template #title>
             <span class="chart-title">任务执行热力图</span>
           </template>
+          <div class="chart-filters" style="position: absolute; right: 16px; top: 12px; z-index: 2;">
+            <a-space>
+              <a-select
+                v-model="heatmapFilters.timeRange"
+                placeholder="时间范围"
+                style="width: 120px"
+                @change="updateHeatmapChart"
+              >
+                <a-option value="today">今日</a-option>
+                <a-option value="week">本周</a-option>
+                <a-option value="month">本月</a-option>
+                <a-option value="custom">自定义</a-option>
+              </a-select>
+              <a-range-picker
+                v-if="heatmapFilters.timeRange === 'custom'"
+                v-model="heatmapFilters.dateRange"
+                @change="updateHeatmapChart"
+                style="width: 240px"
+              />
+            </a-space>
+          </div>
           <div ref="heatmapChart" class="chart-container"></div>
         </a-card>
       </a-col>
@@ -390,6 +411,11 @@ const trendFilters = reactive({
   timeRange: 'week',
   dateRange: [],
   planId: ''  // 按执行方案过滤
+})
+
+const heatmapFilters = reactive({
+  timeRange: 'week',
+  dateRange: []
 })
 
 const successRateFilters = reactive({
@@ -923,6 +949,15 @@ const initSuccessRateChart = async () => {
 const initHeatmapChart = async () => {
   if (!heatmapChart.value) return
 
+  // 如果已有实例，先释放以确保切换 timeRange 时能完全替换配置（避免 setOption merge 导致样式不变）
+  try {
+    const existing = echarts.getInstanceByDom(heatmapChart.value)
+    if (existing) {
+      existing.dispose()
+    }
+  } catch (e) {
+    // ignore
+  }
   const chart = echarts.init(heatmapChart.value)
 
   // 时间轴数据 - 更美观的时间格式
@@ -935,10 +970,63 @@ const initHeatmapChart = async () => {
   let data = []
   let maxValue = 0
 
-  try {
-    // 尝试获取真实的热力图数据
-    const heatmapData = await dashboardApi.getExecutionHeatmap()
-    data = heatmapData || []
+    try {
+      // 构建过滤参数（默认最近一周）
+      const params = { time_range: heatmapFilters.timeRange }
+      if (heatmapFilters.timeRange === 'custom' && heatmapFilters.dateRange && heatmapFilters.dateRange.length === 2) {
+        const formatDate = (date) => {
+          if (!date) return ''
+          if (typeof date === 'string') return date
+          if (date instanceof Date) return date.toISOString().split('T')[0]
+          if (date.format) return date.format('YYYY-MM-DD')
+          return date
+        }
+        // 限制自定义时间范围最多 3 个月（约 92 天）
+        let startObj = heatmapFilters.dateRange[0]
+        let endObj = heatmapFilters.dateRange[1]
+        // 处理 moment 对象或字符串
+        const toDate = (d) => {
+          if (!d) return null
+          if (typeof d === 'string') return new Date(d)
+          if (d instanceof Date) return d
+          if (d.toDate) return d.toDate() // moment
+          return new Date(d)
+        }
+        const sd = toDate(startObj)
+        const ed = toDate(endObj)
+        if (sd && ed) {
+          const diffDays = Math.floor((ed - sd) / (1000 * 60 * 60 * 24)) + 1
+          const maxDays = 92
+          if (diffDays > maxDays) {
+            // 自动截断到最大允许范围，并提示用户
+            const msPerDay = 1000 * 60 * 60 * 24
+            const newEnd = new Date(sd.getTime() + (maxDays - 1) * msPerDay)
+            // 更新选择器的结束日期（支持 moment 对象也会被替换为 Date）
+            heatmapFilters.dateRange[1] = newEnd
+            Message.info(`自定义时间范围已截断为 ${maxDays} 天（约 3 个月），结束日期被设为 ${newEnd.toISOString().split('T')[0]}`)
+          }
+        }
+        params.start_date = formatDate(heatmapFilters.dateRange[0])
+        params.end_date = formatDate(heatmapFilters.dateRange[1])
+      }
+
+      // 获取真实的热力图数据（严格使用新版返回格式 {mode, data, x_labels?, y_labels?}）
+      const resp = await dashboardApi.getExecutionHeatmap(params)
+      if (!resp || !resp.mode || !resp.data) {
+        throw new Error('热力图接口返回格式不正确，期望 { mode, data, ... }')
+      }
+      if (resp.clamped) {
+        Message.info(`后端已将时间范围截断为 ${resp.start_date} - ${resp.end_date}`)
+      }
+      data = resp.data || []
+      chart.__heatmap_mode = resp.mode
+      chart.__heatmap_x_labels = resp.x_labels || null
+      chart.__heatmap_y_labels = resp.y_labels || null
+      chart.__heatmap_start_date = resp.start_date || null
+      chart.__heatmap_end_date = resp.end_date || null
+      chart.__heatmap_week_start_dates = resp.week_start_dates || null
+      // hide month labels (Dec) - not needed per UX
+      chart.__heatmap_month_labels = null
 
     // 计算最大值用于颜色映射
     if (data.length > 0) {
@@ -955,7 +1043,22 @@ const initHeatmapChart = async () => {
   }
 
   const option = {
-    tooltip: {
+    // 仅在 calendar 模式显示居中时间区间；hourly 模式不显示顶部时间文本
+    title: (chart.__heatmap_mode === 'calendar' ? {
+      text: (() => {
+        if (chart.__heatmap_start_date && chart.__heatmap_end_date) {
+          return `${chart.__heatmap_start_date} - ${chart.__heatmap_end_date}`
+        }
+        return ''
+      })(),
+      left: 'center',
+      top: 8,
+      textStyle: {
+        color: '#666',
+        fontSize: 12
+      }
+    } : null),
+      tooltip: {
       position: 'top',
       backgroundColor: 'rgba(50, 50, 50, 0.9)',
       borderColor: '#333',
@@ -965,10 +1068,30 @@ const initHeatmapChart = async () => {
         fontSize: 12
       },
       formatter: function (params) {
-        const hour = hours[params.data[0]]
-        const day = days[params.data[1]]
+        const mode = chart.__heatmap_mode || 'hourly'
         const count = params.data[2]
-        return `${day} ${hour}<br/>执行次数: <strong>${count}</strong>`
+        if (mode === 'calendar') {
+          // compute actual date: week_start + weekday offset
+          const weekIdx = params.data[0]
+          const weekdayIdx = params.data[1] // 0=Mon..6=Sun
+          let dateStr = ''
+          if (chart.__heatmap_week_start_dates && chart.__heatmap_week_start_dates[weekIdx]) {
+            const ws = chart.__heatmap_week_start_dates[weekIdx]
+            const d = new Date(ws)
+            d.setDate(d.getDate() + weekdayIdx)
+            const mm = String(d.getMonth() + 1).padStart(2, '0')
+            const dd = String(d.getDate()).padStart(2, '0')
+            dateStr = `${mm}-${dd}`
+          } else {
+            dateStr = (chart.__heatmap_x_labels && chart.__heatmap_x_labels[weekIdx]) || (`第${weekIdx+1}周`)
+          }
+          const dayName = (chart.__heatmap_y_labels && chart.__heatmap_y_labels[weekdayIdx]) || days[weekdayIdx]
+          return `${dateStr} ${dayName}<br/>执行次数: <strong>${count}</strong>`
+        } else {
+          const hour = hours[params.data[0]]
+          const dayLabel = (chart.__heatmap_y_labels && chart.__heatmap_y_labels[params.data[1]]) || days[params.data[1]]
+          return `${dayLabel} ${hour}<br/>执行次数: <strong>${count}</strong>`
+        }
       }
     },
     grid: {
@@ -980,7 +1103,7 @@ const initHeatmapChart = async () => {
     },
     xAxis: {
       type: 'category',
-      data: hours,
+      data: (chart.__heatmap_mode === 'calendar' && chart.__heatmap_x_labels) ? chart.__heatmap_x_labels : hours,
       position: 'top',
       splitArea: {
         show: true,
@@ -997,12 +1120,20 @@ const initHeatmapChart = async () => {
       axisLabel: {
         fontSize: 11,
         color: '#666',
-        interval: 1 // 显示所有标签
+        interval: 0,
+        formatter: function (value, idx) {
+          // 不在日历模式顶部显示单列标签（避免 'Dec' 出现）——顶部已使用区间标题显示时间范围
+          if (chart.__heatmap_mode === 'calendar') {
+            return ''
+          }
+          // hourly 模式展示小时标签
+          return value
+        }
       }
     },
     yAxis: {
       type: 'category',
-      data: days,
+      data: chart.__heatmap_y_labels || days,
       splitArea: {
         show: true,
         areaStyle: {
@@ -1043,7 +1174,7 @@ const initHeatmapChart = async () => {
       type: 'heatmap',
       data: data,
       label: {
-        show: true,
+        show: chart.__heatmap_mode !== 'calendar',
         fontSize: 10,
         color: '#333',
         formatter: function (params) {
@@ -1063,7 +1194,8 @@ const initHeatmapChart = async () => {
       }
     }]
   }
-  chart.setOption(option)
+  // 使用 notMerge=true 完全替换旧配置，避免旧配置残留导致样式不变
+  chart.setOption(option, true)
 }
 
 // 工具函数
@@ -1142,6 +1274,10 @@ const updateSuccessRateChart = () => {
 const updateTopChart = () => {
   // 重新初始化Top20图表
   initTopExecutionChart()
+}
+
+const updateHeatmapChart = () => {
+  initHeatmapChart()
 }
 
 // 初始化Top20图表

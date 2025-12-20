@@ -226,8 +226,16 @@ class ExecutionRecordService:
             }
 
     @staticmethod
-    def retry_step_inplace(execution_record, step_id, retry_type='failed_only', user=None):
-        """步骤原地重试服务 - 不创建新的执行记录，在原记录上重试（只支持Agent方式）"""
+    def retry_step_inplace(execution_record, step_id, retry_type='failed_only', user=None, host_ids=None):
+        """步骤原地重试服务 - 不创建新的执行记录，在原记录上重试（只支持Agent方式）
+        
+        Args:
+            execution_record: 执行记录
+            step_id: 步骤ID
+            retry_type: 重试类型，'failed_only' 或 'all'
+            user: 执行用户
+            host_ids: 可选，指定要重试的主机ID列表（如果提供，则只重试这些主机）
+        """
         try:
             # 获取要重试的步骤
             try:
@@ -246,8 +254,14 @@ class ExecutionRecordService:
             if step.status not in ['failed', 'skipped', 'timeout']:
                 return {'success': False, 'error': '只有失败、跳过或超时的步骤才能重试'}
 
-            # 根据重试类型确定要重试的主机
-            if retry_type == 'failed_only':
+            # 根据重试类型或主机ID列表确定要重试的主机
+            if host_ids:
+                # 如果指定了主机ID列表，只重试这些主机
+                target_hosts = [
+                    host for host in step.host_results 
+                    if host.get('host_id') in host_ids
+                ]
+            elif retry_type == 'failed_only':
                 # 只重试失败的主机
                 target_hosts = [
                     host for host in step.host_results 

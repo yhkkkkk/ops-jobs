@@ -70,10 +70,11 @@ export const dashboardApi = {
   },
 
   // 获取执行热力图数据
-  getExecutionHeatmap() {
+  getExecutionHeatmap(params = {}) {
     return request({
       url: '/dashboard/execution_heatmap/',
-      method: 'get'
+      method: 'get',
+      params
     })
   },
 

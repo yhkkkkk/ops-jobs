@@ -397,6 +397,51 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             message=f"批量禁用{count}个agent成功"
         )
 
+    @action(detail=False, methods=["post"], url_path="batch_enable")
+    def batch_enable(self, request):
+        """批量启用agent（带限流）"""
+        serializer = BatchOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+        agent_ids = serializer.validated_data["agent_ids"]
+        confirmed = serializer.validated_data.get("confirmed", False)
+        if not confirmed:
+            return SycResponse.error(
+                message="批量高危操作需要二次确认，请设置 confirmed=true",
+                code=400
+            )
+        # 批量操作限流：最多50个
+        MAX_BATCH_SIZE = 50
+        if len(agent_ids) > MAX_BATCH_SIZE:
+            return SycResponse.error(
+                message=f"批量操作最多支持{MAX_BATCH_SIZE}个agent",
+                code=400
+            )
+        # 权限过滤
+        queryset = self.get_queryset()
+        allowed_agents = queryset.filter(id__in=agent_ids)
+        if allowed_agents.count() != len(agent_ids):
+            return SycResponse.error(
+                message="部分agent无权限操作",
+                code=403
+            )
+        # 生产环境额外限制
+        prod_agents = allowed_agents.filter(host__environment="prod")
+        if prod_agents.exists() and len(agent_ids) > 10:
+            return SycResponse.error(
+                message="生产环境批量操作最多支持10个agent",
+                code=400
+            )
+        count = 0
+        for agent in allowed_agents:
+            AgentService.enable_agent(agent)
+            AgentService.audit(request.user, "enable_agent", agent, request=request)
+            count += 1
+        return SycResponse.success(
+            content={"count": count},
+            message=f"批量启用{count}个agent成功"
+        )
+
     @action(detail=True, methods=["post"], url_path="regenerate_script")
     def regenerate_script(self, request, pk=None):
         """
