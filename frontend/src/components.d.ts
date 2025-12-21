@@ -37,6 +37,8 @@ declare module 'vue' {
     ATextarea: typeof import('@arco-design/web-vue')['Textarea']
     ATree: typeof import('@arco-design/web-vue')['Tree']
     CDNMonacoEditor: typeof import('./components/CDNMonacoEditor.vue')['default']
+    ChartsEchartLine: typeof import('./components/charts/EchartLine.vue')['default']
+    ChartsEchartPie: typeof import('./components/charts/EchartPie.vue')['default']
     HostSelector: typeof import('./components/HostSelector.vue')['default']
     IconBulb: typeof import('@arco-design/web-vue/es/icon')['IconBulb']
     IconCheckSquare: typeof import('@arco-design/web-vue/es/icon')['IconCheckSquare']

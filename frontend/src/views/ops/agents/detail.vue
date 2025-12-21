@@ -24,7 +24,7 @@
             签发 Token
           </a-button>
           <a-button
-            v-if="agentDetail && agentDetail.status !== 'disabled'"
+            v-if="agentDetail && (agentDetail.computed_status || agentDetail.status) !== 'disabled'"
             status="warning"
             @click="handleDisable"
           >
@@ -55,8 +55,8 @@
           <div class="info-item">
             <span class="label">状态：</span>
             <span class="value">
-              <a-tag :color="getStatusColor(agentDetail.status)">
-                {{ agentDetail.status_display }}
+            <a-tag :color="getStatusColor(agentDetail.computed_status || agentDetail.status)">
+                {{ agentDetail.computed_status_display || agentDetail.status_display }}
               </a-tag>
             </span>
           </div>

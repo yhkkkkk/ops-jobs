@@ -276,7 +276,7 @@ const routes: RouteRecordRaw[] = [
     path: '/ops',
     name: 'OpsLayout',
     component: () => import('@/views/OpsLayout.vue'),
-    redirect: '/ops/agents',
+    redirect: '/ops/dashboard',
     meta: {
       requiresAuth: true,
       requiresSuperUser: true, // 只有超级管理员才能访问运维台
@@ -326,6 +326,15 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '主机管理',
           icon: 'icon-computer',
+        },
+      },
+      {
+        path: 'dashboard',
+        name: 'OpsDashboard',
+        component: () => import('@/views/ops/dashboard/index.vue'),
+        meta: {
+          title: '运维台 Dashboard',
+          icon: 'icon-dashboard',
         },
       },
       {

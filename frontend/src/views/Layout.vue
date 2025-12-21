@@ -313,7 +313,7 @@ const switchToOpsPlatform = () => {
   sessionStorage.setItem('selected_platform', 'ops')
   
   // 跳转到运维台
-  router.push('/ops/agents')
+  router.push('/ops/dashboard')
 }
 
 // 退出登录

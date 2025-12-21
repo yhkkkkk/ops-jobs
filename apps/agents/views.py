@@ -32,6 +32,7 @@ from .serializers import (
     AgentUninstallRecordSerializer,
 )
 from .services import AgentService
+from .status import set_agent_status_cache, invalidate_agent_status_cache
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,10 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         if agent.status == 'pending':
             agent.status = 'online'
             agent.save(update_fields=['status', 'updated_at'])
+            try:
+                set_agent_status_cache(agent.id, 'online')
+            except Exception:
+                pass
 
         serializer = AgentDetailSerializer(agent)
         return SycResponse.success(
@@ -218,6 +223,10 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         agent = self.get_object()
         AgentService.enable_agent(agent)
         AgentService.audit(request.user, "enable_agent", agent, request=request)
+        try:
+            invalidate_agent_status_cache(agent.id)
+        except Exception:
+            pass
         return SycResponse.success(message="启用agent成功")
 
     @action(detail=True, methods=["post"], url_path="disable")
@@ -232,6 +241,10 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             )
         AgentService.disable_agent(agent)
         AgentService.audit(request.user, "disable_agent", agent, request=request)
+        try:
+            set_agent_status_cache(agent.id, 'disabled')
+        except Exception:
+            pass
         return SycResponse.success(message="禁用agent成功")
 
     # 辅助方法：构造Agent-Server基础url
@@ -598,6 +611,10 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         'endpoint': agent_server_url or '',
                     }
                 )
+                try:
+                    set_agent_status_cache(agent.id, 'pending')
+                except Exception:
+                    pass
 
                 # 如果 Agent 已存在，更新状态和配置
                 if not agent_created:
@@ -1047,12 +1064,20 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             )
             install_record.agent = agent
             install_record.save()
+            try:
+                set_agent_status_cache(agent.id, 'pending')
+            except Exception:
+                pass
         else:
             agent = install_record.agent
             # 更新Agent状态为pending
             agent.status = 'pending'
             agent.endpoint = install_record.agent_server_url or ''
             agent.save(update_fields=['status', 'endpoint', 'updated_at'])
+            try:
+                set_agent_status_cache(agent.id, 'pending')
+            except Exception:
+                pass
 
         # 重新签发Agent Token
         token_data = AgentService.issue_token(agent, request.user, note="基于安装记录重新生成脚本")

@@ -118,5 +118,12 @@ class Command(BaseCommand):
                     "last_heartbeat_at": agent.last_heartbeat_at.isoformat(),
                 },
             )
+            try:
+                # update cache to reflect fresh heartbeat
+                from apps.agents.status import set_agent_status_cache
+
+                set_agent_status_cache(agent.id, mapped_status)
+            except Exception:
+                pass
 
 

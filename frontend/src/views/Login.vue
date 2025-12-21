@@ -331,11 +331,11 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
       // 根据选择的平台跳转
       const redirect = route.query.redirect as string
       if (selectedPlatform.value === 'ops') {
-        // 运维台（仅超级管理员）
-        router.push(redirect || '/ops/agents')
+        // 运维台（仅超级管理员） - 默认跳转到运维台 Dashboard
+        router.push(redirect || '/ops/dashboard')
       } else {
         // 作业平台
-      router.push(redirect || '/dashboard')
+        router.push(redirect || '/dashboard')
       }
     } catch (error: any) {
       // 检查是否是2FA错误

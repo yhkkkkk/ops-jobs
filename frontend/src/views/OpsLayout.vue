@@ -19,6 +19,12 @@
         @menu-item-click="onMenuClick"
         @sub-menu-click="onSubMenuClick"
       >
+        <a-menu-item key="/ops/dashboard">
+          <template #icon>
+            <icon-dashboard />
+          </template>
+          仪表盘
+        </a-menu-item>
         <!-- 运维管理分组 -->
         <a-sub-menu key="ops">
           <template #icon>
@@ -150,6 +156,7 @@ const openKeys = ref<string[]>([])
 
 // 菜单配置映射
 const menuConfig = {
+  '/ops/dashboard': { key: '/ops/dashboard', parent: null },
   '/ops/agents': { key: '/ops/agents', parent: 'ops' },
   '/ops/agents/packages': { key: '/ops/agents/packages', parent: 'ops' },
   '/ops/agents/install-records': { key: '/ops/agents/install-records', parent: 'ops' },

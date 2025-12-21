@@ -78,6 +78,14 @@ export const dashboardApi = {
     })
   },
 
+  // 运维台概览（Ops dashboard）
+  getOpsOverview() {
+    return request({
+      url: '/dashboard/ops_overview/',
+      method: 'get'
+    })
+  },
+
   // 获取Top20执行统计
   getTopExecutions(params = {}) {
     return request({
@@ -92,6 +100,15 @@ export const dashboardApi = {
     return request({
       url: '/dashboard/execution_plans/',
       method: 'get'
+    })
+  }
+,
+  // 获取任务延时趋势（p50/p95）
+  getLatencyTrend(params = {}) {
+    return request({
+      url: '/dashboard/ops_latency_trend/',
+      method: 'get',
+      params
     })
   }
 }

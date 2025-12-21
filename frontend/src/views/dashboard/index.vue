@@ -970,7 +970,7 @@ const initHeatmapChart = async () => {
   let data = []
   let maxValue = 0
 
-    try {
+  try {
       // 构建过滤参数（默认最近一周）
       const params = { time_range: heatmapFilters.timeRange }
       if (heatmapFilters.timeRange === 'custom' && heatmapFilters.dateRange && heatmapFilters.dateRange.length === 2) {
@@ -1058,7 +1058,7 @@ const initHeatmapChart = async () => {
         fontSize: 12
       }
     } : null),
-      tooltip: {
+    tooltip: {
       position: 'top',
       backgroundColor: 'rgba(50, 50, 50, 0.9)',
       borderColor: '#333',

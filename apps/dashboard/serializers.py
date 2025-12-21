@@ -65,3 +65,22 @@ class DashboardSystemStatusSerializer(serializers.Serializer):
     system_info = serializers.DictField(help_text="系统信息")
     service_status = serializers.DictField(help_text="服务状态")
     last_check = serializers.DateTimeField(help_text="最后检查时间")
+
+
+class OpsOverviewSerializer(serializers.Serializer):
+    """运维台概览数据序列化器（面向运维关注的指标）"""
+    
+    agents_total = serializers.IntegerField(help_text="Agent 总数")
+    agents_online = serializers.IntegerField(help_text="Agent 在线数（computed_status）")
+    agents_offline = serializers.IntegerField(help_text="Agent 离线数（computed_status）")
+    agents_pending = serializers.IntegerField(help_text="Agent 待激活数（status 字段）")
+    agents_disabled = serializers.IntegerField(help_text="Agent 已禁用数（status 字段）")
+    running_tasks = serializers.IntegerField(help_text="当前运行任务数")
+    fail_rate_24h = serializers.FloatField(help_text="过去24小时任务失败率（%）")
+    task_p50_ms = serializers.FloatField(help_text="任务 P50 延时（ms）", default=0.0)
+    task_p95_ms = serializers.FloatField(help_text="任务 P95 延时（ms）", default=0.0)
+    task_p99_ms = serializers.FloatField(help_text="任务 P99 延时（ms）", default=0.0)
+    heartbeat_alerts = serializers.IntegerField(help_text="心跳告警数（离线 agent 数）", default=0)
+    heartbeat_alerts_hosts = serializers.ListField(child=serializers.DictField(), help_text="心跳异常主机列表（示例: host_name, agent_id, last_heartbeat_at, threshold_seconds）", default=list)
+    top_failure_hosts = serializers.ListField(child=serializers.DictField(), help_text="过去24小时失败最多的主机 TOP 列表", default=list)
+    last_updated = serializers.DateTimeField(help_text="数据更新时间")

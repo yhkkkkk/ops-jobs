@@ -3,6 +3,10 @@ Agent 过滤器
 """
 import django_filters
 from django.db import models
+from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
+from apps.system_config.models import ConfigManager
 
 from apps.hosts.models import Host, HostGroup
 from .models import Agent, AgentInstallRecord, AgentUninstallRecord
@@ -12,7 +16,7 @@ class AgentFilter(django_filters.FilterSet):
     """Agent 过滤器（列表页用）"""
 
     search = django_filters.CharFilter(method='filter_search', label='搜索')
-    status = django_filters.ChoiceFilter(choices=Agent.STATUS_CHOICES, label='状态')
+    status = django_filters.CharFilter(method='filter_status', label='状态')
     environment = django_filters.ChoiceFilter(
         field_name='host__environment',
         choices=Host.ENVIRONMENT_CHOICES,
@@ -78,6 +82,56 @@ class AgentFilter(django_filters.FilterSet):
             return queryset.none()
         group_ids = [g.id for g in group.get_descendants(include_self=True)]
         return queryset.filter(host__groups__in=group_ids).distinct()
+
+    def filter_status(self, queryset, name, value):
+        """
+        支持按“实时计算的状态”过滤：
+          - 'pending' / 'disabled'：使用存量 DB 字段过滤（管理语义优先）
+          - 'online'：根据 host 所在环境的阈值判断 last_heartbeat_at 是否在阈值内（同时排除 pending/disabled）
+          - 'offline'：非 online 且非 pending/disabled（包含 last_heartbeat_at 为空的情况）
+        """
+        if not value:
+            return queryset
+        value = str(value)
+        if value in ('pending', 'disabled'):
+            return queryset.filter(status=value)
+
+        now = timezone.now()
+        # load thresholds
+        by_env = ConfigManager.get("agent.offline_threshold_by_env", {}) or {}
+        global_threshold = ConfigManager.get("agent.offline_threshold_seconds", 600) or 600
+
+        online_q = Q()
+        env_keys = [k for k in by_env.keys() if isinstance(k, str)]
+        for env in env_keys:
+            try:
+                t = int(by_env.get(env))
+            except Exception:
+                continue
+            cutoff = now - timedelta(seconds=t)
+            online_q |= Q(host__environment=env, last_heartbeat_at__gte=cutoff)
+
+        # default bucket: hosts whose environment not in env_keys
+        try:
+            cutoff_def = now - timedelta(seconds=int(global_threshold))
+        except Exception:
+            cutoff_def = now - timedelta(seconds=600)
+
+        if env_keys:
+            online_q |= Q(~Q(host__environment__in=env_keys), last_heartbeat_at__gte=cutoff_def)
+        else:
+            online_q |= Q(last_heartbeat_at__gte=cutoff_def)
+
+        # exclude pending/disabled
+        online_q &= ~Q(status__in=['pending', 'disabled'])
+
+        if value == 'online':
+            return queryset.filter(online_q).distinct()
+        elif value == 'offline':
+            # offline = not online AND not pending/disabled
+            return queryset.exclude(online_q).exclude(status__in=['pending', 'disabled']).distinct()
+        else:
+            return queryset
 
 
 class InstallRecordFilter(django_filters.FilterSet):

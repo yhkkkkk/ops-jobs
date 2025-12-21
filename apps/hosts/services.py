@@ -278,7 +278,13 @@ class HostService:
                     timeout=3,
                     connection_timeout=3
                 )
-
+            except (FabricSSHError, Exception) as e:
+                last_error = str(e)
+                used_ip_type = 'internal'
+                used_ip = original_internal_ip
+                logger.debug(f"内网IP连接失败: {host.name} ({original_internal_ip}) - {e}")
+                result = None
+            else:
                 if result and result.get('success'):
                     host.status = 'online'
                     host.last_check_time = timezone.now()
@@ -312,12 +318,6 @@ class HostService:
                     used_ip_type = 'internal'
                     used_ip = original_internal_ip
 
-            except (FabricSSHError, Exception) as e:
-                last_error = str(e)
-                used_ip_type = 'internal'
-                used_ip = original_internal_ip
-                logger.debug(f"内网IP连接失败: {host.name} ({original_internal_ip}) - {e}")
-
         # 如果内网失败或没有内网IP，尝试外网IP
         if (not use_internal or last_error) and use_public:
             try:
@@ -335,6 +335,7 @@ class HostService:
                 last_error = str(e)
                 logger.debug(f"外网IP连接失败: {host.name} ({original_public_ip}) - {e}")
             else:
+                # 恢复原始IP设置
                 host.internal_ip = original_internal_ip
                 host.public_ip = original_public_ip
 
@@ -536,7 +537,7 @@ df -h 2>/dev/null || echo "N/A"
             try:
                 host.internal_ip = original_internal_ip
                 host.public_ip = None  # 避免使用公网IP
-                
+
                 # 内网连接使用短超时（连接5秒，命令执行5秒，收集信息需要执行脚本，比测试连接稍长）
                 result = fabric_ssh_manager.execute_script(
                     host=host,
@@ -545,19 +546,18 @@ df -h 2>/dev/null || echo "N/A"
                     timeout=5,
                     connection_timeout=5  # 连接超时也设置为5秒
                 )
-                
-                if not result['success']:
-                    last_error = result.get('message') or result.get('error') or '内网连接失败'
-                    result = None
-                    logger.debug(f"内网IP收集信息失败: {host.name} ({original_internal_ip}) - {last_error}")
-                    
             except (FabricSSHError, Exception) as e:
                 last_error = str(e)
                 result = None
                 logger.debug(f"内网IP收集信息异常: {host.name} ({original_internal_ip}) - {e}")
+            else:
+                if not result or not result.get('success'):
+                    last_error = result.get('message') if result else '内网连接失败'
+                    result = None
+                    logger.debug(f"内网IP收集信息失败: {host.name} ({original_internal_ip}) - {last_error}")
         
         # 如果内网失败或没有内网IP，尝试外网IP
-        if (not use_internal or not result or not result.get('success')) and use_public:
+        if (not use_internal or not result) and use_public:
             try:
                 # 临时使用公网IP作为连接目标
                 host.internal_ip = original_public_ip
@@ -575,14 +575,14 @@ df -h 2>/dev/null || echo "N/A"
                 result = None
                 logger.debug(f"外网IP收集信息异常: {host.name} ({original_public_ip}) - {e}")
             else:
-                if not result.get('success'):
-                    last_error = result.get('message') or result.get('error') or '外网连接失败'
+                if not result or not result.get('success'):
+                    last_error = result.get('message') if result else '外网连接失败'
                     logger.debug(f"外网IP收集信息失败: {host.name} ({original_public_ip}) - {last_error}")
         
         # 恢复原始IP地址
         host.internal_ip = original_internal_ip
         host.public_ip = original_public_ip
-        
+
         # 检查是否成功
         if not result or not result.get('success'):
             error_msg = last_error or '未知错误'

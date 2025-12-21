@@ -1,5 +1,12 @@
 """
-项目仪表盘视图
+项目仪表盘视图（包含运维台相关统计）
+
+本模块提供：
+- 仪表盘概览 / 统计 / 最近活动 / 系统状态 等端点
+- 运维台专用的概览接口（ops_overview），用于返回运维关注的 KPI（实时在线/离线、心跳告警、任务延时分位、失败主机TOP 等）
+
+注意：
+- 运维台的告警基于实时计算的 computed status（短时缓存），并可按环境使用不同阈值判定离线。
 """
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -17,6 +24,21 @@ from .serializers import (
     DashboardRecentActivitySerializer,
     DashboardSystemStatusSerializer
 )
+
+
+def compute_percentile(values, p):
+    """计算简单分位数（线性插值），values 为数值列表，p 为百分比（0-100）"""
+    if not values:
+        return 0.0
+    vals = sorted(values)
+    k = (len(vals) - 1) * (p / 100.0)
+    f = int(k)
+    c = min(f + 1, len(vals) - 1)
+    if f == c:
+        return vals[int(k)]
+    d0 = vals[f] * (c - k)
+    d1 = vals[c] * (k - f)
+    return d0 + d1
 
 
 class DashboardViewSet(viewsets.ViewSet):
@@ -82,6 +104,172 @@ class DashboardViewSet(viewsets.ViewSet):
             return SycResponse.success(content=status_data, message="获取系统状态成功")
         except Exception as e:
             return SycResponse.error(message=f"获取系统状态失败: {str(e)}")
+
+    @extend_schema(
+        summary="运维台：获取运维关注的概览数据（使用 computed_status 统计在线/离线）",
+        responses={200: 'OpsOverviewSerializer'},
+        tags=["运维台"]
+    )
+    @cache_response(timeout=60)  # 缓存 60s
+    @action(detail=False, methods=['get'], url_path='ops_overview')
+    def ops_overview(self, request):
+        """运维台概览：基于实时计算的 Agent 状态提供运维关注的 KPI"""
+        try:
+            from apps.agents.models import Agent
+            from apps.executor.models import ExecutionRecord
+            from apps.agents.status import get_cached_agent_status
+
+            agents = Agent.objects.select_related('host').all()
+            total = agents.count()
+            online = 0
+            offline = 0
+            pending = 0
+            disabled = 0
+
+            for agent in agents:
+                # pending/disabled respect stored management state
+                if agent.status in ('pending', 'disabled'):
+                    if agent.status == 'pending':
+                        pending += 1
+                    else:
+                        disabled += 1
+                    continue
+
+                # otherwise use computed cached status
+                st = get_cached_agent_status(agent.id, agent)
+                if st == 'online':
+                    online += 1
+                else:
+                    offline += 1
+
+            # heartbeat alerts: compute per-agent using compute_agent_status (env-aware thresholds)
+            from apps.agents.status import compute_agent_status
+            heartbeat_hosts = []
+            try:
+                for agent in agents:
+                    # skip agents intentionally disabled or pending
+                    if agent.status in ('pending', 'disabled'):
+                        continue
+                    try:
+                        cs = compute_agent_status(agent)
+                    except Exception:
+                        cs = 'offline'
+                    if cs == 'offline':
+                        # determine threshold for reporting
+                        # try to extract host env and last_heartbeat_at
+                        env = getattr(agent.host, 'environment', None) if getattr(agent, 'host', None) else getattr(agent, 'environment', None)
+                        last_hb = getattr(agent, 'last_heartbeat_at', None)
+                        heartbeat_hosts.append({
+                            'agent_id': agent.id,
+                            'host_name': getattr(agent.host, 'name', None) if getattr(agent, 'host', None) else None,
+                            'environment': env,
+                            'last_heartbeat_at': last_hb.isoformat() if last_hb else None,
+                        })
+            except Exception:
+                heartbeat_hosts = []
+
+            heartbeat_alerts_count = len(heartbeat_hosts)
+
+            # running tasks and 24h failure rate
+            now = timezone.now()
+            since_24h = now - timedelta(hours=24)
+            running_tasks = ExecutionRecord.objects.filter(status='running').count()
+            total_24h = ExecutionRecord.objects.filter(created_at__gte=since_24h).count()
+            failed_24h = ExecutionRecord.objects.filter(created_at__gte=since_24h, status='failed').count()
+            fail_rate = (failed_24h / total_24h * 100) if total_24h > 0 else 0.0
+            # 计算任务时延分位（过去24小时已完成的任务）
+            durations = []
+            finished_qs = ExecutionRecord.objects.filter(
+                created_at__gte=since_24h,
+                started_at__isnull=False,
+                finished_at__isnull=False
+            ).values('started_at', 'finished_at')
+            for rec in finished_qs:
+                try:
+                    dur = (rec['finished_at'] - rec['started_at']).total_seconds() * 1000.0
+                    if dur >= 0:
+                        durations.append(dur)
+                except Exception:
+                    continue
+
+            def percentile(values, p):
+                if not values:
+                    return 0.0
+                vals = sorted(values)
+                k = (len(vals)-1) * (p/100.0)
+                f = int(k)
+                c = min(f+1, len(vals)-1)
+                if f == c:
+                    return vals[int(k)]
+                d0 = vals[f] * (c - k)
+                d1 = vals[c] * (k - f)
+                return d0 + d1
+
+            p95_ms = round(percentile(durations, 95), 1) if durations else 0.0
+
+            # heartbeat_alerts: 简化为离线 agent 数（可扩展为阈值告警）
+            # 使用 per-agent 阈值更精确判定（返回详情）
+            heartbeat_alerts = heartbeat_alerts_count
+            # 计算 top failure hosts (基于 ExecutionStep.host_results 中的 host_name)
+            from apps.executor.models import ExecutionStep
+
+            host_fail_counts = {}
+            host_last_failed = {}
+            try:
+                failed_steps = ExecutionStep.objects.filter(
+                    created_at__gte=since_24h,
+                    status='failed'
+                ).values('host_results', 'finished_at')
+
+                for step in failed_steps:
+                    host_results = step.get('host_results') or []
+                    finished_at = step.get('finished_at')
+                    
+                    for hr in host_results:
+                        try:
+                            host_name = hr.get('host_name') or hr.get('host') or hr.get('hostname')
+                            status = hr.get('status') or hr.get('result_status') or ''
+                            if not host_name:
+                                continue
+
+                            if status in ('failed', 'error', 'timeout'):
+                                host_fail_counts[host_name] = host_fail_counts.get(host_name, 0) + 1
+                                if finished_at:
+                                    host_last_failed[host_name] = max(host_last_failed.get(host_name) or finished_at, finished_at)
+                        except Exception:
+                            continue
+            except Exception:
+                host_fail_counts = {}
+                host_last_failed = {}
+
+            top_hosts = []
+            for h, cnt in sorted(host_fail_counts.items(), key=lambda x: x[1], reverse=True)[:5]:
+                last_failed = host_last_failed.get(h)
+                top_hosts.append({
+                    'host_name': h,
+                    'fail_count': cnt,
+                    'last_failed_at': last_failed.isoformat() if last_failed else None
+                })
+
+            data = {
+                'agents_total': total,
+                'agents_online': online,
+                'agents_offline': offline,
+                'agents_pending': pending,
+                'agents_disabled': disabled,
+                'running_tasks': running_tasks,
+                'fail_rate_24h': round(fail_rate, 2),
+                'task_p50_ms': round(percentile(durations, 50), 1) if durations else 0.0,
+                'task_p95_ms': p95_ms,
+                'task_p99_ms': round(percentile(durations, 99), 1) if durations else 0.0,
+                'heartbeat_alerts': heartbeat_alerts,
+                'heartbeat_alerts_hosts': heartbeat_hosts,
+                'top_failure_hosts': top_hosts,
+                'last_updated': timezone.now()
+            }
+            return SycResponse.success(content=data, message="获取运维台概览成功")
+        except Exception as e:
+            return SycResponse.error(message=f"获取运维台概览失败: {str(e)}")
 
     @extend_schema(
         summary="获取执行趋势数据",
@@ -160,6 +348,108 @@ class DashboardViewSet(viewsets.ViewSet):
 
         except Exception as e:
             return SycResponse.error(message=f"获取执行趋势失败: {str(e)}")
+
+    @extend_schema(
+        summary="运维台：任务延时趋势（p50/p95）",
+        tags=["运维台"]
+    )
+    @cache_response(timeout=60 * 30, key_func=lambda request, *args, **kwargs: f"ops_latency_trend_{request.GET.get('time_range','7d')}_{request.GET.get('granularity','day')}_{request.GET.get('start_date','')}_{request.GET.get('end_date','')}")
+    @action(detail=False, methods=['get'], url_path='ops_latency_trend')
+    def ops_latency_trend(self, request):
+        """
+        返回任务延时趋势（p50/p95），参数：
+          - time_range: today/week/month/7d/30d/custom
+          - granularity: hour|day
+          - start_date, end_date: 自定义范围 YYYY-MM-DD
+        """
+        try:
+            from apps.executor.models import ExecutionRecord
+
+            time_range = request.GET.get('time_range', '7d')
+            granularity = request.GET.get('granularity', 'day')
+            start_date_str = request.GET.get('start_date', '')
+            end_date_str = request.GET.get('end_date', '')
+
+            now = timezone.now()
+            if time_range == 'today':
+                start_dt = timezone.make_aware(datetime.combine(now.date(), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'week':
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'month':
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=29)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range.endswith('d') and time_range[:-1].isdigit():
+                days = int(time_range[:-1])
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=days-1)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            elif time_range == 'custom' and start_date_str and end_date_str:
+                try:
+                    start_dt = timezone.make_aware(datetime.strptime(start_date_str, '%Y-%m-%d'))
+                    end_dt = timezone.make_aware(datetime.strptime(end_date_str, '%Y-%m-%d')) + timedelta(days=1) - timedelta(seconds=1)
+                except Exception:
+                    start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                    end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+            else:
+                start_dt = timezone.make_aware(datetime.combine((now.date() - timedelta(days=6)), datetime.min.time()))
+                end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
+
+            # 收集已完成的执行的 durations（ms）
+            records = ExecutionRecord.objects.filter(
+                created_at__gte=start_dt,
+                created_at__lte=end_dt,
+                started_at__isnull=False,
+                finished_at__isnull=False
+            ).values('created_at', 'started_at', 'finished_at')
+
+            # bucket by day or hour
+            buckets = {}
+            current = start_dt
+            if granularity == 'hour':
+                step = timedelta(hours=1)
+                fmt = lambda dt: dt.strftime('%Y-%m-%d %H:00')
+            else:
+                step = timedelta(days=1)
+                fmt = lambda dt: dt.strftime('%Y-%m-%d')
+
+            # initialize buckets
+            bstart = start_dt
+            while bstart <= end_dt:
+                buckets[fmt(bstart)] = []
+                bstart += step
+
+            for r in records:
+                try:
+                    finished = r['finished_at']
+                    started = r['started_at']
+                    dur_ms = (finished - started).total_seconds() * 1000.0
+                    if dur_ms < 0:
+                        continue
+                    # find bucket key by created_at
+                    created = r['created_at']
+                    if not created:
+                        created = started
+                    if granularity == 'hour':
+                        key = created.astimezone(timezone.get_current_timezone()).replace(minute=0, second=0, microsecond=0)
+                    else:
+                        key = created.astimezone(timezone.get_current_timezone()).replace(hour=0, minute=0, second=0, microsecond=0)
+                    key_str = fmt(key)
+                    if key_str in buckets:
+                        buckets[key_str].append(dur_ms)
+                except Exception:
+                    continue
+
+            series = []
+            for key in sorted(buckets.keys()):
+                vals = buckets[key]
+                p50 = round(compute_percentile(vals, 50), 1) if vals else 0.0
+                p95 = round(compute_percentile(vals, 95), 1) if vals else 0.0
+                series.append({'ts': key, 'p50': p50, 'p95': p95})
+
+            return SycResponse.success(content=series, message='获取延时趋势成功')
+        except Exception as e:
+            return SycResponse.error(message=f'获取延时趋势失败: {e}')
 
     @extend_schema(
         summary="获取任务状态分布",

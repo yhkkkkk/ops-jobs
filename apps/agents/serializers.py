@@ -6,6 +6,7 @@ from rest_framework import serializers
 from apps.hosts.serializers import HostSerializer, HostSimpleSerializer
 from apps.system_config.models import ConfigManager
 from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage
+from .status import get_cached_agent_status
 
 
 class AgentTokenSerializer(serializers.ModelSerializer):
@@ -29,6 +30,8 @@ class AgentTokenSerializer(serializers.ModelSerializer):
 class AgentSerializer(serializers.ModelSerializer):
     host = HostSimpleSerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    computed_status = serializers.SerializerMethodField()
+    computed_status_display = serializers.SerializerMethodField()
     tokens = AgentTokenSerializer(many=True, read_only=True)
     is_version_outdated = serializers.SerializerMethodField()
     expected_min_version = serializers.SerializerMethodField()
@@ -40,6 +43,8 @@ class AgentSerializer(serializers.ModelSerializer):
             'host',
             'status',
             'status_display',
+            'computed_status',
+            'computed_status_display',
             'version',
             'is_version_outdated',
             'expected_min_version',
@@ -63,6 +68,24 @@ class AgentSerializer(serializers.ModelSerializer):
         expected = self._get_expected_min_version(obj)
         if not expected:
             return False
+
+    def get_computed_status(self, obj: Agent) -> str | None:
+        """Return cached computed status (online/offline/pending/disabled)."""
+        try:
+            status = get_cached_agent_status(obj.id, obj)
+            return status or obj.status
+        except Exception:
+            return obj.status
+
+    def get_computed_status_display(self, obj: Agent) -> str:
+        mapping = {
+            'pending': '待激活',
+            'online': '在线',
+            'offline': '离线',
+            'disabled': '已禁用'
+        }
+        status = self.get_computed_status(obj) or obj.status
+        return mapping.get(status, status)
         if not obj.version:
             # 未上报版本，保守视为不落后，只在 UI 提示“未知版本”
             return False
@@ -105,6 +128,8 @@ class AgentSerializer(serializers.ModelSerializer):
 class AgentDetailSerializer(serializers.ModelSerializer):
     host = HostSerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    computed_status = serializers.SerializerMethodField()
+    computed_status_display = serializers.SerializerMethodField()
     tokens = AgentTokenSerializer(many=True, read_only=True)
     business_system = serializers.ReadOnlyField()
     environment = serializers.ReadOnlyField()
@@ -118,6 +143,8 @@ class AgentDetailSerializer(serializers.ModelSerializer):
             'host',
             'status',
             'status_display',
+            'computed_status',
+            'computed_status_display',
             'version',
             'is_version_outdated',
             'expected_min_version',
@@ -138,6 +165,12 @@ class AgentDetailSerializer(serializers.ModelSerializer):
 
     def get_expected_min_version(self, obj: Agent) -> str | None:
         return AgentSerializer._get_expected_min_version(obj)
+
+    def get_computed_status(self, obj: Agent) -> str | None:
+        return AgentSerializer(context=self.context).get_computed_status(obj)
+
+    def get_computed_status_display(self, obj: Agent) -> str:
+        return AgentSerializer(context=self.context).get_computed_status_display(obj)
 
 
 def _parse_semver(ver: str) -> tuple[int, int, int]:

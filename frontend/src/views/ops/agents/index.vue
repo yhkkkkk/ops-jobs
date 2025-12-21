@@ -82,61 +82,7 @@
       </div>
     </div>
 
-    <!-- 统计信息卡片 -->
-    <a-row :gutter="16" class="mb-4">
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <a-statistic
-            title="待激活"
-            :value="statistics.pending"
-            :value-style="{ color: '#ff7d00' }"
-          >
-            <template #prefix>
-              <icon-clock-circle style="margin-right: 4px" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <a-statistic
-            title="在线"
-            :value="statistics.online"
-            :value-style="{ color: '#00b42a' }"
-          >
-            <template #prefix>
-              <icon-check-circle style="margin-right: 4px" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <a-statistic
-            title="离线"
-            :value="statistics.offline"
-            :value-style="{ color: '#f53f3f' }"
-          >
-            <template #prefix>
-              <icon-close-circle style="margin-right: 4px" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <a-statistic
-            title="禁用"
-            :value="statistics.disabled"
-            :value-style="{ color: '#86909c' }"
-          >
-            <template #prefix>
-              <icon-minus-circle style="margin-right: 4px" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-    </a-row>
+    <!-- 统计信息卡片（已移除，使用运维台 Dashboard 提供更全面的 KPI） -->
 
     <!-- 搜索栏 -->
     <a-card class="mb-4">
@@ -151,21 +97,7 @@
             style="width: 250px"
           />
         </a-form-item>
-        <a-form-item label="状态">
-          <a-select
-            v-model="searchForm.status"
-            placeholder="请选择状态"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 120px"
-          >
-            <a-option value="pending">待激活</a-option>
-            <a-option value="online">在线</a-option>
-            <a-option value="offline">离线</a-option>
-            <a-option value="disabled">禁用</a-option>
-          </a-select>
-        </a-form-item>
+        <!-- 状态筛选已移除，前端展示使用 computed_status，复杂筛选请使用运维台 Dashboard -->
         <a-form-item label="环境">
           <a-select
             v-model="searchForm.environment"
@@ -232,12 +164,12 @@
         <template #status="{ record }">
           <a-space>
             <a-tag
-              :color="getStatusColor(record.status)"
+              :color="getStatusColor(record.computed_status || record.status)"
               size="small"
             >
-              {{ record.status_display }}
+              {{ record.computed_status_display || record.status_display }}
             </a-tag>
-            <a-tooltip v-if="getStatusHint(record.status)" :content="getStatusHint(record.status)">
+            <a-tooltip v-if="getStatusHint(record.computed_status || record.status)" :content="getStatusHint(record.computed_status || record.status)">
               <IconInfoCircle style="color: #ff7d00; cursor: help" />
             </a-tooltip>
           </a-space>
@@ -289,7 +221,7 @@
               详情
             </a-button>
             <a-button
-              v-if="record.status === 'pending'"
+            v-if="(record.computed_status || record.status) === 'pending'"
               type="text"
               status="warning"
               size="small"
@@ -301,7 +233,7 @@
               查看安装脚本
             </a-button>
             <a-button
-              v-if="record.status !== 'pending'"
+            v-if="(record.computed_status || record.status) !== 'pending'"
               type="text"
               size="small"
               @click="handleIssueToken(record)"
@@ -312,7 +244,7 @@
               发Token
             </a-button>
             <a-button
-              v-if="record.status !== 'disabled' && record.status !== 'pending'"
+            v-if="((record.computed_status || record.status) !== 'disabled') && ((record.computed_status || record.status) !== 'pending')"
               type="text"
               status="warning"
               size="small"
@@ -324,7 +256,7 @@
               禁用
             </a-button>
             <a-button
-              v-if="record.status === 'disabled'"
+            v-if="(record.computed_status || record.status) === 'disabled'"
               type="text"
               status="success"
               size="small"
@@ -415,7 +347,7 @@
                     v-for="host in availableHosts"
                     :key="host.id"
                     :value="host.id"
-                    :label="`${host.name} (${host.ip_address})`"
+                  :label="`${host.name} (${host.ip_address})`"
                   >
                     {{ host.name }} ({{ host.ip_address }}) - {{ host.os_type_display }}
                   </a-option>
@@ -484,7 +416,7 @@
                     v-for="pkg in availablePackages"
                     :key="pkg.id"
                     :value="pkg.id"
-                    :label="`${pkg.version} - ${pkg.os_type_display} - ${pkg.arch_display}`"
+                  :label="`${pkg.version} - ${pkg.os_type_display} - ${pkg.arch_display}`"
                   >
                     {{ pkg.version }} - {{ pkg.os_type_display }} - {{ pkg.arch_display }}
                     <a-tag v-if="pkg.is_default" color="blue" size="small" style="margin-left: 8px">默认</a-tag>
@@ -586,7 +518,7 @@
                     :value="agent.id"
                     :label="`${agent.host.name} (${agent.host.ip_address})`"
                   >
-                    {{ agent.host.name }} ({{ agent.host.ip_address }}) - {{ agent.status_display }} - {{ agent.version || '未知版本' }}
+                    {{ agent.host.name }} ({{ agent.host.ip_address }}) - {{ agent.computed_status_display || agent.status_display }} - {{ agent.version || '未知版本' }}
                   </a-option>
                 </a-select>
                 <template #extra>
@@ -762,7 +694,6 @@ const uninstallSseEventSource = ref<EventSource | null>(null)
 // 搜索表单
 const searchForm = reactive({
   search: '',
-  status: '',
   environment: '',
   business_system: undefined as number | undefined
 })
@@ -801,7 +732,7 @@ const rowSelection = reactive({
 
 // 计算选中的 pending 状态 Agent 数量
 const selectedPendingCount = computed(() => {
-  return agents.value.filter(a => selectedAgentIds.value.includes(a.id) && a.status === 'pending').length
+  return agents.value.filter(a => selectedAgentIds.value.includes(a.id) && (a.computed_status || a.status) === 'pending').length
 })
 
 // 是否有选中的 pending 状态 Agent
@@ -813,8 +744,8 @@ const hasPendingAgents = computed(() => {
 const selectedDisableableCount = computed(() => {
   return agents.value.filter(a => 
     selectedAgentIds.value.includes(a.id) && 
-    a.status !== 'disabled' && 
-    a.status !== 'pending'
+    ((a.computed_status || a.status) !== 'disabled') && 
+    ((a.computed_status || a.status) !== 'pending')
   ).length
 })
 
@@ -827,7 +758,7 @@ const hasDisableableAgents = computed(() => {
 const selectedEnableableCount = computed(() => {
   return agents.value.filter(a => 
     selectedAgentIds.value.includes(a.id) && 
-    a.status === 'disabled'
+    (a.computed_status || a.status) === 'disabled'
   ).length
 })
 
@@ -926,7 +857,6 @@ const fetchAgents = async () => {
       page_size: pagination.pageSize
     }
     if (searchForm.search) params.search = searchForm.search
-    if (searchForm.status) params.status = searchForm.status
     if (searchForm.environment) params.environment = searchForm.environment
     if (searchForm.business_system) params.business_system = searchForm.business_system
 
@@ -1563,10 +1493,10 @@ const copyText = (text: string) => {
 
 // 更新统计信息
 const updateStatistics = () => {
-  statistics.pending = agents.value.filter(a => a.status === 'pending').length
-  statistics.online = agents.value.filter(a => a.status === 'online').length
-  statistics.offline = agents.value.filter(a => a.status === 'offline').length
-  statistics.disabled = agents.value.filter(a => a.status === 'disabled').length
+  statistics.pending = agents.value.filter(a => (a.computed_status || a.status) === 'pending').length
+  statistics.online = agents.value.filter(a => (a.computed_status || a.status) === 'online').length
+  statistics.offline = agents.value.filter(a => (a.computed_status || a.status) === 'offline').length
+  statistics.disabled = agents.value.filter(a => (a.computed_status || a.status) === 'disabled').length
 }
 
 // 重置统计信息
@@ -1609,7 +1539,7 @@ const handleBatchRegenerateScript = async () => {
   }
   
   const pendingAgents = agents.value.filter(a => 
-    selectedAgentIds.value.includes(a.id) && a.status === 'pending'
+    selectedAgentIds.value.includes(a.id) && (a.computed_status || a.status) === 'pending'
   )
   
   if (pendingAgents.length === 0) {
@@ -1672,8 +1602,8 @@ const handleBatchDisable = async () => {
 
   const disableableAgents = agents.value.filter(a => 
     selectedAgentIds.value.includes(a.id) && 
-    a.status !== 'disabled' && 
-    a.status !== 'pending'
+    ((a.computed_status || a.status) !== 'disabled') && 
+    ((a.computed_status || a.status) !== 'pending')
   )
 
   if (disableableAgents.length === 0) {
@@ -1721,7 +1651,7 @@ const handleBatchEnable = async () => {
 
   const enableableAgents = agents.value.filter(a => 
     selectedAgentIds.value.includes(a.id) && 
-    a.status === 'disabled'
+    (a.computed_status || a.status) === 'disabled'
   )
 
   if (enableableAgents.length === 0) {
@@ -1767,7 +1697,7 @@ const handleBatchDeletePending = async () => {
   }
   
   const pendingAgents = agents.value.filter(a => 
-    selectedAgentIds.value.includes(a.id) && a.status === 'pending'
+    selectedAgentIds.value.includes(a.id) && (a.computed_status || a.status) === 'pending'
   )
   
   if (pendingAgents.length === 0) {

@@ -181,6 +181,19 @@ def init_default_configs():
             'category': 'notification',
             'description': '默认邮件接收人列表'
         },
+        # Agent 离线判定配置
+        {
+            'key': 'agent.offline_threshold_seconds',
+            'value': 600,
+            'category': 'system',
+            'description': 'Agent 离线判定阈值（秒），默认 600'
+        },
+        {
+            'key': 'agent.offline_threshold_by_env',
+            'value': {},
+            'category': 'system',
+            'description': '按环境的 Agent 离线阈值映射，例如 {\"prod\": 300, \"test\": 900}'
+        },
         # 云厂商配置示例
         {
             'key': 'cloud.aliyun.access_key',

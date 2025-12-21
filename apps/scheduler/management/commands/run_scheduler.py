@@ -67,38 +67,6 @@ def _load_jobs(scheduler: BlockingScheduler):
         )
         logger.info("ScheduledJob loaded", extra={"job_id": job.id, "cron": job.cron_expression, "tz": str(tz)})
 
-    # 内置系统任务：Agent 离线扫描（可通过配置关闭）
-    offline_enabled = getattr(settings, "AGENT_OFFLINE_SCHED_ENABLED", True)
-    interval_minutes = int(getattr(settings, "AGENT_OFFLINE_SCHED_INTERVAL_MINUTES", 5))
-
-    if offline_enabled and interval_minutes > 0:
-        try:
-            scheduler.add_job(
-                _run_mark_agents_offline,
-                trigger=IntervalTrigger(minutes=interval_minutes),
-                id="agent_mark_offline_job",
-                replace_existing=True,
-            )
-            logger.info(
-                "Builtin job loaded: mark_agents_offline",
-                extra={"interval_minutes": interval_minutes},
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to schedule mark_agents_offline job")
-
-
-def _run_mark_agents_offline():
-    """
-    周期性执行 Agent 离线扫描：
-      - 调用管理命令 mark_agents_offline
-      - 阈值逻辑由命令自身和 SystemConfig 决定
-    """
-    logger.info("Running builtin job: mark_agents_offline")
-    try:
-        call_command("mark_agents_offline")
-    except Exception:  # noqa: BLE001
-        logger.exception("mark_agents_offline job failed")
-
 
 class Command(BaseCommand):
     help = "Run APScheduler to execute ScheduledJob without Celery Beat"
