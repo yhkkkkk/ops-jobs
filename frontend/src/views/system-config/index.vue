@@ -256,6 +256,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
+// @ts-ignore - IDE path alias resolution in this environment
 import { systemConfigApi, type SystemConfig, type TaskConfig, type NotificationConfig } from '@/api/system'
 
 // 响应式数据
@@ -365,36 +366,27 @@ const columns = [
 
 // 计算属性
 const filteredConfigs = computed(() => {
-  let result = configs.value
-
-  if (searchText.value) {
-    result = result.filter(config =>
-      config.key.toLowerCase().includes(searchText.value.toLowerCase()) ||
-      config.description.toLowerCase().includes(searchText.value.toLowerCase())
-    )
-  }
-
-  if (categoryFilter.value) {
-    result = result.filter(config => config.category === categoryFilter.value)
-  }
-
-  // 更新分页总数
-  pagination.total = result.length
-
-  // 前端分页
-  const start = (pagination.current - 1) * pagination.pageSize
-  const end = start + pagination.pageSize
-
-  return result.slice(start, end)
+  return configs.value || []
 })
 
 // 方法
-const fetchConfigs = async () => {
+const fetchConfigs = async (opts: any = {}) => {
   try {
     tableLoading.value = true
-    // 获取所有配置，前端进行过滤和分页
-    const response = await systemConfigApi.getConfigs()
+    const params: any = {
+      page: opts.page || pagination.current,
+      page_size: opts.page_size || pagination.pageSize
+    }
+    if (categoryFilter.value) params.category = categoryFilter.value
+    if (searchText.value) params.search = searchText.value
+    const response = await systemConfigApi.getConfigs(params)
     configs.value = response.results || []
+    pagination.total = response.total || (response.results ? response.results.length : 0)
+    // 确保当前页在总页范围内
+    const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.pageSize))
+    if (pagination.current > totalPages) {
+      pagination.current = totalPages
+    }
   } catch (error) {
     Message.error('获取配置列表失败')
   } finally {
@@ -508,17 +500,20 @@ const handleCancelEdit = () => {
 
 const handlePageChange = (page: number) => {
   pagination.current = page
+  fetchConfigs({ page: pagination.current, page_size: pagination.pageSize })
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  fetchConfigs({ page: pagination.current, page_size: pagination.pageSize })
 }
 
 const handleSearch = () => {
   // 搜索和过滤逻辑由计算属性filteredConfigs自动处理
   // 这里可以添加额外的搜索逻辑，比如重置分页等
   pagination.current = 1
+  fetchConfigs({ page: 1, page_size: pagination.pageSize })
 }
 
 // 工具函数

@@ -17,6 +17,8 @@ from .serializers import (
     TaskConfigSerializer,
     NotificationConfigSerializer,
 )
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters
 
 
 @extend_schema_view(
@@ -33,6 +35,7 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
     queryset = SystemConfig.objects.all()
     serializer_class = SystemConfigSerializer
     permission_classes = [IsAuthenticated, IsSuperUser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'is_active']
     search_fields = ['key', 'description']
     ordering = ['category', 'key']
@@ -103,26 +106,6 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         self.perform_destroy(instance)
         return SycResponse.success(message="配置删除成功")
-    
-    @extend_schema(
-        summary="按分类获取配置",
-        tags=["系统配置"],
-        responses={200: SystemConfigCategorySerializer}
-    )
-    @action(detail=False, methods=['get'])
-    def by_category(self, request):
-        """按分类获取配置"""
-        category = request.query_params.get('category')
-        if not category:
-            return SycResponse.error("请指定配置分类")
-        
-        configs = ConfigManager.get_by_category(category)
-        data = {
-            'category': category,
-            'configs': configs
-        }
-        
-        return SycResponse.success(content=data, message="获取配置成功")
     
     @extend_schema(
         summary="批量更新配置",
