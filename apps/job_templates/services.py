@@ -263,6 +263,8 @@ class ExecutionPlanService:
                         'timeout': plan_step.get_effective_timeout(),
                         'ignore_error': step.ignore_error,
                         'execution_parameters': plan_step.get_effective_parameters(),
+                    # 支持 file_sources（从模板步骤迁移过来）
+                    'file_sources': getattr(step, 'file_sources', []) or [],
                         'target_hosts': [{
                             'id': host.id,
                             'name': host.name,

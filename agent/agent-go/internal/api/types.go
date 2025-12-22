@@ -22,18 +22,22 @@ type TaskSpec struct {
 	Env        map[string]string `json:"env,omitempty"`         // 环境变量
 	TimeoutSec int               `json:"timeout_sec,omitempty"` // 超时时间
 	WorkDir    string            `json:"work_dir,omitempty"`    // 工作目录
-	RunAs      string            `json:"run_as,omitempty"`       // 执行用户（用户名）
+	RunAs      string            `json:"run_as,omitempty"`      // 执行用户（用户名）
 	// 文件传输相关
 	FileTransfer *FileTransferSpec `json:"file_transfer,omitempty"`
 }
 
 // FileTransferSpec 文件传输规范
 type FileTransferSpec struct {
-	Type           string `json:"type"` // upload/download
-	LocalPath      string `json:"local_path"`
-	RemotePath     string `json:"remote_path"`
-	Content        []byte `json:"content,omitempty"`         // 上传文件内容
-	BandwidthLimit int    `json:"bandwidth_limit,omitempty"` // 带宽限制（KB/s），0表示不限制
+	Type           string            `json:"type"` // upload/download
+	LocalPath      string            `json:"local_path"`
+	RemotePath     string            `json:"remote_path"`
+	Content        []byte            `json:"content,omitempty"`         // 上传文件内容
+	BandwidthLimit int               `json:"bandwidth_limit,omitempty"` // 带宽限制（MB/s），0表示不限制
+	DownloadURL    string            `json:"download_url,omitempty"`    // presigned download URL（优先）
+	Checksum       string            `json:"checksum,omitempty"`        // sha256 校验（可选）
+	Size           int64             `json:"size,omitempty"`            // 文件大小（字节，可选）
+	AuthHeaders    map[string]string `json:"auth_headers,omitempty"`    // 可选认证头
 }
 
 // TaskResult 上报给控制面的执行结果

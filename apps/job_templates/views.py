@@ -126,7 +126,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         'transfer_type': step_data.get('transfer_type', ''),
                         'local_path': step_data.get('local_path', ''),
                         'remote_path': step_data.get('remote_path', ''),
-                        'overwrite_policy': step_data.get('overwrite_policy', '')
+                        'overwrite_policy': step_data.get('overwrite_policy', ''),
+                        'file_sources': step_data.get('file_sources', [])
                     })
 
                 step = JobStep.objects.create(**step_kwargs)
@@ -251,7 +252,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                             'transfer_type': step_data.get('transfer_type', ''),
                             'local_path': step_data.get('local_path', ''),
                             'remote_path': step_data.get('remote_path', ''),
-                            'overwrite_policy': step_data.get('overwrite_policy', '')
+                            'overwrite_policy': step_data.get('overwrite_policy', ''),
+                            'file_sources': step_data.get('file_sources', [])
                         })
 
                     # 更新现有步骤或创建新步骤

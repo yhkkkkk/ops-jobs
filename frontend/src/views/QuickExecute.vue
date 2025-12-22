@@ -638,13 +638,13 @@
                 </a-form-item>
               </a-col>
               <a-col :span="6">
-                <a-form-item label="限速(KB/s)">
+            <a-form-item label="限速(MB/s)">
                   <a-input-number
                     v-model="bandwidthLimit"
                     :min="0"
                     :max="1000000"
                     style="width: 100%"
-                    placeholder="0=不限速"
+                    placeholder="0=不限速（单位：MB/s）"
                   />
                 </a-form-item>
               </a-col>
@@ -899,6 +899,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
 import { accountApi, type ServerAccount } from '@/api/account'
+import request from '@/utils/request'
 import HostSelector from '@/components/HostSelector.vue'
 import type { Host, HostGroup, ScriptTemplate } from '@/types'
 import ScriptEditorWithValidation from '@/components/ScriptEditorWithValidation.vue'
@@ -1494,7 +1495,57 @@ const handleFileTransfer = async () => {
 
     console.log('文件传输请求数据:', data)
 
-    const result = await quickExecuteApi.transferFile(data)
+    // 构建 FormData 并上传文件（本地上传模式会把文件附加为 multipart）
+    const formData = new FormData()
+    // 基本字段
+    formData.append('name', data.name)
+    formData.append('overwrite_policy', data.overwrite_policy)
+    formData.append('timeout', String(data.timeout))
+    formData.append('bandwidth_limit', String(data.bandwidth_limit ?? ''))
+    formData.append('execution_mode', data.execution_mode)
+    formData.append('rolling_strategy', data.rolling_strategy)
+    formData.append('rolling_batch_size', String(data.rolling_batch_size))
+    formData.append('rolling_batch_delay', String(data.rolling_batch_delay))
+    formData.append('remote_path', data.remote_path)
+    formData.append('global_variables', JSON.stringify(data.global_variables || {}))
+
+    // targets
+    if (data.target_group_ids && data.target_group_ids.length > 0) {
+      formData.append('target_group_ids', JSON.stringify(data.target_group_ids))
+    }
+    if (data.target_host_ids && data.target_host_ids.length > 0) {
+      formData.append('target_host_ids', JSON.stringify(data.target_host_ids))
+    }
+
+    const sources: any[] = []
+    if (transferType.value === 'local_upload') {
+      // 将每个 fileList 中的文件放到一个独立的 form field，sources 中记录对应的 file_field
+      fileList.value.forEach((f: any, idx: number) => {
+        const fieldName = `local_file_${idx}`
+        formData.append(fieldName, f.file || f)
+        sources.push({
+          type: 'local',
+          file_field: fieldName,
+          remote_path: remotePath.value
+        })
+      })
+    } else {
+      // server_upload 模式：用户需提供 storage_path 或 download_url 到 sourceServerPath 输入框
+      sources.push({
+        type: 'server',
+        download_url: sourceServerPath.value,
+        remote_path: remotePath.value,
+        filename: sourceServerPath.value.split('/').pop()
+      })
+    }
+
+    formData.append('sources', JSON.stringify(sources))
+
+    // 发送 multipart 请求（使用 axios 实例直接发送以覆盖默认 JSON header）
+    const resp = await request.post('/quick/transfer_file/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const result = resp.data
     Message.success(`文件传输任务已启动，任务ID: ${result.task_id}`)
 
     // 跳转到执行记录页面

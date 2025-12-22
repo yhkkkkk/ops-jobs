@@ -261,20 +261,33 @@
 
                   <!-- 文件传输步骤 -->
                   <div v-else-if="step.step_type === 'file_transfer'" class="file-transfer-content">
-                    <a-descriptions :column="2" size="small">
-                      <a-descriptions-item label="传输类型">
-                        {{ step.transfer_type === 'upload' ? '上传' : '下载' }}
-                      </a-descriptions-item>
-                      <a-descriptions-item label="本地路径">
-                        {{ step.local_path || '-' }}
-                      </a-descriptions-item>
-                      <a-descriptions-item label="远程路径">
-                        {{ step.remote_path || '-' }}
-                      </a-descriptions-item>
-                      <a-descriptions-item label="覆盖策略">
-                        {{ getOverwritePolicyName(step.overwrite_policy) }}
-                      </a-descriptions-item>
-                    </a-descriptions>
+                  <a-descriptions :column="2" size="small">
+                    <a-descriptions-item label="覆盖策略">
+                      {{ getOverwritePolicyName(step.overwrite_policy) }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="执行账号">
+                      {{ step.account_name || `ID: ${step.account_id || '-'}` }}
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="step.file_sources && step.file_sources.length > 0" label="文件来源">
+                      <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
+                        <div v-for="(src, si) in step.file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                          <a-tag :color="src.type === 'local' ? 'cyan' : 'purple'">{{ src.type === 'local' ? '本地' : '制品库' }}</a-tag>
+                          <div style="flex:1; min-width:0">
+                            <div style="font-weight:500">{{ src.filename || src.storage_path || src.download_url }}</div>
+                            <div style="font-size:12px; color:#86909c">
+                              目标路径: {{ src.remote_path || '-' }} 
+                              <span v-if="src.size"> · {{ formatSize(src.size) }}</span>
+                              <span v-if="src.sha256"> · sha256: {{ src.sha256.substr(0,12) }}...</span>
+                            </div>
+                          </div>
+                          <a-space>
+                            <a-button v-if="src.download_url" type="text" size="small" @click="openDownload(src.download_url)">下载</a-button>
+                            <a-button v-if="src.download_url" type="text" size="small" @click="copyToClipboard(src.download_url)">复制链接</a-button>
+                          </a-space>
+                        </div>
+                      </div>
+                    </a-descriptions-item>
+                  </a-descriptions>
                   </div>
                 </div>
               </div>
@@ -415,6 +428,33 @@ const toggleScriptExpand = (stepIndex: number) => {
   } else {
     expandedScripts.value.add(stepIndex)
   }
+}
+
+// 打开下载链接
+const openDownload = (url: string) => {
+  if (!url) return
+  window.open(url, '_blank')
+}
+
+// 复制到剪贴板
+const copyToClipboard = async (text: string) => {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    Message.success('已复制链接到剪贴板')
+  } catch (e) {
+    Message.error('复制失败')
+  }
+}
+
+// 格式化字节大小
+const formatSize = (bytes?: number) => {
+  if (!bytes && bytes !== 0) return '-'
+  const kb = 1024
+  if (bytes < kb) return bytes + ' B'
+  const mb = kb * kb
+  if (bytes < mb) return (bytes / kb).toFixed(2) + ' KB'
+  return (bytes / mb).toFixed(2) + ' MB'
 }
 
 // 获取脚本预览内容

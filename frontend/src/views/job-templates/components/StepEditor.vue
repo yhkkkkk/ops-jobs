@@ -139,83 +139,57 @@
         </a-form-item>
       </div>
 
-      <!-- 文件传输配置 -->
+      <!-- 文件传输配置（仅本地上传） -->
       <div v-if="form.step_type === 'file_transfer'">
-        <a-form-item label="传输类型">
-          <a-radio-group v-model="transferType">
-            <a-radio value="upload">上传到服务器</a-radio>
-            <a-radio value="download">从服务器下载</a-radio>
-          </a-radio-group>
-        </a-form-item>
-
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="本地路径" required>
-              <!-- 上传模式：使用 a-upload -->
-              <div v-if="transferType === 'upload'" class="upload-section">
-                <a-upload
-                  :file-list="stepFileList"
-                  :auto-upload="false"
-                  multiple
-                  :show-upload-button="true"
-                  :show-file-list="false"
-                  :show-cancel-button="false"
-                  :show-retry-button="false"
-                  :show-upload-list-button="false"
-                  @change="handleStepFileChange"
-                  @remove="handleStepFileRemove"
-                  class="step-file-upload"
-                >
-                  <template #upload-button>
-                    <div class="step-upload-btn">
-                      <icon-plus />
-                      <div class="upload-text">选择文件</div>
-                    </div>
-                  </template>
-                </a-upload>
+            <a-form-item label="文件来源（本地）" required>
+              <a-upload
+                :file-list="stepFileList"
+                :auto-upload="false"
+                multiple
+                :show-upload-button="true"
+                :show-file-list="false"
+                @change="handleStepFileChange"
+                @remove="handleStepFileRemove"
+                class="step-file-upload"
+              >
+                <template #upload-button>
+                  <div class="step-upload-btn" style="width:100%; text-align:center;">
+                    <icon-plus />
+                    <div class="upload-text">选择本地文件（支持多选）</div>
+                  </div>
+                </template>
+              </a-upload>
 
-                <!-- 自定义步骤文件列表 -->
-                <div v-if="stepFileList.length > 0" class="custom-step-file-list">
-                  <div
-                    v-for="(fileItem, index) in stepFileList"
-                    :key="fileItem.uid || index"
-                    class="custom-step-upload-list-item"
-                  >
-                    <div class="step-file-info">
-                      <icon-file class="step-file-icon" />
-                      <div class="step-file-details">
-                        <div class="step-file-name">{{ fileItem.name }}</div>
-                        <div class="step-file-size">{{ formatStepFileSize(fileItem.file?.size || 0) }}</div>
-                      </div>
-                    </div>
-                    <div class="step-file-actions">
-                      <a-button
-                        type="text"
-                        size="small"
-                        @click="handleStepFileRemove(fileItem)"
-                        class="step-remove-btn"
-                      >
-                        <template #icon>
-                          <icon-delete />
-                        </template>
-                      </a-button>
+              <!-- 自定义步骤文件列表（更宽展示） -->
+              <div v-if="stepFileList.length > 0" class="custom-step-file-list" style="margin-top:12px;">
+                <div
+                  v-for="(fileItem, index) in stepFileList"
+                  :key="fileItem.uid || index"
+                  class="custom-step-upload-list-item"
+                >
+                  <div class="step-file-info">
+                    <icon-file class="step-file-icon" />
+                    <div class="step-file-details">
+                      <div class="step-file-name">{{ fileItem.name }}</div>
+                      <div class="step-file-size">{{ formatStepFileSize(fileItem.file?.size || 0) }}</div>
                     </div>
                   </div>
+                  <div class="step-file-actions">
+                    <a-button
+                      type="text"
+                      size="small"
+                      @click="handleStepFileRemove(fileItem)"
+                      class="step-remove-btn"
+                    >
+                      <template #icon>
+                        <icon-delete />
+                      </template>
+                    </a-button>
+                  </div>
                 </div>
-                <a-input
-                  v-model="localPath"
-                  placeholder="也可以手动输入文件路径"
-                  class="manual-path-input"
-                />
               </div>
-
-              <!-- 下载模式：普通输入框 -->
-              <a-input
-                v-else
-                v-model="localPath"
-                placeholder="请输入本地文件路径"
-                allow-clear
-              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -534,9 +508,7 @@ const form = reactive<Partial<JobStep>>({
   script_type: 'shell',
   script_content: '',
   account_id: undefined,
-  // 文件传输相关字段
-  transfer_type: 'upload',
-  local_path: '',
+  // 文件传输相关字段（仅本地上传到模板存储）
   remote_path: '',
   overwrite_policy: 'overwrite'
 })
@@ -561,9 +533,7 @@ const selectedTemplateKeys = ref<number[]>([])
 const positionalArgs = ref<string[]>([''])
 const parameterVisibility = ref<Record<number, boolean>>({})
 
-// 文件传输相关
-const transferType = ref('upload')
-const localPath = ref('')
+// 文件传输相关（仅本地上传）
 const remotePath = ref('')
 const overwritePolicy = ref('overwrite')
 const stepFileList = ref<any[]>([]) // 步骤文件列表
@@ -765,9 +735,8 @@ watch(
         scriptContent.value = step.script_content || ''
         selectedAccountId.value = step.account_id
       } else if (step.step_type === 'file_transfer') {
-        transferType.value = step.transfer_type || 'upload'
-        localPath.value = step.local_path || ''
-        remotePath.value = step.remote_path || ''
+        // 仅保留远程目标路径/覆盖策略和账号。如果模板里有 file_sources，优先使用首个 source 的 remote_path 作为预填。
+        remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
         overwritePolicy.value = step.overwrite_policy || 'overwrite'
         selectedAccountId.value = step.account_id
       }
@@ -924,33 +893,33 @@ const formatStepFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 步骤文件操作方法
+// 步骤文件操作方法（仅维护上传列表）
 const handleStepFileChange = (files: any[]) => {
   stepFileList.value = files
-
-  // 更新localPath
-  if (files.length === 0) {
-    localPath.value = ''
-  } else if (files.length === 1) {
-    localPath.value = files[0].name
-  } else {
-    localPath.value = files.map((f: any) => f.name).join(';')
-  }
 }
 
 const handleStepFileRemove = (fileItem: any) => {
-  // 手动更新步骤文件列表（因为我们使用自定义文件列表）
   const remainingFiles = stepFileList.value.filter(f => f.uid !== fileItem.uid)
   stepFileList.value = remainingFiles
+}
 
-  // 更新localPath
-  if (remainingFiles.length === 0) {
-    localPath.value = ''
-  } else if (remainingFiles.length === 1) {
-    localPath.value = remainingFiles[0].name
-  } else {
-    localPath.value = remainingFiles.map((f: any) => f.name).join(';')
-  }
+// Read file as base64 string
+const readFileAsBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // remove data:*/*;base64, prefix if present
+      const idx = result.indexOf('base64,')
+      if (idx !== -1) {
+        resolve(result.substring(idx + 7))
+      } else {
+        resolve(result)
+      }
+    }
+    reader.onerror = (e) => reject(e)
+    reader.readAsDataURL(file)
+  })
 }
 
 // 检查是否是示例内容
@@ -1023,15 +992,40 @@ const handleSubmit = async () => {
       stepData.script_content = scriptContent.value
       stepData.account_id = selectedAccountId.value
     } else if (form.step_type === 'file_transfer') {
-      if (!localPath.value.trim() || !remotePath.value.trim()) {
-        Message.error('请输入本地路径和远程路径')
+      if (!remotePath.value.trim()) {
+        Message.error('请输入远程路径')
         return
       }
-      stepData.transfer_type = transferType.value
-      stepData.local_path = localPath.value
+      // 模板中的文件传输步骤仅保存本地上传的 file_sources（base64 内容），不支持服务器下载模式
       stepData.remote_path = remotePath.value
       stepData.overwrite_policy = overwritePolicy.value
       stepData.account_id = selectedAccountId.value
+
+      // 构建 file_sources：仅支持本地上传（将文件转换为 base64 存入模板）
+      const file_sources: any[] = []
+      if (!stepFileList.value || stepFileList.value.length === 0) {
+        Message.error('请至少选择一个本地文件作为步骤来源')
+        return
+      }
+      for (let i = 0; i < stepFileList.value.length; i++) {
+        const f = stepFileList.value[i]
+        const fileObj = f.file || f
+        try {
+          const content = await readFileAsBase64(fileObj)
+          file_sources.push({
+            type: 'local',
+            filename: fileObj.name,
+            content: content, // base64 string
+            remote_path: remotePath.value,
+            size: fileObj.size
+          })
+        } catch (e) {
+          console.error('读取步骤文件失败', e)
+          Message.error('读取步骤文件失败，请重试')
+          return
+        }
+      }
+      stepData.file_sources = file_sources
     }
 
     emit('save', stepData)

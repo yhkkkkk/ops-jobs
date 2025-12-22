@@ -80,10 +80,14 @@ class QuickFileTransferView(APIView):
         # 获取客户端信息
         client_ip = self.get_client_ip(request)
         user_agent = request.META.get('HTTP_USER_AGENT', '')
+        # 支持 multipart/form-data 上传本地文件：把 request.FILES 一并传给 service
+        transfer_data = serializer.validated_data
+        # request.FILES 是类似 MultiValueDict，直接传递供 service 使用（file_field 对应的 key）
+        transfer_data['uploaded_files'] = request.FILES
 
         result = QuickExecuteService.transfer_file(
             user=request.user,
-            transfer_data=serializer.validated_data,
+            transfer_data=transfer_data,
             client_ip=client_ip,
             user_agent=user_agent
         )

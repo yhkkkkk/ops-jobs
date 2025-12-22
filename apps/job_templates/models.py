@@ -115,6 +115,9 @@ class JobStep(models.Model):
     transfer_type = models.CharField(max_length=20, blank=True, verbose_name="传输类型",
                                    help_text="upload 或 download")
     local_path = models.TextField(blank=True, verbose_name="本地路径")
+    # 支持多文件来源（本地/服务器），存储为 array of objects
+    file_sources = models.JSONField(default=list, blank=True, verbose_name="文件来源",
+                                   help_text="文件来源数组，元素示例: {'type':'local','local_path':'/tmp/a.tar.gz','remote_path':'/tmp/a.tar.gz'} 或 {'type':'server','source_server_host':'1.2.3.4','source_server_path':'/data/a.tar.gz','remote_path':'/tmp/a.tar.gz'}")
     remote_path = models.TextField(blank=True, verbose_name="远程路径")
     overwrite_policy = models.CharField(max_length=20, blank=True, verbose_name="覆盖策略",
                                       help_text="overwrite, skip, backup")
@@ -144,12 +147,14 @@ class JobStep(models.Model):
             if not self.script_type:
                 raise ValidationError({'script_type': '脚本步骤必须指定脚本类型'})
         elif self.step_type == 'file_transfer':
-            if not self.local_path:
-                raise ValidationError({'local_path': '文件传输步骤必须包含本地路径'})
-            if not self.remote_path:
-                raise ValidationError({'remote_path': '文件传输步骤必须包含远程路径'})
-            if not self.transfer_type:
-                raise ValidationError({'transfer_type': '文件传输步骤必须指定传输类型'})
+            # 强制使用 file_sources 字段（不再兼容旧字段）
+            if not isinstance(self.file_sources, list) or len(self.file_sources) == 0:
+                raise ValidationError({'file_sources': '文件传输步骤必须包含非空的 file_sources'})
+            for s in self.file_sources:
+                if not isinstance(s, dict) or 'type' not in s:
+                    raise ValidationError({'file_sources': '每个 source 必须是对象且包含 type 字段'})
+                if s.get('type') not in ('local', 'server'):
+                    raise ValidationError({'file_sources': "source.type 必须是 'local' 或 'server'"})
 
         # 验证位置参数格式
         if not isinstance(self.step_parameters, list):

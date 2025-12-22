@@ -13,7 +13,6 @@ from .serializers import (
     SystemConfigSerializer,
     SystemConfigUpdateSerializer,
     SystemConfigBatchUpdateSerializer,
-    SystemConfigCategorySerializer,
     TaskConfigSerializer,
     NotificationConfigSerializer,
 )

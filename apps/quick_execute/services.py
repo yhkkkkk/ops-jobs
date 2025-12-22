@@ -7,6 +7,9 @@ from django.utils import timezone
 from apps.hosts.models import Host, HostGroup
 from apps.agents.execution_service import AgentExecutionService
 from apps.executor.services import ExecutionRecordService
+from apps.agents.storage_service import StorageService
+from apps.system_config.models import ConfigManager
+import hashlib, uuid
 
 logger = logging.getLogger(__name__)
 
@@ -195,39 +198,168 @@ class QuickExecuteService:
             })
             execution_record.save()
 
-            # 读取文件内容（如果是上传）
-            file_content = None
-            if transfer_data.get('transfer_type') == 'upload':
-                local_path = transfer_data.get('local_path', '')
-                if local_path:
-                    try:
-                        with open(local_path, 'rb') as f:
-                            file_content = f.read()
-                    except Exception as e:
-                        logger.error(f"读取文件失败: {str(e)}")
-                        ExecutionRecordService.update_execution_status(
-                            execution_record=execution_record,
-                            status='failed',
-                            error_message=f'读取文件失败: {str(e)}'
-                        )
-                        return {
-                            'success': False,
-                            'message': f'读取文件失败: {str(e)}'
-                        }
+            # 处理上传的多个 sources（必须存在，且不兼容旧字段）
+            file_items = []
+            sources = transfer_data.get('sources') or []
+            uploaded_files = transfer_data.get('uploaded_files')  # request.FILES
+            if sources:
+                # 为每个 source 构建 file_items（local 或 server）
+                for s in sources:
+                    stype = s.get('type')
+                    if stype == 'local':
+                        # local: upload uploaded_files[file_field] into storage backend, generate download_url + checksum
+                        file_field = s.get('file_field')
+                        remote_path_for_source = s.get('remote_path') or transfer_data.get('remote_path')
+                        if not file_field:
+                            continue
+                        if not uploaded_files:
+                            continue
+                        files_list = uploaded_files.getlist(file_field) if hasattr(uploaded_files, 'getlist') else uploaded_files.get(file_field)
+                        if not files_list:
+                            continue
+                        if not isinstance(files_list, (list, tuple)):
+                            files_list = [files_list]
+                        # choose storage backend from system config
+                        storage_type = ConfigManager.get('storage.type', 'local')
+                        backend = StorageService.get_backend(storage_type)
+                        if backend is None:
+                            logger.error(f"无法获取存储后端: {storage_type}")
+                            continue
+                        for fu in files_list:
+                            try:
+                                # compute sha256
+                                content = fu.read()
+                                sha256_hash = hashlib.sha256(content).hexdigest()
+                                size = len(content)
+                                # generate storage path
+                                filename = getattr(fu, 'name', f'file_{uuid.uuid4().hex}')
+                                storage_path = f"quick_execute/{execution_record.execution_id}/{uuid.uuid4().hex}_{filename}"
+                                # seek back if possible by writing to temp file-like for backend; use UploadedFile interface: create BytesIO
+                                from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
+                                # create a new InMemoryUploadedFile-like wrapper if needed
+                                try:
+                                    fu.seek(0)
+                                except Exception:
+                                    pass
+                                success, err_msg = backend.upload_file(fu, storage_path)
+                                if not success:
+                                    logger.error(f"上传到存储失败: {err_msg}")
+                                    continue
+                                download_url = backend.generate_url(storage_path, expires_in=3600)
+                                file_items.append({
+                                    'type': 'artifact',
+                                    'storage_path': storage_path,
+                                    'download_url': download_url,
+                                    'sha256': sha256_hash,
+                                    'size': size,
+                                    'filename': filename,
+                                    'remote_path': remote_path_for_source,
+                                })
+                            except Exception as e:
+                                logger.exception(f"处理上传文件失败: {e}")
+                                continue
+                    elif stype == 'server':
+                        # server: require storage_path or download_url (artifact must be prepared front-end or other process)
+                        remote_path_for_source = s.get('remote_path') or transfer_data.get('remote_path')
+                        storage_path = s.get('storage_path')
+                        download_url = s.get('download_url')
+                        if storage_path and not download_url:
+                            storage_type = ConfigManager.get('storage.type', 'local')
+                            backend = StorageService.get_backend(storage_type)
+                            download_url = backend.generate_url(storage_path, expires_in=3600) if backend else None
+                        if not download_url:
+                            logger.error("server source missing download_url/storage_path, skipping")
+                            continue
+                        file_items.append({
+                            'type': 'artifact',
+                            'storage_path': storage_path,
+                            'download_url': download_url,
+                            'sha256': s.get('sha256'),
+                            'size': s.get('size'),
+                            'filename': s.get('filename'),
+                            'remote_path': remote_path_for_source,
+                        })
+            else:
+                # 兼容旧逻辑：单文件从本地路径读取（用于 backward compatibility）
+                if transfer_data.get('transfer_type') in ('local_upload', 'upload'):
+                    local_path = transfer_data.get('local_path', '')
+                    if local_path:
+                        try:
+                            with open(local_path, 'rb') as f:
+                                content = f.read()
+                            file_items.append({
+                                'type': 'local',
+                                'filename': local_path.split('/')[-1],
+                                'content': content,
+                                'remote_path': transfer_data.get('remote_path'),
+                            })
+                        except Exception as e:
+                            logger.error(f"读取文件失败: {str(e)}")
+                            ExecutionRecordService.update_execution_status(
+                                execution_record=execution_record,
+                                status='failed',
+                                error_message=f'读取文件失败: {str(e)}'
+                            )
+                            return {
+                                'success': False,
+                                'message': f'读取文件失败: {str(e)}'
+                            }
 
             # 通过Agent执行文件传输
-            result = AgentExecutionService.execute_file_transfer_via_agent(
-                execution_record=execution_record,
-                transfer_type=transfer_data.get('transfer_type', 'upload'),
-                local_path=transfer_data.get('local_path', ''),
-                remote_path=transfer_data.get('remote_path', ''),
-                target_hosts=list(target_hosts),
-                file_content=file_content,
-                timeout=transfer_data.get('timeout', 300),
-                bandwidth_limit=transfer_data.get('bandwidth_limit', 0),
-                step_id=None,  # 快速执行没有步骤ID
-                agent_server_url=agent_server_url,
-            )
+            # 如果有多个 file_items，则逐个创建任务（每个 file_item 会在每台主机上创建一个任务）
+            if file_items:
+                # 把 file_items 写入 execution_parameters，便于审计/重试
+                execution_record.execution_parameters.update({
+                    'file_sources': file_items
+                })
+                execution_record.save()
+
+                overall_results = {'success': True, 'success_count': 0, 'failed_count': 0, 'results': []}
+                for item in file_items:
+                    # artifact: use download_url + checksum + size; Agent will download from URL
+                    if item.get('type') == 'artifact':
+                        res = AgentExecutionService.execute_file_transfer_via_agent(
+                            execution_record=execution_record,
+                            transfer_type=transfer_data.get('transfer_type', 'upload'),
+                            local_path=item.get('filename') or '',
+                            remote_path=item.get('remote_path') or transfer_data.get('remote_path', ''),
+                            target_hosts=list(target_hosts),
+                            file_content=None,
+                            timeout=transfer_data.get('timeout', 300),
+                            bandwidth_limit=transfer_data.get('bandwidth_limit', 0),
+                            download_url=item.get('download_url'),
+                            checksum=item.get('sha256'),
+                            size=item.get('size'),
+                            auth_headers=item.get('auth_headers') or {},
+                            step_id=None,
+                            agent_server_url=agent_server_url,
+                        )
+                    else:
+                        # unknown type: skip
+                        logger.warning(f"未知的 file_item 类型: {item.get('type')}, 跳过")
+                        continue
+                    # aggregate results
+                    overall_results['success_count'] += res.get('success_count', 0)
+                    overall_results['failed_count'] += res.get('failed_count', 0)
+                    overall_results['results'].extend(res.get('results', []))
+
+                result = {
+                    'success': overall_results['success_count'] > 0,
+                    'success_count': overall_results['success_count'],
+                    'failed_count': overall_results['failed_count'],
+                    'results': overall_results['results'],
+                }
+            else:
+                # 不再兼容旧字段，必须通过 sources 上传/描述文件
+                ExecutionRecordService.update_execution_status(
+                    execution_record=execution_record,
+                    status='failed',
+                    error_message='file_sources required for file transfer'
+                )
+                return {
+                    'success': False,
+                    'error': 'file_sources required for file transfer'
+                }
 
             if result['success']:
                 # 更新执行记录状态

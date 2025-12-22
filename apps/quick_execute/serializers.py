@@ -101,22 +101,13 @@ class QuickFileTransferSerializer(serializers.Serializer):
     """快速文件传输序列化器"""
     
     name = serializers.CharField(max_length=200, default="快速文件传输")
-    transfer_type = serializers.ChoiceField(
-        choices=[
-            ('local_upload', '从本地上传'),
-            ('server_upload', '从服务器上传'),
-        ],
-        default='local_upload',
-        help_text="传输类型"
+    # 新规则：必须使用 sources 描述所有来源（不再兼容旧字段）
+    sources = serializers.ListField(
+        child=serializers.DictField(),
+        required=True,
+        allow_empty=False,
+        help_text="文件来源数组，元素示例: {type: 'local', file_field: 'local_file_0', remote_path: '/tmp/x'} 或 {type: 'server', source_server_host:'1.2.3.4', source_server_path:'/data/a.tar.gz', remote_path:'/tmp/a.tar.gz'}"
     )
-
-    local_path = serializers.CharField(required=False, allow_blank=True, help_text="本地文件路径（本地上传时使用）")
-    remote_path = serializers.CharField(help_text="远程文件路径")
-
-    # 服务器上传相关字段
-    source_server_host = serializers.CharField(required=False, allow_blank=True, help_text="源服务器地址")
-    source_server_path = serializers.CharField(required=False, allow_blank=True, help_text="源服务器文件路径")
-    
     # 执行账号相关
     global_variables = serializers.DictField(required=False, allow_null=True, help_text="全局变量（包含执行账号信息）")
     
@@ -154,7 +145,7 @@ class QuickFileTransferSerializer(serializers.Serializer):
         required=False,
         min_value=0,
         max_value=1000000,  # 最大1GB/s
-        help_text="带宽限制(KB/s)，0表示不限制",
+        help_text="带宽限制(MB/s)，0表示不限制",
         allow_null=True
     )
     execution_mode = serializers.ChoiceField(
@@ -176,6 +167,14 @@ class QuickFileTransferSerializer(serializers.Serializer):
     )
     rolling_batch_size = serializers.IntegerField(default=20, min_value=1, max_value=100, help_text="滚动批次大小(百分比)")
     rolling_batch_delay = serializers.IntegerField(default=0, min_value=0, help_text="批次间延迟(秒)")
+    # 支持多文件源（本地/服务器）,
+    # sources 中的本地项需要包含 file_field 字段，对应 multipart 中的文件字段名。
+    sources = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        help_text="文件来源数组，元素示例: {type: 'local', file_field: 'local_file_0', remote_path: '/tmp/x'} 或 {type: 'server', source_server_host:'1.2.3.4', source_server_path:'/data/a.tar.gz', remote_path:'/tmp/a.tar.gz'}"
+    )
     
     def validate(self, attrs):
         """验证数据"""
@@ -200,25 +199,35 @@ class QuickFileTransferSerializer(serializers.Serializer):
             except ValidationError as e:
                 raise serializers.ValidationError(f"无效的IP地址: {ip}")
         
-        transfer_type = attrs.get('transfer_type')
-        local_path = attrs.get('local_path', '').strip()
-        remote_path = attrs.get('remote_path', '').strip()
+        # 只接受 sources
+        sources = attrs.get('sources')
+        # 支持前端以 JSON 字符串形式提交 sources（multipart/form-data 场景）
+        import json
+        if isinstance(attrs.get('sources'), str):
+            try:
+                attrs['sources'] = json.loads(attrs.get('sources'))
+            except Exception:
+                raise serializers.ValidationError("sources 字段 JSON 解析失败")
 
-        # 验证远程路径
-        if not remote_path:
-            raise serializers.ValidationError("远程路径不能为空")
-
-        # 根据传输类型验证必要字段
-        if transfer_type == 'local_upload':
-            if not local_path:
-                raise serializers.ValidationError("本地上传模式下，本地路径不能为空")
-        elif transfer_type == 'server_upload':
-            source_server_host = attrs.get('source_server_host', '').strip()
-            source_server_path = attrs.get('source_server_path', '').strip()
-
-            if not source_server_host:
-                raise serializers.ValidationError("服务器上传模式下，源服务器地址不能为空")
-            if not source_server_path:
-                raise serializers.ValidationError("服务器上传模式下，源服务器文件路径不能为空")
+        sources = attrs.get('sources')
+        if not sources:
+            raise serializers.ValidationError("必须提供 sources 字段，描述本地或服务器文件来源")
+        # 校验每个 source 的必需字段
+        for s in sources:
+            stype = s.get('type')
+            if stype not in ('local', 'server'):
+                raise serializers.ValidationError("sources 中的 type 必须是 'local' 或 'server'")
+            if stype == 'local':
+                if not s.get('file_field') and not s.get('content'):
+                    # 支持直接在 multipart 中传文件（file_field）或直接传 content(base64)
+                    raise serializers.ValidationError("local 类型的 source 必须包含 file_field（multipart 中文件字段名）或 content(base64)")
+                if not (s.get('remote_path') or attrs.get('remote_path')):
+                    raise serializers.ValidationError("local 类型的 source 必须包含 remote_path")
+            else:
+                # server 源 - 不再支持直接源服务器拉取；必须先入制品库，提供 storage_path 或 download_url
+                if not (s.get('storage_path') or s.get('download_url')):
+                    raise serializers.ValidationError("server 类型的 source 必须包含 storage_path 或 download_url（请先将源文件上传到制品库）")
+                if not (s.get('remote_path') or attrs.get('remote_path')):
+                    raise serializers.ValidationError("server 类型的 source 必须包含 remote_path")
 
         return attrs

@@ -444,7 +444,7 @@ const handleEdit = (record: SystemConfig) => {
   if (typeof record.value === 'string') {
     editForm.valueText = record.value
   } else {
-    editForm.valueText = JSON.stringify(record.value, null, 2)
+  editForm.valueText = JSON.stringify(record.value, null, 2)
   }
   editForm.description = record.description
   editForm.is_active = record.is_active

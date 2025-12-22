@@ -380,6 +380,10 @@ class AgentExecutionService:
         file_content: bytes = None,
         timeout: int = 300,
         bandwidth_limit: int = 0,
+        download_url: str = None,
+        checksum: str = None,
+        size: int = None,
+        auth_headers: Dict[str, str] = None,
         step_id: str = None,
         agent_server_url: str = None,
         account_id: int = None,  # 执行账号ID
@@ -469,6 +473,10 @@ class AgentExecutionService:
                     'remote_path': remote_path,
                     'content': file_content_b64,  # base64编码的字符串
                     'bandwidth_limit': bandwidth_limit,
+                    'download_url': download_url,
+                    'checksum': checksum,
+                    'size': size,
+                    'auth_headers': auth_headers or {},
                 }
 
                 # 创建任务规范
@@ -695,39 +703,127 @@ class AgentExecutionService:
                         )
                         continue
 
-                    # 读取文件内容（如果是上传）
-                    file_content = None
-                    if step_data.get('transfer_type') == 'upload':
-                        local_path = step_data.get('local_path', '')
-                        if local_path:
-                            try:
-                                with open(local_path, 'rb') as f:
-                                    file_content = f.read()
-                            except Exception as e:
-                                logger.error(f"读取文件失败: {str(e)}")
-                                ExecutionRecordService.update_step_status(
-                                    step, 'failed',
-                                    error_message=f'读取文件失败: {str(e)}'
+                    # 如果步骤包含 file_sources（多来源），支持 local/server 混合处理
+                    file_sources = step_data.get('file_sources') or []
+                    if file_sources:
+                        overall_results = {'success_count': 0, 'failed_count': 0, 'results': []}
+                        from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
+                        import base64, os
+                        for src in file_sources:
+                            stype = src.get('type')
+                            remote_path_src = src.get('remote_path') or step_data.get('remote_path', '')
+                            if stype == 'local':
+                                # local 可以是模板中配置的 local_path（控制面可访问）
+                                local_path = src.get('local_path') or src.get('path') or step_data.get('local_path', '')
+                                file_content = None
+                                if local_path and os.path.exists(local_path):
+                                    try:
+                                        with open(local_path, 'rb') as f:
+                                            file_content = f.read()
+                                    except Exception as e:
+                                        logger.error(f"读取本地文件失败: {str(e)}")
+                                        if not step_data.get('ignore_error', False):
+                                            overall_success = False
+                                            break
+                                        else:
+                                            continue
+                                else:
+                                    # 如果没有本地文件，尝试从content字段（base64）
+                                    content_b64 = src.get('content') or src.get('file_content')
+                                    if content_b64:
+                                        try:
+                                            file_content = base64.b64decode(content_b64)
+                                        except Exception as e:
+                                            logger.error(f"解码文件内容失败: {str(e)}")
+                                            if not step_data.get('ignore_error', False):
+                                                overall_success = False
+                                                break
+                                            else:
+                                                continue
+
+                                res = AgentExecutionService.execute_file_transfer_via_agent(
+                                    execution_record=execution_record,
+                                    transfer_type=step_data.get('transfer_type', 'upload'),
+                                    local_path=os.path.basename(local_path) if local_path else '',
+                                    remote_path=remote_path_src,
+                                    target_hosts=step_target_hosts,
+                                    file_content=file_content,
+                                    timeout=step_data.get('timeout', 300),
+                                    bandwidth_limit=step_data.get('bandwidth_limit', 0),
+                                    step_id=str(step.id),
+                                    agent_server_url=agent_server_url,
+                                    account_id=step_data.get('account_id'),  # 传递执行账号ID
                                 )
-                                if not step_data.get('ignore_error', False):
-                                    overall_success = False
-                                    break
+                            else:
+                                # server 类型：使用 FabricSSHManager 三跳方式，从源服务器下载再上传到目标主机
+                                # 该方式由控制面直接驱动，不通过 Agent
+                                source_host = src.get('source_server_host') or src.get('host')
+                                source_path = src.get('source_server_path') or src.get('path')
+                                source_user = src.get('source_server_user') or src.get('user')
+                                # 对每个目标主机调用 fabric_ssh_manager.transfer_file
+                                for tgt in step_target_hosts:
+                                    try:
+                                        res_single = fabric_ssh_manager.transfer_file(
+                                            host=tgt,
+                                            transfer_type='server_upload',
+                                            local_path='',
+                                            remote_path=remote_path_src,
+                                            timeout=step_data.get('timeout', 300),
+                                            task_id=None,
+                                            source_server_host=source_host,
+                                            source_server_user=source_user,
+                                            source_server_path=source_path,
+                                            account_id=step_data.get('account_id')
+                                        )
+                                        # 合并结果格式，fabric 返回 success/message 等
+                                        overall_results['results'].append({
+                                            'host_id': tgt.id,
+                                            'host_name': tgt.name,
+                                            'success': res_single.get('success', False),
+                                            'message': res_single.get('message', '')
+                                        })
+                                        if res_single.get('success'):
+                                            overall_results['success_count'] += 1
+                                        else:
+                                            overall_results['failed_count'] += 1
+                                    except Exception as e:
+                                        overall_results['failed_count'] += 1
+                                        overall_results['results'].append({
+                                            'host_id': tgt.id,
+                                            'host_name': tgt.name,
+                                            'success': False,
+                                            'message': str(e)
+                                        })
+                                # continue 到下一个 source
                                 continue
 
-                    # 通过Agent执行文件传输
-                    result = AgentExecutionService.execute_file_transfer_via_agent(
-                        execution_record=execution_record,
-                        transfer_type=step_data.get('transfer_type', 'upload'),
-                        local_path=step_data.get('local_path', ''),
-                        remote_path=step_data.get('remote_path', ''),
-                        target_hosts=step_target_hosts,
-                        file_content=file_content,
-                        timeout=step_data.get('timeout', 300),
-                        bandwidth_limit=step_data.get('bandwidth_limit', 0),
-                        step_id=str(step.id),
-                        agent_server_url=agent_server_url,
-                        account_id=step_data.get('account_id'),  # 传递执行账号ID
-                    )
+                            # 合并 execute_file_transfer_via_agent 返回结果
+                            overall_results['success_count'] += res.get('success_count', 0)
+                            overall_results['failed_count'] += res.get('failed_count', 0)
+                            overall_results['results'].extend(res.get('results', []))
+
+                        # 将 overall_results 转换为统一 result
+                        if overall_results['success_count'] > 0:
+                            result = {
+                                'success': True,
+                                'success_count': overall_results['success_count'],
+                                'failed_count': overall_results['failed_count'],
+                                'results': overall_results['results']
+                            }
+                        else:
+                            result = {
+                                'success': False,
+                                'success_count': overall_results['success_count'],
+                                'failed_count': overall_results['failed_count'],
+                                'results': overall_results['results']
+                            }
+                    else:
+                        ExecutionRecordService.update_step_status(
+                            step, 'failed',
+                            error_message='file_sources required for file_transfer step'
+                        )
+                        overall_success = False
+                        result = {'success': False, 'results': [], 'failed_count': len(step_target_hosts)}
 
                     # 更新步骤结果
                     host_results = []

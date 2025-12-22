@@ -54,7 +54,7 @@ class JobStepSerializer(serializers.ModelSerializer):
             # 脚本相关字段
             'script_type', 'script_content', 'account_id', 'account_name',
             # 文件传输相关字段
-            'transfer_type', 'local_path', 'remote_path', 'overwrite_policy',
+            'transfer_type', 'local_path', 'remote_path', 'overwrite_policy', 'file_sources',
             # 目标主机相关字段
             'target_hosts', 'target_groups'
         ]
@@ -96,12 +96,14 @@ class JobStepSerializer(serializers.ModelSerializer):
             if not data.get('script_type'):
                 raise serializers.ValidationError({'script_type': '脚本步骤必须指定脚本类型'})
         elif step_type == 'file_transfer':
-            if not data.get('local_path'):
-                raise serializers.ValidationError({'local_path': '文件传输步骤必须包含本地路径'})
-            if not data.get('remote_path'):
-                raise serializers.ValidationError({'remote_path': '文件传输步骤必须包含远程路径'})
-            if not data.get('transfer_type'):
-                raise serializers.ValidationError({'transfer_type': '文件传输步骤必须指定传输类型'})
+            # 强制使用 file_sources，必须为非空数组
+            fs = data.get('file_sources') or []
+            if not isinstance(fs, list) or len(fs) == 0:
+                raise serializers.ValidationError({'file_sources': '文件传输步骤必须包含非空的 file_sources'})
+            # 简单校验每个 source
+            for s in fs:
+                if not isinstance(s, dict) or s.get('type') not in ('local', 'server'):
+                    raise serializers.ValidationError({'file_sources': "每个 source 必须是对象且 type 为 'local' 或 'server'"})
 
         return data
 
@@ -135,6 +137,13 @@ class JobStepCreateSerializer(serializers.Serializer):
     local_path = serializers.CharField(required=False, allow_blank=True, help_text="本地路径")
     remote_path = serializers.CharField(required=False, allow_blank=True, help_text="远程路径")
     overwrite_policy = serializers.CharField(required=False, allow_blank=True, help_text="覆盖策略")
+    # 支持多文件来源
+    file_sources = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        help_text="文件来源数组，元素示例: {'type':'local','local_path':'/tmp/a.tar.gz','remote_path':'/tmp/a.tar.gz'} 或 {'type':'server','source_server_host':'1.2.3.4','source_server_path':'/data/a.tar.gz','remote_path':'/tmp/a.tar.gz'}"
+    )
 
     # 目标选择：主机ID + 分组ID
     target_host_ids = serializers.ListField(
@@ -160,12 +169,13 @@ class JobStepCreateSerializer(serializers.Serializer):
             if not data.get('script_type'):
                 raise serializers.ValidationError({'script_type': '脚本步骤必须指定脚本类型'})
         elif step_type == 'file_transfer':
-            if not data.get('local_path'):
-                raise serializers.ValidationError({'local_path': '文件传输步骤必须包含本地路径'})
-            if not data.get('remote_path'):
-                raise serializers.ValidationError({'remote_path': '文件传输步骤必须包含远程路径'})
-            if not data.get('transfer_type'):
-                raise serializers.ValidationError({'transfer_type': '文件传输步骤必须指定传输类型'})
+            # 强制使用 file_sources（不再兼容旧字段）
+            fs = data.get('file_sources') or []
+            if not isinstance(fs, list) or len(fs) == 0:
+                raise serializers.ValidationError({'file_sources': '文件传输步骤必须包含非空的 file_sources'})
+            for s in fs:
+                if not isinstance(s, dict) or s.get('type') not in ('local', 'server'):
+                    raise serializers.ValidationError({'file_sources': "每个 source 必须是对象且 type 为 'local' 或 'server'"})
 
         # 验证目标主机/分组ID格式：主机或分组至少要有一个
         target_host_ids = data.get('target_host_ids') or []
