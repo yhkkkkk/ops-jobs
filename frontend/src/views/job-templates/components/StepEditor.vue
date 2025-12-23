@@ -695,10 +695,38 @@ watch(
         scriptContent.value = step.script_content || ''
         selectedAccountId.value = step.account_id
       } else if (step.step_type === 'file_transfer') {
-        // 仅保留远程目标路径/覆盖策略和账号。如果模板里有 file_sources，优先使用首个 source 的 remote_path 作为预填。
+        // 解析文件传输配置（支持模板中保存的 file_sources，包括制品与服务器来源）
         remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
         overwritePolicy.value = step.overwrite_policy || 'overwrite'
         selectedAccountId.value = step.account_id
+        // populate fileArtifacts for UI display/editing
+        fileArtifacts.value = []
+        if (step.file_sources && Array.isArray(step.file_sources)) {
+          for (const src of step.file_sources) {
+            if (src.type === 'server') {
+              fileArtifacts.value.push({
+                type: 'server',
+                server: src.server || src.server_name || '',
+                server_id: src.server_id || null,
+                source_path: src.source_path || src.download_url || src.storage_path || '',
+                account: src.account || src.account_id || '',
+                filename: src.filename || src.source_path?.split?.('/')?.pop?.() || '',
+                remote_path: src.remote_path || ''
+              })
+            } else {
+              // local / artifact
+              fileArtifacts.value.push({
+                type: 'local',
+                storage_path: src.storage_path,
+                download_url: src.download_url,
+                checksum: src.checksum || src.sha256,
+                size: src.size,
+                name: src.filename || src.name,
+                remote_path: src.remote_path || ''
+              })
+            }
+          }
+        }
       }
 
       // 解析位置参数 (现在 step_parameters 直接是数组)
@@ -990,31 +1018,51 @@ const handleSubmit = async () => {
         Message.error('请输入远程路径')
         return
       }
-      // 模板中的文件传输步骤仅保存本地上传的 file_sources（base64 内容），不支持服务器下载模式
       stepData.remote_path = remotePath.value
       stepData.overwrite_policy = overwritePolicy.value
       stepData.account_id = selectedAccountId.value
 
-      // 构建 file_sources：使用已上传到制品库的 artifact metadata（storage_path）
+      // 构建 file_sources：支持本地制品与服务器来源
       const file_sources: any[] = []
       if (!fileArtifacts.value || fileArtifacts.value.length === 0) {
-        Message.error('请至少选择并上传一个本地文件作为步骤来源')
+        Message.error('请至少添加一个文件来源（本地或服务器）')
         return
       }
       for (const a of fileArtifacts.value) {
-        if (!a.storage_path && !a.download_url) {
-          Message.error(`文件 ${a.name} 尚未上传完成，请稍后`)
-          return
+        if (a.type === 'server') {
+          if (!a.server && !a.server_id) {
+            Message.error(`服务器来源未选择主机或主机无效`)
+            return
+          }
+          if (!a.source_path) {
+            Message.error(`服务器来源 ${a.server || a.filename || ''} 缺少源路径`)
+            return
+          }
+          file_sources.push({
+            type: 'server',
+            server: a.server || undefined,
+            server_id: a.server_id || undefined,
+            source_path: a.source_path,
+            account: a.account || undefined,
+            filename: a.filename || a.source_path.split('/').pop(),
+            remote_path: a.remote_path || remotePath.value
+          })
+        } else {
+          // artifact / local
+          if (!a.storage_path && !a.download_url) {
+            Message.error(`文件 ${a.name || a.filename} 尚未上传完成，请稍后`)
+            return
+          }
+          file_sources.push({
+            type: 'local',
+            storage_path: a.storage_path,
+            download_url: a.download_url,
+            checksum: a.checksum,
+            size: a.size,
+            filename: a.name || a.filename,
+            remote_path: a.remote_path || remotePath.value
+          })
         }
-        file_sources.push({
-          type: 'server', // 表示制品库中的资源
-          storage_path: a.storage_path,
-          download_url: a.download_url,
-          checksum: a.checksum,
-          size: a.size,
-          filename: a.name,
-          remote_path: remotePath.value,
-        })
       }
       stepData.file_sources = file_sources
     }

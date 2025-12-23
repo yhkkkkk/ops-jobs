@@ -29,16 +29,22 @@
           <div style="min-width:0; flex:1">
             <div v-if="a.type === 'server'">
               <div style="display:flex; gap:12px; align-items:center; width:100%">
-                <div style="flex:2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500;">
-                  {{ a.server || (a.server_id ? lookupHostName(a.server_id) : '-') }}
+                <div style="display:flex; align-items:center; gap:8px; flex:3; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  <span :style="{ width: '8px', height: '8px', 'border-radius': '50%', display: 'inline-block', background: getAgentStatusColor(a.server_id) }" />
+                  <div style="flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-weight:500;">
+                    {{ a.server || (a.server_id ? lookupHostName(a.server_id) : '-') }}
+                  </div>
+                  <div style="flex:0 0 auto; font-size:12px; color:#86909c; margin-left:8px; white-space:nowrap;">
+                    {{ getAgentStatusText(a.server_id) }}
+                  </div>
                 </div>
                 <div style="flex:4; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   {{ a.source_path || '-' }}
                 </div>
-                <div style="flex:2; color:#86909c;">
+                <div style="flex:1; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   {{ lookupAccountName(a.account) || '-' }}
                 </div>
-                <div style="flex:3; color:#86909c;">
+                <div style="flex:3; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   {{ a.remote_path || '-' }}
                 </div>
               </div>
@@ -261,6 +267,26 @@ const lookupAccountName = (id: any) => {
   if (!id) return ''
   const a = accounts.value.find(x => String(x.id) === String(id))
   return a ? a.name : ''
+}
+
+const getAgentStatus = (serverId: any) => {
+  if (!serverId) return 'unknown'
+  const h = hosts.value.find(x => String(x.id) === String(serverId))
+  return h?.agent_info?.status || (h?.agent_info?.status_display ? 'online' : 'unknown')
+}
+
+const getAgentStatusText = (serverId: any) => {
+  if (!serverId) return '未知'
+  const h = hosts.value.find(x => String(x.id) === String(serverId))
+  if (!h) return '未知'
+  return h.agent_info?.status_display || (h.agent_info?.status === 'online' ? '在线' : (h.agent_info?.status === 'offline' ? '离线' : '未知'))
+}
+
+const getAgentStatusColor = (serverId: any) => {
+  const status = getAgentStatus(serverId)
+  if (status === 'online') return '#52c41a'
+  if (status === 'offline') return '#ff4d4f'
+  return '#d9d9d9'
 }
 </script>
 

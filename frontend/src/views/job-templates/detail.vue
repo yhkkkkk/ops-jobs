@@ -271,13 +271,20 @@
                     <a-descriptions-item v-if="step.file_sources && step.file_sources.length > 0" label="文件来源">
                       <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
                         <div v-for="(src, si) in step.file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-                          <a-tag :color="src.type === 'local' ? 'cyan' : 'purple'">{{ src.type === 'local' ? '本地' : '制品库' }}</a-tag>
+                          <a-tag :color="src.type === 'server' ? 'orange' : (src.type === 'local' ? 'cyan' : 'purple')">
+                            {{ src.type === 'server' ? '服务器' : (src.type === 'local' ? '本地' : '制品库') }}
+                          </a-tag>
                           <div style="flex:1; min-width:0">
-                            <div style="font-weight:500">{{ src.filename || src.storage_path || src.download_url }}</div>
+                            <div v-if="src.type === 'server'" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                              {{ src.server || src.server_name || ('ID:' + (src.server_id || '-')) }} · {{ src.source_path || '-' }}
+                            </div>
+                            <div v-else style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                              {{ src.filename || src.storage_path || src.download_url }}
+                            </div>
                             <div style="font-size:12px; color:#86909c">
                               目标路径: {{ src.remote_path || '-' }} 
                               <span v-if="src.size"> · {{ formatSize(src.size) }}</span>
-                              <span v-if="src.sha256"> · sha256: {{ src.sha256.substr(0,12) }}...</span>
+                              <span v-if="src.checksum || src.sha256"> · sha256: {{ (src.checksum || src.sha256).substr(0,12) }}...</span>
                             </div>
                           </div>
                           <a-space>
