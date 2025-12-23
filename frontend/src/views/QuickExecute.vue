@@ -39,7 +39,7 @@
       <a-col :span="8">
         <a-card class="mb-4">
           <template #title>
-            <div class="card-title-full">选择目标主机</div>
+          <div class="card-title-full">选择目标主机</div>
           </template>
           <template #extra>
             <a-space>
@@ -495,122 +495,19 @@
       <a-col :span="16">
         <a-card title="文件传输配置" class="mb-4">
           <a-form layout="vertical">
-            <a-form-item label="传输类型">
-              <a-radio-group v-model="transferType">
-                <a-radio value="local_upload">从本地上传</a-radio>
-                <a-radio value="server_upload">从服务器上传</a-radio>
-              </a-radio-group>
-            </a-form-item>
-
             <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item :label="transferType === 'local_upload' ? '本地文件' : '源服务器配置'">
-                  <!-- 从本地上传模式 -->
-                  <div v-if="transferType === 'local_upload'" class="upload-container">
-                    <a-upload
-                      :file-list="fileList"
-                      :auto-upload="false"
-                      multiple
-                      :show-upload-button="true"
-                      :show-file-list="false"
-                      :show-cancel-button="false"
-                      :show-retry-button="false"
-                      :show-upload-list-button="false"
-                      @change="handleFileChange"
-                      @remove="handleFileRemove"
-                      class="file-upload"
-                    >
-                      <template #upload-button>
-                        <div class="upload-btn">
-                          <icon-plus />
-                          <div class="upload-text">选择文件</div>
-                        </div>
-                      </template>
-                    </a-upload>
-
-                    <!-- 自定义文件列表 -->
-                    <div v-if="fileList.length > 0" class="custom-file-list">
-                      <div
-                        v-for="(fileItem, index) in fileList"
-                        :key="fileItem.uid || index"
-                        class="custom-upload-list-item"
-                      >
-                        <div class="file-info">
-                          <icon-file class="file-icon" />
-                          <div class="file-details">
-                            <div class="file-name">{{ fileItem.name }}</div>
-                            <div class="file-size">{{ formatFileSize(fileItem.file?.size || 0) }}</div>
-                          </div>
-                        </div>
-                        <div class="file-actions">
-                          <a-button
-                            type="text"
-                            size="small"
-                            @click="handleFileRemove(fileItem)"
-                            class="remove-btn"
-                          >
-                            <template #icon>
-                              <icon-delete />
-                            </template>
-                          </a-button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 从服务器上传模式 -->
-                  <div v-else class="server-upload-container">
-                    <a-space direction="vertical" style="width: 100%">
-                      <a-input
-                        v-model="sourceServerHost"
-                        placeholder="源服务器地址，例如：192.168.1.100"
-                        allow-clear
-                      >
-                        <template #prepend>服务器地址</template>
-                      </a-input>
-                      <a-input
-                        v-model="sourceServerPath"
-                        placeholder="源文件路径，例如：/data/files/app.tar.gz"
-                        allow-clear
-                      >
-                        <template #prepend>文件路径</template>
-                      </a-input>
-                    </a-space>
-                    <div class="path-examples">
-                      <div class="example-title">配置示例：</div>
-                      <div class="example-item">服务器: <code>192.168.1.100</code> 或 <code>file-server.company.com</code></div>
-                      <div class="example-item">文件路径: <code>/data/releases/app-v1.2.3.tar.gz</code></div>
-                    </div>
-                  </div>
-
-                  <template #extra>
-                    <div class="text-xs text-gray-500">
-                      {{ transferType === 'local_upload' ? '支持选择单个文件或多个文件' : '配置源服务器地址和文件路径' }}
-                    </div>
-                    <div v-if="transferType === 'local_upload' && localPath && hasVariables(localPath)" class="text-xs text-blue-600 mt-1">
-                      预览: {{ previewPath(localPath) }}
-                    </div>
-                    <div v-if="transferType === 'server_upload' && sourceServerPath && hasVariables(sourceServerPath)" class="text-xs text-blue-600 mt-1">
-                      预览: {{ previewPath(sourceServerPath) }}
-                    </div>
-                  </template>
+              <a-col :span="24">
+                <a-form-item label="文件来源">
+                  <FileSourcesPanel :artifacts="fileArtifacts" @update:artifacts="(v)=>{ fileArtifacts = v }" />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :span="24">
                 <a-form-item label="远程路径">
                   <a-input
                     v-model="remotePath"
                     placeholder="目标路径，例如：/opt/app/ 或 /var/www/[hostname]/app.tar.gz"
                     allow-clear
                   />
-                  <template #extra>
-                    <div class="text-xs text-gray-500">
-                      文件保存到目标主机的路径，支持变量: /opt/app/[hostname]/ 或 /data/backup/[date]/
-                    </div>
-                    <div v-if="remotePath && hasVariables(remotePath)" class="text-xs text-blue-600 mt-1">
-                      预览: {{ previewPath(remotePath) }}
-                    </div>
-                  </template>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -778,7 +675,7 @@
               <template #icon>
                 <icon-upload />
               </template>
-              {{ transferType === 'local_upload' ? '上传文件' : '传输文件' }} ({{ totalTargetCount }} 个目标)
+              传输文件 ({{ totalTargetCount }} 个目标)
             </a-button>
           </div>
         </a-card>
@@ -905,6 +802,7 @@ import type { Host, HostGroup, ScriptTemplate } from '@/types'
 import ScriptEditorWithValidation from '@/components/ScriptEditorWithValidation.vue'
 import { getScriptExample } from '@/components/ScriptExamples'
 import type { ScriptValidationResult } from '@/utils/scriptValidator'
+import FileSourcesPanel from '@/components/FileSourcesPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -957,12 +855,11 @@ const rollingBatchDelay = ref(0)
 const positionalArgs = ref<string[]>([''])
 
 // 文件传输相关
-const transferType = ref<'local_upload' | 'server_upload'>('local_upload')
-const localPath = ref('')
 const remotePath = ref('')
 const overwritePolicy = ref<'overwrite' | 'skip' | 'backup' | 'fail'>('overwrite')
 const bandwidthLimit = ref(0) // 带宽限制，0表示不限制
-const fileList = ref<any[]>([]) // a-upload 的文件列表
+const fileList = ref<any[]>([]) // a-upload 的文件列表 (UI)
+const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
 
 // 服务器上传相关
 const sourceServerHost = ref('')
@@ -1067,15 +964,9 @@ const directHosts = computed(() => {
   return allTargetHosts.value.filter(host => selectedHosts.value.includes(host.id))
 })
 
-// 文件传输表单验证
+// 文件传输表单验证：要求至少有一个来源（artifact或服务器条目）
 const isTransferFormValid = computed(() => {
-  if (transferType.value === 'local_upload') {
-    return localPath.value.trim() !== ''
-  } else if (transferType.value === 'server_upload') {
-    return sourceServerHost.value.trim() !== '' &&
-           sourceServerPath.value.trim() !== ''
-  }
-  return false
+  return (fileArtifacts.value && fileArtifacts.value.length > 0) || (sourceServerHost.value.trim() !== '' && sourceServerPath.value.trim() !== '')
 })
 
 const getHostStatus = (hostId: number) => {
@@ -1367,64 +1258,59 @@ const formatFileSize = (bytes: number): string => {
 }
 
 // a-upload 文件操作方法
-const handleFileChange = (files: any[]) => {
-  // 更新文件列表
+const handleFileChange = async (files: any[]) => {
+  // 更新 UI 列表
   fileList.value = files
 
-  // 更新localPath用于后端处理
-  if (files.length === 0) {
-    localPath.value = ''
-  } else if (files.length === 1) {
-    localPath.value = files[0].name
-  } else {
-    localPath.value = files.map((f: any) => f.name).join(';')
+  // 对新增文件立即上传到制品库（去重：根据 uid 或 name）
+  for (const f of files) {
+    const exists = fileArtifacts.value.find(a => a.uid === f.uid || a.name === f.name)
+    if (exists) continue
+    // push placeholder
+    const placeholder = { uid: f.uid, name: f.name, uploading: true }
+    fileArtifacts.value.push(placeholder)
+    try {
+      const formData = new FormData()
+      formData.append('file', f.file || f)
+      const resp = await request.post('/agents/artifacts/upload/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const data = resp.data || resp
+      const idx = fileArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+      if (idx > -1) {
+        fileArtifacts.value[idx] = {
+          uid: f.uid,
+          name: f.name,
+          storage_path: data.content?.storage_path || data.storage_path || data.content?.storage_path,
+          download_url: data.content?.download_url || data.download_url || data.content?.download_url,
+          checksum: data.content?.checksum || data.checksum || data.content?.checksum,
+          size: data.content?.size || data.size || (f.file && f.file.size) || 0,
+        }
+      } else {
+        fileArtifacts.value.push({
+          uid: f.uid,
+          name: f.name,
+          storage_path: data.content?.storage_path || data.storage_path || data.content?.storage_path,
+          download_url: data.content?.download_url || data.download_url || data.content?.download_url,
+          checksum: data.content?.checksum || data.checksum || data.content?.checksum,
+          size: data.content?.size || data.size || (f.file && f.file.size) || 0,
+        })
+      }
+    } catch (e) {
+      console.error('上传制品失败', e)
+      Message.error(`文件 ${f.name} 上传制品库失败`)
+      // remove placeholder
+      fileArtifacts.value = fileArtifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
+    }
   }
 }
 
 const handleFileRemove = (fileItem: any) => {
-  // 手动更新文件列表（因为我们使用自定义文件列表）
+  // 更新 UI 列表
   const remainingFiles = fileList.value.filter(f => f.uid !== fileItem.uid)
   fileList.value = remainingFiles
-
-  // 更新localPath
-  if (remainingFiles.length === 0) {
-    localPath.value = ''
-  } else if (remainingFiles.length === 1) {
-    localPath.value = remainingFiles[0].name
-  } else {
-    localPath.value = remainingFiles.map((f: any) => f.name).join(';')
-  }
-}
-
-// 文件选择相关函数
-const handleSelectLocalPath = () => {
-  if (transferType.value === 'local_upload') {
-    // 本地上传模式：选择文件
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.multiple = true
-    input.webkitdirectory = false  // 只允许选择文件
-    input.style.display = 'none'
-    
-    input.onchange = (e) => {
-      const files = Array.from((e.target as HTMLInputElement).files || [])
-      if (files.length > 0) {
-        // 使用第一个文件的相对路径来推断目录
-        const firstFile = files[0]
-        const relativePath = firstFile.webkitRelativePath || firstFile.name
-        const dirPath = relativePath.substring(0, relativePath.lastIndexOf('/'))
-        localPath.value = dirPath || '已选择目录'
-        Message.success('已选择保存目录')
-      }
-    }
-    
-    document.body.appendChild(input)
-    input.click()
-    document.body.removeChild(input)
-  } else {
-    // 服务器上传模式：提示用户配置服务器信息
-    Message.info('请在上方配置源服务器的连接信息和文件路径')
-  }
+  // 移除对应 artifact metadata（不删除后端文件）
+  fileArtifacts.value = fileArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
 }
 
 // 文件传输相关函数
@@ -1439,18 +1325,20 @@ const handleFileTransfer = async () => {
     return
   }
 
-  if (!localPath.value || !remotePath.value) {
-    Message.warning('请填写本地路径和远程路径')
-    return
-  }
+    if ((!fileArtifacts.value || fileArtifacts.value.length === 0) && (!sourceServerPath.value || !sourceServerHost.value)) {
+      Message.warning('请至少添加一个文件来源并填写远程路径')
+      return
+    }
+    if (!remotePath.value) {
+      Message.warning('请填写远程路径')
+      return
+    }
 
   executing.value = true
   try {
     // 构建请求数据
     const data: any = {
-      name: `快速文件${transferType.value === 'local_upload' ? '上传' : '传输'}`,
-      transfer_type: transferType.value,
-      local_path: transferType.value === 'local_upload' ? localPath.value : '',
+      name: '快速文件传输',
       remote_path: remotePath.value,
       overwrite_policy: overwritePolicy.value,
       timeout: timeout.value,
@@ -1459,9 +1347,6 @@ const handleFileTransfer = async () => {
       rolling_strategy: rollingStrategy.value,
       rolling_batch_size: rollingBatchSize.value,
       rolling_batch_delay: rollingBatchDelay.value,
-      // 服务器上传相关参数
-      source_server_host: transferType.value === 'server_upload' ? sourceServerHost.value : '',
-      source_server_path: transferType.value === 'server_upload' ? sourceServerPath.value : '',
       // 执行账号
       global_variables: {
         execute_user: selectedAccount.value?.username || '',
@@ -1517,26 +1402,38 @@ const handleFileTransfer = async () => {
       formData.append('target_host_ids', JSON.stringify(data.target_host_ids))
     }
 
+    // 从 fileArtifacts 构建 sources（支持同时包含本地已上传制品与手工添加的服务器条目）
     const sources: any[] = []
-    if (transferType.value === 'local_upload') {
-      // 将每个 fileList 中的文件放到一个独立的 form field，sources 中记录对应的 file_field
-      fileList.value.forEach((f: any, idx: number) => {
-        const fieldName = `local_file_${idx}`
-        formData.append(fieldName, f.file || f)
-        sources.push({
-          type: 'local',
-          file_field: fieldName,
-          remote_path: remotePath.value
-        })
-      })
+    if (fileArtifacts.value && fileArtifacts.value.length > 0) {
+      for (const a of fileArtifacts.value) {
+        if (a.type === 'server') {
+          // server entry: may have download_url or storage_path
+          sources.push({
+            type: 'server',
+            storage_path: a.storage_path,
+            download_url: a.download_url || undefined,
+            checksum: a.checksum,
+            size: a.size,
+            filename: a.filename || a.name,
+            remote_path: a.remote_path || remotePath.value
+          })
+        } else {
+          // artifact uploaded from local file
+          sources.push({
+            type: 'server',
+            storage_path: a.storage_path,
+            download_url: a.download_url,
+            checksum: a.checksum,
+            size: a.size,
+            filename: a.name,
+            remote_path: remotePath.value
+          })
+        }
+      }
     } else {
-      // server_upload 模式：用户需提供 storage_path 或 download_url 到 sourceServerPath 输入框
-      sources.push({
-        type: 'server',
-        download_url: sourceServerPath.value,
-        remote_path: remotePath.value,
-        filename: sourceServerPath.value.split('/').pop()
-      })
+      Message.error('请先选择并上传至少一个本地文件或添加服务器文件')
+      executing.value = false
+      return
     }
 
     formData.append('sources', JSON.stringify(sources))
@@ -1573,12 +1470,11 @@ const handleClear = () => {
   rollingBatchDelay.value = 0
 
   // 清空文件传输相关
-  transferType.value = 'local_upload'
-  localPath.value = ''
   remotePath.value = ''
   overwritePolicy.value = 'overwrite'
   bandwidthLimit.value = 0
   fileList.value = [] // 清空文件列表
+  fileArtifacts.value = [] // 清空已上传的制品元数据
 
   // 清空服务器上传相关
   sourceServerHost.value = ''

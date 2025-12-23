@@ -831,8 +831,8 @@ df -h 2>/dev/null || echo "N/A"
                 }
 
             # 账号缓存
-            account_cache: Dict[str, Optional[ServerAccount]] = {}
             from .models import ServerAccount
+            account_cache: Dict[str, Optional[ServerAccount]] = {}
 
             with transaction.atomic():
                 for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):

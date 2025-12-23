@@ -254,6 +254,7 @@ class QuickExecuteService:
                                     'size': size,
                                     'filename': filename,
                                     'remote_path': remote_path_for_source,
+                                    'auth_headers': {},
                                 })
                             except Exception as e:
                                 logger.exception(f"处理上传文件失败: {e}")
@@ -278,6 +279,7 @@ class QuickExecuteService:
                             'size': s.get('size'),
                             'filename': s.get('filename'),
                             'remote_path': remote_path_for_source,
+                            'auth_headers': {},
                         })
             else:
                 # 兼容旧逻辑：单文件从本地路径读取（用于 backward compatibility）

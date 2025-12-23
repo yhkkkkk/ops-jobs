@@ -142,57 +142,14 @@
       <!-- 文件传输配置（仅本地上传） -->
       <div v-if="form.step_type === 'file_transfer'">
         <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="文件来源（本地）" required>
-              <a-upload
-                :file-list="stepFileList"
-                :auto-upload="false"
-                multiple
-                :show-upload-button="true"
-                :show-file-list="false"
-                @change="handleStepFileChange"
-                @remove="handleStepFileRemove"
-                class="step-file-upload"
-              >
-                <template #upload-button>
-                  <div class="step-upload-btn" style="width:100%; text-align:center;">
-                    <icon-plus />
-                    <div class="upload-text">选择本地文件（支持多选）</div>
-                  </div>
-                </template>
-              </a-upload>
-
-              <!-- 自定义步骤文件列表（更宽展示） -->
-              <div v-if="stepFileList.length > 0" class="custom-step-file-list" style="margin-top:12px;">
-                <div
-                  v-for="(fileItem, index) in stepFileList"
-                  :key="fileItem.uid || index"
-                  class="custom-step-upload-list-item"
-                >
-                  <div class="step-file-info">
-                    <icon-file class="step-file-icon" />
-                    <div class="step-file-details">
-                      <div class="step-file-name">{{ fileItem.name }}</div>
-                      <div class="step-file-size">{{ formatStepFileSize(fileItem.file?.size || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="step-file-actions">
-                    <a-button
-                      type="text"
-                      size="small"
-                      @click="handleStepFileRemove(fileItem)"
-                      class="step-remove-btn"
-                    >
-                      <template #icon>
-                        <icon-delete />
-                      </template>
-                    </a-button>
-                  </div>
-                </div>
-              </div>
+          <a-col :span="24">
+            <a-form-item label="文件来源" required>
+              <FileSourcesPanel :artifacts="fileArtifacts" @update:artifacts="(v)=>{ fileArtifacts = v }" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+        </a-row>
+        <a-row :gutter="16" style="margin-top:8px;">
+          <a-col :span="24">
             <a-form-item label="远程路径" required>
               <a-input
                 v-model="remotePath"
@@ -451,12 +408,14 @@ import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconComputer, IconFolder, IconEye, IconEyeInvisible, IconDelete, IconPlus } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi, scriptTemplateApi } from '@/api/ops'
+import request from '@/utils/request'
 import { accountApi, type ServerAccount } from '@/api/account'
 import type { JobStep, Host, HostGroup, ScriptTemplate } from '@/types'
 import ScriptEditorWithValidation from '@/components/ScriptEditorWithValidation.vue'
 import HostSelector from '@/components/HostSelector.vue'
 import { getScriptExample, getScriptTypeText, getScriptTypeColor } from '@/components/ScriptExamples'
 import type { ScriptValidationResult } from '@/utils/scriptValidator'
+import FileSourcesPanel from '@/components/FileSourcesPanel.vue'
 
 
 interface Props {
@@ -537,6 +496,7 @@ const parameterVisibility = ref<Record<number, boolean>>({})
 const remotePath = ref('')
 const overwritePolicy = ref('overwrite')
 const stepFileList = ref<any[]>([]) // 步骤文件列表
+const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
 
 // 模板表格列
 const templateColumns = [
@@ -764,11 +724,11 @@ const handleStepTypeChange = () => {
   // 清空参数
   form.step_parameters = []  // 位置参数数组
   scriptContent.value = ''
-  localPath.value = ''
   remotePath.value = ''
   selectedAccountId.value = undefined
-
-  // 清空脚本参数
+  // 清空脚本参数 & 文件相关
+  stepFileList.value = []
+  fileArtifacts.value = []
   positionalArgs.value = ['']
 
   // 重置默认值
@@ -779,7 +739,6 @@ const handleStepTypeChange = () => {
       insertScriptExample()
     })
   } else if (form.step_type === 'file_transfer') {
-    transferType.value = 'upload'
     overwritePolicy.value = 'overwrite'
   }
 }
@@ -893,14 +852,49 @@ const formatStepFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 步骤文件操作方法（仅维护上传列表）
-const handleStepFileChange = (files: any[]) => {
+// 步骤文件操作方法：上传到制品库并维护 artifact 元数据
+const handleStepFileChange = async (files: any[]) => {
+  // 更新 UI 列表
   stepFileList.value = files
+
+  for (const f of files) {
+    const exists = fileArtifacts.value.find(a => a.uid === f.uid || a.name === f.name)
+    if (exists) continue
+    // placeholder
+    fileArtifacts.value.push({ uid: f.uid, name: f.name, uploading: true })
+    try {
+      const formData = new FormData()
+      formData.append('file', f.file || f)
+      const resp = await request.post('/agents/artifacts/upload/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const data = resp.data || resp
+      const idx = fileArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+      const meta = {
+        uid: f.uid,
+        name: f.name,
+        storage_path: data.content?.storage_path || data.storage_path || data.content?.storage_path,
+        download_url: data.content?.download_url || data.download_url || data.content?.download_url,
+        checksum: data.content?.checksum || data.checksum || data.content?.checksum,
+        size: data.content?.size || data.size || (f.file && f.file.size) || 0,
+      }
+      if (idx > -1) {
+        fileArtifacts.value[idx] = meta
+      } else {
+        fileArtifacts.value.push(meta)
+      }
+    } catch (e) {
+      console.error('上传制品失败', e)
+      Message.error(`文件 ${f.name} 上传制品库失败`)
+      fileArtifacts.value = fileArtifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
+    }
+  }
 }
 
 const handleStepFileRemove = (fileItem: any) => {
   const remainingFiles = stepFileList.value.filter(f => f.uid !== fileItem.uid)
   stepFileList.value = remainingFiles
+  fileArtifacts.value = fileArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
 }
 
 // Read file as base64 string
@@ -1001,29 +995,26 @@ const handleSubmit = async () => {
       stepData.overwrite_policy = overwritePolicy.value
       stepData.account_id = selectedAccountId.value
 
-      // 构建 file_sources：仅支持本地上传（将文件转换为 base64 存入模板）
+      // 构建 file_sources：使用已上传到制品库的 artifact metadata（storage_path）
       const file_sources: any[] = []
-      if (!stepFileList.value || stepFileList.value.length === 0) {
-        Message.error('请至少选择一个本地文件作为步骤来源')
+      if (!fileArtifacts.value || fileArtifacts.value.length === 0) {
+        Message.error('请至少选择并上传一个本地文件作为步骤来源')
         return
       }
-      for (let i = 0; i < stepFileList.value.length; i++) {
-        const f = stepFileList.value[i]
-        const fileObj = f.file || f
-        try {
-          const content = await readFileAsBase64(fileObj)
-          file_sources.push({
-            type: 'local',
-            filename: fileObj.name,
-            content: content, // base64 string
-            remote_path: remotePath.value,
-            size: fileObj.size
-          })
-        } catch (e) {
-          console.error('读取步骤文件失败', e)
-          Message.error('读取步骤文件失败，请重试')
+      for (const a of fileArtifacts.value) {
+        if (!a.storage_path && !a.download_url) {
+          Message.error(`文件 ${a.name} 尚未上传完成，请稍后`)
           return
         }
+        file_sources.push({
+          type: 'server', // 表示制品库中的资源
+          storage_path: a.storage_path,
+          download_url: a.download_url,
+          checksum: a.checksum,
+          size: a.size,
+          filename: a.name,
+          remote_path: remotePath.value,
+        })
       }
       stepData.file_sources = file_sources
     }

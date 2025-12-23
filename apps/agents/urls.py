@@ -6,6 +6,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import AgentViewSet
 from .package_views import AgentPackageViewSet
+from .views import ArtifactUploadView
 
 router = DefaultRouter()
 # 先注册具体路径，避免被空路径匹配
@@ -16,5 +17,6 @@ app_name = 'agents'
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('artifacts/upload/', ArtifactUploadView.as_view(), name='artifact-upload'),
 ]
 
