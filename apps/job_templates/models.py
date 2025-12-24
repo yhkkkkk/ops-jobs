@@ -269,11 +269,7 @@ class PlanStep(models.Model):
     step_targets = models.JSONField(default=list, verbose_name="目标快照（统一格式）", 
                                    help_text="格式：[{'type': 'host', 'id': 1}, {'type': 'group', 'id': 2}]")
 
-    # 新增快照字段
     step_account_id = models.IntegerField(null=True, blank=True, verbose_name="执行账号ID快照")
-    step_transfer_type = models.CharField(max_length=20, blank=True, verbose_name="传输类型快照")
-    step_local_path = models.TextField(blank=True, verbose_name="本地路径快照")
-    step_remote_path = models.TextField(blank=True, verbose_name="远程路径快照")
     step_file_sources = models.JSONField(default=list, blank=True, verbose_name="文件来源快照")
 
     # 可以在方案中覆盖步骤的某些参数
@@ -344,11 +340,7 @@ class PlanStep(models.Model):
                 self.step_script_type = self.step.script_type
                 self.step_account_id = self.step.account_id
             elif self.step.step_type == 'file_transfer':
-                self.step_transfer_type = self.step.transfer_type
-                self.step_local_path = self.step.local_path
-                self.step_remote_path = self.step.remote_path
-
-                # 复制 file_sources 并添加账号名称
+                # 仅复制 file_sources（并尝试附加 account_name），不再保留单独的 transfer/local/remote 快照字段
                 if self.step.file_sources:
                     from apps.hosts.models import ServerAccount
                     enriched_sources = []

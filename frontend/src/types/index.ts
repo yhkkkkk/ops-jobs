@@ -322,9 +322,7 @@ export interface PlanStep {
   step_target_group_ids: number[]
   step_account_id?: number | null
   step_account_name?: string | null
-  step_transfer_type?: string
-  step_local_path?: string
-  step_remote_path?: string
+  step_file_sources?: any[]
   // 覆盖配置
   override_parameters: Record<string, any>
   override_timeout: number | null

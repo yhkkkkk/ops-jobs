@@ -253,8 +253,7 @@ class PlanStepSerializer(serializers.ModelSerializer):
             'step_target_host_ids', 'step_target_group_ids', 'step_targets',
             'target_hosts', 'target_groups',
             'step_account_name',
-            'step_account_id', 'step_transfer_type', 'step_local_path', 'step_remote_path',
-            'step_file_sources',
+            'step_account_id', 'step_file_sources',
             # 覆盖配置
             'override_parameters', 'override_timeout',
             # 有效值（仅在有覆盖时显示）

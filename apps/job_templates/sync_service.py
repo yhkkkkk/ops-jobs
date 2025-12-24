@@ -103,11 +103,8 @@ class TemplateChangeDetector:
                         'ignore_error': plan_step.step_ignore_error,
                         'target_host_ids': plan_step.step_target_host_ids,
                         'target_group_ids': plan_step.step_target_group_ids,
-                        # 执行账号 / 文件传输等字段快照，用于精确对比
                         'account_id': plan_step.step_account_id,
-                        'transfer_type': plan_step.step_transfer_type,
-                        'local_path': plan_step.step_local_path,
-                        'remote_path': plan_step.step_remote_path,
+                        'file_sources': plan_step.step_file_sources,
                     }
                 }
 
@@ -335,29 +332,14 @@ class TemplateChangeDetector:
                     'change_type': 'text'
                 })
         elif new_step.step_type == 'file_transfer':
-            if snapshot.get('transfer_type') != new_step.transfer_type:
+            # 对于文件传输，使用 file_sources 列表做整体比较（包含来源、路径、账号等信息）
+            if snapshot.get('file_sources') != new_step.file_sources:
                 changes.append({
-                    'field': 'transfer_type',
-                    'field_name': '传输类型',
-                    'old_value': snapshot.get('transfer_type'),
-                    'new_value': new_step.transfer_type,
-                    'change_type': 'text'
-                })
-            if snapshot.get('local_path') != new_step.local_path:
-                changes.append({
-                    'field': 'local_path',
-                    'field_name': '本地路径',
-                    'old_value': snapshot.get('local_path'),
-                    'new_value': new_step.local_path,
-                    'change_type': 'text'
-                })
-            if snapshot.get('remote_path') != new_step.remote_path:
-                changes.append({
-                    'field': 'remote_path',
-                    'field_name': '远程路径',
-                    'old_value': snapshot.get('remote_path'),
-                    'new_value': new_step.remote_path,
-                    'change_type': 'text'
+                    'field': 'file_sources',
+                    'field_name': '文件来源',
+                    'old_value': snapshot.get('file_sources'),
+                    'new_value': new_step.file_sources,
+                    'change_type': 'json'
                 })
 
         return changes
