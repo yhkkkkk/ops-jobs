@@ -73,6 +73,35 @@
                   </a-option>
                 </a-select>
               </a-form-item>
+            <!-- 模板全局变量覆盖（仅在创建且已选择模板时显示） -->
+            <a-card v-if="!isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（覆盖，仅允许修改值）" class="mb-4">
+              <div class="global-parameters-list">
+                <div
+                  v-for="(val, key) in selectedTemplate.global_parameters"
+                  :key="key"
+                  class="parameter-item"
+                >
+                  <div class="parameter-content">
+                    <div class="parameter-row">
+                      <div class="parameter-key">
+                        <!-- 变量名不可修改，仅展示 -->
+                        <div style="font-weight:500;">{{ key }}</div>
+                      </div>
+                      <div class="parameter-value">
+                        <a-input
+                          v-model:value="form.global_parameter_overrides[key]"
+                          :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
+                          :placeholder="(typeof val === 'object' && val.type === 'secret') ? '密文变量值' : '变量值（可留空使用模板默认）'"
+                        />
+                      </div>
+                    </div>
+                    <div class="parameter-description" v-if="getGlobalParameterDescription(val)">
+                      <div style="font-size:12px; color:#86909c;">{{ getGlobalParameterDescription(val) }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a-card>
 
               <!-- 编辑模式：显示模板信息 -->
               <a-form-item v-else label="所属模板">
@@ -229,8 +258,12 @@ const displaySteps = computed(() => {
 const form = reactive({
   name: '',
   description: '',
-  template_id: undefined as number | undefined
+  template_id: undefined as number | undefined,
+  // 覆盖用的全局变量键值（仅模板已有键），默认不覆盖
+  global_parameter_overrides: {} as Record<string, any>
 })
+// 用于提交给后端的全局变量覆盖（只包含被用户修改的键）
+form.global_parameter_overrides = {}
 
 // 选中的步骤配置
 const selectedSteps = ref<Array<{
@@ -260,6 +293,13 @@ const fetchTemplateSteps = async (templateId: number) => {
     const template = await jobTemplateApi.getTemplate(templateId)
     templateSteps.value = template.steps || []
     selectedTemplate.value = template
+    // 初始化全局变量覆盖对象，仅包含模板已有的键（默认不覆盖）
+    form.global_parameter_overrides = {}
+    if (template.global_parameters) {
+      Object.keys(template.global_parameters).forEach(k => {
+        form.global_parameter_overrides[k] = ''
+      })
+    }
   } catch (error) {
     console.error('获取模板步骤失败:', error)
     Message.error('获取模板步骤失败')
@@ -420,7 +460,20 @@ const handleSave = async () => {
 
     // 只在创建模式下添加 template_id
     if (!isEdit.value) {
-      data.template_id = form.template_id
+      ;(data as any).template_id = form.template_id
+    }
+    // 添加全局变量覆盖（仅包含用户填写的键）
+    if (!isEdit.value && form.global_parameter_overrides) {
+      const overrides: Record<string, any> = {}
+      Object.keys(form.global_parameter_overrides).forEach(k => {
+        const v = form.global_parameter_overrides[k]
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          overrides[k] = v
+        }
+      })
+      if (Object.keys(overrides).length > 0) {
+        ;(data as any).global_parameter_overrides = overrides
+      }
     }
 
     if (isEdit.value) {
@@ -472,6 +525,13 @@ watch(() => route.query.template_id, (templateId) => {
     handleTemplateChange(Number(templateId))
   }
 }, { immediate: true })
+
+// 辅助：获取模板全局变量描述（用于输入提示）
+const getGlobalParameterDescription = (val: any) => {
+  if (!val) return ''
+  if (typeof val === 'object' && val.description) return String(val.description)
+  return ''
+}
 
 // 生命周期
 onMounted(() => {
@@ -643,5 +703,44 @@ onMounted(() => {
 .template-desc {
   font-size: 12px;
   color: var(--color-text-3);
+}
+
+/* 模板全局变量覆盖样式（复用作业模板的样式） */
+.global-parameters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.parameter-item {
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--color-bg-1);
+}
+
+.parameter-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parameter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.parameter-key {
+  flex: 1;
+  min-width: 200px;
+}
+
+.parameter-value {
+  flex: 2;
+}
+
+.parameter-description {
+  margin-top: 4px;
 }
 </style>

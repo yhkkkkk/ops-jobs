@@ -547,6 +547,12 @@ class ExecutionPlanCreateSerializer(serializers.Serializer):
         min_length=1,
         help_text="步骤配置列表，每个配置包含step_id、order等字段"
     )
+    # 全局变量覆盖（只能覆盖已存在的模板全局变量的值）
+    global_parameter_overrides = serializers.DictField(
+        required=False,
+        allow_empty=True,
+        help_text="模板级别的全局变量覆盖映射，只允许更新已存在的变量，不能新增或删除"
+    )
 
     def validate_step_configs(self, value):
         """验证步骤配置"""
@@ -570,6 +576,12 @@ class ExecutionPlanCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"执行顺序 {order} 重复")
             orders.append(order)
 
+        return value
+
+    def validate_global_parameter_overrides(self, value):
+        # 保证是 dict
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("global_parameter_overrides 必须是一个对象")
         return value
 
 

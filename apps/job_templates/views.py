@@ -511,12 +511,27 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
 
         with transaction.atomic():
             # 创建执行方案
+            # 处理全局变量覆盖：只允许覆盖已存在的模板变量
+            overrides = data.get('global_parameter_overrides') or {}
+            # 深拷贝模板的全局变量作为快照
+            import copy
+            snapshot = copy.deepcopy(template.global_parameters or {})
+            if overrides:
+                for k, v in overrides.items():
+                    if k not in snapshot:
+                        return SycResponse.error(message=f"不能覆盖不存在的模板变量: {k}", code=400)
+                    # 如果模板变量是扩展对象（含 value/type/description），只更新 value 字段；否则直接替换值
+                    if isinstance(snapshot[k], dict):
+                        snapshot[k]['value'] = v
+                    else:
+                        snapshot[k] = v
+
             plan = ExecutionPlan.objects.create(
                 template=template,
                 name=data['name'],
                 description=data.get('description', ''),
                 created_by=request.user,
-                global_parameters_snapshot=template.global_parameters  # 保存全局变量快照
+                global_parameters_snapshot=snapshot  # 保存已应用覆盖的全局变量快照
             )
 
             # 添加步骤到方案

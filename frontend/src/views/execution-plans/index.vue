@@ -247,6 +247,7 @@
           :pagination="false"
           row-key="id"
           :row-selection="{ type: 'radio', selectedRowKeys: selectedTemplateKeys, onChange: handleTemplateRowSelect }"
+          @row-click="handleTemplateRowClick"
           max-height="400px"
         >
           <template #name="{ record }">
@@ -467,6 +468,11 @@ const handleTemplateRowSelect = (selectedKeys: number[]) => {
   selectedTemplateKeys.value = selectedKeys
 }
 
+const handleTemplateRowClick = (record: any) => {
+  if (record && record.id) {
+    selectedTemplateKeys.value = [record.id]
+  }
+}
 // 确认选择模板
 const handleTemplateSelect = () => {
   if (selectedTemplateKeys.value.length === 0) {

@@ -20,7 +20,7 @@
       <a-button type="dashed" @click="serverInlineVisible = !serverInlineVisible">添加服务器文件</a-button>
     </div>
 
-    <div v-if="artifacts && artifacts.length > 0" class="artifact-list" style="margin-top:12px; border:1px dashed var(--color-border-2); padding:12px; border-radius:4px; width:calc(100% + 480px); margin-right:-240px; box-sizing:border-box; background:transparent;">
+    <div v-if="artifacts && artifacts.length > 0" class="artifact-list artifact-list-panel">
       <div v-for="(a, idx) in artifacts" :key="a.uid || a.storage_path || idx" class="artifact-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px; border:1px solid var(--color-border-2); border-radius:4px; margin-bottom:8px;">
         <div style="display:flex; gap:12px; align-items:center; min-width:0; flex:1">
           <a-tag :color="a.type === 'server' ? 'orange' : (a.storage_path ? 'cyan' : 'gray')">
@@ -28,32 +28,38 @@
           </a-tag>
           <div style="min-width:0; flex:1">
             <div v-if="a.type === 'server'">
-              <div style="display:flex; gap:12px; align-items:center; width:100%">
-                <div style="display:flex; align-items:center; gap:8px; flex:3; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                  <span :style="{ width: '8px', height: '8px', 'border-radius': '50%', display: 'inline-block', background: getAgentStatusColor(a.server_id) }" />
-                  <div style="flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-weight:500;">
+              <div class="server-row">
+                <div class="server-name-status">
+                  <span class="agent-dot" :style="{ background: getAgentStatusColor(a.server_id) }" />
+                  <div class="server-name">
                     {{ a.server || (a.server_id ? lookupHostName(a.server_id) : '-') }}
                   </div>
-                  <div style="flex:0 0 auto; font-size:12px; color:#86909c; margin-left:8px; white-space:nowrap;">
+                  <div class="agent-text">
                     {{ getAgentStatusText(a.server_id) }}
                   </div>
                 </div>
-                <div style="flex:4; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <div class="col-source-path">
                   {{ a.source_path || '-' }}
                 </div>
-                <div style="flex:1; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <div class="col-account">
                   {{ lookupAccountName(a.account) || '-' }}
                 </div>
-                <div style="flex:3; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <div class="col-remote">
                   {{ a.remote_path || '-' }}
                 </div>
               </div>
             </div>
             <div v-else>
-              <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.name || a.filename || a.storage_path }}</div>
-              <div style="font-size:12px; color:#86909c;">
-                <span v-if="a.size">{{ formatSize(a.size) }}</span>
-                <span v-if="a.checksum"> · sha256: {{ a.checksum.substr(0,12) }}...</span>
+              <div v-if="a.uploading" style="display:flex; align-items:center; gap:8px;">
+                <a-progress :percent="(a.progress || 0) / 100" size="small" style="flex:1" />
+                <div style="width:48px; text-align:right; font-size:12px; color:#86909c;">{{ a.progress || 0 }}%</div>
+              </div>
+              <div v-else>
+                <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.name || a.filename || a.storage_path }}</div>
+                <div class="col-muted">
+                  <span v-if="a.size">{{ formatSize(a.size) }}</span>
+                  <span v-if="a.checksum"> · sha256: {{ a.checksum.substr(0,12) }}...</span>
+                </div>
               </div>
             </div>
           </div>
@@ -65,7 +71,7 @@
         </div>
       </div>
     </div>
-      <div v-if="serverInlineVisible" style="margin-top:12px; border:1px dashed var(--color-border-2); padding:12px; border-radius:4px; width:calc(100% + 480px); margin-right:-240px; box-sizing:border-box; background:transparent;">
+      <div v-if="serverInlineVisible" class="server-inline-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <div style="font-weight:600">服务器来源列表</div>
         <a-button type="dashed" size="small" @click="addServerRow">+ 添加一行</a-button>
@@ -148,12 +154,27 @@ const onFileChange = async (files: any[]) => {
   for (const f of files) {
     const exists = artifacts.value.find(a => a.uid === f.uid || a.name === f.name)
     if (exists) continue
-    artifacts.value.push({ uid: f.uid, name: f.name, uploading: true })
+    // placeholder with progress
+    artifacts.value.push({ uid: f.uid, name: f.name, uploading: true, progress: 0 })
     try {
       const formData = new FormData()
       formData.append('file', f.file || f)
       const resp = await request.post('/agents/artifacts/upload/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0,
+        onUploadProgress: (e: any) => {
+          try {
+            const total = e.total || (f.file ? f.file.size : f.size) || 0
+            let percent = total ? Math.min(100, Math.round((e.loaded / total) * 100)) : 0
+            if (percent >= 100) percent = 99
+            const idx = artifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+            if (idx > -1) {
+              artifacts.value[idx].progress = percent
+            }
+          } catch (err) {
+            // ignore
+          }
+        }
       })
       const data = resp.data || resp
       const meta = {
@@ -215,11 +236,6 @@ const addServerEntries = () => {
 const removeArtifact = (a: any) => {
   artifacts.value = artifacts.value.filter(x => x !== a)
   emit('update:artifacts', artifacts.value)
-}
-
-const openDownload = (url: string) => {
-  if (!url) return
-  window.open(url, '_blank')
 }
 
 // HostSelector helpers
@@ -292,6 +308,45 @@ const getAgentStatusColor = (serverId: any) => {
 
 <style scoped>
 .artifact-item { }
+.artifact-list-panel {
+  margin-top: 12px;
+  border: 1px dashed var(--color-border-2);
+  padding: 12px;
+  border-radius: 4px;
+  width: calc(100% + 480px);
+  margin-right: -240px;
+  box-sizing: border-box;
+  background: transparent;
+}
+.server-inline-panel {
+  margin-top: 12px;
+  border: 1px dashed var(--color-border-2);
+  padding: 12px;
+  border-radius: 4px;
+  width: calc(100% + 480px);
+  margin-right: -240px;
+  box-sizing: border-box;
+  background: transparent;
+}
+.col-muted {
+  font-size:12px;
+  color:#86909c;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.server-select-btn {
+  justify-content:flex-start;
+}
+.col-path { flex:10; }
+.col-account { flex:4; }
+.col-remote { flex:8; }
+.server-row { display:flex; gap:12px; align-items:center; width:100%; }
+.server-name-status { display:flex; align-items:center; gap:8px; flex:3; min-width:0; white-space:nowrap; overflow:hidden; }
+.agent-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+.server-name { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+.agent-text { flex:0 0 auto; font-size:12px; color:#86909c; margin-left:8px; white-space:nowrap; }
+.col-source-path { flex:4; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-account { flex:1; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-remote { flex:3; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
-
-
