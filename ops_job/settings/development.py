@@ -228,8 +228,8 @@ if DEBUG:
     except ImportError:
         pass
 
-print(f"🚀 Development environment loaded")
-print(f"📍 DEBUG: {DEBUG}")
-print(f"🗄️  Database: SQLite")
-print(f"🔴 Redis: {REDIS_HOST}:{REDIS_PORT}")
-print(f"📧 Email: Console backend")
+print(f"Development environment loaded")
+print(f"DEBUG: {DEBUG}")
+print(f"Database: SQLite")
+print(f"Redis: {REDIS_HOST}:{REDIS_PORT}")
+print(f"Email: Console backend")

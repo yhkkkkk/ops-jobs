@@ -261,40 +261,43 @@
 
                   <!-- 文件传输步骤 -->
                   <div v-else-if="step.step_type === 'file_transfer'" class="file-transfer-content">
-                  <a-descriptions :column="2" size="small">
-                    <a-descriptions-item label="覆盖策略">
-                      {{ getOverwritePolicyName(step.overwrite_policy) }}
-                    </a-descriptions-item>
-                    <a-descriptions-item label="执行账号">
-                      {{ step.account_name || `ID: ${step.account_id || '-'}` }}
-                    </a-descriptions-item>
-                    <a-descriptions-item v-if="step.file_sources && step.file_sources.length > 0" label="文件来源">
-                      <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
-                        <div v-for="(src, si) in step.file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-                          <a-tag :color="src.type === 'server' ? 'orange' : (src.type === 'local' ? 'cyan' : 'purple')">
-                            {{ src.type === 'server' ? '服务器' : (src.type === 'local' ? '本地' : '制品库') }}
-                          </a-tag>
-                          <div style="flex:1; min-width:0">
-                            <div v-if="src.type === 'server'" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                              {{ src.server || src.server_name || ('ID:' + (src.server_id || '-')) }} · {{ src.source_path || '-' }}
-                            </div>
-                            <div v-else style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                              {{ src.filename || src.storage_path || src.download_url }}
-                            </div>
-                            <div style="font-size:12px; color:#86909c">
-                              目标路径: {{ src.remote_path || '-' }} 
-                              <span v-if="src.size"> · {{ formatSize(src.size) }}</span>
-                              <span v-if="src.checksum || src.sha256"> · sha256: {{ (src.checksum || src.sha256).substr(0,12) }}...</span>
-                            </div>
-                          </div>
-                          <a-space>
-                            <a-button v-if="src.download_url" type="text" size="small" @click="openDownload(src.download_url)">下载</a-button>
-                            <a-button v-if="src.download_url" type="text" size="small" @click="copyToClipboard(src.download_url)">复制链接</a-button>
-                          </a-space>
+                    <a-descriptions :column="2" size="small">
+                      <a-descriptions-item label="覆盖策略">
+                        {{ getOverwritePolicyName(step.overwrite_policy) }}
+                      </a-descriptions-item>
+                      <a-descriptions-item label="执行账号">
+                        <!-- 支持多种字段名，优先展示名称，否则展示 ID -->
+                        <div>
+                          {{ step.account_name || step.step_account_name || (step.account_id || step.step_account_id ? ('ID: ' + (step.account_id || step.step_account_id)) : '-') }}
                         </div>
-                      </div>
-                    </a-descriptions-item>
-                  </a-descriptions>
+                      </a-descriptions-item>
+                      <a-descriptions-item v-if="step.file_sources && step.file_sources.length > 0" label="文件来源">
+                        <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
+                          <div v-for="(src, si) in step.file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                            <a-tag :color="src.type === 'server' ? 'orange' : (src.type === 'local' ? 'cyan' : 'purple')">
+                              {{ src.type === 'server' ? '服务器' : (src.type === 'local' ? '本地' : '制品库') }}
+                            </a-tag>
+                            <div style="flex:1; min-width:0">
+                              <div v-if="src.type === 'server'" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                {{ src.server_name || src.server || (src.server_id ? ('ID:' + String(src.server_id)) : '-') }} · {{ src.source_path || src.path || '-' }}
+                              </div>
+                              <div v-else style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                {{ src.filename || src.name || src.storage_path || src.download_url || '-' }}
+                              </div>
+                              <div style="font-size:12px; color:#86909c">
+                                目标路径: {{ src.remote_path || '-' }} 
+                                <span v-if="src.size"> · {{ formatSize(src.size) }}</span>
+                                <span v-if="src.checksum || src.sha256"> · sha256: {{ String(src.checksum || src.sha256).substr(0,12) }}...</span>
+                              </div>
+                            </div>
+                            <a-space>
+                              <a-button v-if="src.download_url" type="text" size="small" @click="openDownload(src.download_url)">下载</a-button>
+                              <a-button v-if="src.download_url" type="text" size="small" @click="copyToClipboard(src.download_url)">复制链接</a-button>
+                            </a-space>
+                          </div>
+                        </div>
+                      </a-descriptions-item>
+                    </a-descriptions>
                   </div>
                 </div>
               </div>

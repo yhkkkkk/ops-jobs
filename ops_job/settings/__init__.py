@@ -15,12 +15,12 @@ try:
 
     if env_path.exists():
         load_dotenv(env_path)
-        print(f"✅ Loaded environment variables from {env_path}")
+        print(f"Loaded environment variables from {env_path}")
     else:
-        print(f"⚠️  .env file not found at {env_path}")
+        print(f"Warning: .env file not found at {env_path}")
 
 except ImportError:
-    print("⚠️  python-dotenv not installed. Install it with: pip install python-dotenv")
+    print("Warning: python-dotenv not installed. Install it with: pip install python-dotenv")
 
 # 获取环境变量，默认为开发环境
 ENVIRONMENT = os.getenv('DJANGO_ENVIRONMENT', 'development')

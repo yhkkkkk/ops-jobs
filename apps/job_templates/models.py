@@ -274,6 +274,7 @@ class PlanStep(models.Model):
     step_transfer_type = models.CharField(max_length=20, blank=True, verbose_name="传输类型快照")
     step_local_path = models.TextField(blank=True, verbose_name="本地路径快照")
     step_remote_path = models.TextField(blank=True, verbose_name="远程路径快照")
+    step_file_sources = models.JSONField(default=list, blank=True, verbose_name="文件来源快照")
 
     # 可以在方案中覆盖步骤的某些参数
     override_parameters = models.JSONField(default=dict, blank=True, verbose_name="参数覆盖")
@@ -346,3 +347,24 @@ class PlanStep(models.Model):
                 self.step_transfer_type = self.step.transfer_type
                 self.step_local_path = self.step.local_path
                 self.step_remote_path = self.step.remote_path
+
+                # 复制 file_sources 并添加账号名称
+                if self.step.file_sources:
+                    from apps.hosts.models import ServerAccount
+                    enriched_sources = []
+                    for src in self.step.file_sources:
+                        src_copy = src.copy()
+                        # 如果有 account 或 account_id，添加 account_name
+                        account_id = src_copy.get('account') or src_copy.get('account_id')
+                        if account_id:
+                            try:
+                                account = ServerAccount.objects.get(id=account_id)
+                                src_copy['account_name'] = account.name
+                            except ServerAccount.DoesNotExist:
+                                src_copy['account_name'] = None
+                        enriched_sources.append(src_copy)
+                    self.step_file_sources = enriched_sources
+                else:
+                    self.step_file_sources = []
+
+                self.step_account_id = self.step.account_id

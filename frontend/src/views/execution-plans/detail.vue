@@ -285,54 +285,38 @@
               <!-- 文件传输步骤 -->
               <div v-else-if="step.step_type === 'file_transfer'" class="step-file-transfer">
                 <h4>传输配置</h4>
-                <!-- 仅显示新的 file_sources 结构 -->
-                <div v-if="step.file_sources && step.file_sources.length > 0" class="file-sources-list">
-                  <div
-                    v-for="(src, idx) in step.file_sources"
-                    :key="idx"
-                    class="file-source-item"
-                    style="margin-bottom:8px;"
-                  >
-                    <div style="font-weight:500; margin-bottom:6px;">
-                      {{ src.type === 'server' ? '服务器文件' : '制品/本地上传' }}
-                    </div>
-                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
-                      <div>
-                        <div class="param-key">来源标识</div>
-                        <div class="param-value">{{ src.filename || src.name || src.storage_path || src.source_path || '-' }}</div>
-                      </div>
-                      <div>
-                        <div class="param-key">存储路径</div>
-                        <div class="param-value">{{ src.storage_path || src.download_url || '-' }}</div>
-                      </div>
-                      <div>
-                        <div class="param-key">远程路径</div>
-                        <div class="param-value">{{ src.remote_path || '-' }}</div>
-                      </div>
-                      <div v-if="src.server_name || src.server_ip || src.server_id">
-                        <div class="param-key">源服务器</div>
-                        <div class="param-value">{{ src.server_name || src.server_ip || (src.server_id ? 'ID:' + String(src.server_id) : '-') }}</div>
-                      </div>
-                      <div v-if="src.account_name || src.account_id">
-                        <div class="param-key">账号</div>
-                        <div class="param-value">{{ src.account_name || (src.account_id ? 'ID:' + String(src.account_id) : '-') }}</div>
-                      </div>
-                      <div v-if="src.size !== undefined">
-                        <div class="param-key">大小</div>
-                        <div class="param-value">{{ formatFileSize(src.size) }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="no-file-sources">
-                  <a-empty description="未配置文件来源" />
-                </div>
-                <a-descriptions :column="2" size="small" style="margin-top:12px;">
+                <a-descriptions :column="2" size="small" class="mb-4">
                   <a-descriptions-item label="执行账号">
                     {{ step.step_account_name || (step.step_account_id ? `ID: ${step.step_account_id}` : '默认') }}
                   </a-descriptions-item>
-                  <a-descriptions-item label="远程路径">
-                    {{ step.step_remote_path || '-' }}
+                  <a-descriptions-item v-if="step.step_file_sources && step.step_file_sources.length > 0" label="文件来源">
+                    <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
+                      <div v-for="(src, si) in step.step_file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                        <a-tag :color="src.type === 'server' ? 'orange' : (src.type === 'local' ? 'cyan' : 'purple')">
+                          {{ src.type === 'server' ? '服务器' : (src.type === 'local' ? '本地' : '制品库') }}
+                        </a-tag>
+                        <div style="flex:1; min-width:0">
+                          <div v-if="src.type === 'server'" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            {{ src.server_name || src.server || (src.server_id ? ('ID:' + String(src.server_id)) : '-') }} · {{ src.source_path || src.path || '-' }}
+                          </div>
+                          <div v-else style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            {{ src.filename || src.name || src.storage_path || src.download_url || '-' }}
+                          </div>
+                          <div style="font-size:12px; color:#86909c">
+                            <span v-if="src.type === 'server' && src.account_name">账号: {{ src.account_name }} · </span>
+                            目标路径: {{ src.remote_path || '-' }}
+                            <span v-if="src.size"> · {{ formatFileSize(src.size) }}</span>
+                            <span v-if="src.checksum || src.sha256"> · sha256: {{ String(src.checksum || src.sha256).substr(0,12) }}...</span>
+                          </div>
+                        </div>
+                        <a-space>
+                          <a-button v-if="src.download_url" type="text" size="small" @click="() => window.open(src.download_url)">下载</a-button>
+                        </a-space>
+                      </div>
+                    </div>
+                  </a-descriptions-item>
+                  <a-descriptions-item v-else label="文件来源">
+                    <a-empty description="未配置文件来源" :image-style="{ height: '30px' }" />
                   </a-descriptions-item>
                 </a-descriptions>
               </div>

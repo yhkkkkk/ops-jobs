@@ -254,6 +254,7 @@ class PlanStepSerializer(serializers.ModelSerializer):
             'target_hosts', 'target_groups',
             'step_account_name',
             'step_account_id', 'step_transfer_type', 'step_local_path', 'step_remote_path',
+            'step_file_sources',
             # 覆盖配置
             'override_parameters', 'override_timeout',
             # 有效值（仅在有覆盖时显示）
@@ -603,6 +604,13 @@ class ExecutionPlanUpdateSerializer(serializers.ModelSerializer):
         help_text="步骤配置列表，每个配置包含step_id、order等字段"
     )
 
+    # 全局变量覆盖（用于更新）
+    global_parameter_overrides = serializers.DictField(
+        required=False,
+        write_only=True,
+        help_text="全局变量覆盖值"
+    )
+
     class Meta:
         model = ExecutionPlan
         fields = [
@@ -611,7 +619,7 @@ class ExecutionPlanUpdateSerializer(serializers.ModelSerializer):
             'step_count', 'total_executions', 'success_executions', 'failed_executions',
             'success_rate', 'last_executed_at',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
-            'plan_steps', 'step_configs'
+            'plan_steps', 'step_configs', 'global_parameter_overrides'
         ]
         read_only_fields = ['id', 'template', 'is_synced', 'last_sync_at',
                            'total_executions', 'success_executions', 'failed_executions',
@@ -649,11 +657,29 @@ class ExecutionPlanUpdateSerializer(serializers.ModelSerializer):
         from django.db import transaction
         from .models import JobStep, PlanStep
         from .sync_service import TemplateChangeDetector
+        import copy
 
         step_configs = validated_data.pop('step_configs', None)
+        global_parameter_overrides = validated_data.pop('global_parameter_overrides', None)
 
         # 更新基本信息
         instance = super().update(instance, validated_data)
+
+        # 处理全局变量覆盖
+        if global_parameter_overrides is not None:
+            # 深拷贝模板的全局变量作为快照
+            snapshot = copy.deepcopy(instance.template.global_parameters or {})
+            if global_parameter_overrides:
+                for k, v in global_parameter_overrides.items():
+                    if k not in snapshot:
+                        raise serializers.ValidationError(f"不能覆盖不存在的模板变量: {k}")
+                    # 如果模板变量是扩展对象（含 value/type/description），只更新 value 字段；否则直接替换值
+                    if isinstance(snapshot[k], dict):
+                        snapshot[k]['value'] = v
+                    else:
+                        snapshot[k] = v
+            instance.global_parameters_snapshot = snapshot
+            instance.save(update_fields=['global_parameters_snapshot'])
 
         # 如果提供了步骤配置，则更新步骤
         if step_configs is not None:

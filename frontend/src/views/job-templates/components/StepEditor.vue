@@ -2,7 +2,7 @@
   <a-modal
     v-model:visible="modalVisible"
     :title="isEdit ? '编辑步骤' : '添加步骤'"
-    width="800px"
+    width="1200px"
     @cancel="handleCancel"
     @ok="handleSubmit"
     :confirm-loading="loading"

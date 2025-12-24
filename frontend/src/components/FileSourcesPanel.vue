@@ -20,8 +20,8 @@
       <a-button type="dashed" @click="serverInlineVisible = !serverInlineVisible">添加服务器文件</a-button>
     </div>
 
-    <div v-if="artifacts && artifacts.length > 0" class="artifact-list artifact-list-panel">
-      <div v-for="(a, idx) in artifacts" :key="a.uid || a.storage_path || idx" class="artifact-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px; border:1px solid var(--color-border-2); border-radius:4px; margin-bottom:8px;">
+    <div v-if="localArtifacts && localArtifacts.length > 0" class="artifact-list artifact-list-panel">
+      <div v-for="(a, idx) in localArtifacts" :key="a.uid || a.storage_path || idx" class="artifact-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px; border:1px solid var(--color-border-2); border-radius:4px; margin-bottom:8px;">
         <div style="display:flex; gap:12px; align-items:center; min-width:0; flex:1">
           <a-tag :color="a.type === 'server' ? 'orange' : (a.storage_path ? 'cyan' : 'gray')">
             {{ a.type === 'server' ? '服务器' : (a.storage_path ? '制品' : '临时') }}
@@ -102,21 +102,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import request from '@/utils/request'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import { accountApi } from '@/api/account'
 import HostSelector from '@/components/HostSelector.vue'
 
-defineProps({
+const props = defineProps({
   artifacts: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['update:artifacts'])
 
 const uploadList = ref<any[]>([])
 const serverRows = ref<any[]>([{ _uid: Date.now().toString(), server: '', server_id: null, path: '', account: '', remote_path: '' }])
-const artifacts = ref<any[]>([])
+const localArtifacts = ref<any[]>([])
+
+// Watch props.artifacts and sync to local state
+watch(() => props.artifacts, (newVal) => {
+  if (newVal && Array.isArray(newVal)) {
+    localArtifacts.value = [...newVal]
+  }
+}, { immediate: true, deep: true })
 
 const hosts = ref<any[]>([])
 const hostGroups = ref<any[]>([])
@@ -152,10 +159,10 @@ onMounted(async () => {
 const onFileChange = async (files: any[]) => {
   uploadList.value = files
   for (const f of files) {
-    const exists = artifacts.value.find(a => a.uid === f.uid || a.name === f.name)
+    const exists = localArtifacts.value.find(a => a.uid === f.uid || a.name === f.name)
     if (exists) continue
     // placeholder with progress
-    artifacts.value.push({ uid: f.uid, name: f.name, uploading: true, progress: 0 })
+    localArtifacts.value.push({ uid: f.uid, name: f.name, uploading: true, progress: 0 })
     try {
       const formData = new FormData()
       formData.append('file', f.file || f)
@@ -167,9 +174,9 @@ const onFileChange = async (files: any[]) => {
             const total = e.total || (f.file ? f.file.size : f.size) || 0
             let percent = total ? Math.min(100, Math.round((e.loaded / total) * 100)) : 0
             if (percent >= 100) percent = 99
-            const idx = artifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+            const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
             if (idx > -1) {
-              artifacts.value[idx].progress = percent
+              localArtifacts.value[idx].progress = percent
             }
           } catch (err) {
             // ignore
@@ -185,23 +192,23 @@ const onFileChange = async (files: any[]) => {
         checksum: data.content?.checksum || data.checksum || data.content?.checksum,
         size: data.content?.size || data.size || (f.file && f.file.size) || 0,
       }
-      const idx = artifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
-      if (idx > -1) artifacts.value[idx] = meta
-      else artifacts.value.push(meta)
-      emit('update:artifacts', artifacts.value)
+      const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+      if (idx > -1) localArtifacts.value[idx] = meta
+      else localArtifacts.value.push(meta)
+      emit('update:artifacts', localArtifacts.value)
     } catch (e) {
       console.error('artifact upload failed', e)
       Message.error(`文件 ${f.name} 上传失败`)
-      artifacts.value = artifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
-      emit('update:artifacts', artifacts.value)
+      localArtifacts.value = localArtifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
+      emit('update:artifacts', localArtifacts.value)
     }
   }
 }
 
 const onFileRemove = (fileItem: any) => {
   uploadList.value = uploadList.value.filter(f => f.uid !== fileItem.uid)
-  artifacts.value = artifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
-  emit('update:artifacts', artifacts.value)
+  localArtifacts.value = localArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
+  emit('update:artifacts', localArtifacts.value)
 }
 
 const addServerRow = () => {
@@ -215,7 +222,7 @@ const removeServerRow = (idx: number) => {
 const addServerEntries = () => {
   for (const r of serverRows.value) {
     if (!r.server && !r.path) continue
-    artifacts.value.push({
+    localArtifacts.value.push({
       type: 'server',
       server: r.server,
       server_id: r.server_id || null,
@@ -230,12 +237,12 @@ const addServerEntries = () => {
     })
   }
   serverRows.value = [{ _uid: Date.now().toString(), server: '', path: '', account: '', remote_path: '' }]
-  emit('update:artifacts', artifacts.value)
+  emit('update:artifacts', localArtifacts.value)
 }
 
 const removeArtifact = (a: any) => {
-  artifacts.value = artifacts.value.filter(x => x !== a)
-  emit('update:artifacts', artifacts.value)
+  localArtifacts.value = localArtifacts.value.filter(x => x !== a)
+  emit('update:artifacts', localArtifacts.value)
 }
 
 // HostSelector helpers

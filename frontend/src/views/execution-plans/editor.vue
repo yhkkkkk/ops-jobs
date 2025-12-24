@@ -73,7 +73,7 @@
                   </a-option>
                 </a-select>
               </a-form-item>
-            <!-- 模板全局变量覆盖（仅在创建且已选择模板时显示） -->
+            <!-- 模板全局变量覆盖（创建模式显示） -->
             <a-card v-if="!isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（覆盖，仅允许修改值）" class="mb-4">
               <div class="global-parameters-list">
                 <div
@@ -91,7 +91,40 @@
                         <a-input
                           v-model:value="form.global_parameter_overrides[key]"
                           :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
-                          :placeholder="(typeof val === 'object' && val.type === 'secret') ? '密文变量值' : '变量值（可留空使用模板默认）'"
+                          :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
+                        />
+                      </div>
+                    </div>
+                    <div class="parameter-description" v-if="getGlobalParameterDescription(val)">
+                      <div style="font-size:12px; color:#86909c;">{{ getGlobalParameterDescription(val) }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a-card>
+
+            <!-- 模板全局变量覆盖（编辑模式显示 - 可以修改覆盖值） -->
+            <a-card v-if="isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（可覆盖修改值）" class="mb-4">
+              <a-alert type="info" style="margin-bottom: 12px;">
+                可以修改全局变量的覆盖值。留空则使用模板默认值。
+              </a-alert>
+              <div class="global-parameters-list">
+                <div
+                  v-for="(val, key) in selectedTemplate.global_parameters"
+                  :key="key"
+                  class="parameter-item"
+                >
+                  <div class="parameter-content">
+                    <div class="parameter-row">
+                      <div class="parameter-key">
+                        <!-- 变量名不可修改，仅展示 -->
+                        <div style="font-weight:500;">{{ key }}</div>
+                      </div>
+                      <div class="parameter-value">
+                        <a-input
+                          v-model:value="form.global_parameter_overrides[key]"
+                          :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
+                          :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
                         />
                       </div>
                     </div>
@@ -323,6 +356,33 @@ const fetchPlanDetail = async () => {
     // 获取模板步骤
     await fetchTemplateSteps(plan.template)
 
+    // 加载现有的全局变量覆盖（从 global_parameters_snapshot 提取覆盖值）
+    if (plan.global_parameters_snapshot && selectedTemplate.value?.global_parameters) {
+      form.global_parameter_overrides = {}
+      Object.keys(selectedTemplate.value.global_parameters).forEach(key => {
+        const snapshotValue = plan.global_parameters_snapshot[key]
+        const templateValue = selectedTemplate.value.global_parameters[key]
+
+        // 提取实际值用于比较
+        let snapshotActualValue = snapshotValue
+        let templateActualValue = templateValue
+
+        if (typeof snapshotValue === 'object' && snapshotValue !== null) {
+          snapshotActualValue = snapshotValue.value
+        }
+        if (typeof templateValue === 'object' && templateValue !== null) {
+          templateActualValue = templateValue.value
+        }
+
+        // 如果快照值与模板默认值不同，说明有覆盖
+        if (snapshotActualValue !== templateActualValue) {
+          form.global_parameter_overrides[key] = snapshotActualValue || ''
+        } else {
+          form.global_parameter_overrides[key] = ''
+        }
+      })
+    }
+
     // 设置当前方案的步骤数据（用于显示）
     if (plan.plan_steps) {
       currentPlanSteps.value = plan.plan_steps.map(planStep => ({
@@ -462,8 +522,9 @@ const handleSave = async () => {
     if (!isEdit.value) {
       ;(data as any).template_id = form.template_id
     }
-    // 添加全局变量覆盖（仅包含用户填写的键）
-    if (!isEdit.value && form.global_parameter_overrides) {
+
+    // 添加全局变量覆盖（创建和编辑模式都支持）
+    if (form.global_parameter_overrides) {
       const overrides: Record<string, any> = {}
       Object.keys(form.global_parameter_overrides).forEach(k => {
         const v = form.global_parameter_overrides[k]
@@ -516,6 +577,20 @@ const getStepTypeText = (type: string) => {
     file_transfer: '文件传输'
   }
   return texts[type] || type
+}
+
+// 格式化全局变量值（处理secret等类型）
+const formatGlobalParameterValue = (rawValue: any) => {
+  if (rawValue === null || rawValue === undefined) return ''
+  if (typeof rawValue !== 'object') {
+    return String(rawValue)
+  }
+  const value = rawValue?.value
+  const type = rawValue?.type
+  if (type === 'secret') {
+    return '******'
+  }
+  return value !== undefined ? String(value) : ''
 }
 
 // 监听URL参数变化
