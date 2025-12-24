@@ -321,6 +321,19 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         template_name = instance.name
 
+        # 检查是否存在与该模板关联的定时作业（ScheduledJob）
+        try:
+            from apps.scheduler.models import ScheduledJob
+            scheduled_exists = ScheduledJob.objects.filter(execution_plan__template=instance).exists()
+        except Exception:
+            scheduled_exists = False
+
+        if scheduled_exists:
+            return SycResponse.error(
+                message=f"模板 '{template_name}' 存在已配置的定时任务，请先删除或禁用定时任务后再尝试删除模板",
+                code=400
+            )
+
         # 检查是否有关联的执行记录
         if hasattr(instance, 'execution_records') and instance.execution_records.exists():
             return SycResponse.error(
@@ -328,6 +341,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 code=400
             )
 
+        # 若无定时任务与执行记录，则允许删除（会级联删除执行方案等）
         self.perform_destroy(instance)
 
         return SycResponse.success(

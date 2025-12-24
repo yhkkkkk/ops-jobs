@@ -7,10 +7,12 @@ import time
 import tempfile
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from io import StringIO
 from contextlib import contextmanager
+import re
+import shlex
 
 try:
     from fabric import Connection, Config
@@ -715,6 +717,78 @@ class FabricSSHManager:
                         except:
                             pass
     
+    def _render_path_variables(self, path: str, now: Optional[datetime] = None, source_host: Optional[object] = None, target_host: Optional[object] = None) -> str:
+        """在服务器端渲染路径中的变量，例如 [date], [date+1], [date:YYYY/MM/DD], [hostname], [timestamp]"""
+        if not path:
+            return path or ''
+        if now is None:
+            now = datetime.now()
+
+        result = path
+
+        # 处理日期偏移 [date+N] 或 [date-N]
+        def _replace_offset(match):
+            offset = int(match.group(1))
+            target = now + timedelta(days=offset)
+            return target.strftime('%Y-%m-%d')
+
+        result = re.sub(r'\[date([+-]\d+)\]', _replace_offset, result)
+
+        # 处理自定义日期格式 [date:FORMAT]
+        def _replace_custom_date(match):
+            fmt = match.group(1)
+            # 支持 YYYY MM DD HH mm SS 替换为 strftime 等价
+            fmt_py = fmt.replace('YYYY', '%Y').replace('MM', '%m').replace('DD', '%d').replace('HH', '%H').replace('mm', '%M').replace('SS', '%S')
+            try:
+                return now.strftime(fmt_py)
+            except Exception:
+                return fmt
+
+        result = re.sub(r'\[date:([^\]]+)\]', _replace_custom_date, result)
+
+        # 基础变量替换
+        vars_map = {
+            '[date]': now.strftime('%Y-%m-%d'),
+            '[time]': now.strftime('%H-%M-%S'),
+            '[datetime]': f"{now.strftime('%Y-%m-%d')}_{now.strftime('%H-%M-%S')}",
+            '[timestamp]': str(int(now.timestamp())),
+            '[year]': now.strftime('%Y'),
+            '[month]': now.strftime('%m'),
+            '[day]': now.strftime('%d'),
+            '[hour]': now.strftime('%H'),
+            '[minute]': now.strftime('%M'),
+            '[second]': now.strftime('%S'),
+        }
+
+        for k, v in vars_map.items():
+            result = result.replace(k, v)
+
+        # 主机名替换（优先使用 target_host，然后 source_host）
+        hostname = None
+        if target_host and hasattr(target_host, 'hostname'):
+            hostname = getattr(target_host, 'hostname') or getattr(target_host, 'name', None)
+        if not hostname and source_host and hasattr(source_host, 'hostname'):
+            hostname = getattr(source_host, 'hostname') or getattr(source_host, 'name', None)
+        if hostname:
+            result = result.replace('[hostname]', str(hostname))
+
+        return result
+
+    def _list_remote_matches(self, conn, pattern: str) -> list:
+        """在远程主机上列出匹配 pattern 的文件路径（使用 shell 扩展）"""
+        try:
+            if not pattern:
+                return []
+            # 使用 bash -lc 'ls -1 -- pattern'，将 pattern 使用单引号包裹以避免本地解析
+            quoted = shlex.quote(pattern)
+            cmd = f"bash -lc \"ls -1 -- {quoted} 2>/dev/null || true\""
+            res = conn.run(cmd, warn=True, hide=True)
+            stdout = res.stdout or ''
+            lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
+            return lines
+        except Exception:
+            return []
+    
     def _execute_shell_script(self, conn, script_content: str, timeout: int,
                              host, task_id: Optional[str]) -> Dict[str, Any]:
         """执行Shell脚本"""
@@ -948,8 +1022,11 @@ class FabricSSHManager:
                 if transfer_type == 'local_upload':
                     result = self._upload_file(conn, local_path, remote_path, host, task_id, **kwargs)
                 elif transfer_type == 'server_upload':
+                    # 支持服务器端变量替换与通配符展开：
+                    # - source_server_path 上的变量以源服务器环境为主（例如日期偏移），不支持通配符
+                    # - remote_path 的变量在上传到每台目标主机时以目标主机信息替换（例如 [hostname]），支持通配符
                     result = self._server_upload_file(conn, source_server_host, source_server_user, source_server_path,
-                                                    remote_path, host, task_id, **kwargs)
+                                                     remote_path, host, task_id, **kwargs)
                 else:
                     raise FabricSSHError(f"不支持的传输类型: {transfer_type}")
 
@@ -1124,40 +1201,52 @@ class FabricSSHManager:
             if source_host.username != source_server_user:
                 logger.info(f"源服务器用户名不匹配，使用提供的用户名: {source_server_user} (原用户名: {source_host.username})")
 
-            # 步骤2: 创建临时文件路径
+            # 步骤2: 根据 source_server_path 支持变量替换与通配符展开，然后逐个下载匹配到的文件
             import uuid
             temp_dir = tempfile.gettempdir()
-            file_name = os.path.basename(source_server_path) or f"transfer_{uuid.uuid4().hex[:8]}"
-            temp_file_path = os.path.join(temp_dir, f"ops_job_transfer_{uuid.uuid4().hex}_{file_name}")
 
-            # 推送下载开始日志
-            if task_id:
-                realtime_log_service.push_log(task_id, host.id, {
-                    'host_name': host.name,
-                    'host_ip': host.ip_address,
-                    'log_type': 'info',
-                    'content': f'步骤1/3: 从源服务器 {source_server_host} 下载文件到临时目录',
-                    'step_name': '文件传输',
-                    'step_order': 2
-                })
+            # 渲染源路径变量（以源服务器为上下文）
+            rendered_source_path = self._render_path_variables(source_server_path or '', now=datetime.now(), source_host=source_host)
 
-            # 步骤3: 从源服务器下载文件到临时目录
             try:
                 source_conn_info = self._get_connection_info(source_host)
                 # 如果提供了不同的用户名，使用提供的用户名（但使用源服务器的认证信息）
                 if source_host.username != source_server_user:
                     source_conn_info['user'] = source_server_user
-                
+
                 with self._create_connection(source_conn_info, timeout) as source_conn:
+                    # 不支持源路径通配符；source_server_path 必须是明确路径
+                    if re.search(r'[\*\?\[]', rendered_source_path):
+                        return {
+                            'success': False,
+                            'host_id': host.id,
+                            'host_name': host.name,
+                            'host_ip': host.ip_address,
+                            'message': f'源路径不支持通配符，请提供确切的源文件路径: {rendered_source_path}',
+                        }
+
+                    # 逐个下载指定的源文件（仅单文件）
+                    file_name = os.path.basename(rendered_source_path) or f"transfer_{uuid.uuid4().hex[:8]}"
+                    temp_file = os.path.join(temp_dir, f"ops_job_transfer_{uuid.uuid4().hex}_{file_name}")
+                    # 推送下载开始日志
+                    if task_id:
+                        realtime_log_service.push_log(task_id, host.id, {
+                            'host_name': host.name,
+                            'host_ip': host.ip_address,
+                            'log_type': 'info',
+                            'content': f'步骤1/3: 从源服务器 {source_server_host} 下载文件到临时目录: {rendered_source_path}',
+                            'step_name': '文件传输',
+                            'step_order': 2
+                        })
+
                     download_result = self._download_file(
-                        source_conn, 
-                        temp_file_path, 
-                        source_server_path, 
-                        source_host, 
-                        task_id, 
+                        source_conn,
+                        temp_file,
+                        rendered_source_path,
+                        source_host,
+                        task_id,
                         **kwargs
                     )
-                    
                     if not download_result.get('success'):
                         return {
                             'success': False,
@@ -1166,6 +1255,7 @@ class FabricSSHManager:
                             'host_ip': host.ip_address,
                             'message': f'从源服务器下载文件失败: {download_result.get("message", "未知错误")}',
                         }
+                    downloaded_files = [temp_file]
             except Exception as e:
                 error_msg = f'从源服务器下载文件失败: {str(e)}'
                 logger.error(error_msg)
@@ -1197,16 +1287,69 @@ class FabricSSHManager:
                     'step_order': 3
                 })
 
-            # 步骤4: 上传文件到目标服务器
-            upload_result = self._upload_file(conn, temp_file_path, remote_path, host, task_id, **kwargs)
-            
-            if not upload_result.get('success'):
+            # 步骤4: 上传文件到目标服务器（支持目标路径通配符/匹配）
+            upload_errors = []
+            upload_success = 0
+            for fpath in downloaded_files:
+                # 渲染目标路径中的变量（以目标主机为上下文）
+                rendered_remote = self._render_path_variables(remote_path or '', now=datetime.now(), target_host=host)
+
+                # 如果目标路径包含通配符，先在目标主机上列出匹配项
+                if re.search(r'[\*\?\[]', rendered_remote):
+                    matches = self._list_remote_matches(conn, rendered_remote)
+                    # 限制匹配数量，默认100，可通过 kwargs['max_target_matches'] 覆盖
+                    try:
+                        from apps.system_config.models import ConfigManager
+                        default_max = int(ConfigManager.get('file_transfer.max_target_matches', 100))
+                    except Exception:
+                        default_max = 100
+                    max_matches = int(kwargs.get('max_target_matches', default_max))
+                    if len(matches) > max_matches:
+                        upload_errors.append({'file': fpath, 'error': f'目标路径匹配数 ({len(matches)}) 超过上限 ({max_matches})，请缩小匹配范围或调整配置'})
+                        continue
+                    if not matches:
+                        upload_errors.append({'file': fpath, 'error': f'目标路径模式未匹配任何路径: {rendered_remote}'})
+                        continue
+                    targets = matches
+                else:
+                    targets = [rendered_remote]
+
+                for target in targets:
+                    # 如果目标是目录则把文件名拼接到目录后
+                    try:
+                        is_dir = conn.run(f'test -d {shlex.quote(target)}', warn=True, hide=True).ok
+                    except Exception:
+                        is_dir = False
+
+                    if is_dir or target.endswith('/'):
+                        final_remote_path = target.rstrip('/') + '/' + os.path.basename(fpath)
+                    else:
+                        final_remote_path = target
+
+                    upload_result = self._upload_file(conn, fpath, final_remote_path, host, task_id, **kwargs)
+                    if not upload_result.get('success'):
+                        upload_errors.append({
+                            'file': fpath,
+                            'target': final_remote_path,
+                            'error': upload_result.get('message', '上传失败')
+                        })
+                    else:
+                        upload_success += 1
+
+            if upload_errors:
+                # 清理临时文件
+                for f in downloaded_files:
+                    try:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    except:
+                        pass
                 return {
                     'success': False,
                     'host_id': host.id,
                     'host_name': host.name,
                     'host_ip': host.ip_address,
-                    'message': f'上传文件到目标服务器失败: {upload_result.get("message", "未知错误")}',
+                    'message': f'上传到目标服务器失败: {upload_errors}',
                 }
 
             # 步骤5: 删除临时文件

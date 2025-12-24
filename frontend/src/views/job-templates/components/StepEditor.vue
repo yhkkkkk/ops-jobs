@@ -167,6 +167,20 @@
             <a-option value="fail">失败</a-option>
           </a-select>
         </a-form-item>
+
+        <a-form-item label="最大匹配数">
+          <a-input-number
+            v-model="maxTargetMatches"
+            :min="1"
+            :max="1000"
+            placeholder="目标路径最多匹配的文件/目录数量"
+            style="width: 100%"
+          />
+          <div class="form-tip">
+            <icon-info-circle />
+            限制通配符匹配结果的数量，默认100，避免过度匹配
+          </div>
+        </a-form-item>
       </div>
 
       <!-- 目标主机选择 -->
@@ -495,6 +509,7 @@ const parameterVisibility = ref<Record<number, boolean>>({})
 // 文件传输相关（仅本地上传）
 const remotePath = ref('')
 const overwritePolicy = ref('overwrite')
+const maxTargetMatches = ref(100) // 最大匹配数
 const stepFileList = ref<any[]>([]) // 步骤文件列表
 const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
 
@@ -695,10 +710,11 @@ watch(
         scriptContent.value = step.script_content || ''
         selectedAccountId.value = step.account_id
       } else if (step.step_type === 'file_transfer') {
-        // 解析文件传输配置（支持模板中保存的 file_sources，包括制品与服务器来源）
-        remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
-        overwritePolicy.value = step.overwrite_policy || 'overwrite'
-        selectedAccountId.value = step.account_id
+      // 解析文件传输配置（支持模板中保存的 file_sources，包括制品与服务器来源）
+      remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
+      overwritePolicy.value = step.overwrite_policy || 'overwrite'
+      maxTargetMatches.value = step.max_target_matches || 100
+      selectedAccountId.value = step.account_id
         // populate fileArtifacts for UI display/editing
         fileArtifacts.value = []
         if (step.file_sources && Array.isArray(step.file_sources)) {
@@ -1020,6 +1036,7 @@ const handleSubmit = async () => {
       }
       stepData.remote_path = remotePath.value
       stepData.overwrite_policy = overwritePolicy.value
+      stepData.max_target_matches = maxTargetMatches.value
       stepData.account_id = selectedAccountId.value
 
       // 构建 file_sources：支持本地制品与服务器来源

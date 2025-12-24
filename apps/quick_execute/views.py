@@ -12,6 +12,10 @@ from .serializers import (
     QuickFileTransferSerializer,
 )
 from .services import QuickExecuteService
+from apps.hosts.models import Host
+from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
+from datetime import datetime
+import re, shlex
 
 
 @extend_schema_view(
@@ -57,6 +61,58 @@ class QuickScriptExecuteView(APIView):
         else:
             ip = request.META.get('REMOTE_ADDR')
         return ip
+
+
+class QuickFileTransferPreviewView(APIView):
+    """预览快速文件传输在各目标主机上会匹配到的目标路径（支持目标路径通配符预览）"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data or {}
+        target_host_ids = data.get('target_host_ids') or []
+        remote_path = data.get('remote_path') or ''
+        max_matches = data.get('max_matches')
+        timeout = data.get('timeout', 30)
+
+        if not target_host_ids or not isinstance(target_host_ids, (list, tuple)):
+            return SycResponse.validation_error(errors={'target_host_ids': '需要非空的目标主机ID列表'})
+        if not remote_path:
+            return SycResponse.validation_error(errors={'remote_path': '需要目标路径'})
+
+        results = {}
+        for hid in target_host_ids:
+            try:
+                host = Host.objects.get(id=hid)
+            except Host.DoesNotExist:
+                results[str(hid)] = {'error': 'host not found'}
+                continue
+
+            try:
+                conn_info = fabric_ssh_manager._get_connection_info(host)
+                with fabric_ssh_manager._create_connection(conn_info, timeout) as conn:
+                    rendered = fabric_ssh_manager._render_path_variables(remote_path, now=datetime.now(), target_host=host)
+                    if re.search(r'[\*\?\[]', rendered):
+                        matches = fabric_ssh_manager._list_remote_matches(conn, rendered)
+                    else:
+                        # 检查路径是否存在
+                        test = conn.run(f'test -e {shlex.quote(rendered)}', warn=True, hide=True)
+                        matches = [rendered] if test.ok else []
+
+                    # enforce max_matches if provided
+                    if max_matches is not None:
+                        try:
+                            mm = int(max_matches)
+                            if len(matches) > mm:
+                                results[str(hid)] = {'error': f'matches ({len(matches)}) > max_matches ({mm})'}
+                                continue
+                        except Exception:
+                            pass
+
+                    results[str(hid)] = {'matches': matches}
+            except Exception as e:
+                results[str(hid)] = {'error': str(e)}
+
+        return SycResponse.success(content={'matches': results}, message='预览完成')
 
 
 @extend_schema_view(

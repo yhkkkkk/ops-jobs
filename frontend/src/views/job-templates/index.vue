@@ -244,15 +244,27 @@
                   </template>
                   复制
                 </a-doption>
-                <a-doption
-                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id) }]"
-                  @click="handleClickDeleteTemplate(record)"
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                  删除
-                </a-doption>
+                <template v-if="canDeleteTemplate(record.id)">
+                  <a-popconfirm
+                    title="确定要删除此模板？此操作不可撤销。"
+                    @ok="() => handleDelete(record)"
+                  >
+                    <a-doption>
+                      <template #icon>
+                        <icon-delete />
+                      </template>
+                      删除
+                    </a-doption>
+                  </a-popconfirm>
+                </template>
+                <template v-else>
+                  <a-doption class="text-red-500 disabled-option">
+                    <template #icon>
+                      <icon-delete />
+                    </template>
+                    删除
+                  </a-doption>
+                </template>
               </template>
             </a-dropdown>
           </a-space>
