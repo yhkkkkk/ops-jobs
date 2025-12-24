@@ -116,6 +116,7 @@
             :pagination="{ pageSize: 15, showSizeChanger: true, showQuickJumper: true }"
             v-model:selectedKeys="selectedHostIds"
             :row-selection="{ type: 'checkbox' }"
+            @row-click="handleHostsTableRowClick"
             row-key="id"
             size="small"
             class="hosts-table"
@@ -795,6 +796,25 @@ const selectOnlineHosts = () => {
 
 const clearHostSelection = () => {
   selectedHostIds.value = []
+}
+
+// 点击主机表格行时切换选择状态（忽略复选框本身的点击）
+const handleHostsTableRowClick = (record, index, event) => {
+  // 如果点击目标是在复选框或复选框内部，忽略此处理（以免和复选框原生行为冲突）
+  const target = event?.target
+  if (target && (target.closest('.arco-checkbox') || target.closest('input[type="checkbox"]'))) {
+    return
+  }
+
+  const hostId = record?.id
+  if (!hostId) return
+
+  const idx = selectedHostIds.value.indexOf(hostId)
+  if (idx > -1) {
+    selectedHostIds.value.splice(idx, 1)
+  } else {
+    selectedHostIds.value.push(hostId)
+  }
 }
 
 // 搜索处理

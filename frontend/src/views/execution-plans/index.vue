@@ -739,6 +739,10 @@ onMounted(() => {
   color: var(--color-text-3);
 }
 
+.template-select-content ::deep(.arco-table-selection) {
+  width: 50px;
+}
+
 .text-gray {
   color: var(--color-text-3);
 }

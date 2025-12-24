@@ -273,7 +273,7 @@
                     :key="index"
                     class="positional-arg-item"
                   >
-                    <span class="arg-index">${{ index + 1 }}</span>
+                    <span class="arg-index">{{ Number(index) + 1 }}</span>
                     <span class="arg-value">{{ arg }}</span>
                   </div>
                 </div>
@@ -285,18 +285,54 @@
               <!-- 文件传输步骤 -->
               <div v-else-if="step.step_type === 'file_transfer'" class="step-file-transfer">
                 <h4>传输配置</h4>
-                <a-descriptions :column="2" size="small">
-                  <a-descriptions-item label="传输方向">
-                    {{ step.step_transfer_type === 'upload' ? '上传' : '下载' }}
-                  </a-descriptions-item>
+                <!-- 仅显示新的 file_sources 结构 -->
+                <div v-if="step.file_sources && step.file_sources.length > 0" class="file-sources-list">
+                  <div
+                    v-for="(src, idx) in step.file_sources"
+                    :key="idx"
+                    class="file-source-item"
+                    style="margin-bottom:8px;"
+                  >
+                    <div style="font-weight:500; margin-bottom:6px;">
+                      {{ src.type === 'server' ? '服务器文件' : '制品/本地上传' }}
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                      <div>
+                        <div class="param-key">来源标识</div>
+                        <div class="param-value">{{ src.filename || src.name || src.storage_path || src.source_path || '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="param-key">存储路径</div>
+                        <div class="param-value">{{ src.storage_path || src.download_url || '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="param-key">远程路径</div>
+                        <div class="param-value">{{ src.remote_path || '-' }}</div>
+                      </div>
+                      <div v-if="src.server_name || src.server_ip || src.server_id">
+                        <div class="param-key">源服务器</div>
+                        <div class="param-value">{{ src.server_name || src.server_ip || (src.server_id ? 'ID:' + String(src.server_id) : '-') }}</div>
+                      </div>
+                      <div v-if="src.account_name || src.account_id">
+                        <div class="param-key">账号</div>
+                        <div class="param-value">{{ src.account_name || (src.account_id ? 'ID:' + String(src.account_id) : '-') }}</div>
+                      </div>
+                      <div v-if="src.size !== undefined">
+                        <div class="param-key">大小</div>
+                        <div class="param-value">{{ formatFileSize(src.size) }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="no-file-sources">
+                  <a-empty description="未配置文件来源" />
+                </div>
+                <a-descriptions :column="2" size="small" style="margin-top:12px;">
                   <a-descriptions-item label="执行账号">
                     {{ step.step_account_name || (step.step_account_id ? `ID: ${step.step_account_id}` : '默认') }}
                   </a-descriptions-item>
-                  <a-descriptions-item label="本地路径">
-                    {{ step.step_local_path || '未配置' }}
-                  </a-descriptions-item>
                   <a-descriptions-item label="远程路径">
-                    {{ step.step_remote_path || '未配置' }}
+                    {{ step.step_remote_path || '-' }}
                   </a-descriptions-item>
                 </a-descriptions>
               </div>
@@ -526,6 +562,16 @@ const formatGlobalParameterValue = (rawValue: any) => {
 const getGlobalParameterDescription = (rawValue: any) => {
   if (!rawValue || typeof rawValue !== 'object') return ''
   return rawValue.description?.trim?.() || ''
+}
+
+// 文件大小格式化
+const formatFileSize = (bytes: number) => {
+  if (bytes === null || bytes === undefined) return '-'
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 生命周期

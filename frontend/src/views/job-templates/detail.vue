@@ -132,7 +132,7 @@
                 class="step-item"
               >
                 <div class="step-header">
-                  <div class="step-number">{{ index + 1 }}</div>
+                  <div class="step-number">{{ Number(index) + 1 }}</div>
                   <div class="step-info">
                     <h4>{{ step.name }}</h4>
                     <a-space>
@@ -203,20 +203,20 @@
                           <a-button
                             type="text"
                             size="small"
-                            @click="toggleScriptExpand(index)"
+                            @click="toggleScriptExpand(Number(index))"
                           >
                             <template #icon>
-                              <icon-down v-if="!expandedScripts.has(index)" />
+                              <icon-down v-if="!expandedScripts.has(Number(index))" />
                               <icon-up v-else />
                             </template>
-                            {{ expandedScripts.has(index) ? '收起' : '展开' }}
+                            {{ expandedScripts.has(Number(index)) ? '收起' : '展开' }}
                           </a-button>
                         </a-space>
                       </div>
                     </div>
 
                     <!-- 脚本预览（收起状态） -->
-                    <div v-if="!expandedScripts.has(index)" class="script-preview">
+                    <div v-if="!expandedScripts.has(Number(index))" class="script-preview">
                       <div class="script-preview-content">
                         {{ getScriptPreview(step.script_content) }}
                       </div>
@@ -252,7 +252,7 @@
                           :key="argIndex"
                           class="positional-arg-item"
                         >
-                          <span class="arg-index">${{ argIndex + 1 }}</span>
+                          <span class="arg-index">{{ Number(argIndex) + 1 }}</span>
                           <span class="arg-value">{{ arg }}</span>
                         </div>
                       </div>
@@ -523,6 +523,7 @@ const handleCopy = () => {
     description: template.value.description,
     category: template.value.category,
     tags: template.value.tag_list || [],
+    global_parameters: template.value.global_parameters || {},
     steps: template.value.steps || []
   }
 
@@ -538,7 +539,6 @@ const handleDebugExecute = async () => {
   if (!template.value) return
 
   try {
-    Message.loading('正在启动调试执行...', { duration: 0, id: 'debug-loading' })
 
     const result = await jobTemplateApi.debugTemplate(template.value.id, {
       execution_parameters: {},
@@ -546,15 +546,12 @@ const handleDebugExecute = async () => {
       rolling_batch_size: 1,
       rolling_batch_delay: 0
     })
-
-    Message.clear('debug-loading')
     Message.success('调试执行已启动！')
 
     // 跳转到执行记录页面查看结果
     router.push(`/execution-records/${result.execution_id}`)
 
   } catch (error: any) {
-    Message.clear('debug-loading')
     console.error('调试执行失败:', error)
     Message.error(error.response?.data?.message || '调试执行失败')
   }

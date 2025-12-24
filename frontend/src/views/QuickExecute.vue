@@ -690,20 +690,20 @@
       @ok="handleTemplateSelect"
       @cancel="templateModalVisible = false"
     >
-      <a-table
-        :columns="templateColumns"
-        :data="scriptTemplates"
-        :loading="templateLoading"
-        :pagination="false"
-        row-key="id"
-        :row-selection="{
-          type: 'radio',
-          selectedRowKeys: selectedTemplateKeys,
-          onSelect: handleTemplateRowSelect,
-          onSelectAll: handleTemplateRowSelectAll
-        }"
-        @row-click="handleRowClick"
-      >
+        <a-table
+          :columns="templateColumns"
+          :data="scriptTemplates"
+          :loading="templateLoading"
+          :pagination="false"
+          row-key="id"
+          :row-selection="{
+            type: 'radio',
+            selectedRowKeys: selectedTemplateKeys,
+            onChange: handleTemplateRowSelect,
+            onSelectAll: handleTemplateRowSelectAll
+          }"
+          @row-click="handleRowClick"
+        >
         <template #script_type="{ record }">
           <a-tag :color="getScriptTypeColor(record.script_type)">
             {{ getScriptTypeText(record.script_type) }}
@@ -2332,5 +2332,10 @@ onMounted(() => {
   border-radius: 2px;
   font-family: 'Courier New', monospace;
   font-size: 10px;
+}
+
+/* 统一表格选择列宽度，和 HostSelector 一致 */
+::deep(.arco-table-selection) {
+  width: 50px;
 }
 </style>
