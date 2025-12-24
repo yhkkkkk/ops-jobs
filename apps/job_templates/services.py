@@ -105,6 +105,10 @@ class ExecutionPlanService:
                     step_data['account_id'] = step.account_id
                 elif step.step_type == 'file_transfer' and step.account_id:
                     step_data['account_id'] = step.account_id
+
+                # 添加文件传输相关参数
+                if step.step_type == 'file_transfer':
+                    step_data['max_target_matches'] = step.max_target_matches
                 serializable_template_steps.append(step_data)
 
             # 使用 Agent-Server 异步执行调试工作流（与 execute_plan 路径对齐）

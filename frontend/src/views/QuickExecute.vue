@@ -508,6 +508,18 @@
                     placeholder="目标路径，例如：/opt/app/ 或 /var/www/[hostname]/app.tar.gz"
                     allow-clear
                   />
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="previewTargetPaths"
+                    :disabled="!remotePath || selectedHosts.length === 0"
+                    style="margin-top: 8px"
+                  >
+                    <template #icon>
+                      <icon-eye />
+                    </template>
+                    预览目标路径
+                  </a-button>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -519,6 +531,20 @@
                 <a-option value="backup">备份后覆盖</a-option>
                 <a-option value="fail">存在则失败</a-option>
               </a-select>
+            </a-form-item>
+
+            <a-form-item label="最大匹配数">
+              <a-input-number
+                v-model="maxTargetMatches"
+                :min="1"
+                :max="1000"
+                style="width: 200px"
+                placeholder="目标路径最多匹配的文件/目录数量"
+              />
+              <div class="form-tip">
+                <icon-info-circle />
+                限制通配符匹配结果的数量，默认100，避免过度匹配
+              </div>
             </a-form-item>
 
             <!-- 传输配置 -->
@@ -791,9 +817,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
 import { accountApi, type ServerAccount } from '@/api/account'
 import request from '@/utils/request'
@@ -857,6 +883,7 @@ const positionalArgs = ref<string[]>([''])
 // 文件传输相关
 const remotePath = ref('')
 const overwritePolicy = ref<'overwrite' | 'skip' | 'backup' | 'fail'>('overwrite')
+const maxTargetMatches = ref(100) // 最大匹配数
 const bandwidthLimit = ref(0) // 带宽限制，0表示不限制
 const fileList = ref<any[]>([]) // a-upload 的文件列表 (UI)
 const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
@@ -1313,7 +1340,65 @@ const handleFileRemove = (fileItem: any) => {
   fileArtifacts.value = fileArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
 }
 
-// 文件传输相关函数
+// 预览目标路径
+const previewTargetPaths = async () => {
+  if (!remotePath.value || selectedHosts.value.length === 0) {
+    Message.warning('请先填写远程路径并选择目标主机')
+    return
+  }
+
+  try {
+    const response = await request.post('/quick/preview_transfer_targets/', {
+      target_host_ids: selectedHosts.value,
+      remote_path: remotePath.value,
+      max_matches: maxTargetMatches.value
+    })
+
+    if (response.data.code === 200) {
+      const matches = response.data.content.matches
+      let message = '目标路径预览结果：\n'
+      let totalMatches = 0
+
+      for (const [hostId, result] of Object.entries(matches) as [string, any][]) {
+        const host = hosts.value.find(h => h.id === Number(hostId))
+        const hostName = host ? host.name : `主机${hostId}`
+
+        if ((result as any).error) {
+          message += `• ${hostName}: ${(result as any).error}\n`
+        } else {
+          const matchCount = (result as any).matches.length
+          totalMatches += matchCount
+          message += `• ${hostName}: 匹配到 ${matchCount} 个路径\n`
+          if (matchCount > 0 && matchCount <= 10) {
+            (result as any).matches.forEach((path: string) => {
+              message += `  - ${path}\n`
+            })
+          } else if (matchCount > 10) {
+            message += `  - ${(result as any).matches.slice(0, 5).join('\n  - ')}\n  - ... 还有 ${matchCount - 5} 个路径\n`
+          }
+        }
+      }
+
+      Modal.info({
+        title: '目标路径预览',
+        content: h('pre', {
+          style: {
+            maxHeight: '400px',
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            fontSize: '12px'
+          }
+        }, message) as any,
+        width: 600
+      })
+    } else {
+      Message.error(response.data.message || '预览失败')
+    }
+  } catch (error: any) {
+    Message.error(error.response?.data?.message || '预览失败')
+  }
+}
+
 const handleFileTransfer = async () => {
   if (selectionType.value === 'static' && selectedHosts.value.length === 0 && selectedGroups.value.length === 0) {
     Message.warning('请选择至少一台主机或一个主机分组')
@@ -1341,6 +1426,7 @@ const handleFileTransfer = async () => {
       name: '快速文件传输',
       remote_path: remotePath.value,
       overwrite_policy: overwritePolicy.value,
+      max_target_matches: maxTargetMatches.value,
       timeout: timeout.value,
       bandwidth_limit: bandwidthLimit.value || null,
       execution_mode: executionMode.value,
@@ -1472,6 +1558,7 @@ const handleClear = () => {
   // 清空文件传输相关
   remotePath.value = ''
   overwritePolicy.value = 'overwrite'
+  maxTargetMatches.value = 100
   bandwidthLimit.value = 0
   fileList.value = [] // 清空文件列表
   fileArtifacts.value = [] // 清空已上传的制品元数据

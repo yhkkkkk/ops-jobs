@@ -155,6 +155,18 @@
                 v-model="remotePath"
                 placeholder="请输入远程文件路径"
               />
+              <a-button
+                type="text"
+                size="small"
+                @click="previewTargetPaths"
+                :disabled="!remotePath || allTargetHosts.length === 0"
+                style="margin-top: 8px"
+              >
+                <template #icon>
+                  <icon-eye />
+                </template>
+                预览目标路径
+              </a-button>
             </a-form-item>
           </a-col>
         </a-row>
@@ -418,8 +430,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { ref, reactive, computed, watch, onMounted, nextTick, h } from 'vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { IconComputer, IconFolder, IconEye, IconEyeInvisible, IconDelete, IconPlus } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi, scriptTemplateApi } from '@/api/ops'
 import request from '@/utils/request'
@@ -1198,6 +1210,65 @@ const copyOfflineIPs = async () => {
   } catch (error) {
     console.error('复制异常IP失败:', error)
     Message.error('复制失败，请检查浏览器权限或手动复制')
+  }
+}
+
+// 预览目标路径
+const previewTargetPaths = async () => {
+  if (!remotePath.value || allTargetHosts.value.length === 0) {
+    Message.warning('请先填写远程路径并选择目标主机')
+    return
+  }
+
+  try {
+    const response = await request.post('/quick/preview_transfer_targets/', {
+      target_host_ids: allTargetHosts.value.map(h => h.id),
+      remote_path: remotePath.value,
+      max_matches: maxTargetMatches.value
+    })
+
+    if (response.data.code === 200) {
+      const matches = response.data.content.matches
+      let message = '目标路径预览结果：\n'
+      let totalMatches = 0
+
+      for (const [hostId, result] of Object.entries(matches) as [string, any][]) {
+        const host = allTargetHosts.value.find(h => h.id === Number(hostId))
+        const hostName = host ? host.name : `主机${hostId}`
+
+        if ((result as any).error) {
+          message += `• ${hostName}: ${(result as any).error}\n`
+        } else {
+          const matchCount = (result as any).matches.length
+          totalMatches += matchCount
+          message += `• ${hostName}: 匹配到 ${matchCount} 个路径\n`
+          if (matchCount > 0 && matchCount <= 10) {
+            (result as any).matches.forEach((path: string) => {
+              message += `  - ${path}\n`
+            })
+          } else if (matchCount > 10) {
+            message += `  - ${(result as any).matches.slice(0, 5).join('\n  - ')}\n  - ... 还有 ${matchCount - 5} 个路径\n`
+          }
+        }
+      }
+
+      Modal.info({
+        title: '目标路径预览',
+        content: h('pre', {
+          style: {
+            maxHeight: '400px',
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            fontSize: '12px'
+          }
+        }, message) as any,
+        width: 600
+      })
+    } else {
+      Message.error(response.data.message || '预览失败')
+    }
+  } catch (error: any) {
+    Message.error(error.response?.data?.message || '预览失败')
   }
 }
 

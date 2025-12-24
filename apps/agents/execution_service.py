@@ -773,7 +773,8 @@ class AgentExecutionService:
                                             source_server_host=source_host,
                                             source_server_user=source_user,
                                             source_server_path=source_path,
-                                            account_id=step_data.get('account_id')
+                                            account_id=step_data.get('account_id'),
+                                            max_target_matches=step_data.get('max_target_matches', 100)
                                         )
                                         # 合并结果格式，fabric 返回 success/message 等
                                         overall_results['results'].append({
