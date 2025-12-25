@@ -49,6 +49,7 @@ declare module 'vue' {
     IconCheckSquare: typeof import('@arco-design/web-vue/es/icon')['IconCheckSquare']
     IconClose: typeof import('@arco-design/web-vue/es/icon')['IconClose']
     IconCloseCircle: typeof import('@arco-design/web-vue/es/icon')['IconCloseCircle']
+    IconCloud: typeof import('@arco-design/web-vue/es/icon')['IconCloud']
     IconDown: typeof import('@arco-design/web-vue/es/icon')['IconDown']
     IconExclamationCircle: typeof import('@arco-design/web-vue/es/icon')['IconExclamationCircle']
     IconEye: typeof import('@arco-design/web-vue/es/icon')['IconEye']

@@ -105,6 +105,10 @@
               <template #icon><icon-wifi /></template>
               仅在线
             </a-button>
+            <a-button size="small" @click="selectAgentOnlineHosts">
+              <template #icon><icon-cloud /></template>
+              仅agent在线
+            </a-button>
             <a-button size="small" @click="clearHostSelection">
               <template #icon><icon-close-circle /></template>
               清空
@@ -319,11 +323,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { 
-  IconSearch, 
-  IconCheckSquare, 
-  IconWifi, 
-  IconCloseCircle 
+import {
+  IconSearch,
+  IconCheckSquare,
+  IconWifi,
+  IconCloud,
+  IconCloseCircle
 } from '@arco-design/web-vue/es/icon'
 
 // Props
@@ -791,6 +796,12 @@ const selectAllHosts = () => {
 const selectOnlineHosts = () => {
   selectedHostIds.value = filteredHosts.value
     .filter(host => host.status === 'online')
+    .map(host => host.id)
+}
+
+const selectAgentOnlineHosts = () => {
+  selectedHostIds.value = filteredHosts.value
+    .filter(host => host.agent_info && host.agent_info.status === 'online')
     .map(host => host.id)
 }
 

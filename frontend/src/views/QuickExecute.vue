@@ -1505,7 +1505,7 @@ const handleFileTransfer = async () => {
     Message.warning('请选择至少一台主机或一个主机分组')
     return
   }
-  
+
   if (selectionType.value === 'dynamic' && selectedGroups.value.length === 0) {
     Message.warning('请至少选择一个分组')
     return
@@ -1518,6 +1518,22 @@ const handleFileTransfer = async () => {
     if (!remotePath.value) {
       Message.warning('请填写远程路径')
       return
+    }
+
+    // 检查源服务器和目标服务器的agent状态
+    const agentStatusWarnings = checkFileTransferAgentStatus(fileArtifacts.value, allTargetHosts.value)
+    if (agentStatusWarnings.length > 0) {
+      const warningMessages = agentStatusWarnings.map(w => w.message).join('\n')
+      const shouldContinue = await Modal.confirm({
+        title: 'Agent状态警告',
+        content: `发现以下服务器的Agent不在线：\n\n${warningMessages}\n\n是否继续执行？`,
+        okText: '继续执行',
+        cancelText: '取消',
+        type: 'warning'
+      })
+      if (!shouldContinue) {
+        return
+      }
     }
 
   executing.value = true
@@ -1880,6 +1896,41 @@ const removeOfflineHosts = () => {
   })
 
   Message.success(`已移除 ${offlineHosts.length} 台离线主机`)
+}
+
+// 检查文件传输中源服务器和目标服务器的agent状态
+const checkFileTransferAgentStatus = (fileArtifacts: any[], targetHosts: any[]) => {
+  const warnings = []
+
+  // 检查源服务器的agent状态
+  const sourceServers = fileArtifacts.filter(a => a.type === 'server')
+  sourceServers.forEach(source => {
+    if (source.server_id) {
+      const sourceHost = hosts.value.find(h => h.id === source.server_id)
+      if (sourceHost && sourceHost.agent_info && sourceHost.agent_info.status !== 'online') {
+        warnings.push({
+          type: 'source',
+          server: sourceHost.name || sourceHost.ip_address,
+          status: sourceHost.agent_info.status_display || sourceHost.agent_info.status,
+          message: `源服务器 ${sourceHost.name || sourceHost.ip_address}: Agent ${sourceHost.agent_info.status_display || sourceHost.agent_info.status}`
+        })
+      }
+    }
+  })
+
+  // 检查目标服务器的agent状态
+  targetHosts.forEach(targetHost => {
+    if (targetHost.agent_info && targetHost.agent_info.status !== 'online') {
+      warnings.push({
+        type: 'target',
+        server: targetHost.name || targetHost.ip_address,
+        status: targetHost.agent_info.status_display || targetHost.agent_info.status,
+        message: `目标服务器 ${targetHost.name || targetHost.ip_address}: Agent ${targetHost.agent_info.status_display || targetHost.agent_info.status}`
+      })
+    }
+  })
+
+  return warnings
 }
 
 // 生命周期

@@ -274,7 +274,8 @@ const pagination = reactive({
   pageSize: 20,
   total: 0,
   showSizeChanger: true,
-  showTotal: true
+  showTotal: true,
+  showJumper: true,
 })
 
 // 任务配置
