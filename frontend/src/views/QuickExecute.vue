@@ -1529,7 +1529,8 @@ const handleFileTransfer = async () => {
         content: `发现以下服务器的Agent不在线：\n\n${warningMessages}\n\n是否继续执行？`,
         okText: '继续执行',
         cancelText: '取消',
-        type: 'warning'
+        okButtonProps: { type: 'primary' },
+        cancelButtonProps: { type: 'primary' },
       })
       if (!shouldContinue) {
         return

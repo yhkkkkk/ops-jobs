@@ -140,7 +140,7 @@
                       @paste="handleIpPaste"
                       @input="handleIpInput"
                       :auto-size="{ minRows: 1, maxRows: 6 }"
-                      style="width: 300px"
+                      style="width: 350px"
                     />
                   </a-form-item>
                 </div>
@@ -238,7 +238,7 @@
                   @paste="handleInternalIpPaste"
                   @input="handleInternalIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 220px"
+                  style="width: 250px"
                 />
               </a-form-item>
               <a-form-item label="外网IP">
@@ -250,7 +250,7 @@
                   @paste="handlePublicIpPaste"
                   @input="handlePublicIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 220px"
+                  style="width: 250px"
                 />
               </a-form-item>
               <a-form-item label="操作系统版本">
@@ -261,20 +261,6 @@
                   @press-enter="handleSearch"
                   style="width: 160px"
                 />
-              </a-form-item>
-              <a-form-item label="认证方式">
-                <a-select
-                  v-model="advancedForm.auth_method"
-                  placeholder="请选择认证方式"
-                  allow-clear
-                  @change="handleSearch"
-                  @clear="handleSearch"
-                  style="width: 140px"
-                >
-                  <a-option value="password">密码认证</a-option>
-                  <a-option value="key">密钥认证</a-option>
-                  <a-option value="key_password">密钥+密码</a-option>
-                </a-select>
               </a-form-item>
               <a-form-item label="地域">
                 <a-input
@@ -997,7 +983,6 @@ const advancedForm = reactive({
   internal_ip: '',
   public_ip: '',
   os_version: '',
-  auth_method: '',
   region: '',
   zone: '',
 })
@@ -1281,9 +1266,6 @@ const fetchHosts = async () => {
     if (advancedForm.os_version) {
       params.os_version = advancedForm.os_version
     }
-    if (advancedForm.auth_method) {
-      params.auth_method = advancedForm.auth_method
-    }
     if (advancedForm.region) {
       params.region = advancedForm.region
     }
@@ -1351,7 +1333,6 @@ const handleReset = () => {
     internal_ip: '',
     public_ip: '',
     os_version: '',
-    auth_method: '',
     region: '',
     zone: '',
   })
