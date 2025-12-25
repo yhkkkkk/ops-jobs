@@ -114,7 +114,7 @@
             :field-names="{ value: 'id', label: 'name' }"
           />
         </a-form-item>
-        <a-form-item>
+        <a-form-item class="search-actions">
           <a-space>
             <a-button type="primary" @click="handleSearch">
               <template #icon>
@@ -757,6 +757,14 @@ onMounted(() => {
 <style scoped>
 .script-templates-page {
   padding: 0;
+}
+
+.search-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  margin-top: -40px;
+  padding-top: 0;
 }
 
 .page-header {

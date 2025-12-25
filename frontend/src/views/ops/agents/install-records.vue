@@ -106,17 +106,6 @@
           </a-tag>
         </template>
 
-        <template #error_message="{ record }">
-          <div v-if="record.error_message" style="max-width: 300px">
-            <a-tooltip :content="record.error_message">
-              <span style="color: #f53f3f; cursor: pointer">
-                {{ record.error_message.length > 50 ? record.error_message.substring(0, 50) + '...' : record.error_message }}
-              </span>
-            </a-tooltip>
-          </div>
-          <span v-else style="color: #86909c">-</span>
-        </template>
-
         <template #installed_at="{ record }">
           {{ formatDateTime(record.installed_at) }}
         </template>
@@ -208,6 +197,11 @@
         <a-descriptions-item v-if="currentRecord.agent_id" label="关联 Agent">
           <a-button type="text" size="small" @click="handleViewAgent(currentRecord)">
             查看 Agent #{{ currentRecord.agent_id }}
+          </a-button>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.host_id" label="关联 主机">
+          <a-button type="text" size="small" @click="handleViewHost(currentRecord)">
+            查看 主机 #{{ currentRecord.host_id }}
           </a-button>
         </a-descriptions-item>
         <a-descriptions-item v-if="currentRecord.error_message" label="错误信息">
@@ -368,12 +362,6 @@ const columns = [
     width: 180,
   },
   {
-    title: '错误信息',
-    dataIndex: 'error_message',
-    slotName: 'error_message',
-    width: 300,
-  },
-  {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
@@ -464,7 +452,7 @@ const formatDateTime = (dateTime: string) => {
   return dayjs(dateTime).format('YYYY-MM-DD HH:mm:ss')
 }
 
-// 查看详情
+// 查看详情（使用列表数据，不再调用单条详情接口）
 const handleViewDetail = (record: any) => {
   currentRecord.value = record
   detailVisible.value = true
@@ -476,6 +464,15 @@ const handleViewAgent = (record: any) => {
     router.push({
       name: 'OpsAgentDetail',
       params: { id: record.agent_id },
+    })
+  }
+}
+
+const handleViewHost = (record: any) => {
+  if (record.host_id) {
+    router.push({
+      name: 'OpsHostDetail',
+      params: { id: record.host_id },
     })
   }
 }

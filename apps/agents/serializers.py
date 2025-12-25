@@ -246,11 +246,9 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
         model = AgentInstallRecord
         fields = [
             'id',
-            'host',
             'host_id',
             'host_name',
             'host_ip',
-            'agent',
             'agent_id',
             'install_mode',
             'status',
@@ -285,11 +283,9 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
         model = AgentUninstallRecord
         fields = [
             'id',
-            'host',
             'host_id',
             'host_name',
             'host_ip',
-            'agent',
             'agent_id',
             'status',
             'status_display',
