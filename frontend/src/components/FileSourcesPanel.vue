@@ -17,7 +17,10 @@
           </a-button>
         </template>
       </a-upload>
-      <a-button type="dashed" @click="serverInlineVisible = !serverInlineVisible">添加服务器文件</a-button>
+      <a-button type="dashed" @click="serverInlineVisible = !serverInlineVisible">
+        <template #icon><icon-plus /></template>
+        添加服务器文件
+      </a-button>
     </div>
 
     <div v-if="localArtifacts && localArtifacts.length > 0" class="artifact-list artifact-list-panel">
@@ -117,11 +120,17 @@ const emit = defineEmits(['update:artifacts'])
 const uploadList = ref<any[]>([])
 const serverRows = ref<any[]>([{ _uid: Date.now().toString(), server: '', server_id: null, path: '', account: '', remote_path: '' }])
 const localArtifacts = ref<any[]>([])
+// 记录用户已移除的文件 uid/name，防止移除后再次被自动加入显示
+const removedUids = new Set<string>()
 
 // Watch props.artifacts and sync to local state
 watch(() => props.artifacts, (newVal) => {
   if (newVal && Array.isArray(newVal)) {
-    localArtifacts.value = [...newVal]
+    // 过滤掉用户已移除但尚未过期的 artifact，避免自动重新出现
+    localArtifacts.value = newVal.filter((a: any) => {
+      const key = a.uid || a.name
+      return !removedUids.has(key)
+    })
   }
 }, { immediate: true, deep: true })
 
@@ -156,30 +165,79 @@ onMounted(async () => {
   }
 })
 
+// Upload progress smoothing helpers
+const progressTargets = new Map<string, number>()
+const progressTimers = new Map<string, number>()
+
+const startProgressAnimator = (uid: string) => {
+  if (progressTimers.has(uid)) return
+  const timer = window.setInterval(() => {
+    const idx = localArtifacts.value.findIndex(x => x.uid === uid || x.name === uid)
+    if (idx === -1) {
+      const t = progressTimers.get(uid)
+      if (t) clearInterval(t)
+      progressTimers.delete(uid)
+      progressTargets.delete(uid)
+      return
+    }
+
+    const target = progressTargets.get(uid) ?? (localArtifacts.value[idx].progress || 0)
+    let current = Number(localArtifacts.value[idx].progress || 0)
+    if (current >= target) {
+      const t = progressTimers.get(uid)
+      if (t) clearInterval(t)
+      progressTimers.delete(uid)
+      progressTargets.delete(uid)
+      return
+    }
+
+    // smooth step toward target
+    const step = Math.max(1, Math.ceil((target - current) / 6))
+    current = Math.min(target, current + step)
+    localArtifacts.value[idx].progress = current
+  }, 120)
+
+  progressTimers.set(uid, timer)
+}
+
+const stopProgressAnimator = (uid: string) => {
+  const t = progressTimers.get(uid)
+  if (t) {
+    clearInterval(t)
+    progressTimers.delete(uid)
+  }
+  progressTargets.delete(uid)
+}
+
 const onFileChange = async (files: any[]) => {
   uploadList.value = files
   for (const f of files) {
+    const key = f.uid || f.name
+    // 如果该文件之前被用户移除，但这是用户显式重新选择该文件——允许重传并移除标记
+    if (removedUids.has(key)) {
+      removedUids.delete(key)
+    }
+
     const exists = localArtifacts.value.find(a => a.uid === f.uid || a.name === f.name)
     if (exists) continue
-    // placeholder with progress
+    // 加入本地制品列表并显示上传进度
     localArtifacts.value.push({ uid: f.uid, name: f.name, uploading: true, progress: 0 })
     try {
       const formData = new FormData()
       formData.append('file', f.file || f)
       const resp = await request.post('/agents/artifacts/upload/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 0,
+        timeout: 0, // 不设置超时时间，直到上传完成
         onUploadProgress: (e: any) => {
-          try {
-            const total = e.total || (f.file ? f.file.size : f.size) || 0
-            let percent = total ? Math.min(100, Math.round((e.loaded / total) * 100)) : 0
-            if (percent >= 100) percent = 99
-            const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
-            if (idx > -1) {
-              localArtifacts.value[idx].progress = percent
-            }
-          } catch (err) {
-            // ignore
+          const total = e.total || (f.file ? f.file.size : f.size) || 0
+          const raw = total ? Math.min(100, Math.round((e.loaded / total) * 100)) : 0
+          // 避免在此直接设置为 100%；由服务端响应确认上传完成后再置为 100%
+          const target = raw >= 100 ? 99 : raw
+          const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
+          if (idx > -1) {
+            // 设置平滑目标并确保动画运行
+            progressTargets.set(f.uid || f.name, target)
+            startProgressAnimator(f.uid || f.name)
           }
         }
       })
@@ -193,8 +251,20 @@ const onFileChange = async (files: any[]) => {
         size: data.content?.size || data.size || (f.file && f.file.size) || 0,
       }
       const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
-      if (idx > -1) localArtifacts.value[idx] = meta
-      else localArtifacts.value.push(meta)
+      if (idx > -1) {
+        // 合并元数据并标记为已完成
+        localArtifacts.value[idx] = {
+          ...localArtifacts.value[idx],
+          ...meta,
+          uploading: false,
+          progress: 100
+        }
+      } else {
+        localArtifacts.value.push({ ...meta, uploading: false, progress: 100 })
+      }
+      // 上传完成：清理移除标记并停止动画
+      removedUids.delete(f.uid || f.name)
+      stopProgressAnimator(f.uid || f.name)
       emit('update:artifacts', localArtifacts.value)
     } catch (e) {
       console.error('artifact upload failed', e)
@@ -207,6 +277,8 @@ const onFileChange = async (files: any[]) => {
 
 const onFileRemove = (fileItem: any) => {
   uploadList.value = uploadList.value.filter(f => f.uid !== fileItem.uid)
+  // 标记为已移除，防止短时间内重复加入
+  removedUids.add(fileItem.uid || fileItem.name)
   localArtifacts.value = localArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
   emit('update:artifacts', localArtifacts.value)
 }
@@ -241,6 +313,8 @@ const addServerEntries = () => {
 }
 
 const removeArtifact = (a: any) => {
+  // 标记被用户移除的 artifact
+  removedUids.add(a.uid || a.name)
   localArtifacts.value = localArtifacts.value.filter(x => x !== a)
   emit('update:artifacts', localArtifacts.value)
 }
