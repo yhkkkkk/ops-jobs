@@ -60,38 +60,52 @@ class RealtimeLogService:
             host_id: 主机ID
             log_data: 日志数据
         """
-        try:
-            # 快速失败策略，避免阻塞
-            if not self._ensure_connection():
-                logger.error(f"Redis连接不可用，跳过日志推送: {task_id}")
-                return
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 快速失败策略，避免阻塞
+                if not self._ensure_connection():
+                    if attempt == max_retries - 1:
+                        logger.error(f"Redis连接不可用，跳过日志推送: {task_id}")
+                    continue
 
-            stream_key = f"{self.log_stream_prefix}{task_id}"
+                stream_key = f"{self.log_stream_prefix}{task_id}"
 
-            # 构建日志消息
-            message = {
-                'timestamp': datetime.now().isoformat(),
-                'host_id': str(host_id),
-                'host_name': log_data.get('host_name', ''),
-                'host_ip': log_data.get('host_ip', ''),
-                'log_type': log_data.get('log_type', 'stdout'),  # stdout, stderr, info, error
-                'content': log_data.get('content', ''),
-                'step_name': log_data.get('step_name', ''),
-                'step_order': log_data.get('step_order', 0)
-            }
+                # 构建日志消息 - 统一字段名
+                message = {
+                    'timestamp': datetime.now().isoformat(),
+                    'task_id': str(task_id),  # 保留完整task_id
+                    'execution_id': str(task_id),  # 与Agent-Server保持一致
+                    'host_id': str(host_id),
+                    'host_name': log_data.get('host_name', ''),
+                    'host_ip': log_data.get('host_ip', ''),
+                    'log_type': log_data.get('log_type', log_data.get('stream', 'stdout')),  # 统一使用log_type
+                    'content': log_data.get('content', ''),
+                    'step_name': log_data.get('step_name', ''),
+                    'step_order': log_data.get('step_order', 0),
+                    'step_id': log_data.get('step_id', ''),
+                    'agent_id': log_data.get('agent_id', '')
+                }
 
-            # 使用pipeline批量操作，提高性能
-            pipe = self.redis_client.pipeline()
-            pipe.xadd(stream_key, message)
-            pipe.expire(stream_key, 43200)  # 设置过期时间（12小时）
-            pipe.execute()
+                # 使用pipeline批量操作，提高性能
+                pipe = self.redis_client.pipeline()
+                pipe.xadd(stream_key, message)
+                pipe.expire(stream_key, 43200)  # 设置过期时间（12小时）
+                pipe.execute()
 
-            logger.debug(f"推送日志到 {stream_key}: {message}")
+                logger.debug(f"推送日志到 {stream_key}: {message}")
+                return  # 成功则直接返回
 
-        except (redis.ConnectionError, redis.TimeoutError) as e:
-            logger.error(f"Redis连接错误，推送日志失败: {task_id} - {e}")
-        except Exception as e:
-            logger.error(f"推送日志失败: {task_id} - {e}")
+            except (redis.ConnectionError, redis.TimeoutError) as e:
+                logger.error(f"Redis连接错误，推送日志失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.5)  # 重试前等待
+            except Exception as e:
+                logger.error(f"推送日志失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.3)
 
     def push_log_async(self, task_id: str, host_id: str, log_data: Dict[str, Any]):
         """
@@ -179,8 +193,13 @@ class RealtimeLogService:
                         }
                         break
 
-                    # 从Redis Stream读取新消息
-                    messages = self.redis_client.xread({stream_key: last_id}, count=10, block=1000)
+                    # 从Redis Stream读取新消息 - 优化参数
+                    # count增加到100，block增加到5秒，减少轮询频率
+                    messages = self.redis_client.xread(
+                        {stream_key: last_id},
+                        count=100,  # 增加批量读取数量
+                        block=5000  # 增加阻塞时间到5秒
+                    )
 
                     if messages:
                         consecutive_errors = 0  # 重置错误计数
@@ -193,7 +212,7 @@ class RealtimeLogService:
                                 }
                                 last_id = msg_id
                     else:
-                        # 没有新消息时发送心跳
+                        # 没有新消息时发送心跳（现在5秒才发一次）
                         yield {
                             'id': last_id,
                             'type': 'heartbeat',

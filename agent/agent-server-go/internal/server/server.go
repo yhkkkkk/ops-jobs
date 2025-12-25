@@ -767,21 +767,30 @@ func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []ap
 		return
 	}
 
+	// 解析task_id提取execution_id和其他组件
+	// task_id格式: {execution_id}_{step_id}_{host_id}_{random}
+	executionID, stepID, hostID := parseTaskID(taskID)
+
 	// 尝试写入统一日志流
 	if s.logStream != nil {
 		entries := make([]map[string]interface{}, 0, len(logs))
 		now := time.Now().UnixMilli()
 		for _, l := range logs {
 			entries = append(entries, map[string]interface{}{
-				"task_id":     taskID,
-				"agent_id":    agentID,
-				"timestamp":   l.Timestamp,
-				"content":     l.Content,
-				"stream":      l.Stream,
-				"received_at": now,
+				"task_id":      taskID,          // 保留完整task_id用于追踪
+				"execution_id": executionID,     // 新增：用于SSE按execution_id查询
+				"step_id":      stepID,          // 新增：用于前端按步骤过滤
+				"host_id":      hostID,          // 新增：用于前端按主机过滤
+				"agent_id":     agentID,
+				"timestamp":    l.Timestamp,
+				"content":      l.Content,
+				"log_type":     l.Stream,        // 改为log_type，与控制面期望一致
+				"received_at":  now,
 			})
 		}
-		if err := s.logStream.PushLogs(ctx, entries); err != nil {
+
+		// 按execution_id写入，而不是task_id
+		if err := s.logStream.PushLogsByExecutionID(ctx, executionID, entries); err != nil {
 			logger.GetLogger().WithError(err).Warn("push logs to stream failed")
 		} else {
 			return
@@ -790,9 +799,20 @@ func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []ap
 
 	// 不再常规回退 HTTP，失败仅记录告警
 	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id": agentID,
-		"task_id":  taskID,
+		"agent_id":     agentID,
+		"task_id":      taskID,
+		"execution_id": executionID,
 	}).Warn("log stream unavailable, log not delivered")
+}
+
+// parseTaskID 解析task_id，提取execution_id, step_id, host_id
+// task_id格式: {execution_id}_{step_id}_{host_id}_{random}
+func parseTaskID(taskID string) (executionID, stepID, hostID string) {
+	parts := strings.Split(taskID, "_")
+	executionID = parts[0]
+	stepID = parts[1]
+	hostID = parts[2]
+	return
 }
 
 // pushResult 将任务结果写入结果流，失败可选回退 HTTP（当前仅记录错误，不回退）

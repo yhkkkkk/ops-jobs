@@ -13,7 +13,7 @@ import (
 // StreamWriter 写日志到 Redis Stream
 type StreamWriter struct {
 	client *redis.Client
-	key    string
+	key    string // 废弃：不再使用统一key
 	// 简易内存缓冲区：在 Redis 短暂不可用时暂存少量日志，下一次写入成功时一并刷新
 	buffer []map[string]interface{}
 }
@@ -35,9 +35,48 @@ func NewStreamWriter(cfg *config.Config) (*StreamWriter, error) {
 	}
 	return &StreamWriter{
 		client: rdb,
-		key:    cfg.LogStream.Key,
 		buffer: make([]map[string]interface{}, 0),
 	}, nil
+}
+
+// PushLogsByExecutionID 按execution_id写入日志（新方法）
+func (w *StreamWriter) PushLogsByExecutionID(ctx context.Context, executionID string, entries []map[string]interface{}) error {
+	if w == nil || w.client == nil || len(entries) == 0 {
+		return nil
+	}
+
+	streamKey := fmt.Sprintf("job_logs:%s", executionID)
+
+	// 先把之前缓冲的日志拼接上
+	all := make([]map[string]interface{}, 0, len(w.buffer)+len(entries))
+	all = append(all, w.buffer...)
+	all = append(all, entries...)
+
+	pipe := w.client.Pipeline()
+	for _, entry := range all {
+		pipe.XAdd(ctx, &redis.XAddArgs{
+			Stream: streamKey,
+			Values: entry,
+		})
+	}
+	// 设置过期时间为12小时
+	pipe.Expire(ctx, streamKey, 12*time.Hour)
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		// 写入失败：更新缓冲区，限制最大长度，避免内存无限增长
+		const maxBufferSize = 1000
+		if len(all) > maxBufferSize {
+			w.buffer = all[len(all)-maxBufferSize:]
+		} else {
+			w.buffer = all
+		}
+		return err
+	}
+
+	// 写入成功后清空缓冲区
+	w.buffer = w.buffer[:0]
+	return nil
 }
 
 // PushLogs 写入日志条目（批量）

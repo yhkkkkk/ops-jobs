@@ -179,14 +179,18 @@ class JobLogsSSEView(SSEBaseView):
         """获取作业日志流"""
         logger.info(f"SSE日志连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        # 直接使用execution_id作为task_id，因为日志推送时使用的就是execution_id
+        # 使用execution_id作为stream key（Agent-Server已按此聚合）
         task_id = str(execution_id)
-        logger.info(f"SSE日志连接: 执行ID={execution_id}, 任务ID={task_id}")
+        logger.info(f"SSE日志连接: 执行ID={execution_id}")
 
         # 获取起始ID
         last_id = request.GET.get('last_id', '0')
 
-        def event_stream():
+        # 获取可选的过滤参数
+        filter_host_id = request.GET.get('host_id')
+        filter_step_id = request.GET.get('step_id')
+
+        def event_stream(last_id=None):
             """事件流生成器"""
             try:
                 # 发送连接建立消息
@@ -194,7 +198,10 @@ class JobLogsSSEView(SSEBaseView):
                     'type': 'connection_established',
                     'message': f'已连接到执行记录 {execution_id} 的日志流',
                     'execution_id': execution_id,
-                    'task_id': task_id
+                    'filters': {
+                        'host_id': filter_host_id,
+                        'step_id': filter_step_id
+                    }
                 }, event_type='message')
 
                 # 如果是新连接，先发送历史日志
@@ -202,6 +209,12 @@ class JobLogsSSEView(SSEBaseView):
                     historical_logs = realtime_log_service.get_historical_logs(task_id, limit=50)
                     logger.info(f"发送历史日志: {len(historical_logs)} 条")
                     for log in historical_logs:
+                        # 应用过滤器
+                        if filter_host_id and log.get('host_id') != filter_host_id:
+                            continue
+                        if filter_step_id and log.get('step_id') != filter_step_id:
+                            continue
+
                         yield self.format_sse_message({
                             'type': 'log',
                             **log
@@ -210,9 +223,15 @@ class JobLogsSSEView(SSEBaseView):
                         last_id = log['id']
 
                 # 开始实时日志流
-                logger.info(f"开始实时日志流: task_id={task_id}")
+                logger.info(f"开始实时日志流: execution_id={execution_id}")
                 for message in realtime_log_service.get_logs_stream(task_id, last_id):
                     if message['type'] == 'log':
+                        # 应用过滤器
+                        if filter_host_id and message['data'].get('host_id') != filter_host_id:
+                            continue
+                        if filter_step_id and message['data'].get('step_id') != filter_step_id:
+                            continue
+
                         yield self.format_sse_message({
                             'type': 'log',
                             **message['data']
@@ -236,7 +255,7 @@ class JobLogsSSEView(SSEBaseView):
                     'message': str(e)
                 }, event_type='message')
 
-        return self.create_sse_response(event_stream())
+        return self.create_sse_response(event_stream(last_id))
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -336,23 +355,22 @@ class JobCombinedSSEView(SSEBaseView):
         """异步生成日志流"""
         # 生成唯一的客户端ID
         client_id = str(uuid.uuid4())
-        
+
         try:
             # 发送连接建立消息
             yield self.format_sse_message({
                 'type': 'connection_established',
                 'message': f'已连接到执行记录 {execution_id} 的合并流',
                 'execution_id': execution_id,
-                'task_id': task_id,
                 'timestamp': datetime.now().isoformat()
             })
 
             # 发送历史日志
             last_id = '0'
             try:
-                historical_logs = realtime_log_service.get_historical_logs(task_id, limit=50)
+                historical_logs = realtime_log_service.get_historical_logs(task_id, limit=100)
                 logger.info(f"发送历史日志: {len(historical_logs)} 条")
-                
+
                 for log in historical_logs:
                     yield self.format_sse_message({
                         'type': 'log',
@@ -371,7 +389,7 @@ class JobCombinedSSEView(SSEBaseView):
             # 开始实时日志流
             heartbeat_counter = 0
             message_count = 0
-            
+
             # 获取异步日志流，使用历史日志的最后一条 ID 作为起始点
             async for log_msg in self._async_log_stream(task_id, client_id, last_id):
                 if log_msg is None:
@@ -384,11 +402,11 @@ class JobCombinedSSEView(SSEBaseView):
                         }, event_type='heartbeat')
                         heartbeat_counter = 0
                     continue
-                
+
                 # 重置心跳计数器
                 heartbeat_counter = 0
                 message_count += 1
-                
+
                 # 处理不同类型的消息
                 if log_msg['type'] == 'log':
                     yield self.format_sse_message({
@@ -406,7 +424,7 @@ class JobCombinedSSEView(SSEBaseView):
                         **log_msg['data']
                     }, event_type='message')
                     break
-                
+
         except Exception as e:
             logger.error(f"生成日志流时发生错误: {str(e)}", exc_info=True)
             yield self.format_sse_message({
@@ -419,14 +437,14 @@ class JobCombinedSSEView(SSEBaseView):
         async_queue = None
         thread = None
         stop_event = None
-        
+
         try:
-            async_queue = asyncio.Queue(maxsize=1000)  # 限制队列大小
+            async_queue = asyncio.Queue(maxsize=2000)  # 增加队列大小
             stop_event = asyncio.Event()
             loop = asyncio.get_running_loop()
             error_count = 0
-            max_errors = 5
-            
+            max_errors = 10  # 增加最大错误次数
+
             def sync_log_reader():
                 """在单独线程中读取同步日志流"""
                 nonlocal error_count
@@ -436,57 +454,63 @@ class JobCombinedSSEView(SSEBaseView):
                         if stop_event.is_set():
                             logger.info(f"停止事件已设置，退出同步日志读取器")
                             break
-                        
-                        # 使用线程安全的方式添加到异步队列
+
+                        # 使用线程安全的方式添加到异步队列，增加超时
                         try:
                             asyncio.run_coroutine_threadsafe(
                                 async_queue.put(message), loop
-                            ).result(timeout=0.1)
+                            ).result(timeout=5.0)  # 增加超时到5秒
                             error_count = 0  # 重置错误计数
+                        except asyncio.TimeoutError:
+                            error_count += 1
+                            logger.debug(f"队列添加超时 ({error_count}/{max_errors})")
+                            if error_count >= max_errors:
+                                logger.warning(f"队列超时过多，退出同步日志读取器")
+                                break
                         except Exception as queue_error:
                             error_count += 1
                             logger.debug(f"队列添加失败 ({error_count}/{max_errors}): {queue_error}")
                             if error_count >= max_errors:
                                 logger.warning(f"队列错误过多，退出同步日志读取器")
                                 break
-                    
+
                     # 发送结束信号
                     try:
                         asyncio.run_coroutine_threadsafe(
                             async_queue.put(StopAsyncIteration), loop
-                        ).result(timeout=0.1)
+                        ).result(timeout=1.0)
                     except Exception:
                         pass  # 忽略结束信号发送失败
-                        
+
                 except Exception as e:
                     logger.error(f"同步日志读取器出错: {str(e)}", exc_info=True)
                     try:
                         asyncio.run_coroutine_threadsafe(
                             async_queue.put(StopAsyncIteration), loop
-                        ).result(timeout=0.1)
+                        ).result(timeout=1.0)
                     except Exception:
                         pass
-            
+
             # 在线程池中启动同步日志读取器
-            thread = threading.Thread(target=sync_log_reader, daemon=True)
+            thread = threading.Thread(target=sync_log_reader, daemon=True, name=f"LogReader-{client_id[:8]}")
             thread.start()
-            
+
             try:
                 while True:
                     try:
                         # 异步等待日志消息，使用较短的超时以提供更好的响应性
                         log_msg = await asyncio.wait_for(async_queue.get(), timeout=1.0)
-                        
+
                         if log_msg is StopAsyncIteration:
                             logger.info(f"收到结束信号，退出异步日志流")
                             break
-                        
+
                         yield log_msg
-                        
+
                     except asyncio.TimeoutError:
                         # 超时，发送心跳
                         yield None
-                        
+
                     except Exception as e:
                         logger.error(f"异步日志流处理错误: {str(e)}")
                         error_count += 1
@@ -494,14 +518,16 @@ class JobCombinedSSEView(SSEBaseView):
                             logger.warning(f"异步日志流错误过多，退出")
                             break
                         yield None
-                        
+
             finally:
                 # 设置停止事件，清理资源
                 if stop_event:
                     stop_event.set()
                 if thread and thread.is_alive():
-                    thread.join(timeout=2.0)
-                
+                    thread.join(timeout=5.0)  # 增加join超时
+                    if thread.is_alive():
+                        logger.warning(f"日志读取线程未能正常退出: {thread.name}")
+
         except Exception as e:
             logger.error(f"异步日志流错误: {str(e)}", exc_info=True)
             yield None  # 确保生成器正常结束
