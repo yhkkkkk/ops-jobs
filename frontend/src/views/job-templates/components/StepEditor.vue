@@ -88,55 +88,94 @@
         <!-- 位置参数 -->
         <a-form-item label="位置参数">
           <div class="parameter-section">
-            <div class="parameter-header">
-              <span>位置参数（在脚本中使用 $1, $2, $3... 访问）</span>
-              <a-button type="text" size="small" @click="addPositionalArg">
-                <template #icon>
-                  <icon-plus />
-                </template>
-                添加参数
-              </a-button>
+            <!-- 参数输入模式切换 -->
+            <div class="parameter-mode-selector">
+              <a-radio-group v-model="parameterInputMode" @change="handleParameterModeChange">
+                <a-radio value="individual">逐个输入</a-radio>
+                <a-radio value="bulk">批量输入</a-radio>
+              </a-radio-group>
             </div>
-            <div class="parameter-list">
-              <div
-                v-for="(_, index) in positionalArgs"
-                :key="index"
-                class="parameter-item"
-              >
-                <span style="width: 60px; text-align: center">${{ index + 1 }}</span>
-                <div class="parameter-input-wrapper">
-                  <a-input
-                    v-model="positionalArgs[index]"
-                    :type="parameterVisibility[index] ? 'text' : 'password'"
-                    :placeholder="`参数 ${index + 1}`"
-                    style="flex: 1"
-                  />
-                  <a-button
-                    type="text"
-                    size="small"
-                    @click="toggleParameterVisibility(index)"
-                    class="visibility-toggle"
-                  >
-                    <template #icon>
-                      <icon-eye v-if="parameterVisibility[index]" />
-                      <icon-eye-invisible v-else />
-                    </template>
-                  </a-button>
-                </div>
-                <a-button
-                  type="text"
-                  status="danger"
-                  @click="removePositionalArg(index)"
-                  style="margin-left: 8px"
-                >
+
+            <!-- 逐个输入模式 -->
+            <div v-if="parameterInputMode === 'individual'" class="parameter-individual-mode">
+              <div class="parameter-header">
+                <a-button type="text" size="small" @click="addPositionalArg">
                   <template #icon>
-                    <icon-delete />
+                    <icon-plus />
                   </template>
+                  添加参数
                 </a-button>
+              </div>
+              <div class="parameter-list">
+                <div
+                  v-for="(_, index) in positionalArgs"
+                  :key="index"
+                  class="parameter-item"
+                >
+                  <div class="parameter-item-row">
+                    <span class="parameter-index">${{ index + 1 }}</span>
+                    <a-input
+                      v-model="positionalArgs[index]"
+                      :type="parameterVisibility[index] ? 'text' : 'password'"
+                      :placeholder="`参数 ${index + 1}`"
+                      class="parameter-input"
+                    />
+                    <a-button
+                      type="text"
+                      size="small"
+                      @click="toggleParameterVisibility(index)"
+                      class="visibility-toggle"
+                    >
+                      <template #icon>
+                        <icon-eye v-if="parameterVisibility[index]" />
+                        <icon-eye-invisible v-else />
+                      </template>
+                    </a-button>
+                    <a-button
+                      type="text"
+                      status="danger"
+                      @click="removePositionalArg(index)"
+                      class="remove-btn"
+                    >
+                      <template #icon>
+                        <icon-delete />
+                      </template>
+                    </a-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 批量输入模式 -->
+            <div v-else class="parameter-bulk-mode">
+              <div class="parameter-header">
+                <span>位置参数（支持空格分隔或引号包含空格参数）</span>
+              </div>
+              <a-textarea
+                v-model="bulkParameters"
+                placeholder="例如：param1 param2 'param with spaces' --flag=value"
+                :rows="4"
+                @input="handleBulkParametersChange"
+              />
+              <div class="bulk-parameter-preview" v-if="bulkParameters.trim()">
+                <div class="preview-header">参数预览：</div>
+                <div class="preview-list">
+                  <span
+                    v-for="(param, index) in parsedBulkParameters"
+                    :key="index"
+                    class="preview-param"
+                  >
+                    ${{ index + 1 }}: {{ param }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </a-form-item>
+        <div class="form-tip parameter-tip">
+          <icon-info-circle />
+          位置参数将按顺序传递给脚本，在脚本中可以使用 $1, $2, $3... 访问
+        </div>
       </div>
 
       <!-- 文件传输配置（仅本地上传） -->
@@ -517,6 +556,8 @@ const selectedTemplateKeys = ref<number[]>([])
 // 参数相关
 const positionalArgs = ref<string[]>([''])
 const parameterVisibility = ref<Record<number, boolean>>({})
+const parameterInputMode = ref<'individual' | 'bulk'>('individual') // 参数输入模式
+const bulkParameters = ref('') // 批量参数输入
 
 // 文件传输相关（仅本地上传）
 const remotePath = ref('')
@@ -553,6 +594,42 @@ const hostWarnings = computed(() => {
   }
 
   return warnings
+})
+
+// 批量参数解析
+const parsedBulkParameters = computed(() => {
+  if (!bulkParameters.value.trim()) return []
+
+  // 简单的参数解析：支持空格分隔和引号包含空格
+  const params: string[] = []
+  let current = ''
+  let inQuotes = false
+  let quoteChar = ''
+
+  for (let i = 0; i < bulkParameters.value.length; i++) {
+    const char = bulkParameters.value[i]
+
+    if (!inQuotes && (char === '"' || char === "'")) {
+      inQuotes = true
+      quoteChar = char
+    } else if (inQuotes && char === quoteChar) {
+      inQuotes = false
+      quoteChar = ''
+    } else if (!inQuotes && char === ' ') {
+      if (current.trim()) {
+        params.push(current.trim())
+        current = ''
+      }
+    } else {
+      current += char
+    }
+  }
+
+  if (current.trim()) {
+    params.push(current.trim())
+  }
+
+  return params
 })
 
 // 主机选择相关计算属性
@@ -759,11 +836,31 @@ watch(
 
       // 解析位置参数 (现在 step_parameters 直接是数组)
       if (step.step_parameters && Array.isArray(step.step_parameters)) {
-        positionalArgs.value = step.step_parameters.length > 0
-          ? step.step_parameters
-          : ['']
+        const params = step.step_parameters.length > 0 ? step.step_parameters : ['']
+
+        // 如果参数数量超过5个，自动切换到批量模式
+        if (params.length > 5) {
+          parameterInputMode.value = 'bulk'
+          bulkParameters.value = params
+            .map(param => param.includes(' ') ? `"${param}"` : param)
+            .join(' ')
+          positionalArgs.value = [''] // 清空逐个输入
+        } else {
+          parameterInputMode.value = 'individual'
+          positionalArgs.value = params
+          bulkParameters.value = '' // 清空批量输入
+        }
+
+        // 初始化参数可见性
+        parameterVisibility.value = {}
+        positionalArgs.value.forEach((_, index) => {
+          parameterVisibility.value[index] = true // 默认可见
+        })
       } else {
         positionalArgs.value = ['']
+        bulkParameters.value = ''
+        parameterInputMode.value = 'individual'
+        parameterVisibility.value = {}
       }
 
       // 如果是新建步骤且脚本内容为空，插入示例代码
@@ -897,6 +994,29 @@ const toggleParameterVisibility = (index: number) => {
   parameterVisibility.value[index] = !parameterVisibility.value[index]
 }
 
+// 处理参数输入模式切换
+const handleParameterModeChange = () => {
+  if (parameterInputMode.value === 'bulk') {
+    // 从逐个输入切换到批量输入时，将现有参数合并到批量输入
+    if (positionalArgs.value.some(arg => arg.trim())) {
+      bulkParameters.value = positionalArgs.value
+        .map(arg => arg.trim() ? (arg.includes(' ') ? `"${arg}"` : arg) : '')
+        .filter(arg => arg)
+        .join(' ')
+    }
+  } else {
+    // 从批量输入切换到逐个输入时，清空逐个输入的参数
+    positionalArgs.value = ['']
+    parameterVisibility.value = {}
+  }
+}
+
+// 处理批量参数输入变化
+const handleBulkParametersChange = () => {
+  // 当批量参数变化时，同步更新逐个输入模式（如果需要的话）
+  // 这里暂时不自动同步，避免混乱
+}
+
 // 文件大小格式化函数
 const formatStepFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -1009,7 +1129,13 @@ const handleSubmit = async () => {
     }
 
     // 获取位置参数
-    const validPositionalArgs = positionalArgs.value.filter(arg => arg.trim() !== '')
+    let validPositionalArgs: string[] = []
+    if (parameterInputMode.value === 'individual') {
+      validPositionalArgs = positionalArgs.value.filter(arg => arg.trim() !== '')
+    } else {
+      // 批量模式：使用解析后的参数
+      validPositionalArgs = parsedBulkParameters.value
+    }
 
     const stepData: JobStep = {
       id: form.id || 0,
@@ -1288,6 +1414,110 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   margin-top: 4px;
+}
+
+.parameter-tip {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  color: var(--color-text-3);
+}
+
+/* 参数输入样式 */
+.parameter-section {
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  padding: 16px;
+  background: var(--color-bg-1);
+}
+
+/* 更宽的参数表单，让输入区域占用更多横向空间 */
+.parameter-section {
+  width: calc(100% + 20px);
+  margin-left: -10px;
+  margin-right: -10px;
+  box-sizing: border-box;
+  max-width: calc(100% + 20px);
+}
+
+.parameter-mode-selector {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+
+.parameter-individual-mode,
+.parameter-bulk-mode {
+  margin-top: 16px;
+}
+
+.parameter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
+.parameter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parameter-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.parameter-index {
+  min-width: 40px;
+  text-align: center;
+  font-weight: 500;
+  color: var(--color-text-2);
+  font-family: 'Courier New', monospace;
+}
+
+.parameter-input {
+  flex: 1;
+}
+
+.visibility-toggle,
+.remove-btn {
+  flex-shrink: 0;
+}
+
+.bulk-parameter-preview {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: var(--color-fill-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+
+.preview-header {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-2);
+  margin-bottom: 8px;
+}
+
+.preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-param {
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  color: var(--color-text-1);
+  background-color: var(--color-fill-2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-2);
 }
 
 /* 主机警告样式 */

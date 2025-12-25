@@ -932,78 +932,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             message="批量卸载已启动，正在后台执行，可通过uninstall_task_id连接sse查看实时进度"
         )
 
-
-class ArtifactUploadView(APIView):
-    """制品上传（供前端立即上传本地文件到对象存储并返回 metadata）"""
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request):
-        """
-        接收 multipart/form-data 的文件上传，参数:
-        - file: 上传的文件（必需）
-        - storage_path (可选): 希望存储的路径（若不提供则后端生成）
-        返回:
-        {
-          'storage_path': 'path/in/storage',
-          'download_url': 'https://...',
-          'checksum': 'sha256hex',
-          'size': 12345
-        }
-        """
-        try:
-            uploaded_file = request.FILES.get('file')
-            if not uploaded_file:
-                return SycResponse.error(message="缺少上传文件字段 'file'")
-
-            storage_path = request.data.get('storage_path')
-
-            # 获取默认存储后端
-            from apps.agents.storage_service import StorageService
-            from apps.system_config.models import ConfigManager
-            import hashlib
-            import uuid
-
-            default_storage_type = ConfigManager.get('storage.type', 'local')
-            storage_backend = StorageService.get_backend(default_storage_type)
-            if not storage_backend:
-                return SycResponse.error(message=f"无法初始化存储后端: {default_storage_type}")
-
-            # 生成存储路径如果未指定
-            if not storage_path:
-                user_id = request.user.id if request.user and hasattr(request.user, 'id') else 'anonymous'
-                storage_path = f"uploads/{user_id}/{uuid.uuid4().hex}/{uploaded_file.name}"
-
-            # 计算 sha256 和大小
-            uploaded_file.seek(0)
-            file_content = uploaded_file.read()
-            sha256_hex = hashlib.sha256(file_content).hexdigest()
-            size = uploaded_file.size
-            uploaded_file.seek(0)
-
-            success, err = storage_backend.upload_file(uploaded_file, storage_path)
-            if not success:
-                return SycResponse.error(message=f"上传到对象存储失败: {err}")
-
-            download_url = None
-            try:
-                download_url = storage_backend.generate_url(storage_path, expires_in=3600)
-            except Exception:
-                download_url = None
-
-            # auth_headers: 留空或由存储后端扩展以支持需要额外Header的私有存储
-            auth_headers = {}
-            return SycResponse.success(content={
-                'storage_path': storage_path,
-                'download_url': download_url,
-                'checksum': sha256_hex,
-                'size': size,
-                'auth_headers': auth_headers,
-            }, message="文件已上传到制品库")
-        except Exception as exc:
-            logger.exception("制品上传失败")
-            return SycResponse.error(message=f"制品上传失败: {str(exc)}")
-
     @action(detail=False, methods=["get"], url_path="install_records")
     def install_records(self, request):
         """查询安装记录"""
@@ -1270,3 +1198,75 @@ class ArtifactUploadView(APIView):
             )
 
         return SycResponse.error(message="未找到可用的agent包", code=404)
+
+
+class ArtifactUploadView(APIView):
+    """制品上传（供前端立即上传本地文件到对象存储并返回 metadata）"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        """
+        接收 multipart/form-data 的文件上传，参数:
+        - file: 上传的文件（必需）
+        - storage_path (可选): 希望存储的路径（若不提供则后端生成）
+        返回:
+        {
+          'storage_path': 'path/in/storage',
+          'download_url': 'https://...',
+          'checksum': 'sha256hex',
+          'size': 12345
+        }
+        """
+        try:
+            uploaded_file = request.FILES.get('file')
+            if not uploaded_file:
+                return SycResponse.error(message="缺少上传文件字段 'file'")
+
+            storage_path = request.data.get('storage_path')
+
+            # 获取默认存储后端
+            from apps.agents.storage_service import StorageService
+            from apps.system_config.models import ConfigManager
+            import hashlib
+            import uuid
+
+            default_storage_type = ConfigManager.get('storage.type', 'local')
+            storage_backend = StorageService.get_backend(default_storage_type)
+            if not storage_backend:
+                return SycResponse.error(message=f"无法初始化存储后端: {default_storage_type}")
+
+            # 生成存储路径如果未指定
+            if not storage_path:
+                user_id = request.user.id if request.user and hasattr(request.user, 'id') else 'anonymous'
+                storage_path = f"uploads/{user_id}/{uuid.uuid4().hex}/{uploaded_file.name}"
+
+            # 计算 sha256 和大小
+            uploaded_file.seek(0)
+            file_content = uploaded_file.read()
+            sha256_hex = hashlib.sha256(file_content).hexdigest()
+            size = uploaded_file.size
+            uploaded_file.seek(0)
+
+            success, err = storage_backend.upload_file(uploaded_file, storage_path)
+            if not success:
+                return SycResponse.error(message=f"上传到对象存储失败: {err}")
+
+            download_url = None
+            try:
+                download_url = storage_backend.generate_url(storage_path, expires_in=3600)
+            except Exception:
+                download_url = None
+
+            # auth_headers: 留空或由存储后端扩展以支持需要额外Header的私有存储
+            auth_headers = {}
+            return SycResponse.success(content={
+                'storage_path': storage_path,
+                'download_url': download_url,
+                'checksum': sha256_hex,
+                'size': size,
+                'auth_headers': auth_headers,
+            }, message="文件已上传到制品库")
+        except Exception as exc:
+            logger.exception("制品上传失败")
+            return SycResponse.error(message=f"制品上传失败: {str(exc)}")
