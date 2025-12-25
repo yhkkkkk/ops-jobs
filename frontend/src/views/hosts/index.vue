@@ -677,13 +677,13 @@
       :footer="false"
     >
       <a-alert type="info" class="mb-3">
-        支持 .xlsx / .xlsm 文件，必填列包含：主机名称、IP地址、用户名。可选列：端口、操作系统、认证方式、密码、私钥、分组。
+        支持 .xlsx / .xlsm 文件，必填列包含：主机名称、IP地址、服务器账号。可选列：端口、操作系统、分组。
       </a-alert>
 
       <ul class="import-instructions">
-        <li>认证方式支持 <code>password</code> 或 <code>key</code>（可填写“密码/密钥”字样）。</li>
+        <li>服务器账号列填写账号名称，认证方式由账号配置决定。</li>
         <li>分组列可填写多个分组名称，使用逗号、分号、竖线分隔；未匹配的分组会被记录在结果中。</li>
-        <li>启用“覆盖已有主机”后，将按 IP + 端口覆盖更新已有记录。</li>
+        <li>启用"覆盖已有主机"后，将按 IP + 端口覆盖更新已有记录。</li>
       </ul>
 
       <a-form layout="vertical" :model="importForm">
