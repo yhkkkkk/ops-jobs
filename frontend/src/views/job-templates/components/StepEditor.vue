@@ -76,9 +76,9 @@
           <script-editor-with-validation
             ref="editorRef"
             v-model="scriptContent"
-            :language="scriptType"
+            :language="scriptType as any"
             :theme="editorTheme"
-            :height="500"
+            :height="700"
             :auto-validate="true"
             @validation-change="handleValidationChange"
             :readonly="false"

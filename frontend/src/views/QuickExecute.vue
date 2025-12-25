@@ -370,7 +370,7 @@
             v-model="scriptContent"
             :language="scriptType as any"
             :theme="editorTheme"
-            :height="600"
+            :height="800"
             :readonly="false"
             :auto-validate="true"
             @validation-change="handleValidationChange"
