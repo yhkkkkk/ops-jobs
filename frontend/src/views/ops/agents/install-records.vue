@@ -47,19 +47,6 @@
             <a-option value="failed">失败</a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="安装模式">
-          <a-select
-            v-model="searchForm.install_mode"
-            placeholder="请选择安装模式"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 150px"
-          >
-            <a-option value="direct">直连模式</a-option>
-            <a-option value="agent-server">Agent-Server 模式</a-option>
-          </a-select>
-        </a-form-item>
         <a-form-item>
           <a-button type="primary" @click="handleSearch">
             <template #icon>
@@ -101,9 +88,7 @@
         </template>
 
         <template #install_mode="{ record }">
-          <a-tag :color="record.install_mode === 'agent-server' ? 'blue' : 'green'">
-            {{ record.install_mode === 'agent-server' ? 'Agent-Server' : '直连' }}
-          </a-tag>
+          <a-tag color="blue">Agent-Server</a-tag>
         </template>
 
         <template #installed_at="{ record }">
@@ -166,8 +151,7 @@
           </div>
         </a-descriptions-item>
         <a-descriptions-item label="安装模式">
-          <a-tag :color="currentRecord.install_mode === 'agent-server' ? 'blue' : 'green'">
-            {{ currentRecord.install_mode === 'agent-server' ? 'Agent-Server 模式' : '直连模式' }}
+          <a-tag color="blue">Agent-Server 模式
           </a-tag>
         </a-descriptions-item>
         <a-descriptions-item label="安装状态">
@@ -316,7 +300,6 @@ const regeneratingScript = ref(false)
 const searchForm = reactive({
   search: '',
   status: '',
-  install_mode: '',
 })
 
 // 分页配置
@@ -337,12 +320,6 @@ const columns = [
     dataIndex: 'host',
     slotName: 'host',
     width: 180,
-  },
-  {
-    title: '安装模式',
-    dataIndex: 'install_mode',
-    slotName: 'install_mode',
-    width: 140,
   },
   {
     title: '状态',
@@ -383,9 +360,6 @@ const fetchRecords = async () => {
     if (searchForm.status) {
       params.status = searchForm.status
     }
-    if (searchForm.install_mode) {
-      params.install_mode = searchForm.install_mode
-    }
     if (searchForm.search) {
       params.search = searchForm.search
     }
@@ -414,7 +388,6 @@ const handleSearch = () => {
 const handleReset = () => {
   searchForm.search = ''
   searchForm.status = ''
-  searchForm.install_mode = ''
   pagination.current = 1
   fetchRecords()
 }
@@ -515,7 +488,6 @@ const handleRetryInstall = async (record: any) => {
           // 调用批量安装 API，但只针对当前主机
           const response = await agentsApi.batchInstall({
             host_ids: [record.host_id],
-            install_mode: record.install_mode || 'agent-server',
             agent_server_url: record.agent_server_url || '',
             agent_server_backup_url: record.agent_server_backup_url || '',
             package_version: record.package_version || '',

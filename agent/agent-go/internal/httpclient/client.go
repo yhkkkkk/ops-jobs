@@ -61,7 +61,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, r
 }
 
 // Register 向 Agent-Server 注册 agent，返回 agent 信息（含 id）
-// 注意：此方法仅在 agent-server 模式下使用，direct 模式不再需要注册
+// 向 Agent-Server 注册 Agent
 func (c *Client) Register(ctx context.Context, info api.AgentInfo) (*api.AgentInfo, error) {
 	var resp api.AgentInfo
 	if err := c.doJSON(ctx, resty.MethodPost, "/api/agents/register/", info, &resp); err != nil {

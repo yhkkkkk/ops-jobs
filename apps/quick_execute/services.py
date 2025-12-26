@@ -44,7 +44,7 @@ class QuickExecuteService:
             global_variables = script_data.get('global_variables', {})
             positional_args = script_data.get('positional_args', [])
             
-            # 从global_variables中提取account_id（前端传递的）
+            # 从global_variables中提取account_id
             account_id = global_variables.get('account_id') if global_variables else None
 
             # 创建统一的执行记录

@@ -31,13 +31,9 @@ var startCmd = &cobra.Command{
 		log := logger.GetLogger()
 
 		logFields := map[string]interface{}{
-			"agent_name": cfg.AgentName,
-			"mode":       cfg.Mode,
-		}
-		if cfg.Mode == "direct" {
-			logFields["control_plane_url"] = cfg.ControlPlaneURL
-		} else {
-			logFields["agent_server_url"] = cfg.AgentServerURL
+			"agent_name":       cfg.AgentName,
+			"mode":             cfg.Mode,
+			"agent_server_url": cfg.AgentServerURL,
 		}
 
 		log.WithFields(logFields).Info("starting agent")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"ops-job-agent-server/internal/agent"
@@ -280,7 +281,7 @@ func (s *Server) handleRegister(c *gin.Context) {
 	if req.Scope != "" {
 		scope = req.Scope
 	}
-	
+
 	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, scope)
 	if err != nil {
 		if err == agent.ErrMaxConnections {
@@ -352,7 +353,7 @@ func (s *Server) handlePushTask(c *gin.Context) {
 		// 如果没有传递scope，使用Agent-Server配置的scope
 		requestScope = s.cfg.ControlPlane.Scope
 	}
-	
+
 	if err := s.taskDispatcher.DispatchTaskToAgent(agentID, &taskSpec, requestScope); err != nil {
 		if err == agent.ErrAgentNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
@@ -777,14 +778,14 @@ func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []ap
 		now := time.Now().UnixMilli()
 		for _, l := range logs {
 			entries = append(entries, map[string]interface{}{
-				"task_id":      taskID,          // 保留完整task_id用于追踪
-				"execution_id": executionID,     // 新增：用于SSE按execution_id查询
-				"step_id":      stepID,          // 新增：用于前端按步骤过滤
-				"host_id":      hostID,          // 新增：用于前端按主机过滤
+				"task_id":      taskID,      // 保留完整task_id用于追踪
+				"execution_id": executionID, // 新增：用于SSE按execution_id查询
+				"step_id":      stepID,      // 新增：用于前端按步骤过滤
+				"host_id":      hostID,      // 新增：用于前端按主机过滤
 				"agent_id":     agentID,
 				"timestamp":    l.Timestamp,
 				"content":      l.Content,
-				"log_type":     l.Stream,        // 改为log_type，与控制面期望一致
+				"log_type":     l.Stream, // 改为log_type，与控制面期望一致
 				"received_at":  now,
 			})
 		}

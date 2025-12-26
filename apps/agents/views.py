@@ -569,17 +569,24 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
         data = serializer.validated_data
         host_ids = data['host_ids']
+        install_type = data.get('install_type', 'agent')
         install_mode = data.get('install_mode', 'agent-server')
         agent_server_url = data.get('agent_server_url', '')
         agent_server_backup_url = data.get('agent_server_backup_url', '')
         ws_backoff_initial_ms = data.get('ws_backoff_initial_ms', 1000)
         ws_backoff_max_ms = data.get('ws_backoff_max_ms', 30000)
         ws_max_retries = data.get('ws_max_retries', 6)
+        agent_server_listen_addr = data.get('agent_server_listen_addr', '0.0.0.0:8080')
+        max_connections = data.get('max_connections', 1000)
+        heartbeat_timeout = data.get('heartbeat_timeout', 60)
         package_version = data.get('package_version')
         package_id = data.get('package_id')
 
-        if install_mode == 'agent-server' and not agent_server_url:
-            return SycResponse.error(message="agent_server_url 不能为空（agent-server 模式）", code=400)
+        # 验证参数
+        if install_type == 'agent' and not agent_server_url:
+            return SycResponse.error(message="agent_server_url 不能为空（安装 Agent 需要）", code=400)
+        if install_type == 'agent-server' and not agent_server_listen_addr:
+            return SycResponse.error(message="agent_server_listen_addr 不能为空（安装 Agent-Server 需要）", code=400)
 
         # 获取主机列表
         from apps.hosts.models import Host
@@ -634,12 +641,16 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     agent=agent,
                     status='pending',
                     defaults={
+                        'install_type': install_type,
                         'install_mode': install_mode,
                         'agent_server_url': agent_server_url,
                         'agent_server_backup_url': agent_server_backup_url,
                         'ws_backoff_initial_ms': ws_backoff_initial_ms,
                         'ws_backoff_max_ms': ws_backoff_max_ms,
                         'ws_max_retries': ws_max_retries,
+                        'agent_server_listen_addr': agent_server_listen_addr,
+                        'max_connections': max_connections,
+                        'heartbeat_timeout': heartbeat_timeout,
                         'package_id': package_id,
                         'package_version': package_version,
                         'installed_by': request.user,
@@ -648,12 +659,16 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 if not created:
                     # 更新现有安装记录的配置（允许重新生成脚本）
                     install_record.agent = agent
+                    install_record.install_type = install_type
                     install_record.install_mode = install_mode
                     install_record.agent_server_url = agent_server_url
                     install_record.agent_server_backup_url = agent_server_backup_url
                     install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
                     install_record.ws_backoff_max_ms = ws_backoff_max_ms
                     install_record.ws_max_retries = ws_max_retries
+                    install_record.agent_server_listen_addr = agent_server_listen_addr
+                    install_record.max_connections = max_connections
+                    install_record.heartbeat_timeout = heartbeat_timeout
                     install_record.package_id = package_id
                     install_record.package_version = package_version
                     install_record.status = 'pending'
@@ -664,12 +679,16 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     host_scripts = AgentService.generate_install_script(
                         host=host,
                         agent_token=agent_token,
+                        install_type=install_type,
                         install_mode=install_mode,
                         agent_server_url=agent_server_url,
                         agent_server_backup_url=agent_server_backup_url,
                         ws_backoff_initial_ms=ws_backoff_initial_ms,
                         ws_backoff_max_ms=ws_backoff_max_ms,
                         ws_max_retries=ws_max_retries,
+                        agent_server_listen_addr=agent_server_listen_addr,
+                        max_connections=max_connections,
+                        heartbeat_timeout=heartbeat_timeout,
                         package_version=package_version,
                         package_id=package_id,
                     )

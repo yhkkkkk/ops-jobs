@@ -56,7 +56,7 @@ type LoggingConfig struct {
 // LogStreamConfig Redis Stream 写日志配置
 type LogStreamConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
-	Key     string `mapstructure:"key"`
+	Key     string `mapstructure:"key"` // 统一日志流的 Redis Stream key
 }
 
 // ResultStreamConfig Redis Stream 写任务结果配置

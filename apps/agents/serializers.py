@@ -250,9 +250,12 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
             'host_name',
             'host_ip',
             'agent_id',
-            'install_mode',
+            'install_type',
             'status',
             'status_display',
+            'agent_server_listen_addr',
+            'max_connections',
+            'heartbeat_timeout',
             'error_message',
             'error_detail',
             'message',
@@ -423,11 +426,11 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         child=serializers.IntegerField(),
         help_text="主机ID列表"
     )
-    install_mode = serializers.ChoiceField(
-        choices=['direct', 'agent-server'],
-        default='agent-server',
+    install_type = serializers.ChoiceField(
+        choices=['agent', 'agent-server'],
+        default='agent',
         required=False,
-        help_text="安装模式：direct/agent-server"
+        help_text="安装类型：agent/agent-server"
     )
     agent_server_url = serializers.CharField(
         required=False,
@@ -461,6 +464,27 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         max_value=20,
         default=6,
         help_text="ws重连最大次数（可选，1~20）"
+    )
+    agent_server_listen_addr = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+        default='0.0.0.0:8080',
+        help_text="agent-server监听地址（agent-server安装需要）"
+    )
+    max_connections = serializers.IntegerField(
+        required=False,
+        min_value=100,
+        max_value=10000,
+        default=1000,
+        help_text="最大连接数（agent-server安装需要，100~10000）"
+    )
+    heartbeat_timeout = serializers.IntegerField(
+        required=False,
+        min_value=30,
+        max_value=300,
+        default=60,
+        help_text="心跳超时秒数（agent-server安装需要，30~300）"
     )
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
@@ -476,11 +500,11 @@ class BatchInstallSerializer(serializers.Serializer):
         allow_null=True,
         help_text="用于ssh的账号ID（可选）"
     )
-    install_mode = serializers.ChoiceField(
-        choices=['direct', 'agent-server'],
-        default='agent-server',
+    install_type = serializers.ChoiceField(
+        choices=['agent', 'agent-server'],
+        default='agent',
         required=False,
-        help_text="安装模式：direct/agent-server"
+        help_text="安装类型：agent/agent-server"
     )
     agent_server_url = serializers.CharField(
         required=False,
@@ -514,6 +538,27 @@ class BatchInstallSerializer(serializers.Serializer):
         max_value=20,
         default=6,
         help_text="ws重连最大次数（可选，1~20）"
+    )
+    agent_server_listen_addr = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+        default='0.0.0.0:8080',
+        help_text="agent-server监听地址（agent-server安装需要）"
+    )
+    max_connections = serializers.IntegerField(
+        required=False,
+        min_value=100,
+        max_value=10000,
+        default=1000,
+        help_text="最大连接数（agent-server安装需要，100~10000）"
+    )
+    heartbeat_timeout = serializers.IntegerField(
+        required=False,
+        min_value=30,
+        max_value=300,
+        default=60,
+        help_text="心跳超时秒数（agent-server安装需要，30~300）"
     )
     ssh_timeout = serializers.IntegerField(
         required=False,

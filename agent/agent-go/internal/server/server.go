@@ -25,15 +25,14 @@ type TaskService interface {
 }
 
 // Server Agent 内置 HTTP 服务：
-// - /api/tasks                 : 控制面直连推任务
-// - /api/tasks/:taskId/cancel  : 控制面直连取消任务
 // - /tasks/:taskId/status      : 本地/工具查询任务状态
 // - /metrics                   : 指标
+// - /health                    : 健康检查
 type Server struct {
 	engine      *gin.Engine
 	addr        string
 	taskService TaskService
-	authToken   string // direct_shared_secret
+	authToken   string // 保留兼容性
 }
 
 // New 创建 HTTP Server
@@ -61,14 +60,6 @@ func New(addr, authToken string) *Server {
 
 	// 指标
 	r.GET("/metrics", s.getMetrics)
-
-	// 控制面直连 API（统一挂鉴权中间件）
-	apiGroup := r.Group("/api")
-	apiGroup.Use(s.authMiddleware())
-	{
-		apiGroup.POST("/tasks", s.handlePushTask)
-		apiGroup.POST("/tasks/:taskId/cancel", s.handleCancelTaskAPI)
-	}
 
 	return s
 }
@@ -124,64 +115,6 @@ func (s *Server) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "ok",
 		"timestamp": time.Now().Unix(),
-	})
-}
-
-// handlePushTask 控制面直连推任务：POST /api/tasks
-func (s *Server) handlePushTask(c *gin.Context) {
-	if s.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
-		return
-	}
-
-	var task api.TaskSpec
-	if err := c.ShouldBindJSON(&task); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json body", "message": err.Error()})
-		return
-	}
-	if task.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id is required"})
-		return
-	}
-
-	logger.GetLogger().WithFields(map[string]interface{}{
-		"task_id":   task.ID,
-		"task_name": task.Name,
-		"type":      task.Type,
-	}).Info("received task via http (direct mode)")
-
-	s.taskService.SubmitTask(&task)
-
-	c.JSON(http.StatusOK, gin.H{
-		"task_id": task.ID,
-		"status":  "accepted",
-	})
-}
-
-// handleCancelTaskAPI 控制面直连取消：POST /api/tasks/:taskId/cancel
-func (s *Server) handleCancelTaskAPI(c *gin.Context) {
-	taskID := c.Param("taskId")
-	if taskID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id is required"})
-		return
-	}
-	if s.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
-		return
-	}
-
-	if err := s.taskService.CancelTask(taskID); err != nil {
-		logger.GetLogger().WithError(err).WithField("task_id", taskID).Error("cancel task via api failed")
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "cancel task failed",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"task_id": taskID,
-		"status":  "cancelled",
 	})
 }
 

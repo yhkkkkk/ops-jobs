@@ -16,7 +16,6 @@ router.register(r'', AgentViewSet, basename='agent')
 app_name = 'agents'
 
 urlpatterns = [
-    path('', include(router.urls)),
     path('artifacts/upload/', ArtifactUploadView.as_view(), name='artifact-upload'),
+    path('', include(router.urls)),
 ]
-

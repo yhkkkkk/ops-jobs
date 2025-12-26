@@ -1451,19 +1451,17 @@ class AgentExecutionService:
                     'cancelled_count': 0
                 }
             
-            # 确定执行模式
-            if agent_server_url or (execution_record.execution_parameters.get('agent_server_url')):
-                # Agent-Server模式
-                server_url = agent_server_url or execution_record.execution_parameters.get('agent_server_url')
-                return AgentExecutionService._cancel_tasks_via_agent_server(
-                    agent_task_map=agent_task_map,
-                    server_url=server_url,
-                )
-            else:
-                # Direct模式（直连控制面）
-                return AgentExecutionService._cancel_tasks_via_direct(
-                    agent_task_map=agent_task_map,
-                )
+            # Agent-Server模式（唯一支持的模式）
+            server_url = agent_server_url or execution_record.execution_parameters.get('agent_server_url')
+            if not server_url:
+                return {
+                    'success': False,
+                    'error': 'Agent-Server URL 未配置'
+                }
+            return AgentExecutionService._cancel_tasks_via_agent_server(
+                agent_task_map=agent_task_map,
+                server_url=server_url,
+            )
         
         except Exception as e:
             logger.error(f"取消Agent任务异常: {str(e)}", exc_info=True)
@@ -1565,98 +1563,3 @@ class AgentExecutionService:
                 'error': f'取消任务异常: {str(e)}'
             }
 
-    @staticmethod
-    def _cancel_tasks_via_direct(
-        agent_task_map: Dict[int, Dict],
-    ) -> Dict[str, Any]:
-        """
-        通过直连模式取消任务：直接调用 Agent 本地 HTTP 接口 /api/tasks/{id}/cancel
-        Args:
-            agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
-        Returns:
-            Dict: 取消结果
-        """
-        try:
-            import requests
-            from django.conf import settings
-            from apps.hosts.models import Host
-
-            cancelled_count = 0
-            failed_count = 0
-            errors = []
-
-            direct_port = getattr(settings, 'AGENT_DIRECT_PORT', 8080)
-            direct_secret = getattr(settings, 'AGENT_DIRECT_SHARED_SECRET', '') or ''
-
-            for agent_id, agent_info in agent_task_map.items():
-                agent_obj = agent_info['agent']
-                tasks = agent_info['tasks']
-
-                # 获取主机 IP
-                host: Host = getattr(agent_obj, 'host', None)
-                host_ip = getattr(host, 'ip_address', '') if host else ''
-                if not host_ip:
-                    for task_info in tasks:
-                        failed_count += 1
-                        msg = f'直连模式取消任务失败: 找不到主机 IP (agent_id={agent_id})'
-                        errors.append(msg)
-                        logger.error(msg)
-                    continue
-
-                # 如果 endpoint 已是 http(s)，可作为直连基础 URL
-                endpoint = getattr(agent_obj, 'endpoint', '') or ''
-                if endpoint.startswith('http://') or endpoint.startswith('https://'):
-                    base_url = endpoint.rstrip('/')
-                else:
-                    base_url = f"http://{host_ip}:{direct_port}"
-
-                for task_info in tasks:
-                    task_id = task_info['task_id']
-                    host_id = task_info['host_id']
-
-                    api_url = f"{base_url}/api/tasks/{task_id}/cancel"
-                    try:
-                        cancel_headers = {}
-                        if direct_secret:
-                            cancel_headers["Authorization"] = f"Bearer {direct_secret}"
-                        resp = requests.post(api_url, timeout=10, headers=cancel_headers)
-                        if resp.status_code == 200:
-                            cancelled_count += 1
-                            logger.info(
-                                f"直连模式取消任务成功: task_id={task_id}, agent_id={agent_id}, host_id={host_id}, url={api_url}"
-                            )
-                        else:
-                            failed_count += 1
-                            error_msg = resp.text or f"HTTP {resp.status_code}"
-                            errors.append(
-                                f"直连模式取消任务失败 (task_id={task_id}, agent_id={agent_id}): {error_msg}"
-                            )
-                            logger.error(
-                                f"直连模式取消任务失败: task_id={task_id}, agent_id={agent_id}, 状态码={resp.status_code}, 错误={error_msg}"
-                            )
-                    except Exception as e:
-                        failed_count += 1
-                        error_msg = f"请求异常: {str(e)}"
-                        errors.append(
-                            f"直连模式取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}"
-                        )
-                        logger.error(
-                            f"直连模式取消任务异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}",
-                            exc_info=True,
-                        )
-
-            return {
-                'success': cancelled_count > 0,
-                'cancelled_count': cancelled_count,
-                'failed_count': failed_count,
-                'total_count': cancelled_count + failed_count,
-                'errors': errors if errors else None,
-                'message': f'直连模式取消任务：成功 {cancelled_count} 个，失败 {failed_count} 个',
-            }
-
-        except Exception as e:
-            logger.error(f"通过直连模式取消任务异常: {str(e)}", exc_info=True)
-            return {
-                'success': False,
-                'error': f'取消任务异常: {str(e)}'
-            }

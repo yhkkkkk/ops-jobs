@@ -13,9 +13,9 @@ import (
 
 // Config 保存 agent 配置
 type Config struct {
-	// 连接模式：direct（直连控制面）或 agent-server（通过 Agent-Server）
-	Mode               string            `mapstructure:"mode"`              // direct/agent-server
-	ControlPlaneURL    string            `mapstructure:"control_plane_url"` // 控制面地址（direct 模式）
+	// 连接模式：仅支持 agent-server（通过 Agent-Server）
+	Mode               string            `mapstructure:"mode"`              // agent-server
+	ControlPlaneURL    string            `mapstructure:"control_plane_url"` // 保留兼容性
 	AgentServerURL     string            `mapstructure:"agent_server_url"`  // Agent-Server 地址（agent-server 模式）
 	AgentServerBackup  string            `mapstructure:"agent_server_backup_url"`
 	WSBackoffInitialMs int               `mapstructure:"ws_backoff_initial_ms"`
@@ -23,7 +23,6 @@ type Config struct {
 	WSMaxRetries       int               `mapstructure:"ws_max_retries"`
 	WSOutboxMaxSize    int               `mapstructure:"ws_outbox_max_size"` // ws 断线本地缓冲上限（消息条数）
 	HTTPAddr           string            `mapstructure:"http_addr"`
-	DirectSharedSecret string            `mapstructure:"direct_shared_secret"` // 直连模式共享密钥（Bearer/HMAC）
 	AgentName          string            `mapstructure:"agent_name"`
 	AgentLabels        map[string]string `mapstructure:"agent_labels"`
 	AgentToken         string            `mapstructure:"agent_token"`
@@ -33,7 +32,7 @@ type Config struct {
 	LogMaxFiles        int               `mapstructure:"log_max_files"`        // 最大保留日志文件数
 	LogMaxAge          int               `mapstructure:"log_max_age"`          // 日志保留天数
 	HeartbeatInterval  int               `mapstructure:"heartbeat_interval"`   // 心跳间隔（秒）
-	TaskPollInterval   int               `mapstructure:"task_poll_interval"`   // 任务轮询间隔（秒，仅 direct 模式）
+	TaskPollInterval   int               `mapstructure:"task_poll_interval"`   // 保留兼容性
 	MaxConcurrentTasks int               `mapstructure:"max_concurrent_tasks"` // 最大并发任务数
 	LogBatchSize       int               `mapstructure:"log_batch_size"`       // 日志批量推送大小
 	LogFlushInterval   int               `mapstructure:"log_flush_interval"`   // 日志刷新间隔（毫秒）
@@ -45,15 +44,20 @@ type Config struct {
 	CPULimit       float64 `mapstructure:"cpu_limit"`       // cpu 使用率限制（百分比），0表示不限制
 	MemoryLimit    int     `mapstructure:"memory_limit"`    // 内存限制（MB），0表示不限制
 
-	// Redis配置（用于asynq）
+	// Redis配置（分用途）
 	Redis RedisConfig `mapstructure:"redis"`
 
 	// Asynq配置
 	Asynq AsynqConfig `mapstructure:"asynq"`
 }
 
-// RedisConfig Redis配置
+// RedisConfig 顶层 Redis 配置，按用途拆分
 type RedisConfig struct {
+	Asynq RedisBasicConfig `mapstructure:"asynq"`
+}
+
+// RedisBasicConfig 基础 Redis 连接配置
+type RedisBasicConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
 	Addr     string `mapstructure:"addr"`
 	Password string `mapstructure:"password"`
@@ -138,19 +142,13 @@ func reloadFromViper(v *viper.Viper) error {
 
 	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if cfg.Mode == "" {
-		cfg.Mode = "direct"
+		cfg.Mode = "agent-server"
 	}
-	switch cfg.Mode {
-	case "direct":
-		if cfg.ControlPlaneURL == "" {
-			return fmt.Errorf("control_plane_url is required in direct mode")
-		}
-	case "agent-server":
-		if cfg.AgentServerURL == "" {
-			return fmt.Errorf("agent_server_url is required in agent-server mode")
-		}
-	default:
-		return fmt.Errorf("invalid mode %q, must be direct or agent-server", cfg.Mode)
+	if cfg.Mode != "agent-server" {
+		return fmt.Errorf("invalid mode %q, only agent-server mode is supported", cfg.Mode)
+	}
+	if cfg.AgentServerURL == "" {
+		return fmt.Errorf("agent_server_url is required")
 	}
 
 	// 处理标签字符串（如果从环境变量读取）
@@ -215,7 +213,7 @@ func Subscribe(fn func(*Config)) {
 
 // setDefaults 设置默认值
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("mode", "direct") // 默认直连模式
+	v.SetDefault("mode", "agent-server") // 默认 Agent-Server 模式
 	v.SetDefault("control_plane_url", "http://localhost:8000")
 	v.SetDefault("agent_server_url", "ws://localhost:8080")
 	v.SetDefault("agent_server_backup_url", "")
@@ -224,7 +222,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ws_max_retries", 6)
 	v.SetDefault("ws_outbox_max_size", 2000)
 	v.SetDefault("http_addr", ":8080")
-	v.SetDefault("direct_shared_secret", "")
 	v.SetDefault("agent_name", getHostname())
 	v.SetDefault("agent_token", "")
 	v.SetDefault("log_dir", "")
@@ -242,10 +239,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cpu_limit", 0.0)     // 0表示不限制
 	v.SetDefault("memory_limit", 0)    // 0表示不限制
 
-	// Redis默认值
-	v.SetDefault("redis.enabled", false)
-	v.SetDefault("redis.addr", "localhost:6379")
-	v.SetDefault("redis.db", 0)
+	// Redis默认值（用途拆分）
+	v.SetDefault("redis.asynq.enabled", false)
+	v.SetDefault("redis.asynq.addr", "localhost:6379")
+	v.SetDefault("redis.asynq.password", "")
+	v.SetDefault("redis.asynq.db", 0)
 
 	// Asynq默认值
 	v.SetDefault("asynq.enabled", false)
@@ -280,9 +278,6 @@ func bindEnvVars(v *viper.Viper) {
 	}
 	if val := os.Getenv("AGENT_HTTP_ADDR"); val != "" {
 		v.Set("http_addr", val)
-	}
-	if val := os.Getenv("AGENT_DIRECT_SHARED_SECRET"); val != "" {
-		v.Set("direct_shared_secret", val)
 	}
 	if val := os.Getenv("AGENT_NAME"); val != "" {
 		v.Set("agent_name", val)

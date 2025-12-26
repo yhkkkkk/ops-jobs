@@ -92,7 +92,7 @@
 
 ### 🤖 Agent / Agent-Server 系统
 
-- **双模式支持**: 支持直连控制面（Direct）和经 Agent-Server 转发的两种模式，当前推荐 Agent-Server 模式
+- **Agent-Server 支持**: 统一的 Agent-Server 模式，支持跨云跨网络部署
 - **控制面集成**: Django 侧提供 Agent 安装/卸载、生命周期管理、版本管理和批量操作，支持基于安装脚本的 `pending → online → offline/disabled` 状态机
 - ****Agent-Server 网关****: 负责维护与 Agent 的 WebSocket 连接，基于 Asynq 队列分发任务，并通过 **Redis Streams 将日志/结果/状态回传控制面**
 - **幂等与取消**: 控制面提供任务取消 API；Agent 侧维护“最近完成任务”缓存避免重复执行，Agent-Server 优先通过 WS 下发取消指令，失败时回退删除队列任务
@@ -287,17 +287,17 @@ cd agent/agent-go
 # 编译 Agent
 go build -o ops-job-agent cmd/agent/main.go
 
-# 运行 Agent (Direct 模式)
+# 运行 Agent (Agent-Server 模式)
 ./ops-job-agent --config configs/config.yaml
 
 # 或使用环境变量
-AGENT_MODE=direct \
-AGENT_CONTROL_PLANE_URL=http://localhost:8000 \
+AGENT_MODE=agent-server \
+AGENT_AGENT_SERVER_URL=ws://localhost:8080 \
 AGENT_TOKEN=your-token \
 ./ops-job-agent
 ```
 
-9. **启动 Agent-Server (可选，用于跨云跨网络场景)**
+9. **启动 Agent-Server**
 
 ```bash
 # 进入 Agent-Server 目录
@@ -412,17 +412,6 @@ CLOUD_ALIYUN_SECRET_KEY=your-secret-key
 CLOUD_TENCENT_SECRET_ID=your-secret-id
 CLOUD_TENCENT_SECRET_KEY=your-secret-key
 
-# Agent 配置 (Direct 模式)
-AGENT_MODE=direct
-AGENT_CONTROL_PLANE_URL=http://localhost:8000
-AGENT_TOKEN=your-agent-token
-AGENT_DIRECT_SHARED_SECRET=your-direct-shared-secret   # 直连模式 Bearer/HMAC 密钥（跨主机直连必配，未配仅 loopback）
-AGENT_NAME=agent-01
-AGENT_HTTP_ADDR=:8080
-AGENT_HEARTBEAT_INTERVAL=10
-AGENT_TASK_POLL_INTERVAL=5
-AGENT_MAX_CONCURRENT_TASKS=5
-
 # Agent 配置 (Agent-Server 模式)
 AGENT_MODE=agent-server
 AGENT_AGENT_SERVER_URL=ws://localhost:8080
@@ -430,6 +419,7 @@ AGENT_TOKEN=your-agent-token
 AGENT_NAME=agent-01
 AGENT_HTTP_ADDR=:8080
 AGENT_HEARTBEAT_INTERVAL=10
+AGENT_MAX_CONCURRENT_TASKS=5
 
 # Agent-Server 配置
 AGENT_SERVER_HOST=0.0.0.0
@@ -721,33 +711,9 @@ GET /api/dashboard/stats/
 
 ### Agent 连接模式
 
-#### Direct 模式（直连控制面）
+#### Agent-Server 模式
 
-适用于 Agent 和控制面在同一网络环境，可以直接访问的场景。
-
-**配置示例** (`agent/agent-go/configs/config.yaml`):
-
-```yaml
-mode: "direct"
-control_plane_url: "http://localhost:8000"
-agent_token: "your-token"
-agent_name: "agent-01"
-http_addr: ":8080"
-heartbeat_interval: 10
-task_poll_interval: 5
-max_concurrent_tasks: 5
-```
-
-**特点**:
-
-- Agent 直接通过 HTTP 与控制面通信
-- 使用轮询方式拉取任务（默认 5 秒间隔）
-- 日志通过 HTTP 批量推送到控制面
-- 适合内网环境或 VPN 连接
-
-#### Agent-Server 模式（通过 Agent-Server）
-
-适用于跨云、跨网络、NAT 等复杂网络环境。
+统一的 Agent 管理模式，支持跨云跨网络部署。
 
 **配置示例** (`agent/agent-go/configs/config.yaml`):
 
@@ -887,8 +853,8 @@ tail -f agent/agent-go/logs/agent.log
 # 检查 Agent 配置
 cat agent/agent-go/configs/config.yaml
 
-# 测试控制面连接 (Direct 模式)
-curl -H "Authorization: Bearer your-token" http://localhost:8000/api/agents/register/
+# 测试 Agent-Server 连接
+curl http://localhost:8080/health
 
 # 测试 Agent-Server 连接 (Agent-Server 模式)
 curl http://agent-server:8080/health

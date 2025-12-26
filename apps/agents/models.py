@@ -95,13 +95,18 @@ class AgentInstallRecord(models.Model):
         ('failed', '失败'),
     ]
 
+    INSTALL_TYPE_CHOICES = [
+        ('agent', '安装 Agent'),
+        ('agent-server', '安装 Agent-Server'),
+    ]
+
     INSTALL_MODE_CHOICES = [
-        ('direct', '直连模式'),
         ('agent-server', 'Agent-Server 模式'),
     ]
 
     host = models.ForeignKey(Host, on_delete=models.CASCADE, related_name='agent_install_records', verbose_name="主机")
     agent = models.ForeignKey(Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name='install_record', verbose_name="Agent")
+    install_type = models.CharField(max_length=20, choices=INSTALL_TYPE_CHOICES, default='agent', verbose_name="安装类型")
     install_mode = models.CharField(max_length=20, choices=INSTALL_MODE_CHOICES, default='agent-server', verbose_name="安装模式")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="状态")
     agent_version = models.CharField(max_length=50, blank=True, verbose_name="Agent版本")
@@ -110,6 +115,9 @@ class AgentInstallRecord(models.Model):
     ws_backoff_initial_ms = models.IntegerField(default=1000, verbose_name="WS初始退避(ms)")
     ws_backoff_max_ms = models.IntegerField(default=30000, verbose_name="WS最大退避(ms)")
     ws_max_retries = models.IntegerField(default=6, verbose_name="WS最大重试次数")
+    agent_server_listen_addr = models.CharField(max_length=50, default='0.0.0.0:8080', verbose_name="Agent-Server监听地址")
+    max_connections = models.IntegerField(default=1000, verbose_name="最大连接数")
+    heartbeat_timeout = models.IntegerField(default=60, verbose_name="心跳超时(秒)")
     package_id = models.IntegerField(null=True, blank=True, verbose_name="安装包ID")
     package_version = models.CharField(max_length=50, blank=True, verbose_name="安装包版本")
     installed_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="安装人")

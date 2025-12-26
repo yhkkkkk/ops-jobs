@@ -43,21 +43,21 @@ type TaskPayload struct {
 // NewTaskQueue 创建Agent端的任务队列管理器
 func NewTaskQueue(cfg *config.Config) (*TaskQueue, error) {
 	// 检查是否启用asynq
-	if !cfg.Asynq.Enabled || !cfg.Redis.Enabled {
+	if !cfg.Asynq.Enabled || !cfg.Redis.Asynq.Enabled {
 		return &TaskQueue{enabled: false}, nil
 	}
 
 	redisOpt := asynq.RedisClientOpt{
-		Addr:     cfg.Redis.Addr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		Addr:     cfg.Redis.Asynq.Addr,
+		Password: cfg.Redis.Asynq.Password,
+		DB:       cfg.Redis.Asynq.DB,
 	}
 
 	// 创建Redis客户端用于健康检查
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Addr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		Addr:     cfg.Redis.Asynq.Addr,
+		Password: cfg.Redis.Asynq.Password,
+		DB:       cfg.Redis.Asynq.DB,
 	})
 
 	// 测试连接

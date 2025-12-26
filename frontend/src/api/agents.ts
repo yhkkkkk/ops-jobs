@@ -145,12 +145,15 @@ export const agentsApi = {
   // 生成安装脚本
   generateInstallScript(data: {
     host_ids: number[]
-    install_mode?: 'direct' | 'agent-server'
+    install_type?: 'agent' | 'agent-server'
     agent_server_url?: string
     agent_server_backup_url?: string
     ws_backoff_initial_ms?: number
     ws_backoff_max_ms?: number
     ws_max_retries?: number
+    agent_server_listen_addr?: string
+    max_connections?: number
+    heartbeat_timeout?: number
     package_id?: number
     package_version?: string
   }): Promise<{
@@ -161,7 +164,7 @@ export const agentsApi = {
       script: string
       token: string
     }>>
-    install_mode: string
+    install_type: string
     agent_server_url: string
   }> {
     return http.post('/agents/generate_install_script/', data)
@@ -171,12 +174,15 @@ export const agentsApi = {
   batchInstall(data: {
     host_ids: number[]
     account_id?: number
-    install_mode?: 'direct' | 'agent-server'
+    install_type?: 'agent' | 'agent-server'
     agent_server_url?: string
     agent_server_backup_url?: string
     ws_backoff_initial_ms?: number
     ws_backoff_max_ms?: number
     ws_max_retries?: number
+    agent_server_listen_addr?: string
+    max_connections?: number
+    heartbeat_timeout?: number
     ssh_timeout?: number
     allow_reinstall?: boolean
     package_id?: number
@@ -203,7 +209,7 @@ export const agentsApi = {
     page_size?: number
     host_id?: number
     status?: string
-    install_mode?: string
+    install_type?: string
     search?: string
   }): Promise<PaginatedResponse<any>> {
     return http.get('/agents/install_records/', { params })
@@ -222,7 +228,7 @@ export const agentsApi = {
       agent_id: number
       install_record_id: number
     }>>
-    install_mode: string
+    install_type: string
     agent_server_url: string
     notice?: string
   }> {
@@ -239,7 +245,7 @@ export const agentsApi = {
       agent_token: string
       agent_id: number
     }>>
-    install_mode: string
+    install_type: string
     agent_server_url: string
     notice?: string
   }> {

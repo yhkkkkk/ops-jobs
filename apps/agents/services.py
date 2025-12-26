@@ -189,51 +189,93 @@ class AgentService:
         return ''
 
     @classmethod
-    def generate_install_script(cls, host: Host, agent_token: str, install_mode: str = 'agent-server',
-                                agent_server_url: str = '', agent_server_backup_url: str = '',
-                                download_url: str = '', ws_backoff_initial_ms: int = 1000,
-                                ws_backoff_max_ms: int = 30000, ws_max_retries: int = 6,
+    def generate_install_script(cls, host: Host, agent_token: str, install_type: str = 'agent',
+                                install_mode: str = 'agent-server', agent_server_url: str = '',
+                                agent_server_backup_url: str = '', download_url: str = '',
+                                ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
+                                ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
+                                max_connections: int = 1000, heartbeat_timeout: int = 60,
                                 package_version: str = None, package_id: int = None) -> Dict[str, str]:
         """
-        生成 Agent 安装脚本
+        生成 Agent 或 Agent-Server 安装脚本
         Args:
             host: 主机对象
             agent_token: Agent Token（用于 Agent 认证）
-            install_mode: 安装模式 ('direct' 或 'agent-server')
-            agent_server_url: Agent-Server 地址（agent-server 模式需要）
+            install_type: 安装类型 ('agent' 或 'agent-server')
+            install_mode: 安装模式 ('agent-server')
+            agent_server_url: Agent-Server 地址（agent 安装需要）
+            agent_server_listen_addr: Agent-Server 监听地址（agent-server 安装需要）
+            max_connections: 最大连接数（agent-server 安装需要）
+            heartbeat_timeout: 心跳超时（agent-server 安装需要）
             download_url: Agent 二进制下载地址
         Returns:
             Dict[str, str]: 包含不同操作系统的安装脚本
         """
         scripts = {}
-        
-        # agent-server 模式必须显式提供主地址
-        if install_mode == 'agent-server' and not agent_server_url:
-            raise ValueError("agent_server_url is required in agent-server mode")
-        agent_server_backup_url = agent_server_backup_url or ''
-        # clamp retry params to safe bounds
-        ws_backoff_initial_ms = max(100, min(ws_backoff_initial_ms or 1000, 60000))
-        ws_backoff_max_ms = max(1000, min(ws_backoff_max_ms or 30000, 600000))
-        ws_max_retries = max(1, min(ws_max_retries or 6, 20))
+
+        if install_type == 'agent':
+            # Agent 安装配置
+            if not agent_server_url:
+                raise ValueError("agent_server_url is required for agent installation")
+            agent_server_backup_url = agent_server_backup_url or ''
+            ws_backoff_initial_ms = max(100, min(ws_backoff_initial_ms or 1000, 60000))
+            ws_backoff_max_ms = max(1000, min(ws_backoff_max_ms or 30000, 600000))
+            ws_max_retries = max(1, min(ws_max_retries or 6, 20))
+        elif install_type == 'agent-server':
+            # Agent-Server 安装配置
+            max_connections = max(100, min(max_connections or 1000, 10000))
+            heartbeat_timeout = max(30, min(heartbeat_timeout or 60, 300))
+        else:
+            raise ValueError(f"Unsupported install_type: {install_type}")
         
         if not download_url:
             # 使用版本管理获取下载地址（生成脚本时必须验证安装包存在）
             download_url = cls.get_download_url(host, package_version=package_version, package_id=package_id, raise_if_not_found=True)
         
+        # 根据安装类型生成不同的配置
+        if install_type == 'agent':
+            config_content = f"""mode: "agent-server"
+agent_server_url: "{agent_server_url}"
+agent_server_backup_url: "{agent_server_backup_url}"
+ws_backoff_initial_ms: {ws_backoff_initial_ms}
+ws_backoff_max_ms: {ws_backoff_max_ms}
+ws_max_retries: {ws_max_retries}
+agent_token: "{agent_token}"
+"""
+            binary_name = "ops-job-agent"
+            service_name = "ops-job-agent"
+            install_dir = "/opt/ops-job-agent"
+        else:  # agent-server
+            config_content = f"""server:
+  host: "{agent_server_listen_addr.split(':')[0]}"
+  port: {agent_server_listen_addr.split(':')[1]}
+
+control_plane:
+  url: "{agent_server_url or 'http://localhost:8000'}"
+  token: "{agent_token}"
+
+agent:
+  max_connections: {max_connections}
+  heartbeat_timeout: {heartbeat_timeout}s
+  cleanup_interval: 30s
+
+logging:
+  level: "info"
+  file: "logs/agent-server.log"
+"""
+            binary_name = "ops-job-agent-server"
+            service_name = "ops-job-agent-server"
+            install_dir = "/opt/ops-job-agent-server"
+
         # Linux 安装脚本
         linux_script = f"""#!/bin/bash
 set -e
 
 # 配置
-AGENT_SERVER_URL="{agent_server_url}"
-AGENT_SERVER_BACKUP_URL="{agent_server_backup_url}"
-WS_BACKOFF_INITIAL_MS="{ws_backoff_initial_ms}"
-WS_BACKOFF_MAX_MS="{ws_backoff_max_ms}"
-WS_MAX_RETRIES="{ws_max_retries}"
 AGENT_TOKEN="{agent_token}"
-INSTALL_DIR="/opt/ops-job-agent"
-BINARY_NAME="ops-job-agent"
-SERVICE_NAME="ops-job-agent"
+INSTALL_DIR="{install_dir}"
+BINARY_NAME="{binary_name}"
+SERVICE_NAME="{service_name}"
 DOWNLOAD_URL="{download_url}"
 CONFIG_DIR="$INSTALL_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
@@ -259,22 +301,9 @@ if [ -f "$CONFIG_FILE" ]; then
     cp "$CONFIG_FILE" "$CONFIG_FILE.$(date +%Y%m%d%H%M%S).bak"
 fi
 
-# 创建配置文件 ($INSTALL_DIR/config/config.yaml)
+# 创建配置文件
 cat > "$CONFIG_FILE" <<EOF
-mode: {install_mode}
-"""
-        if install_mode == 'agent-server':
-            linux_script += """agent_server_url: $AGENT_SERVER_URL
-agent_server_backup_url: $AGENT_SERVER_BACKUP_URL
-ws_backoff_initial_ms: $WS_BACKOFF_INITIAL_MS
-ws_backoff_max_ms: $WS_BACKOFF_MAX_MS
-ws_max_retries: $WS_MAX_RETRIES
-"""
-        else:
-            cp_url = agent_server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-            linux_script += f"""control_plane_url: {cp_url}
-"""
-        linux_script += """agent_token: "$AGENT_TOKEN"
+{config_content}EOF
 log_level: info
 EOF
 
@@ -312,11 +341,14 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
 
     @classmethod
     def batch_install_agents(cls, host_ids: list, user, account_id: int = None,
-                             install_mode: str = 'agent-server', agent_server_url: str = '',
-                             agent_server_backup_url: str = '', download_url: str = '', install_task_id: str = None,
+                             install_type: str = 'agent', install_mode: str = 'agent-server',
+                             agent_server_url: str = '', agent_server_backup_url: str = '',
+                             download_url: str = '', install_task_id: str = None,
                              package_version: str = None, package_id: int = None,
                              ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
-                             ws_max_retries: int = 6, ssh_timeout: int = 300, allow_reinstall: bool = False) -> Dict[str, Any]:
+                             ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
+                             max_connections: int = 1000, heartbeat_timeout: int = 60,
+                             ssh_timeout: int = 300, allow_reinstall: bool = False) -> Dict[str, Any]:
         """
         批量安装 Agent（通过 SSH）
         
@@ -424,6 +456,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                 scripts = cls.generate_install_script(
                     host=host,
                     agent_token=agent_token,
+                    install_type=install_type,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
                     agent_server_backup_url=agent_server_backup_url,
@@ -431,6 +464,9 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     ws_backoff_initial_ms=ws_backoff_initial_ms,
                     ws_backoff_max_ms=ws_backoff_max_ms,
                     ws_max_retries=ws_max_retries,
+                    agent_server_listen_addr=agent_server_listen_addr,
+                    max_connections=max_connections,
+                    heartbeat_timeout=heartbeat_timeout,
                     package_version=package_version,
                     package_id=package_id
                 )

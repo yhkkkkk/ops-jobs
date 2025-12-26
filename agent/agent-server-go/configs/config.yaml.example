@@ -25,8 +25,8 @@ logging:
   max_age: 7     # days
 
 log_stream:
-  enabled: true           # 将日志写入 Redis Stream（统一消费/ACK）
-  key: "agent_logs"       # 日志流 key
+  enabled: true           # 将日志写入 Redis Stream（统一流，由 Python 消费者转发到前端 SSE）
+  key: "agent_logs"       # 统一日志流 key（Python consume_agent_logs.py 消费此 key）
 
 result_stream:
   enabled: true           # 将任务结果写入 Redis Stream
