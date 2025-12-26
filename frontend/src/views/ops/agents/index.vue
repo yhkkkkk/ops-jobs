@@ -333,6 +333,18 @@
         <a-tab-pane key="select" title="选择主机">
           <div class="install-step">
             <a-form :model="installForm" layout="vertical">
+              <a-form-item label="安装类型">
+                <a-radio-group v-model="installForm.install_type" @change="fetchAvailableHosts">
+                  <a-radio value="agent">安装 Agent</a-radio>
+                  <a-radio value="agent-server">安装 Agent-Server</a-radio>
+                </a-radio-group>
+                <template #extra>
+                  <div style="color: #86909c; font-size: 12px;">
+                    选择安装类型后，主机列表会自动刷新并显示符合条件的主机
+                  </div>
+                </template>
+              </a-form-item>
+
               <a-form-item label="选择主机">
                 <a-select
                   v-model="installForm.host_ids"
@@ -355,12 +367,6 @@
                 <template #extra>
                   <a-link @click="fetchAvailableHosts">刷新主机列表</a-link>
                 </template>
-              </a-form-item>
-              <a-form-item label="安装类型">
-                <a-radio-group v-model="installForm.install_type">
-                  <a-radio value="agent">安装 Agent</a-radio>
-                  <a-radio value="agent-server">安装 Agent-Server</a-radio>
-                </a-radio-group>
               </a-form-item>
               <template v-if="installForm.install_type === 'agent'">
                 <a-form-item label="Agent-Server 地址">
@@ -1288,13 +1294,21 @@ const handlePackageChange = (packageId: number | undefined) => {
   }
 }
 
-// 获取可用主机列表（未安装 Agent 的主机）
+// 获取可用主机列表（根据安装类型动态过滤）
 const fetchAvailableHosts = async () => {
   try {
     const response = await hostApi.getHosts({ page_size: 1000 })
-    // 过滤掉已有 Agent 的主机
-    const agentHostIds = new Set(agents.value.map(a => a.host.id))
-    availableHosts.value = (response.results || []).filter((h: any) => !agentHostIds.has(h.id))
+
+    const allHosts = (response.results || [])
+
+    // 如果安装类型为 'agent'，需要过滤掉已经安装过 Agent 的主机
+    if (installForm.install_type === 'agent') {
+      const agentHostIds = new Set(agents.value.map(a => a.host.id))
+      availableHosts.value = allHosts.filter((h: any) => !agentHostIds.has(h.id))
+    } else {
+      // 安装 Agent-Server 时显示所有主机（包含已有 Agent 的主机），用户可选择安装 Agent-Server 的主机
+      availableHosts.value = allHosts
+    }
   } catch (error) {
     console.error('获取主机列表失败:', error)
     Message.error('获取主机列表失败')
