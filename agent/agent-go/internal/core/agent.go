@@ -19,9 +19,7 @@ import (
 	"ops-job-agent/internal/executor"
 	"ops-job-agent/internal/httpclient"
 	"ops-job-agent/internal/logger"
-	"ops-job-agent/internal/logstream"
 	"ops-job-agent/internal/metrics"
-	"ops-job-agent/internal/server"
 	"ops-job-agent/internal/system"
 	"ops-job-agent/internal/taskqueue"
 	wsclient "ops-job-agent/internal/websocket"
@@ -30,7 +28,7 @@ import (
 // Agent 是 Agent 进程的核心对象，负责注册、心跳、拉任务等
 type Agent struct {
 	cfg            *config.Config
-	client         *httpclient.Client   // HTTP 客户端（direct 模式）
+	client         *httpclient.Client   // HTTP 客户端（用于注册）
 	wsClient       *wsclient.Client     // WebSocket 客户端（agent-server 模式）
 	taskQueue      *taskqueue.TaskQueue // asynq任务队列（可选）
 	info           *AgentInfo
@@ -43,7 +41,6 @@ type Agent struct {
 	scriptExecutor *executor.ScriptExecutor
 	fileExecutor   *executor.FileTransferExecutor
 	taskSemaphore  semaphore.Semaphore              // 控制并发任务数
-	logStream      *logstream.LogStream             // 日志流管理器（direct 模式）
 	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
 	tasksLock      sync.RWMutex                     // 任务映射锁
 	wsURL          string
@@ -73,20 +70,9 @@ func NewAgent(cfg *config.Config) *Agent {
 	// 创建http客户端
 	httpClient := httpclient.NewClient(cfg.ControlPlaneURL, cfg.AgentToken)
 
-	// 创建日志流管理器（批量推送）
-	batchSize := cfg.LogBatchSize
-	if batchSize <= 0 {
-		batchSize = 10
-	}
-	flushInterval := time.Duration(cfg.LogFlushInterval) * time.Millisecond
-	if flushInterval <= 0 {
-		flushInterval = 200 * time.Millisecond
-	}
-	logStream := logstream.NewLogStream(httpClient, "", batchSize, flushInterval)
-
 	// 创建asynq任务队列
 	var taskQueue *taskqueue.TaskQueue
-	if cfg.Asynq.Enabled && cfg.Redis.Enabled {
+	if cfg.Asynq.Enabled && cfg.Redis.Asynq.Enabled {
 		var err error
 		taskQueue, err = taskqueue.NewTaskQueue(cfg)
 		if err != nil {
@@ -108,7 +94,6 @@ func NewAgent(cfg *config.Config) *Agent {
 		scriptExecutor: scriptExec,
 		fileExecutor:   fileExec,
 		taskSemaphore:  taskSemaphore,
-		logStream:      logStream,
 		runningTasks:   make(map[string]*executor.RunningTask),
 		completedTasks: make(map[string]time.Time),
 	}
@@ -167,23 +152,9 @@ func (a *Agent) Start() error {
 	a.wg.Add(1)
 	go a.heartbeatLoop()
 
-	// 根据模式启动不同的接入方式
-	if a.cfg.Mode == "agent-server" {
-		// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
-		if err := a.ensureWebSocketConnection(); err != nil {
-			return err
-		}
-	} else {
-		// Direct 模式：启动 Gin HTTP Server，作为控制面直连入口 + 本地管理接口
-		srv := server.New(a.cfg.HTTPAddr, a.cfg.AgentToken)
-		srv.SetTaskService(a)
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			if err := srv.Start(); err != nil {
-				logger.GetLogger().WithError(err).Error("agent http server exited with error")
-			}
-		}()
+	// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
+	if err := a.ensureWebSocketConnection(); err != nil {
+		return err
 	}
 
 	// 订阅配置变更（动态调整部分运行参数，如心跳间隔、日志级别）
@@ -196,10 +167,6 @@ func (a *Agent) Start() error {
 // Stop 优雅关闭
 func (a *Agent) Stop() {
 	a.cancel()
-	// 停止日志流（direct 模式）
-	if a.logStream != nil {
-		a.logStream.Stop()
-	}
 	// HTTP Server 会在 ctx 取消后优雅退出
 	// 断开 WebSocket 连接（agent-server 模式）
 	if a.wsClient != nil {
@@ -250,33 +217,13 @@ func (a *Agent) heartbeatLoop() {
 			system := collectSystemInfo()
 			a.system = system
 
-			if a.cfg.Mode == "agent-server" {
-				// Agent-Server 模式：通过 WebSocket 发送心跳
-				if a.wsClient != nil && a.wsClient.IsConnected() {
-					if err := a.wsClient.SendHeartbeat(time.Now().Unix(), &system); err != nil {
-						logger.GetLogger().WithError(err).Error("websocket heartbeat failed")
-						// 尝试重连
-						if err := a.wsClient.Connect(a.info.ID); err != nil {
-							logger.GetLogger().WithError(err).Error("websocket reconnect failed")
-						}
-					}
-				}
-			} else {
-				// Direct 模式：通过 HTTP 发送心跳
-				payload := HeartbeatPayload{
-					Timestamp: time.Now().Unix(),
-					System:    &system,
-				}
-				if err := a.client.Heartbeat(a.ctx, a.info.ID, payload); err != nil {
-					logger.GetLogger().WithError(err).Error("heartbeat failed")
-					// 心跳失败时尝试重新获取 Agent ID
-					if a.info == nil || a.info.ID == "" {
-						agentID, err := a.getAgentIDFromInfo()
-						if err != nil {
-							logger.GetLogger().WithError(err).Error("re-get agent ID failed")
-						} else {
-							a.info.ID = agentID
-						}
+			// Agent-Server 模式：通过 WebSocket 发送心跳
+			if a.wsClient != nil && a.wsClient.IsConnected() {
+				if err := a.wsClient.SendHeartbeat(time.Now().Unix(), &system); err != nil {
+					logger.GetLogger().WithError(err).Error("websocket heartbeat failed")
+					// 尝试重连
+					if err := a.wsClient.Connect(a.info.ID); err != nil {
+						logger.GetLogger().WithError(err).Error("websocket reconnect failed")
 					}
 				}
 			}
@@ -368,47 +315,37 @@ func (a *Agent) createLogCallback(taskID string) func(string) {
 		// 记录到本地日志
 		logger.GetLogger().WithField("task_id", taskID).Info(logLine)
 
-		if a.cfg.Mode == "agent-server" {
-			logEntry := api.LogEntry{
-				Timestamp: time.Now().Unix(),
-				Level:     "info",
-				Content:   logLine,
-				Stream:    "stdout",
-				TaskID:    taskID,
-			}
+		// 通过 WebSocket 发送日志到 Agent-Server
+		logEntry := api.LogEntry{
+			Timestamp: time.Now().Unix(),
+			Level:     "info",
+			Content:   logLine,
+			Stream:    "stdout",
+			TaskID:    taskID,
+		}
 
-			// Agent-Server 模式：优先直发，断线则进入 outbox 本地缓冲
-			if a.wsClient != nil && a.wsClient.IsConnected() {
-				if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
-					logger.GetLogger().WithError(err).Error("send log via websocket failed")
-					if a.wsOutbox != nil {
-						a.wsOutbox.Enqueue(wsclient.Message{
-							Type:      "log",
-							Timestamp: time.Now().UnixMilli(),
-							TaskID:    taskID,
-							Logs:      []api.LogEntry{logEntry},
-						})
-					}
+		// 优先直发，断线则进入 outbox 本地缓冲
+		if a.wsClient != nil && a.wsClient.IsConnected() {
+			if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
+				logger.GetLogger().WithError(err).Error("send log via websocket failed")
+				if a.wsOutbox != nil {
+					a.wsOutbox.Enqueue(wsclient.Message{
+						Type:      "log",
+						Timestamp: time.Now().UnixMilli(),
+						TaskID:    taskID,
+						Logs:      []api.LogEntry{logEntry},
+					})
 				}
-				return
 			}
-			if a.wsOutbox != nil {
-				a.wsOutbox.Enqueue(wsclient.Message{
-					Type:      "log",
-					Timestamp: time.Now().UnixMilli(),
-					TaskID:    taskID,
-					Logs:      []api.LogEntry{logEntry},
-				})
-			}
-		} else {
-			// Direct 模式：通过 HTTP 批量推送
-			if a.logStream != nil && a.info != nil {
-				a.logStream.PushLog(taskID, logstream.LogEntry{
-					Timestamp: time.Now().Unix(),
-					Level:     "info",
-					Content:   logLine,
-				})
-			}
+			return
+		}
+		if a.wsOutbox != nil {
+			a.wsOutbox.Enqueue(wsclient.Message{
+				Type:      "log",
+				Timestamp: time.Now().UnixMilli(),
+				TaskID:    taskID,
+				Logs:      []api.LogEntry{logEntry},
+			})
 		}
 	}
 }
@@ -462,52 +399,34 @@ func (a *Agent) recordTaskMetrics(result *api.TaskResult, duration time.Duration
 
 // reportTaskResult 上报任务结果
 func (a *Agent) reportTaskResult(result *api.TaskResult) {
-	if a.cfg.Mode == "agent-server" {
-		// Agent-Server 模式：通过 WebSocket 发送结果
-		if a.wsClient != nil && a.wsClient.IsConnected() {
-			if err := a.wsClient.SendTaskResult(result); err != nil {
-				logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result via websocket failed")
-				if a.wsOutbox != nil {
-					a.wsOutbox.Enqueue(wsclient.Message{
-						Type:      "task_result",
-						Timestamp: time.Now().UnixMilli(),
-						TaskID:    result.TaskID,
-						Result:    result,
-					})
-				}
-			} else {
-				logger.GetLogger().WithFields(map[string]interface{}{
-					"task_id": result.TaskID,
-					"status":  result.Status,
-				}).Info("task completed")
+	// Agent-Server 模式：通过 WebSocket 发送结果
+	if a.wsClient != nil && a.wsClient.IsConnected() {
+		if err := a.wsClient.SendTaskResult(result); err != nil {
+			logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result via websocket failed")
+			if a.wsOutbox != nil {
+				a.wsOutbox.Enqueue(wsclient.Message{
+					Type:      "task_result",
+					Timestamp: time.Now().UnixMilli(),
+					TaskID:    result.TaskID,
+					Result:    result,
+				})
 			}
-			return
+		} else {
+			logger.GetLogger().WithFields(map[string]interface{}{
+				"task_id": result.TaskID,
+				"status":  result.Status,
+			}).Info("task completed")
 		}
-		// 断线期间先落到 outbox，等待重连后补传
-		if a.wsOutbox != nil {
-			a.wsOutbox.Enqueue(wsclient.Message{
-				Type:      "task_result",
-				Timestamp: time.Now().UnixMilli(),
-				TaskID:    result.TaskID,
-				Result:    result,
-			})
-		}
-	} else {
-		// Direct 模式：通过 HTTP 发送结果
-		if a.info != nil {
-			if err := a.client.ReportResult(a.ctx, a.info.ID, *result); err != nil {
-				logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result error")
-			} else {
-				logger.GetLogger().WithFields(map[string]interface{}{
-					"task_id": result.TaskID,
-					"status":  result.Status,
-				}).Info("task completed")
-			}
-		}
-		// 任务完成后，清理日志流缓冲区
-		if a.logStream != nil {
-			a.logStream.RemoveTask(result.TaskID)
-		}
+		return
+	}
+	// 断线期间先落到 outbox，等待重连后补传
+	if a.wsOutbox != nil {
+		a.wsOutbox.Enqueue(wsclient.Message{
+			Type:      "task_result",
+			Timestamp: time.Now().UnixMilli(),
+			TaskID:    result.TaskID,
+			Result:    result,
+		})
 	}
 }
 
@@ -566,7 +485,7 @@ func (a *Agent) SubmitTask(task *TaskSpec) {
 	go a.executeTask(task)
 }
 
-// register 向控制面或 Agent-Server 注册自身
+// register 向 Agent-Server 注册自身
 func (a *Agent) register() error {
 	info := AgentInfo{
 		Name:   a.cfg.AgentName,
@@ -574,65 +493,29 @@ func (a *Agent) register() error {
 		System: &a.system,
 	}
 
-	if a.cfg.Mode == "agent-server" {
-		// Agent-Server 模式：向 Agent-Server 注册
-		httpURL, err := deriveAgentServerHTTPURL(a.cfg.AgentServerURL)
-		if err != nil {
-			return err
-		}
-		tempClient := httpclient.NewClient(httpURL, a.cfg.AgentToken)
-		registered, err := tempClient.Register(a.ctx, info)
-		if err != nil {
-			return fmt.Errorf("register to agent-server failed: %w", err)
-		}
-		a.info = registered
-		a.wsURL = registered.WSURL
-		if a.wsURL == "" {
-			a.wsURL = a.cfg.AgentServerURL
-		}
-		if a.wsClient != nil {
-			a.wsClient.SetOverrideURL(a.wsURL)
-		}
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id":   a.info.ID,
-			"agent_name": a.info.Name,
-			"mode":       "agent-server",
-		}).Info("agent registered to agent-server")
-	} else {
-		// Direct 模式：直接使用配置文件中的 agent_token（已经是正式 token）
-		// 通过 /api/agents/me/ 接口获取 Agent 信息（包括 ID）
-		agentID, err := a.getAgentIDFromInfo()
-		if err != nil {
-			return fmt.Errorf("get agent ID failed: %w", err)
-		}
-
-		a.info = &AgentInfo{
-			ID:     agentID,
-			Name:   a.cfg.AgentName,
-			Labels: a.cfg.AgentLabels,
-			System: &a.system,
-		}
-
-		// 更新日志流的 agent ID
-		if a.logStream != nil {
-			// 重新创建日志流以更新 agent ID
-			a.logStream.Stop()
-			batchSize := a.cfg.LogBatchSize
-			if batchSize <= 0 {
-				batchSize = 10
-			}
-			flushInterval := time.Duration(a.cfg.LogFlushInterval) * time.Millisecond
-			if flushInterval <= 0 {
-				flushInterval = 200 * time.Millisecond
-			}
-			a.logStream = logstream.NewLogStream(a.client, a.info.ID, batchSize, flushInterval)
-		}
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id":   a.info.ID,
-			"agent_name": a.info.Name,
-			"mode":       "direct",
-		}).Info("agent initialized (using agent_token directly)")
+	// Agent-Server 模式：向 Agent-Server 注册
+	httpURL, err := deriveAgentServerHTTPURL(a.cfg.AgentServerURL)
+	if err != nil {
+		return err
 	}
+	tempClient := httpclient.NewClient(httpURL, a.cfg.AgentToken)
+	registered, err := tempClient.Register(a.ctx, info)
+	if err != nil {
+		return fmt.Errorf("register to agent-server failed: %w", err)
+	}
+	a.info = registered
+	a.wsURL = registered.WSURL
+	if a.wsURL == "" {
+		a.wsURL = a.cfg.AgentServerURL
+	}
+	if a.wsClient != nil {
+		a.wsClient.SetOverrideURL(a.wsURL)
+	}
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id":   a.info.ID,
+		"agent_name": a.info.Name,
+		"mode":       "agent-server",
+	}).Info("agent registered to agent-server")
 	return nil
 }
 
@@ -871,35 +754,6 @@ func (a *Agent) onConfigChanged(newCfg *config.Config) {
 	if newCfg.LogLevel != "" {
 		logger.SetLevel(newCfg.LogLevel)
 	}
-}
-
-// getAgentIDFromInfo 通过 Agent 信息接口获取 Agent ID
-func (a *Agent) getAgentIDFromInfo() (string, error) {
-	// 通过 /api/agents/me/ 接口获取 Agent 信息
-	var resp struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		Status string `json:"status"`
-	}
-
-	req := a.client.GetClient().R().
-		SetContext(a.ctx).
-		SetResult(&resp)
-
-	respData, err := req.Get("/api/agents/me/")
-	if err != nil {
-		return "", fmt.Errorf("get agent info: %w", err)
-	}
-
-	if respData.IsError() {
-		return "", fmt.Errorf("get agent info: status=%d", respData.StatusCode())
-	}
-
-	if resp.ID == "" {
-		return "", fmt.Errorf("agent ID not found in response")
-	}
-
-	return resp.ID, nil
 }
 
 func listIPs() []string {

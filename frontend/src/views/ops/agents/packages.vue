@@ -67,6 +67,22 @@
             <a-option value="386">i386</a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="存储方式">
+          <a-select
+            v-model="searchForm.storage_type"
+            placeholder="请选择存储方式"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 120px"
+          >
+            <a-option value="oss">阿里云OSS</a-option>
+            <a-option value="s3">AWS S3</a-option>
+            <a-option value="cos">腾讯云COS</a-option>
+            <a-option value="minio">MinIO</a-option>
+            <a-option value="rustfs">RustFS</a-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="状态">
           <a-select
             v-model="searchForm.is_active"
@@ -107,6 +123,12 @@
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
+        <template #storage_type="{ record }">
+          <a-tag :color="getStorageTypeColor(record.storage_type)">
+            {{ getStorageTypeDisplay(record.storage_type) }}
+          </a-tag>
+        </template>
+
         <template #file_size="{ record }">
           {{ formatFileSize(record.file_size) }}
         </template>
@@ -193,7 +215,6 @@
 
         <a-form-item label="存储方式" field="storage_type" v-if="!isEdit">
           <a-radio-group v-model="packageForm.storage_type">
-            <a-radio value="local">本地存储</a-radio>
             <a-radio value="oss">阿里云OSS</a-radio>
             <a-radio value="s3">AWS S3</a-radio>
             <a-radio value="cos">腾讯云COS</a-radio>
@@ -203,6 +224,20 @@
           <template #extra>
             <div style="color: #86909c; font-size: 12px;">
               选择文件存储方式，对象存储需要在系统配置中设置相关参数
+            </div>
+          </template>
+        </a-form-item>
+
+        <!-- 编辑时的存储方式显示 -->
+        <a-form-item label="存储方式" v-if="isEdit">
+          <a-input :model-value="getStorageTypeDisplay(currentPackage?.storage_type)" readonly>
+            <template #prefix>
+              <IconLock />
+            </template>
+          </a-input>
+          <template #extra>
+            <div style="color: #ff7d00; font-size: 12px;">
+              ⚠️ 更新时无法修改存储方式，如需更改存储方式请重新上传安装包
             </div>
           </template>
         </a-form-item>
@@ -314,6 +349,7 @@ import {
   IconUpload,
   IconFile,
   IconClose,
+  IconLock,
 } from '@arco-design/web-vue/es/icon'
 import { packageApi, type AgentPackage } from '@/api/agents'
 import type { FileItem } from '@arco-design/web-vue/es/upload'
@@ -325,6 +361,7 @@ const searchForm = reactive({
   search: '',
   os_type: '',
   arch: '',
+  storage_type: '',
   is_active: undefined as boolean | undefined,
 })
 
@@ -343,7 +380,7 @@ const packageForm = reactive({
   os_type: '' as 'linux' | 'windows' | 'darwin' | '',
   arch: '' as 'amd64' | 'arm64' | '386' | '',
   file: null as File | null,
-  storage_type: 'local' as 'local' | 'oss' | 's3' | 'cos' | 'minio' | 'rustfs',
+  storage_type: 'oss' as 'oss' | 's3' | 'cos' | 'minio' | 'rustfs',
   description: '',
   is_active: true,
   is_default: false,
@@ -399,9 +436,15 @@ const columns = ref([
     width: 100,
   },
   {
+    title: '存储方式',
+    dataIndex: 'storage_type_display',
+    width: 120,
+    slotName: 'storage_type',
+  },
+  {
     title: '文件名',
     dataIndex: 'file_name',
-    width: 150,
+    width: 100,
     ellipsis: true,
     tooltip: true,
   },
@@ -459,6 +502,9 @@ const fetchPackages = async () => {
     if (searchForm.arch) {
       params.arch = searchForm.arch
     }
+    if (searchForm.storage_type) {
+      params.storage_type = searchForm.storage_type
+    }
     if (searchForm.is_active !== undefined) {
       params.is_active = searchForm.is_active
     }
@@ -484,6 +530,7 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.os_type = ''
   searchForm.arch = ''
+  searchForm.storage_type = ''
   searchForm.is_active = undefined
   handleSearch()
 }
@@ -514,15 +561,16 @@ const handleEdit = (record: AgentPackage) => {
   isEdit.value = true
   currentPackage.value = record
   fileList.value = []
-  
+
   packageForm.version = record.version
   packageForm.os_type = record.os_type
   packageForm.arch = record.arch
+  packageForm.storage_type = record.storage_type || ''  // 设置当前存储类型，用于显示
   packageForm.description = record.description || ''
   packageForm.is_active = record.is_active
   packageForm.is_default = record.is_default
   packageForm.file = null
-  
+
   packageModalVisible.value = true
 }
 
@@ -532,7 +580,7 @@ const resetPackageForm = () => {
   packageForm.os_type = ''
   packageForm.arch = ''
   packageForm.file = null
-  packageForm.storage_type = 'local'
+  packageForm.storage_type = 'oss'
   packageForm.description = ''
   packageForm.is_active = true
   packageForm.is_default = false
@@ -559,7 +607,7 @@ const handleFileChange = (files: FileItem[]) => {
 }
 
 // 移除文件
-const handleFileRemove = (index?: number) => {
+const handleFileRemove = () => {
   fileList.value = []
   packageForm.file = null
 }
@@ -588,7 +636,10 @@ const handleSubmitPackage = async () => {
     if (packageForm.file) {
       formData.append('file', packageForm.file)
     }
-    formData.append('storage_type', packageForm.storage_type)
+    // 更新时不传递storage_type，保持原有存储类型
+    if (!isEdit.value) {
+      formData.append('storage_type', packageForm.storage_type)
+    }
     if (packageForm.description) {
       formData.append('description', packageForm.description)
     }
@@ -684,6 +735,30 @@ const formatDateTime = (dateTime: string): string => {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+// 获取存储方式显示名称
+const getStorageTypeDisplay = (storageType: string): string => {
+  const typeMap: Record<string, string> = {
+    oss: '阿里云OSS',
+    s3: 'AWS S3',
+    cos: '腾讯云COS',
+    minio: 'MinIO',
+    rustfs: 'RustFS',
+  }
+  return typeMap[storageType] || storageType
+}
+
+// 获取存储方式标签颜色
+const getStorageTypeColor = (storageType: string): string => {
+  const colorMap: Record<string, string> = {
+    oss: 'orange',
+    s3: 'purple',
+    cos: 'green',
+    minio: 'cyan',
+    rustfs: 'magenta',
+  }
+  return colorMap[storageType] || 'gray'
 }
 
 onMounted(() => {

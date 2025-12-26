@@ -218,12 +218,11 @@ class AgentPackage(models.Model):
         verbose_name="存储路径",
         help_text="文件在存储中的路径，用于动态生成下载URL"
     )
-    file = models.FileField(
-        upload_to=agent_package_upload_path,
+    file_name = models.CharField(
+        max_length=255,
         blank=True,
-        null=True,
-        verbose_name="文件",
-        help_text="本地存储文件，如果使用对象存储则留空"
+        verbose_name="文件名",
+        help_text="文件的原始名称"
     )
     file_size = models.BigIntegerField(verbose_name="文件大小（字节）")
     md5_hash = models.CharField(max_length=32, blank=True, verbose_name="MD5哈希值")
@@ -268,14 +267,11 @@ class AgentPackage(models.Model):
             下载url
         """
         from apps.agents.storage_service import StorageService
-        
-        # 如果没有存储路径，尝试从file字段获取
+
+        # 如果没有存储路径，返回空
         if not self.storage_path:
-            if self.file:
-                # 本地存储
-                return self.file.url
             return ''
-        
+
         # 根据存储类型生成url
         import logging
         logger_instance = logging.getLogger(__name__)
@@ -283,7 +279,7 @@ class AgentPackage(models.Model):
         if backend is None:
             logger_instance.error(f"无法获取存储后端: {self.storage_type}")
             return ''
-        
+
         url = backend.generate_url(self.storage_path, expires_in=expires_in)
         return url or ''
 

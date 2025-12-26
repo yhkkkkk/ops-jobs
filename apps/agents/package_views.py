@@ -122,16 +122,50 @@ def _run_package_validation(package_id: int) -> None:
     )
 
     try:
-        # 目前仅对本地存储做深度结构校验，其它存储类型后续可扩展为预下载到本地再校验
-        file_path = None
-        if pkg.file and pkg.file.name:
-            try:
-                file_path = pkg.file.path
-            except Exception:  # pragma: no cover - 防御性
-                file_path = None
+        # 对所有存储类型进行深度结构校验
+        from apps.agents.storage_service import StorageServiceFactory
+        import tempfile
 
-        if pkg.storage_type == "local" and file_path:
+        file_path = None
+        temp_file = None
+
+        try:
+            # 获取存储后端
+            backend = StorageServiceFactory.get_backend(pkg.storage_type)
+            if backend is None:
+                raise ValueError(f"无法获取存储后端: {pkg.storage_type}")
+
+            # 获取文件流
+            file_obj = backend.get_file(pkg.storage_path)
+            if file_obj is None:
+                raise ValueError("无法获取文件内容")
+
+            # 创建临时文件进行校验
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as temp_file:
+                # 将文件内容写入临时文件
+                if hasattr(file_obj, 'read'):
+                    # 如果是文件流对象
+                    while True:
+                        chunk = file_obj.read(8192)
+                        if not chunk:
+                            break
+                        temp_file.write(chunk)
+                else:
+                    # 如果是bytes对象
+                    temp_file.write(file_obj)
+
+                file_path = temp_file.name
+
+            # 进行文件结构校验
             _validate_compressed_package(file_path, pkg.os_type)
+
+        finally:
+            # 清理临时文件
+            if temp_file and file_path and os.path.exists(file_path):
+                try:
+                    os.unlink(file_path)
+                except Exception:
+                    pass  # 忽略清理失败的错误
 
         # 校验通过
         AgentPackage.objects.filter(id=package_id).update(
@@ -165,7 +199,7 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
     serializer_class = AgentPackageSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['version', 'os_type', 'arch', 'is_active', 'is_default']
+    filterset_fields = ['version', 'os_type', 'arch', 'storage_type', 'is_active', 'is_default']
     pagination_class = CustomPagination
 
     def get_queryset(self):
@@ -216,31 +250,17 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                 # 获取存储后端并上传文件
                 backend = StorageServiceFactory.get_backend(storage_type)
                 if backend is None:
-                    logger.warning(f"无法获取存储后端: {storage_type}，将使用本地存储")
-                    storage_type = 'local'
-                    backend = StorageServiceFactory.get_backend('local')
-                
+                    raise ValueError(f"无法获取存储后端: {storage_type}")
+
                 # 上传文件
-                if storage_type == 'local':
-                    # 本地存储由Django FileField处理，不需要手动上传
-                    pass
-                else:
-                    # 对象存储，上传文件
-                    success, error = backend.upload_file(file_obj, storage_path)
-                    if not success:
-                        logger.warning(f"对象存储上传失败: {error}，将使用本地存储")
-                        storage_type = 'local'
-                        backend = StorageServiceFactory.get_backend('local')
-                        storage_path = StorageServiceFactory.generate_storage_path(version, os_type, arch, filename)
-                        # 不保存文件字段（从validated_data中移除）
-                        serializer.validated_data.pop('file', None)
-                    else:
-                        # 对象存储上传成功，不保存文件字段
-                        serializer.validated_data.pop('file', None)
+                success, error = backend.upload_file(file_obj, storage_path)
+                if not success:
+                    raise ValueError(f"文件上传失败: {error}，请检查存储配置或稍后重试")
                 
                 # 保存数据
                 save_kwargs = {
                     'created_by': self.request.user,
+                    'file_name': filename,
                     'file_size': file_size,
                     'md5_hash': md5_hash,
                     'sha256_hash': sha256_hash,
@@ -295,41 +315,27 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
                 
                 # 获取存储类型（更新时不传，使用现有的）
                 storage_type = self.request.data.get('storage_type', serializer.instance.storage_type)
-                
+
                 # 生成统一的存储路径
                 version = serializer.validated_data.get('version', serializer.instance.version)
                 os_type = serializer.validated_data.get('os_type', serializer.instance.os_type)
                 arch = serializer.validated_data.get('arch', serializer.instance.arch)
                 filename = file_obj.name
                 storage_path = StorageServiceFactory.generate_storage_path(version, os_type, arch, filename)
-                
+
                 # 获取存储后端并上传文件
                 backend = StorageServiceFactory.get_backend(storage_type)
                 if backend is None:
-                    logger.warning(f"无法获取存储后端: {storage_type}，将使用本地存储")
-                    storage_type = 'local'
-                    backend = StorageServiceFactory.get_backend('local')
-                
+                    raise ValueError(f"无法获取存储后端: {storage_type}")
+
                 # 上传文件
-                if storage_type == 'local':
-                    # 本地存储由Django FileField处理，不需要手动上传
-                    pass
-                else:
-                    # 对象存储，上传文件
-                    success, error = backend.upload_file(file_obj, storage_path)
-                    if not success:
-                        logger.warning(f"对象存储上传失败: {error}，将使用本地存储")
-                        storage_type = 'local'
-                        backend = StorageServiceFactory.get_backend('local')
-                        storage_path = StorageServiceFactory.generate_storage_path(version, os_type, arch, filename)
-                        # 不保存文件字段（从validated_data中移除）
-                        serializer.validated_data.pop('file', None)
-                    else:
-                        # 对象存储上传成功，不保存文件字段
-                        serializer.validated_data.pop('file', None)
+                success, error = backend.upload_file(file_obj, storage_path)
+                if not success:
+                    raise ValueError(f"文件上传失败: {error}，请检查存储配置或稍后重试")
                 
                 # 保存数据
                 save_kwargs = {
+                    'file_name': filename,
                     'file_size': file_size,
                     'md5_hash': md5_hash,
                     'sha256_hash': sha256_hash,
@@ -356,8 +362,10 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         try:
             # 删除文件
-            if instance.file:
-                instance.file.delete()
+            if instance.storage_path:
+                backend = StorageServiceFactory.get_backend(instance.storage_type)
+                if backend:
+                    backend.delete_file(instance.storage_path)
             instance.delete()
             return SycResponse.success(message="安装包删除成功")
         except Exception as e:
@@ -369,45 +377,36 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
         """下载安装包文件"""
         package = self.get_object()
         
-        # 如果设置了外部下载地址（对象存储），重定向到该地址
+        # 如果设置了外部下载地址，重定向到该地址
         if package.download_url:
             from django.http import HttpResponseRedirect
             return HttpResponseRedirect(package.download_url)
-        
-        # 如果是本地文件，返回文件流
-        if package.file and package.file.storage.exists(package.file.name):
-            try:
-                file_path = package.file.path
-                if not os.path.exists(file_path):
-                    # 如果文件不在本地，尝试从存储后端获取
-                    file_obj = package.file.open('rb')
-                    response = FileResponse(
-                        file_obj,
-                        content_type='application/octet-stream',
-                        as_attachment=True
-                    )
-                    # 设置文件名，支持中文
-                    filename = package.file.name.split('/')[-1]
-                    response['Content-Disposition'] = f'attachment; filename="{unquote(filename)}"; filename*=UTF-8\'\'{unquote(filename)}'
-                    response['Content-Length'] = package.file_size
-                    return response
-                else:
-                    # 文件在本地文件系统
-                    file_obj = open(file_path, 'rb')
-                    response = FileResponse(
-                        file_obj,
-                        content_type='application/octet-stream',
-                        as_attachment=True
-                    )
-                    filename = os.path.basename(file_path)
-                    response['Content-Disposition'] = f'attachment; filename="{unquote(filename)}"; filename*=UTF-8\'\'{unquote(filename)}'
-                    response['Content-Length'] = package.file_size
-                    return response
-            except Exception as e:
-                logger.error(f"下载文件失败: {e}", exc_info=True)
-                return SycResponse.error(message=f"文件下载失败: {str(e)}", code=500)
-        
-        return SycResponse.error(message="文件不存在或下载地址无效", code=404)
+
+        # 从存储后端获取文件
+        try:
+            backend = StorageServiceFactory.get_backend(package.storage_type)
+            if backend is None:
+                return SycResponse.error(message="存储后端不可用", code=500)
+
+            file_obj = backend.get_file(package.storage_path)
+            if file_obj is None:
+                return SycResponse.error(message="文件不存在", code=404)
+
+            response = FileResponse(
+                file_obj,
+                content_type='application/octet-stream',
+                as_attachment=True
+            )
+
+            # 设置文件名，支持中文
+            filename = package.file_name or package.storage_path.split('/')[-1]
+            response['Content-Disposition'] = f'attachment; filename="{unquote(filename)}"; filename*=UTF-8\'\'{unquote(filename)}'
+            response['Content-Length'] = package.file_size
+            return response
+
+        except Exception as e:
+            logger.error(f"下载文件失败: {e}", exc_info=True)
+            return SycResponse.error(message=f"文件下载失败: {str(e)}", code=500)
 
     @action(detail=False, methods=['get'])
     def versions(self, request):

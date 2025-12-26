@@ -338,7 +338,8 @@ class AgentPackageSerializer(serializers.ModelSerializer):
             'os_type_display',
             'arch',
             'arch_display',
-            'file',
+            'storage_type',
+            'storage_path',
             'file_name',
             'file_size',
             'md5_hash',
@@ -370,8 +371,9 @@ class AgentPackageSerializer(serializers.ModelSerializer):
 
     def get_file_name(self, obj):
         """获取文件名"""
-        if obj.file:
-            return obj.file.name.split('/')[-1]
+        # 优先使用file_name字段
+        if obj.file_name:
+            return obj.file_name
         # 如果使用对象存储，从storage_path中提取文件名
         if obj.storage_path:
             return obj.storage_path.split('/')[-1]
@@ -379,6 +381,8 @@ class AgentPackageSerializer(serializers.ModelSerializer):
 
 
 class AgentPackageCreateSerializer(serializers.ModelSerializer):
+    file = serializers.FileField(write_only=True, required=False)
+
     class Meta:
         model = AgentPackage
         fields = ['version', 'description', 'os_type', 'arch', 'file', 'is_default', 'is_active']
@@ -408,16 +412,16 @@ class AgentPackageCreateSerializer(serializers.ModelSerializer):
                 os_type=os_type,
                 arch=arch
             )
-            
+
             # 如果是更新操作，排除当前记录
             if self.instance:
                 query = query.exclude(pk=self.instance.pk)
-            
+
             if query.exists():
                 raise serializers.ValidationError({
                     'non_field_errors': ['字段 version, os_type, arch 必须能构成唯一集合。']
                 })
-        
+
         return attrs
 
 
