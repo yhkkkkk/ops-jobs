@@ -72,7 +72,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import type { IStandaloneEditorConstructionOptions } from 'monaco-editor'
+import type * as monaco from 'monaco-editor'
 import MonacoEditor from './MonacoEditor.vue'
 import { validateScript, type ScriptValidationResult } from '@/utils/scriptValidator'
 
@@ -110,7 +110,7 @@ const showValidationPanel = ref(false)
 const validationTimer = ref<NodeJS.Timeout | null>(null)
 
 // 编辑器选项
-const editorOptions = computed<IStandaloneEditorConstructionOptions>(() => ({
+const editorOptions = computed<monaco.editor.IStandaloneEditorConstructionOptions>(() => ({
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   wordWrap: 'on',

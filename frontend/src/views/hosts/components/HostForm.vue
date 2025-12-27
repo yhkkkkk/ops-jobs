@@ -642,24 +642,35 @@ const handleSubmit = async () => {
     console.log('设置loading状态')
     loading.value = true
 
+    const allowedCloudProviders = ['aliyun', 'tencent', 'aws', 'azure', 'huawei', 'baidu', 'ucloud', 'qiniu', 'idc', 'other']
+    const allowedDeviceTypes = ['vm', 'container', 'physical', 'k8s_node']
+    const allowedEnvironments = ['dev', 'test', 'staging', 'prod']
+    const businessSystemId = form.business_system !== undefined && form.business_system !== null && form.business_system !== ''
+      ? Number(form.business_system)
+      : undefined
+
     const data = {
       name: form.name,
       port: form.port,
       account: form.account,
       os_type: form.os_type as Host['os_type'],
-      groups: form.groups,
+      groups: form.groups as Array<number>,
       description: form.description,
       // 网络信息
       public_ip: form.public_ip || null,
       internal_ip: form.internal_ip || null,
       hostname: form.hostname || null,
       // 云厂商信息
-      cloud_provider: form.cloud_provider || null,
+      cloud_provider: allowedCloudProviders.includes(form.cloud_provider as any)
+        ? (form.cloud_provider as Host['cloud_provider'])
+        : undefined,
       instance_id: form.instance_id || null,
       region: form.region || null,
       zone: form.zone || null,
       // 硬件信息
-      device_type: form.device_type || null,
+      device_type: allowedDeviceTypes.includes(form.device_type as any)
+        ? (form.device_type as Host['device_type'])
+        : undefined,
       cpu_cores: form.cpu_cores,
       memory_gb: form.memory_gb,
       disk_gb: form.disk_gb,
@@ -667,22 +678,15 @@ const handleSubmit = async () => {
       os_version: form.os_version || null,
       kernel_version: form.kernel_version || null,
       // 业务信息
-      environment: form.environment || null,
-      business_system: form.business_system || null,
+      environment: allowedEnvironments.includes(form.environment as any)
+        ? (form.environment as Host['environment'])
+        : undefined,
+      business_system: isNaN(businessSystemId as number) ? undefined : businessSystemId,
       service_role: form.service_role || null,
       // 管理信息
       owner: form.owner || null,
       department: form.department || null,
     }
-
-    console.log('准备调用API，数据:', data)
-    console.log('groups字段详细信息:', {
-      groups: data.groups,
-      groupsType: typeof data.groups,
-      groupsLength: data.groups?.length,
-      groupsContent: data.groups?.map(g => ({ id: g, type: typeof g }))
-    })
-    console.log('可用的分组列表:', hostGroups.value.map(g => ({ id: g.id, name: g.name })))
 
     // 验证分组ID是否有效
     if (data.groups && data.groups.length > 0) {
@@ -696,7 +700,6 @@ const handleSubmit = async () => {
     }
 
     if (isEdit.value) {
-      console.log('调用更新主机API，ID:', props.host!.id)
       const result = await hostApi.updateHost(props.host!.id, data)
       console.log('更新API返回结果:', result)
       Message.success('主机更新成功')
@@ -709,7 +712,6 @@ const handleSubmit = async () => {
 
     console.log('API调用成功，触发success事件')
     emit('success')
-    console.log('关闭模态框')
     modalVisible.value = false
   } catch (error: any) {
     console.error('保存主机失败:', error)

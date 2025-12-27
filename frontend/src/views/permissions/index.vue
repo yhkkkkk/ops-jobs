@@ -136,7 +136,7 @@
                     <template #title>
                       <icon-check-circle v-if="hasPermission" style="color: #52c41a" />
                       <icon-close-circle v-else style="color: #ff4d4f" />
-                      {{ getPermissionDisplayName(permission) }}
+                      {{ getPermissionDisplayName(String(permission)) }}
                     </template>
                     <div class="permission-status">
                       {{ hasPermission ? '有权限' : '无权限' }}
@@ -245,9 +245,9 @@ const checkPermissions = async () => {
   
   try {
     const result = await permissionsApi.checkPermission({
-      resource_type: permissionForm.value.resourceType,
+      resource_type: permissionForm.value.resourceType as string,
       resource_id: permissionForm.value.resourceId,
-      permissions: permissionForm.value.permissions
+      permissions: permissionForm.value.permissions as string[]
     })
     
     // 构建结果对象

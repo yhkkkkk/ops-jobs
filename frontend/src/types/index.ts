@@ -70,7 +70,7 @@ export interface Host {
   last_connected_at?: string
   last_check_time?: string
   connection_count?: number
-  groups?: HostGroup[]
+  groups?: Array<number | HostGroup>
   groups_info?: HostGroup[]
   created_by?: number
   created_by_name?: string
@@ -263,8 +263,8 @@ export interface JobStep {
   timeout: number
   ignore_error: boolean
   condition?: string
-  target_hosts: Array<number | Host>
-  target_groups: Array<number | HostGroup>
+  target_hosts: number[]
+  target_groups: number[]
 
   // 脚本相关字段
   script_type?: string

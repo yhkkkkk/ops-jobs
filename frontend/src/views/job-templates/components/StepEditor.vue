@@ -782,7 +782,7 @@ watch(
         form.target_hosts = step.target_hosts.map(host =>
           typeof host === 'object' && host ? (host as any).id : host
         )
-        selectedHosts.value = form.target_hosts
+        selectedHosts.value = form.target_hosts as number[]
       }
 
       // 处理目标分组数据 - 如果是对象数组，提取ID
@@ -790,7 +790,7 @@ watch(
         form.target_groups = step.target_groups.map(group =>
           typeof group === 'object' && group ? (group as any).id : group
         )
-        selectedGroups.value = form.target_groups
+        selectedGroups.value = form.target_groups as number[]
       }
 
       // 解析脚本和文件传输配置

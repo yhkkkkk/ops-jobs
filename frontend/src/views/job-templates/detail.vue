@@ -147,12 +147,17 @@
                       <div class="target-hosts-label">目标主机:</div>
                       <a-space wrap>
                         <a-tag
-                          v-for="host in step.target_hosts"
-                          :key="host.id"
+                          v-for="host in (step.target_hosts || []).filter(Boolean)"
+                          :key="(host as any)?.id ?? String(host)"
                           color="cyan"
                           size="small"
                         >
-                          {{ host.name }} ({{ host.ip_address }})
+                          <template v-if="host && typeof host === 'object'">
+                            {{ (host as any).name }} ({{ (host as any).ip_address }})
+                          </template>
+                          <template v-else>
+                            ID: {{ host }}
+                          </template>
                         </a-tag>
                       </a-space>
                     </div>
@@ -161,12 +166,17 @@
                       <div class="target-hosts-label">目标分组:</div>
                       <a-space wrap>
                         <a-tag
-                          v-for="group in step.target_groups"
-                          :key="group.id"
+                          v-for="group in (step.target_groups || []).filter(Boolean)"
+                          :key="(group as any)?.id ?? String(group)"
                           color="blue"
                           size="small"
                         >
-                          {{ group.name }} ({{ group.host_count }}台主机)
+                          <template v-if="group && typeof group === 'object'">
+                            {{ (group as any).name }} ({{ (group as any).host_count }}台主机)
+                          </template>
+                          <template v-else>
+                            ID: {{ group }}
+                          </template>
                         </a-tag>
                       </a-space>
                     </div>

@@ -565,7 +565,7 @@ const handleEdit = (record: AgentPackage) => {
   packageForm.version = record.version
   packageForm.os_type = record.os_type
   packageForm.arch = record.arch
-  packageForm.storage_type = record.storage_type || ''  // 设置当前存储类型，用于显示
+  packageForm.storage_type = (record.storage_type as any) || 'oss'  // 设置当前存储类型，用于显示
   packageForm.description = record.description || ''
   packageForm.is_active = record.is_active
   packageForm.is_default = record.is_default
