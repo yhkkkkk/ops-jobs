@@ -15,8 +15,8 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-app.use(ArcoVue)
-app.use(ArcoVueIcon)
+app.use(ArcoVue as any)
+app.use(ArcoVueIcon as any)
 
 // 注册权限指令
 setupPermissionDirectives(app)
@@ -64,7 +64,7 @@ startAuthCheck()
 preloadMonaco()
 
 // 全局错误处理
-app.config.errorHandler = (err, vm, info) => {
+app.config.errorHandler = (err, _vm, info) => {
   console.error('全局错误:', err, info)
   
   // 如果是认证相关错误，清理状态
@@ -75,7 +75,7 @@ app.config.errorHandler = (err, vm, info) => {
 }
 
 // 全局警告处理
-app.config.warnHandler = (msg, vm, trace) => {
+app.config.warnHandler = (msg, _vm, trace) => {
   console.warn('全局警告:', msg, trace)
 }
 

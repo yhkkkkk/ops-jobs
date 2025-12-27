@@ -32,6 +32,11 @@ export const authApi = {
     return http.get<AuthConfig>('/auth/users/auth_config/')
   },
 
+  // 获取当前用户信息（兼容旧命名）
+  getUserInfo() {
+    return this.getCurrentUser()
+  },
+
   // 检查用户是否需要2FA验证（登录前）
   check2FARequired(data: { username: string; password: string }) {
     return http.post<{ requires_2fa: boolean }>('/auth/check-2fa/', data)

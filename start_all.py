@@ -164,11 +164,6 @@ def main():
             'name': 'ASGI',
             'command': [sys.executable, '-m', 'daphne', '-b', '127.0.0.1', '-p', '8001', 'ops_job.asgi:application'],
             'description': 'Django ASGI Server (port 8001)'
-        },
-        {
-            'name': 'Celery',
-            'command': [sys.executable, '-m', 'celery', '-A', 'ops_job', 'worker', '--loglevel=debug', '--pool=solo', '--concurrency=1', '--without-gossip', '--without-mingle', '--without-heartbeat', '--events'],
-            'description': 'Celery Background Task Processor (Debug Mode)'
         }
     ]
     
@@ -193,7 +188,6 @@ def main():
     print("  - ASGI Server: http://127.0.0.1:8001")
     print("  - Admin Panel: http://127.0.0.1:8000/admin/")
     print("  - API Docs: http://127.0.0.1:8000/docs/swagger/")
-    print("  - Celery Worker: Running in background")
     print("=" * 60)
     print("\nTips:")
     print("  - Frontend dev server needs to be started separately: cd frontend && npm run dev")

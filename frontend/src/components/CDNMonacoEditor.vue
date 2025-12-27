@@ -33,6 +33,7 @@ const editorRef = ref<HTMLElement>()
 let editor: any = null
 let monaco: any = null
 let isLoading = ref(false)
+const win = window as any
 
 // 语言映射
 const languageMap = {
@@ -56,16 +57,16 @@ const getMonacoLanguage = (lang: string) => {
 // 从CDN加载Monaco Editor
 const loadMonacoFromCDN = (): Promise<any> => {
   return new Promise((resolve, reject) => {
-    if (window.monaco) {
-      resolve(window.monaco)
+    if (win.monaco) {
+      resolve(win.monaco)
       return
     }
 
     // 检查是否已经在加载中
     if (isLoading.value) {
       const checkLoaded = () => {
-        if (window.monaco) {
-          resolve(window.monaco)
+        if (win.monaco) {
+          resolve(win.monaco)
         } else {
           setTimeout(checkLoaded, 100)
         }
@@ -81,15 +82,15 @@ const loadMonacoFromCDN = (): Promise<any> => {
     script.src = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js'
     script.onload = () => {
       // 配置Monaco Editor的路径
-      ;(window as any).require.config({
+      win.require.config({
         paths: {
           vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'
         }
       })
 
       // 配置Web Worker
-      ;(window as any).MonacoEnvironment = {
-        getWorkerUrl: function (moduleId: string, label: string) {
+      win.MonacoEnvironment = {
+        getWorkerUrl: function (_moduleId: string, label: string) {
           if (label === 'json') {
             return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/language/json/json.worker.js'
           }
@@ -107,8 +108,8 @@ const loadMonacoFromCDN = (): Promise<any> => {
       }
 
       // 加载Monaco Editor
-      ;(window as any).require(['vs/editor/editor.main'], () => {
-        monaco = (window as any).monaco
+      win.require(['vs/editor/editor.main'], () => {
+        monaco = win.monaco
         isLoading.value = false
         resolve(monaco)
       })

@@ -298,6 +298,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     refreshAccessToken,
     fetchUserInfo,
+    getUserInfo: fetchUserInfo,
     clearState,
     isTokenExpired,
   }

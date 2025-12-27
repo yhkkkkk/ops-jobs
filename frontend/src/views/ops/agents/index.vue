@@ -729,6 +729,7 @@ const uninstallSseEventSource = ref<EventSource | null>(null)
 // 搜索表单
 const searchForm = reactive({
   search: '',
+  status: '',
   environment: '',
   business_system: undefined as number | undefined
 })
@@ -892,6 +893,7 @@ const fetchAgents = async () => {
       page_size: pagination.pageSize
     }
     if (searchForm.search) params.search = searchForm.search
+    if (searchForm.status) params.status = searchForm.status
     if (searchForm.environment) params.environment = searchForm.environment
     if (searchForm.business_system) params.business_system = searchForm.business_system
 

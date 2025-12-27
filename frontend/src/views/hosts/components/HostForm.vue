@@ -646,7 +646,7 @@ const handleSubmit = async () => {
       name: form.name,
       port: form.port,
       account: form.account,
-      os_type: form.os_type,
+      os_type: form.os_type as Host['os_type'],
       groups: form.groups,
       description: form.description,
       // 网络信息

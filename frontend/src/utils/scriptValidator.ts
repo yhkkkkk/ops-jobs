@@ -264,7 +264,10 @@ export function createScriptValidator(options: ScriptValidationOptions): ScriptV
 /**
  * 快速验证脚本
  */
-export function validateScript(script: string, language: 'shell' | 'python' | 'powershell'): ScriptValidationResult[] {
+export function validateScript(
+  script: string,
+  language: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
+): ScriptValidationResult[] {
   const validator = createScriptValidator({ language })
   return validator.validate(script)
 }

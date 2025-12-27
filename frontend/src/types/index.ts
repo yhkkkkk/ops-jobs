@@ -240,6 +240,7 @@ export interface JobTemplate {
   business_system_name?: string
   // 用于创建/编辑时的标签结构
   tags: { key: string; value: string }[]
+  tag_list?: { key: string; value: string }[]
   global_parameters: Record<string, any>
   steps: JobStep[]
   step_count: number
@@ -261,9 +262,9 @@ export interface JobStep {
   step_parameters: string[]  // 位置参数数组
   timeout: number
   ignore_error: boolean
-  condition: string
-  target_hosts: number[]
-  target_groups: number[]
+  condition?: string
+  target_hosts: Array<number | Host>
+  target_groups: Array<number | HostGroup>
 
   // 脚本相关字段
   script_type?: string
@@ -271,6 +272,10 @@ export interface JobStep {
   account_id?: number
 
   account_name?: string | null
+  step_account_id?: number | null
+  step_account_name?: string | null
+  max_target_matches?: number
+  file_sources?: any[]
   // 文件传输相关字段
   transfer_type?: string
   local_path?: string
@@ -300,6 +305,7 @@ export interface ExecutionPlan {
   created_at: string
   updated_at: string
   plan_steps?: PlanStep[]
+  global_parameters_snapshot?: Record<string, any>
 }
 
 // 方案步骤类型

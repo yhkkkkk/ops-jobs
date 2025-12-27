@@ -27,6 +27,10 @@ export interface Agent {
   created_at: string
   updated_at: string
   tokens?: AgentToken[]
+  computed_status?: string
+  computed_status_display?: string
+  is_version_outdated?: boolean
+  expected_min_version?: string
 }
 
 export interface AgentToken {
@@ -166,6 +170,8 @@ export const agentsApi = {
     }>>
     install_type: string
     agent_server_url: string
+    notice?: string
+    errors?: string[]
   }> {
     return http.post('/agents/generate_install_script/', data)
   },
@@ -248,6 +254,7 @@ export const agentsApi = {
     install_type: string
     agent_server_url: string
     notice?: string
+    errors?: string[]
   }> {
     return http.post(`/agents/${agentId}/regenerate_script/`)
   },
@@ -308,6 +315,7 @@ export interface AgentPackage {
   md5_hash: string
   sha256_hash: string
   download_url: string
+  storage_type?: string
   is_default: boolean
   is_active: boolean
   created_by: number
@@ -368,4 +376,3 @@ export const packageApi = {
     return http.get('/agents/packages/default_packages/')
   },
 }
-

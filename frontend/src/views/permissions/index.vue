@@ -28,7 +28,7 @@
         <a-col :span="8">
           <a-statistic
             title="用户状态"
-            :value="userPermissions?.is_superuser ? '超级用户' : '普通用户'"
+            :value="(userPermissions?.is_superuser ? '超级用户' : '普通用户') as any"
             :value-style="{ color: userPermissions?.is_superuser ? '#cf1322' : '#722ed1' }"
           >
             <template #suffix>
@@ -177,6 +177,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { usePermissionsStore } from '@/stores/permissions'
+import { permissionsApi } from '@/api/permissions'
 import type { PermissionLevel, ResourceType } from '@/types'
 
 // 权限表单
@@ -243,23 +244,17 @@ const checkPermissions = async () => {
   checking.value = true
   
   try {
-    const result = await permissionsStore.checkPermission(
-      permissionForm.value.resourceType,
-      permissionForm.value.permissions[0],
-      permissionForm.value.resourceId
-    )
+    const result = await permissionsApi.checkPermission({
+      resource_type: permissionForm.value.resourceType,
+      resource_id: permissionForm.value.resourceId,
+      permissions: permissionForm.value.permissions
+    })
     
     // 构建结果对象
     permissionResults.value = {
       success: true,
       message: '权限检查完成',
-      content: {
-        user_id: result.user_id,
-        username: result.username,
-        resource_type: result.resource_type,
-        resource_id: result.resource_id,
-        permissions: result.permissions
-      }
+      content: result
     }
     
     Message.success('权限检查完成')

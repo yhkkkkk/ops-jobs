@@ -310,7 +310,12 @@
                           </div>
                         </div>
                         <a-space>
-                          <a-button v-if="src.download_url" type="text" size="small" @click="() => window.open(src.download_url)">下载</a-button>
+                          <a-button
+                            v-if="src.download_url"
+                            type="text"
+                            size="small"
+                            @click="() => openExternal(src.download_url)"
+                          >下载</a-button>
                         </a-space>
                       </div>
                     </div>
@@ -417,6 +422,12 @@ const fetchPlanDetail = async () => {
 // 返回列表
 const handleBack = () => {
   router.push('/execution-plans')
+}
+
+const openExternal = (url?: string) => {
+  if (url) {
+    window.open(url, '_blank')
+  }
 }
 
 // 刷新

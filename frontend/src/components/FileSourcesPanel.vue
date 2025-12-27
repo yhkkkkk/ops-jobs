@@ -79,15 +79,19 @@
         <div style="font-weight:600">服务器来源列表</div>
         <a-button type="dashed" size="small" @click="addServerRow">+ 添加一行</a-button>
       </div>
-      <div v-for="(row, idx) in serverRows" :key="row._uid" style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
-        <a-button style="flex:4; justify-content:flex-start" type="outline" @click="openHostSelector(idx)">
-          <template v-if="row.server">{{ row.server }}</template>
-          <template v-else>选择源服务器</template>
-        </a-button>
-        <a-input v-model="row.path" placeholder="源文件路径" style="flex:10" />
-        <a-select v-model="row.account" placeholder="账号" style="flex:4" :options="accounts.map(a => ({ label: a.name, value: a.id }))" />
-        <a-input v-model="row.remote_path" placeholder="目标远程路径（可选）" style="flex:8" />
-        <a-button type="text" status="danger" size="small" @click="removeServerRow(idx)">移除</a-button>
+      <div v-for="(row, idx) in serverRows" :key="row._uid" class="server-row">
+        <div class="server-row-line">
+          <a-button class="server-btn" type="outline" @click="openHostSelector(idx)">
+            <template v-if="row.server">{{ row.server }}</template>
+            <template v-else>选择源服务器</template>
+          </a-button>
+          <a-input v-model="row.path" placeholder="源文件路径" class="path-input" />
+        </div>
+        <div class="server-row-line">
+          <a-select v-model="row.account" placeholder="账号" class="account-select" :options="accounts.map(a => ({ label: a.name, value: a.id }))" />
+          <a-input v-model="row.remote_path" placeholder="目标远程路径（可选）" class="remote-input" />
+          <a-button type="text" status="danger" size="small" @click="removeServerRow(idx)">移除</a-button>
+        </div>
       </div>
       <div style="text-align:right">
         <a-button type="primary" size="small" @click="addServerEntries">确认添加</a-button>
@@ -394,8 +398,8 @@ const getAgentStatusColor = (serverId: any) => {
   border: 1px dashed var(--color-border-2);
   padding: 12px;
   border-radius: 4px;
-  width: calc(100% + 480px);
-  margin-right: -240px;
+  width: 100%;
+  margin-right: 0;
   box-sizing: border-box;
   background: transparent;
 }
@@ -404,8 +408,8 @@ const getAgentStatusColor = (serverId: any) => {
   border: 1px dashed var(--color-border-2);
   padding: 12px;
   border-radius: 4px;
-  width: calc(100% + 480px);
-  margin-right: -240px;
+  width: 100%;
+  margin-right: 0;
   box-sizing: border-box;
   background: transparent;
 }
@@ -416,18 +420,46 @@ const getAgentStatusColor = (serverId: any) => {
   overflow:hidden;
   text-overflow:ellipsis;
 }
-.server-select-btn {
+.server-btn {
+  flex:2 1 180px;
+  min-width:150px;
   justify-content:flex-start;
 }
-.col-path { flex:10; }
-.col-account { flex:4; }
-.col-remote { flex:8; }
-.server-row { display:flex; gap:12px; align-items:center; width:100%; }
-.server-name-status { display:flex; align-items:center; gap:8px; flex:3; min-width:0; white-space:nowrap; overflow:hidden; }
+.path-input {
+  flex:5 1 360px;
+  min-width:260px;
+}
+.account-select {
+  flex:1 1 140px;     /* 收缩优先 */
+  min-width:120px;     /* 确保可用 */
+  max-width:180px;     /* 上限，避免过长 */
+}
+.remote-input {
+  flex:4 1 320px;
+  min-width:240px;
+}
+.server-row {
+  display:flex;
+  gap:8px;     /* 两行之间的距离 */
+  align-items:center;
+  width:100%;
+  flex-wrap:wrap;
+  margin-bottom:12px;     /* 行与行之间 */
+}
+.server-row:last-child {
+  margin-bottom:0;         /* 最后一行不多出空白 */
+}
+.server-row-line {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;     /* 缩放/窄屏自动换行 */
+}
+.server-name-status { display:flex; align-items:center; gap:8px; flex:2 1 180px; min-width:150px; white-space:nowrap; overflow:hidden; }
 .agent-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 .server-name { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
 .agent-text { flex:0 0 auto; font-size:12px; color:#86909c; margin-left:8px; white-space:nowrap; }
-.col-source-path { flex:4; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.col-account { flex:1; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.col-remote { flex:3; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-source-path { flex:4 1 220px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-account { flex:1 1 120px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-remote { flex:3 1 220px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
