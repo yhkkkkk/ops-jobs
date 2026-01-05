@@ -1,0 +1,185 @@
+/* 作业模板Admin界面样式优化 */
+
+/* 作业步骤内联编辑样式 */
+.inline-group .inline-related {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    background: #fafafa;
+}
+
+.inline-group .inline-related h3 {
+    background: #79aec8;
+    color: white;
+    padding: 10px 15px;
+    margin: 0;
+    border-radius: 8px 8px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.inline-group .inline-related .form-row {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.inline-group .inline-related .form-row:last-child {
+    border-bottom: none;
+}
+
+/* 字段组样式 */
+.form-row .field-box {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 20px;
+    margin-bottom: 10px;
+}
+
+.form-row .field-box label {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.form-row .field-box input,
+.form-row .field-box select,
+.form-row .field-box textarea {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px 12px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-row .field-box input:focus,
+.form-row .field-box select:focus,
+.form-row .field-box textarea:focus {
+    border-color: #79aec8;
+    outline: none;
+    box-shadow: 0 0 5px rgba(121, 174, 200, 0.3);
+}
+
+/* 步骤类型相关字段的动态显示 */
+.step-script-fields,
+.step-transfer-fields {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.step-script-fields h4,
+.step-transfer-fields h4 {
+    color: #495057;
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* 删除按钮样式 */
+.inline-deletelink {
+    background: #dc3545;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 12px;
+    float: right;
+    margin-top: -30px;
+    margin-right: 15px;
+}
+
+.inline-deletelink:hover {
+    background: #c82333;
+    color: white;
+    text-decoration: none;
+}
+
+/* 添加按钮样式 */
+.add-row a {
+    background: #28a745;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-block;
+    margin: 20px 0;
+}
+
+.add-row a:hover {
+    background: #218838;
+    color: white;
+    text-decoration: none;
+}
+
+/* 字段验证错误样式 */
+.field-box .errorlist {
+    color: #dc3545;
+    font-size: 12px;
+    margin-top: 5px;
+    list-style: none;
+    padding: 0;
+}
+
+.field-box .errorlist li {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+    .form-row .field-box {
+        display: block;
+        width: 100%;
+        margin-right: 0;
+    }
+    
+    .inline-group .inline-related {
+        margin-bottom: 15px;
+    }
+    
+    .inline-group .inline-related .form-row {
+        padding: 10px;
+    }
+}
+
+/* 步骤顺序指示器 */
+.step-order-indicator {
+    display: inline-block;
+    background: #17a2b8;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 24px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+/* 步骤类型标签 */
+.step-type-tag {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.step-type-tag.script {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.step-type-tag.file_transfer {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}

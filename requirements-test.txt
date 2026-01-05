@@ -1,0 +1,27 @@
+# 测试相关依赖
+factory-boy==3.3.0          # 测试数据生成
+pytest-django==4.8.0        # Django 测试框架
+pytest-cov==4.1.0           # 测试覆盖率报告
+pytest-xdist==3.5.0         # 并行测试
+pytest-mock==3.12.0         # Mock 支持
+pytest-html==4.1.1          # HTML 测试报告
+pytest-json-report==1.5.0   # JSON 测试报告
+
+# 代码质量检查
+flake8==7.0.0               # 代码风格检查
+black==23.12.1              # 代码格式化
+isort==5.13.2               # 导入排序
+bandit==1.7.5               # 安全检查
+safety==2.3.5               # 依赖安全检查
+
+# 性能测试
+pytest-benchmark==4.0.0     # 性能基准测试
+locust==2.17.0              # 负载测试
+
+# 测试工具
+responses==0.24.1           # HTTP 请求 Mock
+freezegun==1.4.0            # 时间 Mock
+faker==21.0.0               # 假数据生成
+
+# 覆盖率工具
+coverage==7.3.4             # 覆盖率测试

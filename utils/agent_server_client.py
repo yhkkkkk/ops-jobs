@@ -1,0 +1,81 @@
+import hashlib
+import hmac
+import time
+from typing import Any, Dict, Optional
+
+import requests
+from django.conf import settings
+
+
+class AgentServerClient:
+    """
+    封装对 agent-server 的 HTTP 调用，统一附加 Scope + HMAC 签名。
+
+    签名规则需与 agent-server 内部的 computeHMAC 保持一致：
+      - Header:
+          X-Scope:  作用域/租户（可选，默认 settings.AGENT_SERVER_SCOPE 或 "default"）
+          X-Timestamp: 秒级时间戳（int）
+          X-Signature: hex(hmac_sha256(secret, ts + "\n" + method + "\n" + path + "\n" + body))
+    """
+
+    def __init__(
+        self,
+        shared_secret: str,
+        scope: str = "default",
+        session: Optional[requests.Session] = None,
+        timeout: int = 10,
+    ):
+        self.shared_secret = shared_secret or ""
+        self.scope = scope or "default"
+        self.session = session or requests.Session()
+        self.timeout = timeout
+
+    @classmethod
+    def from_settings(cls) -> "AgentServerClient":
+        secret = getattr(settings, "AGENT_SERVER_SHARED_SECRET", "")
+        scope = getattr(settings, "AGENT_SERVER_SCOPE", "default")
+        timeout = getattr(settings, "AGENT_SERVER_TIMEOUT", 10)
+        return cls(shared_secret=secret, scope=scope, timeout=timeout)
+
+    def _compute_hmac(self, method: str, url: str, ts: str, body: bytes) -> str:
+        """
+        与 agent-server 内部 computeHMAC 保持一致：
+          message = timestamp + "\n" + method + "\n" + path + "\n" + body
+        其中 path 使用 URL 的 path 部分（不含 query）。
+        """
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        path = parsed.path or "/"
+        mac = hmac.new(self.shared_secret.encode("utf-8"), digestmod=hashlib.sha256)
+        mac.update(ts.encode("utf-8"))
+        mac.update(b"\n")
+        mac.update(method.upper().encode("utf-8"))
+        mac.update(b"\n")
+        mac.update(path.encode("utf-8"))
+        mac.update(b"\n")
+        mac.update(body)
+        return mac.hexdigest()
+
+    def post(self, url: str, json: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None):
+        data = b""
+        if json is not None:
+            import json as _json
+
+            data = _json.dumps(json, separators=(",", ":")).encode("utf-8")
+
+        headers = headers.copy() if headers else {}
+        headers.setdefault("Content-Type", "application/json")
+
+        ts = str(int(time.time()))
+        # 允许调用方预先设置 X-Scope（按环境/业务多租户），否则使用默认 scope
+        headers.setdefault("X-Scope", self.scope)
+        headers["X-Timestamp"] = ts
+
+        if self.shared_secret:
+            sig = self._compute_hmac("POST", url, ts, data)
+            headers["X-Signature"] = sig
+
+        return self.session.post(url, data=data, headers=headers, timeout=self.timeout)
+
+

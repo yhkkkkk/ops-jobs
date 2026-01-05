@@ -1,0 +1,151 @@
+"""
+Agent 安装进度 SSE 视图
+"""
+import json
+import logging
+import uuid
+from datetime import datetime
+from django.http import StreamingHttpResponse, HttpResponse
+from django.views import View
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from .sse_views import SSEBaseView
+from .realtime_logs import realtime_log_service
+
+logger = logging.getLogger(__name__)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AgentInstallProgressSSEView(SSEBaseView):
+    """Agent 安装进度 SSE 视图"""
+
+    def dispatch(self, request, *args, **kwargs):
+        """统一的认证和权限检查"""
+        install_task_id = kwargs.get('install_task_id')
+        logger.info(f"SSE dispatch开始: method={request.method}, install_task_id={install_task_id}")
+
+        # 1. 检查用户认证
+        user = self.authenticate_user(request)
+        if not user:
+            logger.warning(f"用户认证失败: install_task_id={install_task_id}")
+            return HttpResponse("Unauthorized", status=401)
+
+        logger.info(f"用户认证成功: user={user.username}, install_task_id={install_task_id}")
+        # 设置认证用户
+        request.user = user
+
+        # 2. 检查安装任务访问权限
+        if install_task_id:
+            if not self.check_execution_permission(request.user, install_task_id):
+                logger.warning(f"权限检查失败: user={user.username}, install_task_id={install_task_id}")
+                return HttpResponse("Forbidden", status=403)
+            logger.info(f"权限检查通过: user={user.username}, install_task_id={install_task_id}")
+
+        return super(SSEBaseView, self).dispatch(request, *args, **kwargs)
+
+    def check_execution_permission(self, user, install_task_id):
+        """检查用户是否有权限访问安装任务"""
+        try:
+            from apps.agents.models import AgentInstallRecord
+
+            # 检查是否有安装记录
+            install_record = AgentInstallRecord.objects.filter(
+                install_task_id=install_task_id
+            ).first()
+
+            if not install_record:
+                logger.warning(f"安装任务不存在: {install_task_id}")
+                return False
+
+            # 超级用户权限
+            if user.is_superuser:
+                return True
+
+            # 安装者权限
+            if install_record.installed_by == user:
+                return True
+
+            # 检查主机权限
+            from guardian.shortcuts import get_objects_for_user
+            from apps.hosts.models import Host
+            allowed_hosts = get_objects_for_user(
+                user,
+                'view_host',
+                klass=Host,
+                accept_global_perms=False
+            )
+            return install_record.host in allowed_hosts
+
+        except Exception as e:
+            logger.error(f"权限检查异常: {install_task_id} - {e}")
+            return False
+
+    def get(self, request, install_task_id):
+        """获取安装进度流"""
+        logger.info(f"SSE安装进度连接: 用户={request.user.username}, 任务ID={install_task_id}")
+
+        # 获取起始ID
+        last_id = request.GET.get('last_id', '0')
+
+        def event_stream():
+            """事件流生成器"""
+            try:
+                # 发送连接建立消息
+                yield self.format_sse_message({
+                    'type': 'connection_established',
+                    'message': f'已连接到安装任务 {install_task_id} 的进度流',
+                    'install_task_id': install_task_id
+                }, event_type='message')
+
+                # 发送历史状态
+                if last_id == '0':
+                    try:
+                        # 尝试获取历史状态（如果方法存在）
+                        if hasattr(realtime_log_service, 'get_historical_status'):
+                            historical_status = realtime_log_service.get_historical_status(install_task_id, limit=10)
+                            logger.info(f"发送历史状态: {len(historical_status)} 条")
+                            for status in historical_status:
+                                yield self.format_sse_message({
+                                    'type': 'status',
+                                    **status
+                                }, event_type='message', event_id=status.get('id'))
+                                last_id = status.get('id', '0')
+                    except Exception as e:
+                        logger.warning(f"获取历史状态失败: {e}")
+
+                # 开始实时状态流
+                logger.info(f"开始实时进度流: install_task_id={install_task_id}")
+                for message in realtime_log_service.get_status_stream(install_task_id, last_id):
+                    if message['type'] == 'status':
+                        yield self.format_sse_message({
+                            'type': 'status',
+                            **message['data']
+                        }, event_type='message', event_id=message.get('id'))
+                    elif message['type'] == 'log':
+                        yield self.format_sse_message({
+                            'type': 'log',
+                            **message['data']
+                        }, event_type='message', event_id=message.get('id'))
+                    elif message['type'] == 'heartbeat':
+                        yield self.format_sse_message({
+                            'type': 'heartbeat',
+                            **message['data']
+                        }, event_type='heartbeat')
+                    elif message['type'] == 'error':
+                        yield self.format_sse_message({
+                            'type': 'error',
+                            **message['data']
+                        }, event_type='message')
+                        break
+
+            except Exception as e:
+                logger.error(f"SSE进度流异常: {install_task_id} - {e}")
+                yield self.format_sse_message({
+                    'type': 'error',
+                    'message': str(e)
+                }, event_type='message')
+
+        return self.create_sse_response(event_stream())
+

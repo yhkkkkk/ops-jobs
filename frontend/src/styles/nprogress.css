@@ -1,0 +1,145 @@
+/* NProgress 基础样式 */
+#nprogress {
+  pointer-events: none;
+}
+
+#nprogress .bar {
+  background: #29d;
+  position: fixed;
+  z-index: 1031;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+}
+
+#nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0px;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px #29d, 0 0 5px #29d;
+  opacity: 1.0;
+  transform: rotate(3deg) translate(0px, -4px);
+}
+
+#nprogress .spinner {
+  display: block;
+  position: fixed;
+  z-index: 1031;
+  top: 15px;
+  right: 15px;
+}
+
+#nprogress .spinner-icon {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: solid 2px transparent;
+  border-top-color: #29d;
+  border-left-color: #29d;
+  border-radius: 50%;
+  animation: nprogress-spinner 400ms linear infinite;
+}
+
+/* NProgress 自定义样式 */
+
+/* 进度条 */
+#nprogress .bar {
+  background: #1890ff !important; /* 使用 Ant Design 的主色调 */
+  height: 3px !important;
+  z-index: 9999 !important;
+}
+
+/* 进度条发光效果 */
+#nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0px;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px #1890ff, 0 0 5px #1890ff;
+  opacity: 1.0;
+  transform: rotate(3deg) translate(0px, -4px);
+}
+
+/* 加载图标（已禁用，但保留样式以防需要） */
+#nprogress .spinner {
+  display: none !important;
+}
+
+#nprogress .spinner-icon {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: solid 2px transparent;
+  border-top-color: #1890ff;
+  border-left-color: #1890ff;
+  border-radius: 50%;
+  animation: nprogress-spinner 400ms linear infinite;
+}
+
+.nprogress-custom {
+  pointer-events: none;
+}
+
+.nprogress-custom #nprogress {
+  pointer-events: none;
+}
+
+.nprogress-custom #nprogress .bar {
+  background: #1890ff;
+  position: fixed;
+  z-index: 1031;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+}
+
+.nprogress-custom #nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0px;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px #1890ff, 0 0 5px #1890ff;
+  opacity: 1.0;
+  transform: rotate(3deg) translate(0px, -4px);
+}
+
+/* 动画 - 优化性能 */
+@keyframes nprogress-spinner {
+  0%   {
+    transform: rotate(0deg);
+    will-change: transform;
+  }
+  100% {
+    transform: rotate(360deg);
+    will-change: transform;
+  }
+}
+
+/* 暗色主题适配 */
+@media (prefers-color-scheme: dark) {
+  #nprogress .bar {
+    background: #40a9ff !important;
+  }
+  
+  #nprogress .peg {
+    box-shadow: 0 0 10px #40a9ff, 0 0 5px #40a9ff;
+  }
+  
+  #nprogress .spinner-icon {
+    border-top-color: #40a9ff;
+    border-left-color: #40a9ff;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  #nprogress .bar {
+    height: 2px !important;
+  }
+}

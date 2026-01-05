@@ -1,0 +1,59 @@
+# Agent-Server 配置文件示例
+# Agent-Server 作为控制面与Agent之间的桥梁，负责任务分发和状态收集
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+control_plane:
+  url: "https://control-plane.example.com"
+  token: "server-auth-token"
+  scope: "default"  # 用于作用域/租户隔离，控制面请求需携带 X-Scope
+  timeout: 30s
+
+agent:
+  heartbeat_timeout: 60s
+  max_connections: 1000
+  task_queue_size: 100
+  # 注意：Agent注册时会传递host_id用于与控制面Agent记录映射
+  # 这是确保任务正确分发到对应Agent的关键配置
+
+logging:
+  level: "info"
+  dir: "/var/log/agent-server"
+  max_size: 100  # MB
+  max_files: 10
+  max_age: 7     # days
+
+log_stream:
+  enabled: true           # 将日志写入 Redis Stream（统一流，由 Python 消费者转发到前端 SSE）
+  key: "agent_logs"       # 统一日志流 key（Python consume_agent_logs.py 消费此 key）
+
+result_stream:
+  enabled: true           # 将任务结果写入 Redis Stream
+  key: "agent_results"    # 结果流 key（Python consume_agent_results.py 消费此 key）
+
+status_stream:
+  enabled: true           # 将 Agent 在线状态/心跳写入 Redis Stream
+  key: "agent_status"     # 状态流 key（Python consume_agent_status.py 消费此 key）
+  # 注意：状态流中包含host_id字段，用于与控制面Agent记录映射
+
+redis:
+  enabled: true           # Agent-Server模式必须启用Redis，用于流式日志和状态传递
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+asynq:
+  enabled: true           # 启用Asynq用于Agent离线时的任务排队
+  concurrency: 10         # 异步任务处理并发数
+  retry_max: 3           # 任务失败最大重试次数
+  retry_delay: "1s"      # 重试间隔
+  task_timeout: "5m"     # 单个任务超时时间
+
+auth:
+  shared_secret: ""    # 可选，控制面调用时用于 HMAC 校验
+  clock_skew: "300s"   # 允许的时间偏移
+  require_signature: false

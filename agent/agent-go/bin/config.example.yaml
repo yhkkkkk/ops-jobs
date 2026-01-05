@@ -1,0 +1,128 @@
+# ops-job-agent 配置示例（config.example.yaml）
+#
+# 使用说明：
+# 1. 安装时，控制面生成的安装脚本会在二进制同级的 config 目录下
+#    写入一个真正的 config.yaml（包含每台机器独有的 agent_token 等）。
+# 2. 这个文件仅作为本地调试或自定义部署时的参考模版，正常生产环境不直接使用。
+#
+# 如果你手动部署 agent，可以：
+#   - 在二进制目录下创建 config 目录（例如：/opt/ops-job-agent/config）
+#   - 将本文件复制为 config.yaml 并根据实际环境修改字段
+#
+# agent-go 会优先读取：<binary_dir>/config/config.yaml
+# 若找不到，则回退到：~/.ops-job-agent/config.yaml
+
+###########################
+# 基础连接配置
+###########################
+
+connection:
+  # 连接模式：direct（直连控制面）或 agent-server（通过 Agent-Server）
+  mode: "agent-server"
+
+  # direct 模式下，控制面 HTTP 地址（例如 Django 服务）
+  control_plane_url: "http://localhost:8000"
+
+  # agent-server 模式下，Agent-Server WebSocket 地址
+  agent_server_url: "wss://agent-server.example.com/ws"
+
+  # 备用 Agent-Server 地址（可选，用于主备/多可用区）
+  agent_server_backup_url: "wss://agent-server-backup.example.com/ws"
+
+  # WebSocket 重连退避参数（毫秒）
+  ws_backoff_initial_ms: 1000
+  ws_backoff_max_ms: 30000
+  ws_max_retries: 6
+  # WebSocket 断线本地缓冲队列上限（条数，防止日志/结果丢失）
+  ws_outbox_max_size: 1000
+
+  # HTTP 监听地址（直连模式下的本地 HTTP 接口）
+  http_addr: ":8080"
+
+###########################
+# 鉴权与标识
+###########################
+
+identification:
+  # 控制面为该 Agent 签发的 Token（安装时由控制面写入，每台机器不同）
+  agent_token: "REPLACE_WITH_YOUR_AGENT_TOKEN"
+
+  # Agent 名称（默认使用主机名）
+  agent_name: "my-agent"
+
+  # 控制面主机ID（安装时由控制面自动设置，用于建立映射关系）
+  host_id: 123
+
+  # Agent 标签（用于分组/筛选），key-value 形式
+  agent_labels:
+    env: "dev"
+    region: "cn-shanghai"
+
+###########################
+# 日志配置
+###########################
+
+logging:
+  # 日志目录（如果为空，则由 agent 内部决定默认路径）
+  log_dir: ""
+  log_level: "info"        # debug/info/warn/error
+
+  log_max_size: 10       # 单个日志文件最大大小（MB）
+  log_max_files: 5       # 保留的历史日志文件个数
+  log_max_age: 7         # 日志保留天数
+
+  # 日志批量上报（仅 agent-server 模式，WS outbox 冲刷）
+  log_batch_size: 50           # 每批日志条数
+  log_flush_interval: 2000     # 日志刷写间隔（毫秒）
+
+###########################
+# 任务配置
+###########################
+
+task:
+  # 心跳间隔（秒）
+  heartbeat_interval: 10
+
+  # 保留兼容性
+  task_poll_interval: 5
+
+  # 最大并发任务数
+  max_concurrent_tasks: 5
+
+###########################
+# 可选：Redis / Asynq 配置
+###########################
+
+redis:
+  enabled: false
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+asynq:
+  enabled: false
+  concurrency: 5
+
+###########################
+# 资源限制配置
+###########################
+
+resource_limit:
+  # 带宽限制（KB/s，0表示不限制；文件传输使用）
+  bandwidth_limit: 0
+  # CPU 使用率限制（百分比，0表示不限制）
+  cpu_limit: 0.0
+  # 内存限制（MB，0表示不限制）
+  memory_limit: 0
+
+###########################
+# TLS 配置
+###########################
+
+tls:
+  # 是否启用 TLS
+  enable_tls: false
+  # TLS 证书文件路径
+  tls_cert_file: ""
+  # TLS 密钥文件路径
+  tls_key_file: ""
