@@ -727,7 +727,6 @@ onMounted(() => {
   margin-left: auto;
   display: flex;
   align-items: center;
-  margin-top: -40px;
   padding-top: 0;
 }
 

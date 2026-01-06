@@ -134,7 +134,7 @@ class HostFilter(django_filters.FilterSet):
         return queryset.filter(groups__in=group_ids).distinct()
 
     def filter_tags(self, queryset, name, value):
-        """支持多值（逗号/空格分隔），对 JSON 标签做不区分大小写的模糊匹配"""
+        """支持多值（逗号/空格分隔），兼容 key=value 与单词匹配"""
         if not value:
             return queryset
 
@@ -150,12 +150,33 @@ class HostFilter(django_filters.FilterSet):
         if not parts:
             return queryset
 
-        # 将 JSONField 强制转换为文本再做 icontains，兼容 [{key,value}] 结构和字符串标签
-        annotated = queryset.annotate(tags_text=models.functions.Cast('tags', models.TextField()))
-        q = models.Q()
+        # 支持 key=value 精确匹配（使用 JSON contains），同时保留模糊关键词匹配
+        kv_parts = []
+        keywords = []
         for part in parts:
-            q |= models.Q(tags_text__icontains=part)
-        return annotated.filter(q)
+            if '=' in part:
+                k, v = part.split('=', 1)
+                k = k.strip()
+                v = v.strip()
+                if k and v:
+                    kv_parts.append((k, v))
+                    continue
+            keywords.append(part)
+
+        # 先按键值对逐个缩小范围（使用 JSON contains 匹配单个元素）
+        for k, v in kv_parts:
+            annotated_qs = queryset.filter(tags__contains=[{'key': k, 'value': v}])
+            queryset = annotated_qs
+
+        # 再处理普通关键词（任意一个命中即可，使用文本 icontains 兜底）
+        if keywords:
+            annotated = queryset.annotate(tags_text=models.functions.Cast('tags', models.TextField()))
+            q = models.Q()
+            for kw in keywords:
+                q |= models.Q(tags_text__icontains=kw)
+            queryset = annotated.filter(q)
+
+        return queryset
 
 
 class HostGroupFilter(django_filters.FilterSet):
