@@ -1,13 +1,30 @@
 """
-实时日志服务 - 基于Redis Stream的实时日志推送
+实时日志服务 - 基于redis stream的实时日志推送
 """
-import redis
 import logging
-from django.conf import settings
-from typing import Dict, Any, Generator
 from datetime import datetime
+from typing import Any, Dict, Generator
+
+import redis
+from django.conf import settings
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
+
+# 统一的 redis 重试策略
+_REDIS_RETRY = dict(
+    retry=retry_if_exception_type((redis.ConnectionError, redis.TimeoutError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.2, max=5),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 
 
 class RealtimeLogService:
@@ -35,78 +52,64 @@ class RealtimeLogService:
         self.status_stream_prefix = getattr(settings, "STATUS_STREAM_PREFIX", "job_status:")
         self._connection_pool = None
 
+    @retry(**_REDIS_RETRY)
     def _ensure_connection(self):
-        """确保Redis连接可用"""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # 测试连接
-                self.redis_client.ping()
-                return True
-            except (redis.ConnectionError, redis.TimeoutError) as e:
-                logger.warning(f"Redis连接测试失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(1)  # 等待1秒后重试
-                else:
-                    logger.error(f"Redis连接最终失败，已重试{max_retries}次")
-                    return False
-        return False
+        """确保redis连接可用"""
+        self.redis_client.ping()
+        return True
+
+    @retry(**_REDIS_RETRY)
+    def _xadd(self, key, fields):
+        """包装 xadd 以提供重试"""
+        return self.redis_client.xadd(key, fields)
+
+    @retry(**_REDIS_RETRY)
+    def _expire(self, key, seconds):
+        """包装 expire 以提供重试"""
+        return self.redis_client.expire(key, seconds)
     
     def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any], stream_key: str = None):
-        """推送日志到Redis Stream
+        """推送日志到redis Stream
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             host_id: 主机ID
             log_data: 日志数据
             stream_key: 可选，覆盖默认日志流
         """
-        max_retries = 3
         log_stream = stream_key or self.log_stream_key
-        for attempt in range(max_retries):
-            try:
-                # 快速失败策略，避免阻塞
-                if not self._ensure_connection():
-                    if attempt == max_retries - 1:
-                        logger.error(f"Redis连接不可用，跳过日志推送: {task_id}")
-                    continue
+        try:
+            self._ensure_connection()
+        except Exception as e:
+            logger.error(f"redis连接不可用，跳过日志推送: {task_id} - {e}")
+            return
 
-                # 构建日志消息 - 统一字段名
-                message = {
-                    'timestamp': datetime.now().isoformat(),
-                    'task_id': str(task_id),  # 保留完整task_id
-                    'execution_id': str(task_id),  # 与Agent-Server保持一致
-                    'host_id': str(host_id),
-                    'host_name': log_data.get('host_name', ''),
-                    'host_ip': log_data.get('host_ip', ''),
-                    'log_type': log_data.get('log_type', log_data.get('stream', 'stdout')),  # 统一使用log_type
-                    'content': log_data.get('content', ''),
-                    'step_name': log_data.get('step_name', ''),
-                    'step_order': log_data.get('step_order', 0),
-                    'step_id': log_data.get('step_id', ''),
-                    'agent_id': log_data.get('agent_id', '')
-                }
+        try:
+            # 构建日志消息 - 统一字段名
+            message = {
+                'timestamp': datetime.now().isoformat(),
+                'task_id': str(task_id),  # 保留完整task_id
+                'execution_id': str(task_id),  # 与Agent-Server保持一致
+                'host_id': str(host_id),
+                'host_name': log_data.get('host_name', ''),
+                'host_ip': log_data.get('host_ip', ''),
+                'log_type': log_data.get('log_type', log_data.get('stream', 'stdout')),  # 统一使用log_type
+                'content': log_data.get('content', ''),
+                'step_name': log_data.get('step_name', ''),
+                'step_order': log_data.get('step_order', 0),
+                'step_id': log_data.get('step_id', ''),
+                'agent_id': log_data.get('agent_id', '')
+            }
 
-                # 同时写入统一日志流（agent_logs），便于consume_agent_logs处理
-                unified_message = message.copy()
-                unified_message['received_at'] = datetime.now().timestamp() * 1000  # 毫秒时间戳
+            # 同时写入统一日志流（agent_logs），便于consume_agent_logs处理
+            unified_message = message.copy()
+            unified_message['received_at'] = datetime.now().timestamp() * 1000  # 毫秒时间戳
 
-                # 仅写入统一日志流
-                self.redis_client.xadd(log_stream, unified_message)
+            # 仅写入统一日志流
+            self._xadd(log_stream, unified_message)
 
-                logger.debug(f"推送日志到 {log_stream}: {message}")
-                return  # 成功则直接返回
-
-            except (redis.ConnectionError, redis.TimeoutError) as e:
-                logger.error(f"Redis连接错误，推送日志失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(0.5)  # 重试前等待
-            except Exception as e:
-                logger.error(f"推送日志失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(0.3)
+            logger.debug(f"推送日志到 {log_stream}: {message}")
+        except Exception as e:
+            logger.error(f"推送日志失败: {task_id} - {e}")
 
     def push_log_async(self, task_id: str, host_id: str, log_data: Dict[str, Any]):
         """
@@ -122,61 +125,49 @@ class RealtimeLogService:
         thread.start()
     
     def push_status(self, task_id: str, status_data: Dict[str, Any], stream_prefix: str = None):
-        """推送状态更新到Redis Stream
+        """推送状态更新到redis stream
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             status_data: 状态数据
             stream_prefix: 可选，覆盖默认状态流前缀
         """
-        max_retries = 3
         status_prefix = stream_prefix or self.status_stream_prefix
-        for attempt in range(max_retries):
-            try:
-                # 确保连接可用
-                if not self._ensure_connection():
-                    logger.error(f"redis连接不可用，跳过状态推送: {task_id}")
-                    return
+        try:
+            self._ensure_connection()
+        except Exception as e:
+            logger.error(f"redis连接不可用，跳过状态推送: {task_id} - {e}")
+            return
 
-                stream_key = f"{status_prefix}{task_id}"
+        try:
+            stream_key = f"{status_prefix}{task_id}"
 
-                # 构建状态消息（支持作业执行和Agent安装两种格式）
-                message = {
-                    'timestamp': datetime.now().isoformat(),
-                    'status': status_data.get('status', ''),
-                    'progress': status_data.get('progress', 0),
-                    'current_step': status_data.get('current_step', ''),
-                    'total_hosts': status_data.get('total_hosts', status_data.get('total', 0)),
-                    'success_hosts': status_data.get('success_hosts', status_data.get('success_count', 0)),
-                    'failed_hosts': status_data.get('failed_hosts', status_data.get('failed_count', 0)),
-                    'running_hosts': status_data.get('running_hosts', 0),
-                    'completed': status_data.get('completed', 0),
-                    'total': status_data.get('total', status_data.get('total_hosts', 0)),
-                    'success_count': status_data.get('success_count', status_data.get('success_hosts', 0)),
-                    'failed_count': status_data.get('failed_count', status_data.get('failed_hosts', 0)),
-                    'message': status_data.get('message', '')
-                }
+            # 构建状态消息（支持作业执行和Agent安装两种格式）
+            message = {
+                'timestamp': datetime.now().isoformat(),
+                'status': status_data.get('status', ''),
+                'progress': status_data.get('progress', 0),
+                'current_step': status_data.get('current_step', ''),
+                'total_hosts': status_data.get('total_hosts', status_data.get('total', 0)),
+                'success_hosts': status_data.get('success_hosts', status_data.get('success_count', 0)),
+                'failed_hosts': status_data.get('failed_hosts', status_data.get('failed_count', 0)),
+                'running_hosts': status_data.get('running_hosts', 0),
+                'completed': status_data.get('completed', 0),
+                'total': status_data.get('total', status_data.get('total_hosts', 0)),
+                'success_count': status_data.get('success_count', status_data.get('success_hosts', 0)),
+                'failed_count': status_data.get('failed_count', status_data.get('failed_hosts', 0)),
+                'message': status_data.get('message', '')
+            }
 
-                # 推送到Redis Stream
-                self.redis_client.xadd(stream_key, message)
+            # 推送到redis stream
+            self._xadd(stream_key, message)
 
-                # 设置过期时间（24小时）
-                self.redis_client.expire(stream_key, 86400)
+            # 设置过期时间（24小时）
+            self._expire(stream_key, 86400)
 
-                logger.debug(f"推送状态到 {stream_key}: {message}")
-                break  # 成功则跳出重试循环
+            logger.debug(f"推送状态到 {stream_key}: {message}")
 
-            except (redis.ConnectionError, redis.TimeoutError) as e:
-                logger.error(f"Redis连接错误，推送状态失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(1)  # 重试前等待更长时间
-            except Exception as e:
-                logger.error(f"推送状态失败 (尝试 {attempt + 1}/{max_retries}): {task_id} - {e}")
-                if attempt == max_retries - 1:
-                    logger.error(f"推送状态最终失败: {task_id}")
-                else:
-                    import time
-                    time.sleep(0.5)  # 重试前等待
+        except Exception as e:
+            logger.error(f"推送状态失败: {task_id} - {e}")
     
     def get_logs_stream(self, task_id: str, last_id: str = '0') -> Generator[Dict[str, Any], None, None]:
         """获取日志流 - 用于SSE，直接读取统一流 agent_logs 并按 execution_id 过滤"""
@@ -188,15 +179,17 @@ class RealtimeLogService:
             while True:
                 try:
                     # 确保连接可用
-                    if not self._ensure_connection():
+                    try:
+                        self._ensure_connection()
+                    except Exception as e:
                         yield {
                             'id': last_id,
                             'type': 'error',
-                            'data': {'message': 'Redis连接不可用'}
+                            'data': {'message': f'redis连接不可用: {e}'}
                         }
                         break
 
-                    # 从Redis Stream读取新消息 - 优化参数
+                    # 从redis Stream读取新消息 - 优化参数
                     # count增加到100，block增加到5秒，减少轮询频率
                     messages = self.redis_client.xread(
                         {stream_key: last_id},
@@ -227,10 +220,10 @@ class RealtimeLogService:
 
                 except (redis.ConnectionError, redis.TimeoutError) as e:
                     consecutive_errors += 1
-                    logger.warning(f"Redis连接错误 (连续错误: {consecutive_errors}): {task_id} - {e}")
+                    logger.warning(f"redis连接错误 (连续错误: {consecutive_errors}): {task_id} - {e}")
 
                     if consecutive_errors >= max_consecutive_errors:
-                        logger.error(f"连续Redis错误过多，停止日志流: {task_id}")
+                        logger.error(f"连续redis错误过多，停止日志流: {task_id}")
                         yield {
                             'id': last_id,
                             'type': 'error',
@@ -256,7 +249,7 @@ class RealtimeLogService:
         
         try:
             while True:
-                # 从Redis Stream读取新消息
+                # 从redis stream读取新消息
                 messages = self.redis_client.xread({stream_key: last_id}, count=10, block=1000)
                 
                 if messages:
