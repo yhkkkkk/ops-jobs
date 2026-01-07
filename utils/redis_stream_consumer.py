@@ -114,8 +114,8 @@ class RedisStreamConsumer:
         """
         stats = {"total": 0, "claimed": 0, "acked": 0, "failed": 0}
         try:
-            pending = self.redis_client.xpending(
-                self.stream_key, self.group, min="-", max="+", count=count
+            pending = self.redis_client.xpending_range(
+                self.stream_key, self.group, "-", "+", count
             )
         except Exception as exc:
             logger.exception(
@@ -174,4 +174,3 @@ class RedisStreamConsumer:
                 stats["failed"] += 1
 
         return stats
-

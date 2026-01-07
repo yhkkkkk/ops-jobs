@@ -267,10 +267,54 @@
                   style="width: 250px"
                 />
               </a-form-item>
-              <a-form-item label="操作系统版本">
+              <a-form-item label="CPU架构">
+                <a-select
+                  v-model="advancedForm.cpu_arch"
+                  placeholder="请选择CPU架构"
+                  allow-clear
+                  allow-search
+                  @change="handleSearch"
+                  @clear="handleSearch"
+                  style="width: 180px"
+                >
+                  <a-option value="x86_64">x86_64</a-option>
+                  <a-option value="arm64">arm64</a-option>
+                  <a-option value="aarch64">aarch64</a-option>
+                  <a-option value="mips">mips</a-option>
+                  <a-option value="ppc64le">ppc64le</a-option>
+                  <a-option value="other">其他</a-option>
+                </a-select>
+              </a-form-item>
+              <a-form-item label="CPU逻辑核心数">
+                <a-input-number
+                  v-model="advancedForm.cpu_cores_min"
+                  placeholder="最小值"
+                  :min="0"
+                  @change="handleSearch"
+                  style="width: 110px"
+                />
+                <span style="margin: 0 6px;">~</span>
+                <a-input-number
+                  v-model="advancedForm.cpu_cores_max"
+                  placeholder="最大值"
+                  :min="0"
+                  @change="handleSearch"
+                  style="width: 110px"
+                />
+              </a-form-item>
+              <a-form-item label="负责人">
                 <a-input
-                  v-model="advancedForm.os_version"
-                  placeholder="请输入系统版本"
+                  v-model="advancedForm.owner"
+                  placeholder="请输入负责人"
+                  allow-clear
+                  @press-enter="handleSearch"
+                  style="width: 160px"
+                />
+              </a-form-item>
+              <a-form-item label="所属部门">
+                <a-input
+                  v-model="advancedForm.department"
+                  placeholder="请输入所属部门"
                   allow-clear
                   @press-enter="handleSearch"
                   style="width: 160px"
@@ -1027,7 +1071,11 @@ const advancedForm = reactive({
   cloud_provider: '',
   internal_ip: '',
   public_ip: '',
-  os_version: '',
+  cpu_arch: '',
+  cpu_cores_min: undefined as number | undefined,
+  cpu_cores_max: undefined as number | undefined,
+  owner: '',
+  department: '',
   region: '',
   zone: '',
 })
@@ -1300,6 +1348,17 @@ const fetchHosts = async () => {
       delete params.search
     }
 
+    // 清理可选高级筛选参数
+    if (!advancedForm.cpu_arch) delete params.cpu_arch
+    if (!advancedForm.owner) delete params.owner
+    if (!advancedForm.department) delete params.department
+    if (advancedForm.cpu_cores_min === undefined || advancedForm.cpu_cores_min === null || advancedForm.cpu_cores_min === '') {
+      delete params.cpu_cores_min
+    }
+    if (advancedForm.cpu_cores_max === undefined || advancedForm.cpu_cores_max === null || advancedForm.cpu_cores_max === '') {
+      delete params.cpu_cores_max
+    }
+
     // 标签数组转逗号分隔（对对象/空值做清洗，保持与脚本模板列表一致）
     if (Array.isArray(searchForm.tags)) {
       const cleanedTags = searchForm.tags
@@ -1381,7 +1440,11 @@ const handleReset = () => {
     cloud_provider: '',
     internal_ip: '',
     public_ip: '',
-    os_version: '',
+    cpu_arch: '',
+    cpu_cores_min: undefined,
+    cpu_cores_max: undefined,
+    owner: '',
+    department: '',
     region: '',
     zone: '',
   })

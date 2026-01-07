@@ -66,6 +66,29 @@ class HostFilter(django_filters.FilterSet):
         lookup_expr='lte',
         label='最大CPU核心数'
     )
+    # CPU架构
+    cpu_arch = django_filters.CharFilter(
+        field_name='cpu_arch',
+        lookup_expr='icontains',
+        label='CPU架构'
+    )
+    # CPU逻辑核心数（精确匹配）
+    cpu_cores = django_filters.NumberFilter(
+        field_name='cpu_cores',
+        label='CPU逻辑核心数'
+    )
+    # 负责人
+    owner = django_filters.CharFilter(
+        field_name='owner',
+        lookup_expr='icontains',
+        label='负责人'
+    )
+    # 所属部门
+    department = django_filters.CharFilter(
+        field_name='department',
+        lookup_expr='icontains',
+        label='所属部门'
+    )
 
     # 内存范围过滤器
     memory_gb_min = django_filters.NumberFilter(
@@ -84,7 +107,7 @@ class HostFilter(django_filters.FilterSet):
         fields = [
             'search', 'status', 'os_type', 'cloud_provider', 'device_type',
             'tags', 'group', 'group_id', 'cpu_cores_min', 'cpu_cores_max',
-            'memory_gb_min', 'memory_gb_max'
+            'cpu_arch', 'cpu_cores', 'memory_gb_min', 'memory_gb_max', 'owner', 'department'
         ]
 
     def filter_search(self, queryset, name, value):
