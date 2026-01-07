@@ -622,8 +622,10 @@ import { agentsApi, packageApi, type Agent, type AgentPackage } from '@/api/agen
 import { hostApi } from '@/api/ops'
 import dayjs from 'dayjs'
 import { buildSseUrl } from '@/utils/env'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 // 响应式数据
 const loading = ref(false)
@@ -1082,6 +1084,15 @@ const filterAgentOption = (inputValue: string, option: any) => {
   return label.toLowerCase().includes(inputValue.toLowerCase())
 }
 
+const getAccessToken = () => {
+  return (
+    authStore.token ||
+    sessionStorage.getItem('access_token') ||
+    localStorage.getItem('access_token') ||
+    ''
+  )
+}
+
 // 连接 SSE 查看卸载进度
 const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   // 关闭之前的连接
@@ -1101,7 +1112,7 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   }
 
   // 获取 token
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+  const token = getAccessToken()
   // 使用相对路径，因为 SSE 请求会通过代理
   // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
   const sseUrl = buildSseUrl(`agent-install/${uninstallTaskId}/`, `token=${token || ''}`)
@@ -1407,7 +1418,7 @@ const connectInstallProgressSSE = (installTaskId: string) => {
   }
 
   // 获取 token
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+  const token = getAccessToken()
   // 使用相对路径，因为sse请求会通过代理
   // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
   const sseUrl = buildSseUrl(`agent-install/${installTaskId}/`, `token=${token || ''}`)
