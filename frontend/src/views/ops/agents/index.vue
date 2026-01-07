@@ -1103,7 +1103,8 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   // 获取 token
   const token = localStorage.getItem('token') || sessionStorage.getItem('token')
   // 使用相对路径，因为 SSE 请求会通过代理
-  const sseUrl = buildSseUrl(`utils/sse/agent-install/${uninstallTaskId}/`, `token=${token || ''}`)
+  // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
+  const sseUrl = buildSseUrl(`agent-install/${uninstallTaskId}/`, `token=${token || ''}`)
 
   // 创建 SSE 连接
   const eventSource = new EventSource(sseUrl)
@@ -1408,7 +1409,8 @@ const connectInstallProgressSSE = (installTaskId: string) => {
   // 获取 token
   const token = localStorage.getItem('token') || sessionStorage.getItem('token')
   // 使用相对路径，因为sse请求会通过代理
-  const sseUrl = buildSseUrl(`utils/sse/agent-install/${installTaskId}/`, `token=${token || ''}`)
+  // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
+  const sseUrl = buildSseUrl(`agent-install/${installTaskId}/`, `token=${token || ''}`)
 
   // 创建 SSE 连接
   const eventSource = new EventSource(sseUrl)
