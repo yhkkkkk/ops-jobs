@@ -653,9 +653,15 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     
                     config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                     if result['success']:
-                        # 安装脚本执行成功，Agent 状态保持 pending，等待首次上线
-                        install_record.status = 'pending'  # 等待 Agent 首次上线
-                        install_record.message = f'安装脚本执行成功，等待 Agent 首次上线 | {config_summary}'
+                        if install_type == 'agent-server':
+                            install_record.status = 'success'
+                            install_record.message = f'Agent-Server 安装脚本执行成功 | {config_summary}'
+                        else:
+                            # Agent 安装等待首次上线
+                            install_record.status = 'pending'
+                            install_record.message = f'安装脚本执行成功，等待 Agent 首次上线 | {config_summary}'
+                        install_record.error_message = ''
+                        install_record.error_detail = ''
                         success_count += 1
                         results.append({
                             'host_id': host.id,
@@ -664,12 +670,13 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                             'message': install_record.message
                         })
                         # 推送成功日志
+                        install_target = 'Agent-Server' if install_type == 'agent-server' else 'Agent'
                         realtime_log_service.push_log(install_task_id, str(host.id), {
                             'host_name': host.name,
                             'host_ip': host.ip_address,
                             'log_type': 'info',
-                            'content': f'主机 {host.name} Agent 安装成功 | {config_summary}',
-                            'step_name': '安装 Agent',
+                            'content': f'主机 {host.name} {install_target} 安装成功 | {config_summary}',
+                            'step_name': f'安装 {install_target}',
                             'step_order': 1
                         })
                     else:

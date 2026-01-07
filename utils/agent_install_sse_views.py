@@ -90,9 +90,13 @@ class AgentInstallProgressSSEView(SSEBaseView):
         last_id = request.GET.get('last_id', '0')
 
         def event_stream():
-            nonlocal last_id
-            """事件流生成器"""
+            """事件流生成器：合并状态与日志流"""
             try:
+                status_stream_key = f"{realtime_log_service.status_stream_prefix}{install_task_id}"
+                log_stream_key = realtime_log_service.log_stream_key
+                status_last_id = last_id
+                log_last_id = last_id
+
                 # 发送连接建立消息
                 yield self.format_sse_message({
                     'type': 'connection_established',
@@ -100,46 +104,82 @@ class AgentInstallProgressSSEView(SSEBaseView):
                     'install_task_id': install_task_id
                 }, event_type='message')
 
-                # 发送历史状态
+                # 发送历史状态与日志
                 if last_id == '0':
                     try:
-                        # 尝试获取历史状态
-                        if hasattr(realtime_log_service, 'get_historical_status'):
-                            historical_status = realtime_log_service.get_historical_status(install_task_id, limit=10)
-                            logger.info(f"发送历史状态: {len(historical_status)} 条")
-                            for status in historical_status:
+                        # 尝试获取历史状态（从 Redis Stream 读取最近 N 条）
+                        try:
+                            status_history = realtime_log_service.redis_client.xrevrange(
+                                status_stream_key, count=20
+                            )
+                            for msg_id, fields in reversed(status_history):
+                                status_last_id = msg_id
                                 yield self.format_sse_message({
                                     'type': 'status',
-                                    **status
-                                }, event_type='message', event_id=status.get('id'))
-                                last_id = status.get('id', '0')
-                    except Exception as e:
-                        logger.warning(f"获取历史状态失败: {e}")
+                                    **fields
+                                }, event_type='message', event_id=msg_id)
+                        except Exception as e:
+                            logger.warning(f"获取历史状态失败: {e}")
 
-                # 开始实时状态流
+                        # 历史日志
+                        historical_logs = realtime_log_service.get_historical_logs(install_task_id, limit=50)
+                        logger.info(f"发送历史日志: {len(historical_logs)} 条")
+                        for log in historical_logs:
+                            normalized_log = self.normalize_log_message(log, install_task_id)
+                            log_last_id = normalized_log.get('id') or log.get('id', '0')
+                            yield self.format_sse_message({
+                                'type': 'log',
+                                **normalized_log
+                            }, event_type='message', event_id=log_last_id)
+                    except Exception as e:
+                        logger.warning(f"发送历史状态/日志失败: {e}")
+
+                # 开始实时合并流
                 logger.info(f"开始实时进度流: install_task_id={install_task_id}")
-                for message in realtime_log_service.get_status_stream(install_task_id, last_id):
-                    if message['type'] == 'status':
-                        yield self.format_sse_message({
-                            'type': 'status',
-                            **message['data']
-                        }, event_type='message', event_id=message.get('id'))
-                    elif message['type'] == 'log':
-                        yield self.format_sse_message({
-                            'type': 'log',
-                            **message['data']
-                        }, event_type='message', event_id=message.get('id'))
-                    elif message['type'] == 'heartbeat':
-                        yield self.format_sse_message({
-                            'type': 'heartbeat',
-                            **message['data']
-                        }, event_type='heartbeat')
-                    elif message['type'] == 'error':
+                while True:
+                    try:
+                        messages = realtime_log_service.redis_client.xread(
+                            {
+                                status_stream_key: status_last_id,
+                                log_stream_key: log_last_id
+                            },
+                            count=200,
+                            block=2000
+                        )
+
+                        if messages:
+                            for stream, msgs in messages:
+                                for msg_id, fields in msgs:
+                                    if stream == status_stream_key:
+                                        status_last_id = msg_id
+                                        yield self.format_sse_message({
+                                            'type': 'status',
+                                            **fields
+                                        }, event_type='message', event_id=msg_id)
+                                    elif stream == log_stream_key:
+                                        exec_id = fields.get('execution_id') or fields.get('task_id')
+                                        if str(exec_id) != str(install_task_id):
+                                            continue
+                                        log_last_id = msg_id
+                                        normalized_log = self.normalize_log_message(fields, install_task_id)
+                                        yield self.format_sse_message({
+                                            'type': 'log',
+                                            **normalized_log
+                                        }, event_type='message', event_id=msg_id)
+                        else:
+                            # 心跳，保持连接
+                            yield self.format_sse_message({
+                                'type': 'heartbeat',
+                                'timestamp': datetime.now().isoformat()
+                            }, event_type='heartbeat')
+
+                    except Exception as e:
+                        logger.error(f"实时进度流异常: {install_task_id} - {e}")
                         yield self.format_sse_message({
                             'type': 'error',
-                            **message['data']
+                            'message': str(e)
                         }, event_type='message')
-                        return
+                        break
 
             except Exception as e:
                 logger.error(f"SSE进度流异常: {install_task_id} - {e}")

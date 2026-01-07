@@ -643,8 +643,8 @@ class FabricSSHManager:
                 'timeout': timeout,  # 设置命令执行超时
                 'encoding': 'utf-8',  # 设置输出编码为UTF-8
                 'env': {
-                    'LC_ALL': 'C.UTF-8',  # 设置UTF-8编码环境
-                    'LANG': 'C.UTF-8',
+                    'LC_ALL': 'zh_CN.UTF-8',  # 设置UTF-8编码环境
+                    'LANG': 'zh_CN.UTF-8',
                     'PYTHONIOENCODING': 'utf-8'  # Python输出编码
                 }
             }
@@ -838,7 +838,7 @@ class FabricSSHManager:
             # 使用bash -c来执行多行脚本，并设置UTF-8编码环境
             escaped_script = script_content.replace("'", "'\"'\"'")  # 转义单引号
             # 在脚本前添加编码设置
-            command = f"export LC_ALL=C.UTF-8 LANG=C.UTF-8 PYTHONIOENCODING=utf-8; bash -c '{escaped_script}'"
+            command = f"export LC_ALL=zh_CN.UTF-8 LANG=zh_CN.UTF-8 PYTHONIOENCODING=utf-8; bash -c '{escaped_script}'"
 
             logger.info(f"执行命令: {command}")
 
@@ -854,8 +854,8 @@ class FabricSSHManager:
                 encoding='utf-8',  # 明确指定编码
                 env={
                     'PYTHONUNBUFFERED': '1',  # 确保Python输出不缓冲
-                    'LC_ALL': 'C.UTF-8',      # 设置UTF-8编码
-                    'LANG': 'C.UTF-8',        # 设置语言环境
+                    'LC_ALL': 'zh_CN.UTF-8',      # 设置UTF-8编码
+                    'LANG': 'zh_CN.UTF-8',        # 设置语言环境
                     'PYTHONIOENCODING': 'utf-8'  # Python输出编码
                 }
             )
