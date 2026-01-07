@@ -510,6 +510,9 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
         success_count = 0
         failed_count = 0
         
+        install_status_prefix = "agent_install_status:"
+        install_log_stream = "agent_install_logs"
+
         # 推送初始状态
         realtime_log_service.push_status(install_task_id, {
             'status': 'running',
@@ -518,7 +521,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
             'success_count': 0,
             'failed_count': 0,
             'message': '开始批量安装 Agent'
-        })
+        }, stream_prefix=install_status_prefix)
         
         # 获取主机列表
         hosts = Host.objects.filter(id__in=host_ids)
@@ -638,7 +641,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     'content': f'开始安装 Agent 到主机 {host.name} ({host.ip_address})',
                     'step_name': '安装 Agent',
                     'step_order': 1
-                })
+                }, stream_key=install_log_stream)
                 
                 # 通过ssh执行安装脚本
                 try:
@@ -678,7 +681,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                             'content': f'主机 {host.name} {install_target} 安装成功 | {config_summary}',
                             'step_name': f'安装 {install_target}',
                             'step_order': 1
-                        })
+                        }, stream_key=install_log_stream)
                     else:
                         install_record.status = 'failed'
                         stderr = (result.get('stderr') or '').strip()
@@ -701,7 +704,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                             'content': f'主机 {host.name} Agent 安装失败: {error_msg} | {config_summary}',
                             'step_name': '安装 Agent',
                             'step_order': 1
-                        })
+                        }, stream_key=install_log_stream)
                     
                     install_record.save()
                     completed += 1
@@ -714,7 +717,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         'success_count': success_count,
                         'failed_count': failed_count,
                         'message': f'已完成 {completed}/{total} 个主机的安装'
-                    })
+                    }, stream_prefix=install_status_prefix)
                     
                 except Exception as e:
                     error_msg = f'SSH 执行失败: {str(e)}'
@@ -740,7 +743,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         'content': f'主机 {host.name} SSH 执行失败: {str(e)}',
                         'step_name': '安装 Agent',
                         'step_order': 1
-                    })
+                    }, stream_key=install_log_stream)
                     
                     completed += 1
                     
@@ -752,7 +755,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         'success_count': success_count,
                         'failed_count': failed_count,
                         'message': f'已完成 {completed}/{total} 个主机的安装'
-                    })
+                    }, stream_prefix=install_status_prefix)
                 
             except Exception as e:
                 failed_count += 1
@@ -773,7 +776,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     'content': f'主机 {host_name} 安装失败: {error_msg}',
                     'step_name': '安装 Agent',
                     'step_order': 1
-                })
+                }, stream_key=install_log_stream)
                 
                 completed += 1
                 
@@ -785,7 +788,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     'success_count': success_count,
                     'failed_count': failed_count,
                     'message': f'已完成 {completed}/{total} 个主机的安装'
-                })
+                }, stream_prefix=install_status_prefix)
         
         # 推送最终状态
         final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
@@ -796,7 +799,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
             'success_count': success_count,
             'failed_count': failed_count,
             'message': f'批量安装完成：成功 {success_count} 个，失败 {failed_count} 个'
-        })
+        }, stream_prefix=install_status_prefix)
         
         return {
             'results': results,

@@ -31,7 +31,6 @@ class RealtimeLogService:
         )
 
         self.redis_client = redis.Redis(connection_pool=self.connection_pool)
-        # Stream keys can be overridden by Django settings to align with Agent-Server defaults.
         self.log_stream_key = getattr(settings, "LOG_STREAM_KEY", "agent_logs")
         self.status_stream_prefix = getattr(settings, "STATUS_STREAM_PREFIX", "job_status:")
         self._connection_pool = None
@@ -54,14 +53,16 @@ class RealtimeLogService:
                     return False
         return False
     
-    def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any]):
+    def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any], stream_key: str = None):
         """推送日志到Redis Stream
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             host_id: 主机ID
             log_data: 日志数据
+            stream_key: 可选，覆盖默认日志流
         """
         max_retries = 3
+        log_stream = stream_key or self.log_stream_key
         for attempt in range(max_retries):
             try:
                 # 快速失败策略，避免阻塞
@@ -91,9 +92,9 @@ class RealtimeLogService:
                 unified_message['received_at'] = datetime.now().timestamp() * 1000  # 毫秒时间戳
 
                 # 仅写入统一日志流
-                self.redis_client.xadd(self.log_stream_key, unified_message)
+                self.redis_client.xadd(log_stream, unified_message)
 
-                logger.debug(f"推送日志到 {self.log_stream_key}: {message}")
+                logger.debug(f"推送日志到 {log_stream}: {message}")
                 return  # 成功则直接返回
 
             except (redis.ConnectionError, redis.TimeoutError) as e:
@@ -120,13 +121,15 @@ class RealtimeLogService:
         thread = threading.Thread(target=push_worker, daemon=True)
         thread.start()
     
-    def push_status(self, task_id: str, status_data: Dict[str, Any]):
+    def push_status(self, task_id: str, status_data: Dict[str, Any], stream_prefix: str = None):
         """推送状态更新到Redis Stream
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             status_data: 状态数据
+            stream_prefix: 可选，覆盖默认状态流前缀
         """
         max_retries = 3
+        status_prefix = stream_prefix or self.status_stream_prefix
         for attempt in range(max_retries):
             try:
                 # 确保连接可用
@@ -134,7 +137,7 @@ class RealtimeLogService:
                     logger.error(f"redis连接不可用，跳过状态推送: {task_id}")
                     return
 
-                stream_key = f"{self.status_stream_prefix}{task_id}"
+                stream_key = f"{status_prefix}{task_id}"
 
                 # 构建状态消息（支持作业执行和Agent安装两种格式）
                 message = {

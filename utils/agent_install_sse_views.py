@@ -11,6 +11,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 from .sse_views import SSEBaseView
 from .realtime_logs import realtime_log_service
 
@@ -92,8 +93,9 @@ class AgentInstallProgressSSEView(SSEBaseView):
         def event_stream():
             """事件流生成器：合并状态与日志流"""
             try:
-                status_stream_key = f"{realtime_log_service.status_stream_prefix}{install_task_id}"
-                log_stream_key = realtime_log_service.log_stream_key
+                status_prefix = getattr(settings, "INSTALL_STATUS_STREAM_PREFIX", "agent_install_status:")
+                log_stream_key = getattr(settings, "INSTALL_LOG_STREAM_KEY", "agent_install_logs")
+                status_stream_key = f"{status_prefix}{install_task_id}"
                 status_last_id = last_id
                 log_last_id = last_id
 
@@ -138,6 +140,12 @@ class AgentInstallProgressSSEView(SSEBaseView):
                 logger.info(f"开始实时进度流: install_task_id={install_task_id}")
                 while True:
                     try:
+                        if not realtime_log_service._ensure_connection():
+                            yield self.format_sse_message({
+                                'type': 'error',
+                                'message': 'Redis连接不可用'
+                            }, event_type='message')
+                            break
                         messages = realtime_log_service.redis_client.xread(
                             {
                                 status_stream_key: status_last_id,
