@@ -1352,10 +1352,10 @@ const fetchHosts = async () => {
     if (!advancedForm.cpu_arch) delete params.cpu_arch
     if (!advancedForm.owner) delete params.owner
     if (!advancedForm.department) delete params.department
-    if (advancedForm.cpu_cores_min === undefined || advancedForm.cpu_cores_min === null || advancedForm.cpu_cores_min === '') {
+    if (advancedForm.cpu_cores_min === undefined || advancedForm.cpu_cores_min === null) {
       delete params.cpu_cores_min
     }
-    if (advancedForm.cpu_cores_max === undefined || advancedForm.cpu_cores_max === null || advancedForm.cpu_cores_max === '') {
+    if (advancedForm.cpu_cores_max === undefined || advancedForm.cpu_cores_max === null) {
       delete params.cpu_cores_max
     }
 
