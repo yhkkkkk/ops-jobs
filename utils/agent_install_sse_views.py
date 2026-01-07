@@ -150,4 +150,3 @@ class AgentInstallProgressSSEView(SSEBaseView):
                 return
 
         return self.create_sse_response(event_stream())
-

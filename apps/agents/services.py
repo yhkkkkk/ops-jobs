@@ -315,13 +315,19 @@ cd "$INSTALL_DIR"
 
 # 下载并解压/放置二进制与示例配置
 echo "正在下载 Agent 包..."
+TMP_PKG=""
 if echo "$DOWNLOAD_URL" | grep -Ei "\\.zip($|\\?)" >/dev/null; then
-    (cd "$INSTALL_DIR" && (curl -L "$DOWNLOAD_URL" || wget -O- "$DOWNLOAD_URL") | unzip -o -)
+    TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.zip)"
+    (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
+    unzip -o "$TMP_PKG" -d "$INSTALL_DIR"
 elif echo "$DOWNLOAD_URL" | grep -Ei "\\.(tar\\.gz|tgz)($|\\?)" >/dev/null; then
-    (cd "$INSTALL_DIR" && (curl -L "$DOWNLOAD_URL" || wget -O- "$DOWNLOAD_URL") | tar -xz)
+    TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.tar.gz)"
+    (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
+    tar -xzf "$TMP_PKG" -C "$INSTALL_DIR"
 else
-    curl -L -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL" || wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
+    curl -fL -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL" || wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
 fi
+[ -n "$TMP_PKG" ] && rm -f "$TMP_PKG"
 
 # 归一化二进制命名
 [ -f "$INSTALL_DIR/agent" ] && mv -f "$INSTALL_DIR/agent" "$INSTALL_DIR/$BINARY_NAME"
@@ -667,10 +673,11 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         })
                     else:
                         install_record.status = 'failed'
-                        error_msg = result.get('stderr', '安装失败')
-                        install_record.message = f'{error_msg} | {config_summary}'
+                        stderr = (result.get('stderr') or '').strip()
+                        error_msg = stderr.splitlines()[0] if stderr else (result.get('message') or '安装失败')
+                        install_record.message = f'安装脚本执行失败：{error_msg} | {config_summary}'
                         install_record.error_message = error_msg
-                        install_record.error_detail = result.get('stderr', '')
+                        install_record.error_detail = stderr or error_msg
                         failed_count += 1
                         results.append({
                             'host_id': host.id,
