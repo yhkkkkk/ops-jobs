@@ -1426,6 +1426,9 @@ const connectInstallProgressSSE = (installTaskId: string) => {
   // 创建 SSE 连接
   const eventSource = new EventSource(sseUrl)
   sseEventSource.value = eventSource
+  // 确保显示进度抽屉并切到进度标签页，避免在连接过程中因异常导致界面仍停留在选择页
+  installModalVisible.value = true
+  installTab.value = 'progress'
 
   eventSource.onmessage = (event) => {
     try {
@@ -1463,6 +1466,9 @@ const connectInstallProgressSSE = (installTaskId: string) => {
           log_type: 'error',
           timestamp: new Date().toISOString()
         })
+        // 切换到进度页并关闭连接，确保用户能看到错误并避免悬挂的连接
+        installTab.value = 'progress'
+        try { eventSource.close() } catch (e) {}
       }
     } catch (error) {
       console.error('解析 SSE 消息失败:', error)
@@ -1471,16 +1477,14 @@ const connectInstallProgressSSE = (installTaskId: string) => {
 
   eventSource.onerror = (error) => {
     console.error('SSE 连接错误:', error)
-    if (eventSource.readyState === EventSource.CLOSED) {
-      if (installProgress.value.status === 'running') {
-        installProgress.value.status = 'error'
-        installProgress.value.message = '连接已断开'
-      }
+    // 作为保险：切换到进度页并标记连接断开，关闭连接
+    installTab.value = 'progress'
+    if (installProgress.value.status === 'running') {
+      installProgress.value.status = 'error'
+      installProgress.value.message = '连接已断开'
     }
+    try { eventSource.close() } catch (e) {}
   }
-
-  // 切换到进度标签页
-  installTab.value = 'progress'
 }
 
 // 批量安装

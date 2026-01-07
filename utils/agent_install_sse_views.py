@@ -90,6 +90,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
         last_id = request.GET.get('last_id', '0')
 
         def event_stream():
+            nonlocal last_id
             """事件流生成器"""
             try:
                 # 发送连接建立消息
@@ -102,7 +103,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                 # 发送历史状态
                 if last_id == '0':
                     try:
-                        # 尝试获取历史状态（如果方法存在）
+                        # 尝试获取历史状态
                         if hasattr(realtime_log_service, 'get_historical_status'):
                             historical_status = realtime_log_service.get_historical_status(install_task_id, limit=10)
                             logger.info(f"发送历史状态: {len(historical_status)} 条")
@@ -138,7 +139,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                             'type': 'error',
                             **message['data']
                         }, event_type='message')
-                        break
+                        return
 
             except Exception as e:
                 logger.error(f"SSE进度流异常: {install_task_id} - {e}")
@@ -146,6 +147,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                     'type': 'error',
                     'message': str(e)
                 }, event_type='message')
+                return
 
         return self.create_sse_response(event_stream())
 
