@@ -823,6 +823,73 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         # 提前获取用户对象，避免在线程中访问 request
         user = request.user
 
+        # 在启动后台线程之前，先为每个主机创建初始的安装记录
+        # 这样SSE权限检查就能找到对应的记录
+        from apps.hosts.models import Host
+        hosts = Host.objects.filter(id__in=host_ids)
+        initial_install_records = []
+
+        for host in hosts:
+            # 创建或获取 Agent（status='pending'）
+            agent, agent_created = Agent.objects.get_or_create(
+                host=host,
+                defaults={
+                    'agent_type': install_type,
+                    'status': 'pending',
+                    'endpoint': agent_server_url or '',
+                }
+            )
+            if not agent_created:
+                # 如果Agent已存在，更新状态和类型
+                if agent.agent_type != install_type:
+                    agent.agent_type = install_type
+                agent.status = 'pending'
+                agent.endpoint = agent_server_url or ''
+                agent.save(update_fields=['agent_type', 'status', 'endpoint', 'updated_at'])
+
+            # 创建初始安装记录
+            from .models import AgentInstallRecord
+            install_record, created = AgentInstallRecord.objects.get_or_create(
+                host=host,
+                agent=agent,
+                status='pending',
+                defaults={
+                    'install_type': install_type,
+                    'install_mode': install_mode,
+                    'agent_server_url': agent_server_url,
+                    'agent_server_backup_url': '',
+                    'ws_backoff_initial_ms': ws_backoff_initial_ms,
+                    'ws_backoff_max_ms': ws_backoff_max_ms,
+                    'ws_max_retries': ws_max_retries,
+                    'agent_server_listen_addr': agent_server_listen_addr,
+                    'max_connections': max_connections,
+                    'heartbeat_timeout': heartbeat_timeout,
+                    'package_id': package_id,
+                    'package_version': package_version,
+                    'installed_by': user,
+                    'install_task_id': install_task_id,
+                }
+            )
+            if not created:
+                # 更新现有记录
+                install_record.install_type = install_type
+                install_record.install_mode = install_mode
+                install_record.agent_server_url = agent_server_url
+                install_record.agent_server_backup_url = ''
+                install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
+                install_record.ws_backoff_max_ms = ws_backoff_max_ms
+                install_record.ws_max_retries = ws_max_retries
+                install_record.agent_server_listen_addr = agent_server_listen_addr
+                install_record.max_connections = max_connections
+                install_record.heartbeat_timeout = heartbeat_timeout
+                install_record.package_id = package_id
+                install_record.package_version = package_version
+                install_record.status = 'pending'
+                install_record.install_task_id = install_task_id
+                install_record.save()
+
+            initial_install_records.append(install_record)
+
         # 使用线程池异步执行批量安装
         def run_batch_install():
             """在后台线程中执行批量安装"""
@@ -986,7 +1053,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="install_records")
     def install_records(self, request):
-        """查安记录"""
+        """查询安装记录"""
         queryset = AgentInstallRecord.objects.select_related('host', 'agent', 'installed_by').order_by('-installed_at')
 
         # 权限过滤
