@@ -651,7 +651,9 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         script_content=script_content,
                         script_type=script_type,
                         timeout=timeout,
-                        account_id=account_id
+                        account_id=account_id,
+                        task_id=install_task_id,
+                        log_stream_key=install_log_stream
                     )
                     
                     config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"

@@ -213,12 +213,13 @@ class SimpleOutputHandler:
 class RealTimeOutputHandler:
     """实时输出处理器，用于捕获并推送命令执行过程中的实时输出"""
 
-    def __init__(self, task_id: str, host_id: int, host_name: str, host_ip: str, stream_type: str = "stdout"):
+    def __init__(self, task_id: str, host_id: int, host_name: str, host_ip: str, stream_type: str = "stdout", stream_key: str = None):
         self.task_id = task_id
         self.host_id = host_id
         self.host_name = host_name
         self.host_ip = host_ip
         self.stream_type = stream_type
+        self.stream_key = stream_key
         self.buffer = ""
         self.lock = threading.Lock()
         self.closed = False
@@ -270,7 +271,7 @@ class RealTimeOutputHandler:
                 'content': content,
                 'step_name': '脚本执行',
                 'step_order': 1
-            })
+            }, stream_key=self.stream_key)
             logger.info(f"[实时日志] 推送成功: {self.host_name}")
         except Exception as e:
             logger.error(f"推送日志失败: {e}")
@@ -446,7 +447,8 @@ class FabricSSHManager:
     
     def execute_script(self, host, script_content: str, script_type: str = 'shell', 
                       timeout: int = None, task_id: Optional[str] = None, 
-                      account_id: Optional[int] = None, connection_timeout: int = None) -> Dict[str, Any]:
+                      account_id: Optional[int] = None, connection_timeout: int = None,
+                      log_stream_key: Optional[str] = None) -> Dict[str, Any]:
         """
         在远程主机上执行脚本
         
@@ -473,7 +475,7 @@ class FabricSSHManager:
             # 获取主机连接信息（支持使用账号管理的认证信息）
             conn_info = self._get_connection_info(host, account_id=account_id)
             
-            # 创建Fabric连接
+            # 创建fabric连接
             with self._create_connection(conn_info, timeout, connection_timeout) as conn:
                 
                 # 推送开始执行日志
@@ -485,15 +487,15 @@ class FabricSSHManager:
                         'content': f'开始执行{script_type}脚本',
                         'step_name': '脚本执行',
                         'step_order': 1
-                    })
+                    }, stream_key=log_stream_key)
                 
                 # 根据脚本类型执行
                 if script_type.lower() == 'python':
-                    result = self._execute_python_script(conn, script_content, timeout, host, task_id)
+                    result = self._execute_python_script(conn, script_content, timeout, host, task_id, log_stream_key)
                 elif script_type.lower() == 'powershell':
-                    result = self._execute_powershell_script(conn, script_content, timeout, host, task_id)
+                    result = self._execute_powershell_script(conn, script_content, timeout, host, task_id, log_stream_key)
                 else:  # shell
-                    result = self._execute_shell_script(conn, script_content, timeout, host, task_id)
+                    result = self._execute_shell_script(conn, script_content, timeout, host, task_id, log_stream_key)
                 
                 # 计算执行时间
                 end_datetime = datetime.now()
@@ -512,7 +514,7 @@ class FabricSSHManager:
                         'content': f'脚本执行{status}，耗时: {execution_time:.2f}秒',
                         'step_name': '脚本执行',
                         'step_order': 1
-                    })
+                    }, stream_key=log_stream_key)
                 
                 return result
                 
@@ -532,7 +534,7 @@ class FabricSSHManager:
                     'content': f'脚本执行异常: {error_msg}',
                     'step_name': '脚本执行',
                     'step_order': 1
-                })
+                }, stream_key=log_stream_key)
             
             return {
                 'success': False,
@@ -807,7 +809,7 @@ class FabricSSHManager:
             return []
     
     def _execute_shell_script(self, conn, script_content: str, timeout: int,
-                             host, task_id: Optional[str]) -> Dict[str, Any]:
+                             host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
         """执行Shell脚本"""
         try:
             # 推送开始执行日志
@@ -828,10 +830,10 @@ class FabricSSHManager:
             if task_id:
                 # 使用改进的实时输出处理器
                 stdout_handler = RealTimeOutputHandler(
-                    task_id, host.id, host.name, host.ip_address, "stdout"
+                    task_id, host.id, host.name, host.ip_address, "stdout", stream_key=log_stream_key
                 )
                 stderr_handler = RealTimeOutputHandler(
-                    task_id, host.id, host.name, host.ip_address, "stderr"
+                    task_id, host.id, host.name, host.ip_address, "stderr", stream_key=log_stream_key
                 )
 
             # 直接执行脚本内容，避免文件上传的复杂性
@@ -887,7 +889,7 @@ class FabricSSHManager:
 
 
     def _execute_python_script(self, conn, script_content: str, timeout: int,
-                              host, task_id: Optional[str]) -> Dict[str, Any]:
+                              host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
         """执行Python脚本"""
         try:
             # 创建临时脚本文件
@@ -906,10 +908,10 @@ class FabricSSHManager:
 
                 if task_id:
                     stdout_handler = RealTimeOutputHandler(
-                        task_id, host.id, host.name, host.ip_address, "stdout"
+                        task_id, host.id, host.name, host.ip_address, "stdout", stream_key=log_stream_key
                     )
                     stderr_handler = RealTimeOutputHandler(
-                        task_id, host.id, host.name, host.ip_address, "stderr"
+                        task_id, host.id, host.name, host.ip_address, "stderr", stream_key=log_stream_key
                     )
 
                 # 执行Python脚本，使用Fabric原生的实时输出流
@@ -958,7 +960,7 @@ class FabricSSHManager:
             raise FabricSSHError(f"Python脚本执行失败: {str(e)}")
     
     def _execute_powershell_script(self, conn, script_content: str, timeout: int,
-                                  host, task_id: Optional[str]) -> Dict[str, Any]:
+                                  host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
         """执行PowerShell脚本"""
         try:
             # PowerShell脚本需要在Windows主机上执行

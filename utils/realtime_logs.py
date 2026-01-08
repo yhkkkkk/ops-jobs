@@ -69,7 +69,7 @@ class RealtimeLogService:
         return self.redis_client.expire(key, seconds)
     
     def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any], stream_key: str = None):
-        """推送日志到redis Stream
+        """推送日志到redis stream
         Args:
             task_id: 执行ID (execution_id)，用于标识执行记录
             host_id: 主机ID
@@ -189,7 +189,7 @@ class RealtimeLogService:
                         }
                         break
 
-                    # 从redis Stream读取新消息 - 优化参数
+                    # 从redis stream读取新消息 - 优化参数
                     # count增加到100，block增加到5秒，减少轮询频率
                     messages = self.redis_client.xread(
                         {stream_key: last_id},
