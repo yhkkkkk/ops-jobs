@@ -330,27 +330,23 @@ AGENT_TOKEN=your-token \
 
 ### 接口概览
 
-- **认证接口**: `/api/auth/` - 用户登录、注册、权限管理
-- **主机管理**: `/api/hosts/` - 主机和主机组管理
-- **服务器账号**: `/api/hosts/accounts/` - 服务器账号管理
-- **云同步**: `/api/hosts/sync_cloud_hosts/` - 云厂商主机同步
-- **脚本模板**: `/api/script-templates/` - 脚本模板管理
-- **作业模板**: `/api/templates/` - 作业模板和执行方案
-- **执行方案**: `/api/templates/plans/` - 执行方案管理
-- **快速执行**: `/api/quick/` - 快速脚本和文件传输
-- **定时任务**: `/api/scheduler/` - 定时任务管理
-- **执行记录**: `/api/executor/` - 执行记录查询和详情
-- **仪表盘**: `/api/dashboard/` - 统计数据和监控
-- **权限管理**: `/api/permissions/` - 权限检查和用户权限
-- **审计日志**: `/api/permissions/audit-logs/` - 系统操作审计
-- **系统配置**: `/api/system/` - 系统配置管理
-- **实时通信**: `/api/realtime/sse/` - SSE 实时日志推送
-- **健康检查**: `/health/` - 系统健康状态检查
-- **Agent 注册**: `/api/agents/register/` - Agent 注册接口
-- **Agent 心跳**: `/api/agents/{id}/heartbeat/` - Agent 心跳上报
-- **任务拉取**: `/api/agents/{id}/tasks/pull/` - Agent 拉取任务
-- **任务结果**: `/api/agents/{id}/tasks/{task_id}/result/` - Agent 上报任务结果
-- **日志推送**: `/api/agents/{id}/logs/push/` - Agent 推送日志
+- **认证**: `/api/auth/` 登录 / 刷新 / 权限
+- **主机与账号**: `/api/hosts/`、`/api/hosts/accounts/`、`/api/hosts/sync_cloud_hosts/`
+- **脚本模板**: `/api/script-templates/`（版本管理、标签）
+- **作业模板与执行方案**: `/api/templates/`、`/api/templates/plans/`
+- **快速执行**: `/api/quick/execute_script/`、`/api/quick/transfer_file/`
+- **定时任务**: `/api/scheduler/` 相关crud
+- **执行记录 / 日志**: `/api/executor/execution-records/` 及详情
+- **仪表盘**: `/api/dashboard/` 统计与监控
+- **权限与审计**: `/api/permissions/`，`/api/permissions/audit-logs/`
+- **系统配置**: `/api/system/`
+- **实时通信 (SSE)**:
+  - 作业日志：`/api/realtime/sse/logs/<execution_id>/`
+  - 作业状态：`/api/realtime/sse/status/<execution_id>/`
+  - 作业合并流：`/api/realtime/sse/combined/<execution_id>/`
+  - Agent 安装进度：`/api/realtime/sse/agent-install/<install_task_id>/`
+- **Agent 管理**: `/api/agents/`（列表/详情/启停/删除），`/api/agents/generate_install_script/`，`/api/agents/batch_install/`，`/api/agents/batch_uninstall/`，`/api/agents/install_records/`，`/api/agents/uninstall_records/`，`/api/agents/packages/`，`/api/agents/{id}/issue_token/` 等
+- **健康检查**: `/health/`
 
 ### 认证方式
 
