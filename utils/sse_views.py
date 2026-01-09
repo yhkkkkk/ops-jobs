@@ -198,14 +198,15 @@ class SSEBaseView(View):
 
         return response
 
-    def format_sse_message(self, data, event_type='message', event_id=None):
-        """格式化SSE消息 - 参考标准SSE格式"""
+    def format_sse_message(self, data, event_id=None):
+        """格式化SSE消息 - 统一使用message事件类型，通过data.type区分"""
         message = ""
 
         if event_id:
             message += f"id: {event_id}\n"
 
-        message += f"event: {event_type}\n"
+        # 统一使用message事件类型，通过data.type字段区分具体事件类型
+        message += "event: message\n"
         message += f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         return message
@@ -254,7 +255,7 @@ class JobLogsSSEView(SSEBaseView):
                         'host_id': filter_host_id,
                         'step_id': filter_step_id
                     }
-                }, event_type='message')
+                })
 
                 # 如果是新连接，先发送历史日志
                 if last_id == '0':
@@ -271,7 +272,7 @@ class JobLogsSSEView(SSEBaseView):
                         yield self.format_sse_message({
                             'type': 'log',
                             **normalized_log
-                        }, event_type='message', event_id=normalized_log.get('id') or log['id'])
+                        }, event_id=normalized_log.get('id') or log['id'])
                         # 更新 last_id 为最后一条历史日志的 ID
                         last_id = normalized_log.get('id') or log['id']
 
@@ -289,17 +290,17 @@ class JobLogsSSEView(SSEBaseView):
                         yield self.format_sse_message({
                             'type': 'log',
                             **normalized_log
-                        }, event_type='message', event_id=message['id'])
+                        }, event_id=message['id'])
                     elif message['type'] == 'heartbeat':
                         yield self.format_sse_message({
                             'type': 'heartbeat',
                             **message['data']
-                        }, event_type='heartbeat')
+                        })
                     elif message['type'] == 'error':
                         yield self.format_sse_message({
                             'type': 'error',
                             **message['data']
-                        }, event_type='message')
+                        })
                         break
 
             except Exception as e:
@@ -307,7 +308,7 @@ class JobLogsSSEView(SSEBaseView):
                 yield self.format_sse_message({
                     'type': 'error',
                     'message': str(e)
-                }, event_type='message')
+                })
 
         return self.create_sse_response(event_stream(last_id))
 
@@ -336,7 +337,7 @@ class JobStatusSSEView(SSEBaseView):
                     'message': f'已连接到执行记录 {execution_id} 的状态流',
                     'execution_id': execution_id,
                     'task_id': task_id
-                }, event_type='message')
+                })
 
                 # 开始实时状态流
                 logger.info(f"开始实时状态流: task_id={task_id}")
@@ -345,17 +346,17 @@ class JobStatusSSEView(SSEBaseView):
                         yield self.format_sse_message({
                             'type': 'status',
                             **message['data']
-                        }, event_type='message', event_id=message['id'])
+                        }, event_id=message['id'])
                     elif message['type'] == 'heartbeat':
                         yield self.format_sse_message({
                             'type': 'heartbeat',
                             **message['data']
-                        }, event_type='heartbeat')
+                        })
                     elif message['type'] == 'error':
                         yield self.format_sse_message({
                             'type': 'error',
                             **message['data']
-                        }, event_type='message')
+                        })
                         break
 
             except Exception as e:
@@ -363,7 +364,7 @@ class JobStatusSSEView(SSEBaseView):
                 yield self.format_sse_message({
                     'type': 'error',
                     'message': str(e)
-                }, event_type='message')
+                })
 
         return self.create_sse_response(event_stream())
 
@@ -432,7 +433,7 @@ class JobCombinedSSEView(SSEBaseView):
                     yield self.format_sse_message({
                         'type': 'log',
                         **normalized_log
-                    }, event_type='message', event_id=normalized_log.get('id') or log.get('id'))
+                    }, event_id=normalized_log.get('id') or log.get('id'))
                     # 更新 last_id 为最后一条历史日志的 ID
                     last_id = normalized_log.get('id') or log.get('id', '0')
 
@@ -456,7 +457,7 @@ class JobCombinedSSEView(SSEBaseView):
                         yield self.format_sse_message({
                             'type': 'heartbeat',
                             'timestamp': int(time.time())
-                        }, event_type='heartbeat')
+                        })
                         heartbeat_counter = 0
                     continue
 
@@ -467,20 +468,20 @@ class JobCombinedSSEView(SSEBaseView):
                 # 处理不同类型的消息
                 if log_msg['type'] == 'log':
                     normalized_log = self.normalize_log_message(log_msg['data'], execution_id)
-                    yield self.format_sse_message({
-                        'type': 'log',
-                        **normalized_log
-                    }, event_type='message', event_id=log_msg.get('id'))
+                        yield self.format_sse_message({
+                            'type': 'log',
+                            **normalized_log
+                        }, event_id=log_msg.get('id'))
                 elif log_msg['type'] == 'status':
                     yield self.format_sse_message({
                         'type': 'status',
                         **log_msg['data']
-                    }, event_type='message', event_id=log_msg['id'])
+                    }, event_id=log_msg['id'])
                 elif log_msg['type'] == 'error':
                     yield self.format_sse_message({
                         'type': 'error',
                         **log_msg['data']
-                    }, event_type='message')
+                    })
                     break
 
         except Exception as e:

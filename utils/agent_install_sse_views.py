@@ -104,7 +104,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                     'type': 'connection_established',
                     'message': f'已连接到安装任务 {install_task_id} 的进度流',
                     'install_task_id': install_task_id
-                }, event_type='message')
+                })
 
                 # 发送历史状态与日志
                 if last_id == '0':
@@ -119,7 +119,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                                 yield self.format_sse_message({
                                     'type': 'status',
                                     **fields
-                                }, event_type='message', event_id=msg_id)
+                                }, event_id=msg_id)
                         except Exception as e:
                             logger.warning(f"获取历史状态失败: {e}")
 
@@ -132,7 +132,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                             yield self.format_sse_message({
                                 'type': 'log',
                                 **normalized_log
-                            }, event_type='message', event_id=log_last_id)
+                            }, event_id=log_last_id)
                     except Exception as e:
                         logger.warning(f"发送历史状态/日志失败: {e}")
 
@@ -144,7 +144,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                             yield self.format_sse_message({
                                 'type': 'error',
                                 'message': 'Redis连接不可用'
-                            }, event_type='message')
+                            })
                             break
                         messages = realtime_log_service.redis_client.xread(
                             {
@@ -163,7 +163,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                                         yield self.format_sse_message({
                                             'type': 'status',
                                             **fields
-                                        }, event_type='message', event_id=msg_id)
+                                        }, event_id=msg_id)
                                     elif stream == log_stream_key:
                                         exec_id = fields.get('execution_id') or fields.get('task_id')
                                         if str(exec_id) != str(install_task_id):
@@ -173,20 +173,20 @@ class AgentInstallProgressSSEView(SSEBaseView):
                                         yield self.format_sse_message({
                                             'type': 'log',
                                             **normalized_log
-                                        }, event_type='message', event_id=msg_id)
+                                        }, event_id=msg_id)
                         else:
                             # 心跳，保持连接
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
                                 'timestamp': datetime.now().isoformat()
-                            }, event_type='heartbeat')
+                            })
 
                     except Exception as e:
                         logger.error(f"实时进度流异常: {install_task_id} - {e}")
                         yield self.format_sse_message({
                             'type': 'error',
                             'message': str(e)
-                        }, event_type='message')
+                        })
                         break
 
             except Exception as e:
@@ -194,7 +194,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                 yield self.format_sse_message({
                     'type': 'error',
                     'message': str(e)
-                }, event_type='message')
+                })
                 return
 
         return self.create_sse_response(event_stream())

@@ -346,11 +346,20 @@ const connect = async (isReconnect = false) => {
     return
   }
 
-  if (connected.value || connecting.value) {
+  // 优化连接状态检查：避免重复连接
+  if (connecting.value) {
+    console.log('SSE正在连接中，跳过重复连接请求')
     return
   }
 
+  if (connected.value && eventSource.value?.readyState === EventSource.OPEN) {
+    console.log('SSE已连接，跳过连接请求')
+    return
+  }
+
+  // 如果正在连接或已连接，先断开现有连接
   if (eventSource.value) {
+    console.log('断开现有SSE连接')
     eventSource.value.close()
     eventSource.value = null
   }
@@ -367,9 +376,12 @@ const connect = async (isReconnect = false) => {
   missingFields.value = []
 
   connecting.value = true
-  
+  connected.value = false
+
   if (isReconnect) {
     addSystemLog(`正在尝试重连... (${reconnectAttempts.value + 1}/${maxReconnectAttempts})`, 'info')
+  } else {
+    addSystemLog('正在连接到实时日志流...', 'info')
   }
 
   try {
@@ -385,167 +397,95 @@ const connect = async (isReconnect = false) => {
       ? buildSseUrl(`combined/${executionId}/`, `token=${encodeURIComponent(token)}`)
       : buildSseUrl(`combined/${executionId}/`)
 
-    console.log('🔗 SSE连接URL:', sseUrl)
+    console.log('SSE连接URL:', sseUrl)
     eventSource.value = new EventSource(sseUrl)
 
     eventSource.value.onopen = (event) => {
-      console.log('✅ SSE连接已打开:', event)
+      console.log('SSE连接已打开:', event)
       connected.value = true
       connecting.value = false
       reconnectAttempts.value = 0  // 重置重连计数
       addSystemLog('已连接到实时日志流')
     }
 
-    // 处理标准message事件（包含connection_established等）
-    eventSource.value.addEventListener('message', (event) => {
-      console.log('📡 收到message事件:', event)
+    // 统一使用 onmessage 处理所有 SSE 事件（修复重复监听问题）
+    eventSource.value.onmessage = (event) => {
+      console.log('收到SSE事件:', event)
       try {
         const data = JSON.parse(event.data)
-        console.log('📡 message事件数据:', data)
+        console.log('SSE事件数据:', data)
         recordStructureHints(data)
 
-        if (data.type === 'connection_established') {
-          addSystemLog(data.message)
-        } else if (data.type === 'log') {
-          // 处理日志消息
-          const hostName = data.host_name || data.host_ip || '未知主机'
-          const stepName = data.step_name || '未知步骤'
-          const stepOrder = data.step_order || 1
+        switch (data.type) {
+          case 'connection_established':
+            addSystemLog(data.message || '已连接到实时日志流')
+            break
 
-          addLog({
-            timestamp: data.timestamp || new Date().toISOString(),
-            host: hostName,
-            type: data.log_type || 'info',
-            content: data.content || '',
-            step: stepName,
-            stepOrder: stepOrder
-          })
+          case 'log':
+            // 处理日志消息
+            const hostName = data.host_name || data.host_ip || '未知主机'
+            const stepName = data.step_name || '未知步骤'
+            const stepOrder = data.step_order || 1
 
-          // 更新步骤日志结构
-          updateStepLogs(stepName, stepOrder, hostName, data)
-        } else if (data.type === 'status') {
-          // 处理状态消息
-          status.value = data
+            addLog({
+              timestamp: data.timestamp || new Date().toISOString(),
+              host: hostName,
+              type: data.log_type || 'info',
+              content: data.content || '',
+              step: stepName,
+              stepOrder: stepOrder
+            })
 
-          if (data.status === 'failed') {
-            addSystemLog(`任务执行失败: ${data.message || '未知错误'}`, 'error')
-          } else if (data.status === 'completed') {
-            addSystemLog(`任务执行完成: ${data.message || ''}`, 'info')
-          }
-        } else if (data.type === 'error') {
-          addSystemLog(`错误: ${data.message}`, 'error')
-          // 更新状态为失败
-          status.value = {
-            ...status.value,
-            status: 'failed',
-            message: data.message
-          }
-        } else if (data.type === 'debug') {
-          // 可选：在开发环境下显示调试信息
-          if (process.env.NODE_ENV === 'development') {
-            addSystemLog(`[调试] ${data.message}`, 'info')
-          }
+            // 更新步骤日志结构
+            updateStepLogs(stepName, stepOrder, hostName, data)
+            break
+
+          case 'status':
+            // 处理状态消息
+            status.value = data
+
+            if (data.status === 'failed') {
+              addSystemLog(`任务执行失败: ${data.message || '未知错误'}`, 'error')
+            } else if (data.status === 'completed') {
+              addSystemLog(`任务执行完成: ${data.message || ''}`, 'info')
+            }
+            break
+
+          case 'heartbeat':
+            // 心跳消息，静默处理
+            console.debug('收到心跳:', data)
+            break
+
+          case 'error':
+            addSystemLog(`错误: ${data.message}`, 'error')
+            // 更新状态为失败
+            status.value = {
+              ...status.value,
+              status: 'failed',
+              message: data.message
+            }
+            break
+
+          case 'debug':
+            // 可选：在开发环境下显示调试信息
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[实时日志调试]', data.message)
+              addSystemLog(`[调试] ${data.message}`, 'info')
+            }
+            break
+
+          default:
+            console.warn('未知的SSE事件类型:', data.type, data)
         }
       } catch (e) {
-        console.error('解析message事件失败:', e, event)
+        console.error('解析SSE事件失败:', e, event)
+        addSystemLog('解析服务器消息失败', 'error')
       }
-    })
-
-    // 保留原有的事件监听器作为备用
-    eventSource.value.addEventListener('connected', (event) => {
-      console.log('📡 收到connected事件:', event)
-      try {
-        const data = JSON.parse(event.data)
-        console.log('📡 connected事件数据:', data)
-        addSystemLog(data.message)
-      } catch (e) {
-        console.error('解析connected事件失败:', e)
-        addSystemLog('连接成功')
-      }
-    })
-
-    eventSource.value.addEventListener('log', (event) => {
-      console.log('📝 收到log事件:', event)
-      try {
-        const data = JSON.parse(event.data)
-        console.log('📝 log事件数据:', data)
-        recordStructureHints(data)
-        const hostName = data.host_name || data.host_ip || '未知主机'
-        const stepName = data.step_name || '未知步骤'
-        const stepOrder = data.step_order || 1
-
-        addLog({
-          timestamp: data.timestamp || new Date().toISOString(),
-          host: hostName,
-          type: data.log_type || 'info',
-          content: data.content || '',
-          step: stepName,
-          stepOrder: stepOrder
-        })
-
-        // 更新步骤日志结构
-        updateStepLogs(stepName, stepOrder, hostName, data)
-      } catch (e) {
-        console.error('解析日志数据失败:', e, event)
-      }
-    })
-
-    eventSource.value.addEventListener('status', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        status.value = data
-
-        // 如果状态是失败，添加一条系统日志
-        if (data.status === 'failed') {
-          addSystemLog(`任务执行失败: ${data.message || '未知错误'}`, 'error')
-        } else if (data.status === 'completed') {
-          addSystemLog(`任务执行完成: ${data.message || ''}`, 'info')
-        }
-      } catch (e) {
-        console.error('解析状态数据失败:', e)
-      }
-    })
-
-    eventSource.value.addEventListener('heartbeat', (event) => {
-      console.log('💓 收到heartbeat事件:', event)
-      // 心跳消息，不处理
-    })
-
-    eventSource.value.addEventListener('debug', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        console.log('[实时日志调试]', data.message)
-        // 可选：在开发环境下显示调试信息
-        if (process.env.NODE_ENV === 'development') {
-          addSystemLog(`[调试] ${data.message}`, 'info')
-        }
-      } catch (e) {
-        console.error('解析调试消息失败:', e)
-      }
-    })
-
-    eventSource.value.addEventListener('error', (event: any) => {
-      try {
-        if (event.data) {
-          const data = JSON.parse(event.data)
-          addSystemLog(`错误: ${data.message}`, 'error')
-          // 更新状态为失败
-          status.value = {
-            ...status.value,
-            status: 'failed',
-            message: data.message
-          }
-        } else {
-          addSystemLog('服务器错误', 'error')
-        }
-      } catch (e) {
-        addSystemLog('服务器错误或数据格式错误', 'error')
-      }
-    })
+    }
 
     eventSource.value.onerror = (event) => {
-      console.error('❌ SSE连接错误:', event)
-      console.error('❌ EventSource readyState:', eventSource.value?.readyState)
+      console.error('SSE连接错误:', event)
+      console.error('EventSource readyState:', eventSource.value?.readyState)
       connected.value = false
       connecting.value = false
       

@@ -690,7 +690,7 @@ class FabricSSHManager:
     
     @contextmanager
     def _create_connection(self, conn_info: Dict[str, Any], timeout: int, connection_timeout: int = None):
-        """创建Fabric连接（支持连接池）"""
+        """创建fabric连接（支持连接池）"""
         config = self._create_connection_config(conn_info, timeout, connection_timeout)
 
         # 确保连接池已初始化
