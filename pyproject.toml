@@ -61,4 +61,5 @@ dependencies = [
     "oss2>=2.19.1",
     "minio>=7.2.20",
     "websocket-client>=1.9.0",
+    "tenacity>=9.1.2",
 ]
