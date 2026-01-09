@@ -468,10 +468,10 @@ class JobCombinedSSEView(SSEBaseView):
                 # 处理不同类型的消息
                 if log_msg['type'] == 'log':
                     normalized_log = self.normalize_log_message(log_msg['data'], execution_id)
-                        yield self.format_sse_message({
-                            'type': 'log',
-                            **normalized_log
-                        }, event_id=log_msg.get('id'))
+                    yield self.format_sse_message({
+                        'type': 'log',
+                        **normalized_log
+                    }, event_id=log_msg.get('id'))
                 elif log_msg['type'] == 'status':
                     yield self.format_sse_message({
                         'type': 'status',
