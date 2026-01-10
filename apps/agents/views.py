@@ -590,6 +590,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         package_version = data.get('package_version')
         package_id = data.get('package_id')
         package_type = 'agent' if install_type == 'agent' else 'agent-server'
+        control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
 
         # 验证参数
         if install_type == 'agent' and not agent_server_url:
@@ -628,7 +629,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     defaults={
                         'agent_type': install_type,
                         'status': 'pending',
-                        'endpoint': agent_server_url or '',
+                        'endpoint': agent_server_url if install_type == 'agent' else agent_server_listen_addr or '',
                     }
                 )
                 try:
@@ -642,7 +643,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     if agent.agent_type != install_type:
                         agent.agent_type = install_type
                     agent.status = 'pending'
-                    agent.endpoint = agent_server_url or ''
+                    agent.endpoint = agent_server_url if install_type == 'agent' else agent_server_listen_addr or ''
                     agent.save(update_fields=['agent_type', 'status', 'endpoint', 'updated_at'])
 
                 now = timezone.now()
@@ -668,7 +669,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     defaults={
                         'install_type': install_type,
                         'install_mode': install_mode,
-                        'agent_server_url': agent_server_url,
+                        'agent_server_url': agent_server_url if install_type == 'agent' else '',
                         'agent_server_backup_url': '',
                         'ws_backoff_initial_ms': ws_backoff_initial_ms,
                         'ws_backoff_max_ms': ws_backoff_max_ms,
@@ -678,6 +679,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         'heartbeat_timeout': heartbeat_timeout,
                         'package_id': package_id,
                         'package_version': package_version,
+                        'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
                         'installed_by': request.user,
                     }
                 )
@@ -686,7 +688,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     install_record.agent = agent
                     install_record.install_type = install_type
                     install_record.install_mode = install_mode
-                    install_record.agent_server_url = agent_server_url
+                    install_record.agent_server_url = agent_server_url if install_type == 'agent' else ''
                     install_record.agent_server_backup_url = ''
                     install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
                     install_record.ws_backoff_max_ms = ws_backoff_max_ms
@@ -696,6 +698,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     install_record.heartbeat_timeout = heartbeat_timeout
                     install_record.package_id = package_id
                     install_record.package_version = package_version
+                    install_record.control_plane_url = control_plane_url if install_type == 'agent-server' else ''
                     install_record.status = 'pending'
                     install_record.save()
 
@@ -757,7 +760,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     content={
                         'scripts': scripts,
                         'install_mode': install_mode,
-                        'agent_server_url': agent_server_url,
+                        'agent_server_url': agent_server_url if install_type == 'agent' else '',
+                        'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
                         'errors': errors,
                         'warning': '部分主机生成脚本失败，请查看 errors 字段'
                     },
@@ -768,7 +772,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             content={
                 'scripts': scripts,
                 'install_mode': install_mode,
-                'agent_server_url': agent_server_url,
+                'agent_server_url': agent_server_url if install_type == 'agent' else '',
+                'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
                 'notice': '这只是生成安装脚本，您需要手动在主机上执行脚本或使用"批量安装（SSH）"功能进行安装'
             },
             message="生成安装脚本成功（请手动执行脚本或使用批量安装功能）"
@@ -799,11 +804,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_max_retries = data.get('ws_max_retries', 6)
         ssh_timeout = data.get('ssh_timeout', 300)
         allow_reinstall = data.get('allow_reinstall', False)
+        control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
 
         if install_type == 'agent' and not agent_server_url:
             return SycResponse.error(message="agent_server_url 不能为空（安装 Agent 需要）", code=400)
         if install_type == 'agent-server' and not agent_server_listen_addr:
             return SycResponse.error(message="agent_server_listen_addr 不能为空（安装 Agent-Server 需要）", code=400)
+        if install_type == 'agent-server' and not control_plane_url:
+            return SycResponse.error(message="控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server", code=400)
 
         # 使用统一的批量操作校验
         is_valid, error_msg, hosts = self.validate_batch_operation_with_hosts(
@@ -836,7 +844,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 defaults={
                     'agent_type': install_type,
                     'status': 'pending',
-                    'endpoint': agent_server_url or '',
+                    'endpoint': agent_server_url if install_type == 'agent' else agent_server_listen_addr or '',
                 }
             )
             if not agent_created:
@@ -844,37 +852,38 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 if agent.agent_type != install_type:
                     agent.agent_type = install_type
                 agent.status = 'pending'
-                agent.endpoint = agent_server_url or ''
+                agent.endpoint = agent_server_url if install_type == 'agent' else agent_server_listen_addr or ''
                 agent.save(update_fields=['agent_type', 'status', 'endpoint', 'updated_at'])
 
             # 创建初始安装记录
             from .models import AgentInstallRecord
-            install_record, created = AgentInstallRecord.objects.get_or_create(
-                host=host,
-                agent=agent,
-                status='pending',
-                defaults={
-                    'install_type': install_type,
-                    'install_mode': install_mode,
-                    'agent_server_url': agent_server_url,
-                    'agent_server_backup_url': '',
-                    'ws_backoff_initial_ms': ws_backoff_initial_ms,
-                    'ws_backoff_max_ms': ws_backoff_max_ms,
-                    'ws_max_retries': ws_max_retries,
-                    'agent_server_listen_addr': agent_server_listen_addr,
-                    'max_connections': max_connections,
-                    'heartbeat_timeout': heartbeat_timeout,
-                    'package_id': package_id,
-                    'package_version': package_version,
-                    'installed_by': user,
-                    'install_task_id': install_task_id,
-                }
-            )
+                install_record, created = AgentInstallRecord.objects.get_or_create(
+                    host=host,
+                    agent=agent,
+                    status='pending',
+                    defaults={
+                        'install_type': install_type,
+                        'install_mode': install_mode,
+                        'agent_server_url': agent_server_url if install_type == 'agent' else '',
+                        'agent_server_backup_url': '',
+                        'ws_backoff_initial_ms': ws_backoff_initial_ms,
+                        'ws_backoff_max_ms': ws_backoff_max_ms,
+                        'ws_max_retries': ws_max_retries,
+                        'agent_server_listen_addr': agent_server_listen_addr,
+                        'max_connections': max_connections,
+                        'heartbeat_timeout': heartbeat_timeout,
+                        'package_id': package_id,
+                        'package_version': package_version,
+                        'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
+                        'installed_by': user,
+                        'install_task_id': install_task_id,
+                    }
+                )
             if not created:
                 # 更新现有记录
                 install_record.install_type = install_type
                 install_record.install_mode = install_mode
-                install_record.agent_server_url = agent_server_url
+                install_record.agent_server_url = agent_server_url if install_type == 'agent' else ''
                 install_record.agent_server_backup_url = ''
                 install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
                 install_record.ws_backoff_max_ms = ws_backoff_max_ms
@@ -884,6 +893,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 install_record.heartbeat_timeout = heartbeat_timeout
                 install_record.package_id = package_id
                 install_record.package_version = package_version
+                install_record.control_plane_url = control_plane_url if install_type == 'agent-server' else ''
                 install_record.status = 'pending'
                 install_record.install_task_id = install_task_id
                 install_record.save()

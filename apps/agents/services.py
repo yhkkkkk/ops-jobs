@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
+from django.conf import settings
 
 from utils.audit_service import AuditLogService
 from apps.hosts.models import Host
@@ -16,7 +17,6 @@ from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
 from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
 from utils.realtime_logs import realtime_log_service
 import uuid
-
 
 class AgentService:
     """Agent 相关服务"""
@@ -260,12 +260,15 @@ host_id: {host.id}
             service_name = "ops-job-agent"
             install_dir = "/opt/ops-job-agent"
         else:  # agent-server
+            control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
+            if not control_plane_url:
+                raise ValueError("CONTROL_PLANE_URL is not configured on control plane; cannot generate agent-server config")
             config_content = f"""server:
   host: "{agent_server_listen_addr.split(':')[0]}"
   port: {agent_server_listen_addr.split(':')[1]}
 
 control_plane:
-  url: "{agent_server_url or 'http://localhost:8000'}"
+  url: "{control_plane_url}"
   token: "{agent_token}"
 
 agent:
@@ -297,6 +300,7 @@ CONFIG_EXAMPLE_SRC=""
 INSTALL_TYPE="${INSTALL_TYPE}"
 HOST_ID=${HOST_ID}
 AGENT_SERVER_URL="${AGENT_SERVER_URL}"
+CONTROL_PLANE_URL="${CONTROL_PLANE_URL}"
 WS_BACKOFF_INITIAL_MS=${WS_BACKOFF_INITIAL_MS}
 WS_BACKOFF_MAX_MS=${WS_BACKOFF_MAX_MS}
 WS_MAX_RETRIES=${WS_MAX_RETRIES}
@@ -380,7 +384,7 @@ else:
             "port": int(port),
         },
         "control_plane": {
-            "url": os.environ.get("AGENT_SERVER_URL", "http://localhost:8000"),
+            "url": os.environ.get("CONTROL_PLANE_URL", ""),
             "token": os.environ.get("AGENT_TOKEN", ""),
         },
         "agent": {
@@ -463,6 +467,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
             INSTALL_TYPE=install_type,
             HOST_ID=host.id,
             AGENT_SERVER_URL=agent_server_url,
+            CONTROL_PLANE_URL=control_plane_url if install_type == 'agent-server' else '',
             WS_BACKOFF_INITIAL_MS=ws_backoff_initial_ms,
             WS_BACKOFF_MAX_MS=ws_backoff_max_ms,
             WS_MAX_RETRIES=ws_max_retries,
@@ -526,6 +531,8 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
         # 获取主机列表
         hosts = Host.objects.filter(id__in=host_ids)
         
+        control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
+
         for host in hosts:
             try:
                 # 为所有类型的Agent创建/检查记录（agent和agent-server都需要）
@@ -572,6 +579,9 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                 token_data = cls.issue_token(agent, user, note="Agent 安装")
                 agent_token = token_data['token']
                 
+                if install_type == 'agent-server' and not control_plane_url:
+                    raise ValueError("CONTROL_PLANE_URL 未配置，无法生成 Agent-Server 安装脚本")
+
                 # 创建或更新安装记录
                 from .models import AgentInstallRecord
                 install_record, created = AgentInstallRecord.objects.get_or_create(
@@ -587,6 +597,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         'ws_max_retries': ws_max_retries,
                         'package_id': package_id,
                         'package_version': package_version,
+                        'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
                         'installed_by': user,
                         'install_task_id': install_task_id,
                     }
@@ -602,6 +613,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     install_record.ws_max_retries = ws_max_retries
                     install_record.package_id = package_id
                     install_record.package_version = package_version
+                    install_record.control_plane_url = control_plane_url if install_type == 'agent-server' else ''
                     install_record.status = 'pending'
                     install_record.install_task_id = install_task_id
                     install_record.save()
@@ -644,6 +656,10 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                 }, stream_key=install_log_stream)
                 
                 # 通过ssh执行安装脚本
+                if install_type == 'agent-server':
+                    config_summary = f"control_plane={control_plane_url or 'n/a'}, listen={agent_server_listen_addr}"
+                else:
+                    config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                 try:
                     timeout = max(60, min(ssh_timeout or 300, 900))
                     result = fabric_ssh_manager.execute_script(
@@ -655,8 +671,6 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                         task_id=install_task_id,
                         log_stream_key=install_log_stream
                     )
-                    
-                    config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                     if result['success']:
                         if install_type == 'agent-server':
                             install_record.status = 'success'
@@ -724,7 +738,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                 except Exception as e:
                     error_msg = f'SSH 执行失败: {str(e)}'
                     install_record.status = 'failed'
-                    install_record.message = f'{error_msg} | primary={agent_server_url or "n/a"}'
+                    install_record.message = f'{error_msg} | {config_summary}'
                     install_record.error_message = error_msg
                     install_record.error_detail = str(e)
                     install_record.save()
@@ -763,11 +777,15 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                 failed_count += 1
                 host_name = host.name if hasattr(host, 'name') else 'Unknown'
                 error_msg = f'安装失败: {str(e)}'
+                if install_type == 'agent-server':
+                    config_summary = f"control_plane={control_plane_url or 'n/a'}, listen={agent_server_listen_addr}"
+                else:
+                    config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                 results.append({
                     'host_id': host.id,
                     'host_name': host_name,
                     'success': False,
-                    'message': f'{error_msg} | primary={agent_server_url or "n/a"}'
+                    'message': f'{error_msg} | {config_summary}'
                 })
                 
                 # 推送失败日志
@@ -775,7 +793,7 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
                     'host_name': host_name,
                     'host_ip': getattr(host, 'ip_address', ''),
                     'log_type': 'error',
-                    'content': f'主机 {host_name} 安装失败: {error_msg}',
+                    'content': f'主机 {host_name} 安装失败: {error_msg} | {config_summary}',
                     'step_name': '安装 Agent',
                     'step_order': 1
                 }, stream_key=install_log_stream)

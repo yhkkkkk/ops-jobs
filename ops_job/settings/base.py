@@ -167,6 +167,9 @@ REDIS_DB_SESSION = 1  # 用于会话存储
 REDIS_DB_CELERY = 2  # 用于 Celery
 REDIS_DB_REALTIME = 3  # 用于实时日志 (Redis Stream)
 
+# 控制面 URL（用于生成 Agent-Server 配置）
+CONTROL_PLANE_URL = os.getenv('CONTROL_PLANE_URL', '')
+
 # JWT 配置 (SECRET_KEY 将在具体环境中设置)
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=4),

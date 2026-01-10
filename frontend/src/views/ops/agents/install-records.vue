@@ -142,6 +142,9 @@
           <a-tag color="blue">Agent-Server 模式
           </a-tag>
         </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord && currentRecord.control_plane_url" label="控制面url">
+          <div style="word-break: break-all">{{ currentRecord.control_plane_url }}</div>
+        </a-descriptions-item>
         <a-descriptions-item label="安装状态">
           <a-space>
           <a-tag :color="getStatusColor(currentRecord.status)">

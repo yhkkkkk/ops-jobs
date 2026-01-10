@@ -1,6 +1,7 @@
 """
 Agent 序列化器
 """
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.hosts.serializers import HostSerializer, HostSimpleSerializer
@@ -284,6 +285,7 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
             'agent_server_listen_addr',
             'max_connections',
             'heartbeat_timeout',
+            'control_plane_url',
             'error_message',
             'error_detail',
             'message',
@@ -300,6 +302,7 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
             'installed_by',
             'installed_by_name',
             'installed_at',
+            'control_plane_url',
         ]
 
 
@@ -538,6 +541,19 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
 
+    def validate(self, attrs):
+        install_type = attrs.get('install_type', 'agent')
+        if install_type == 'agent':
+            if not attrs.get('agent_server_url'):
+                raise serializers.ValidationError({'agent_server_url': ['安装 Agent 需要 agent_server_url']})
+        else:
+            # Agent-Server 仅依赖控制面配置，忽略前端传入的 agent_server_url
+            attrs['agent_server_url'] = ''
+            control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
+            if not control_plane_url:
+                raise serializers.ValidationError({'non_field_errors': ['控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server']})
+        return attrs
+
 
 class BatchInstallSerializer(serializers.Serializer):
     host_ids = serializers.ListField(
@@ -627,6 +643,18 @@ class BatchInstallSerializer(serializers.Serializer):
         required=True,
         help_text="批量安装高危操作二次确认"
     )
+
+    def validate(self, attrs):
+        install_type = attrs.get('install_type', 'agent')
+        if install_type == 'agent':
+            if not attrs.get('agent_server_url'):
+                raise serializers.ValidationError({'agent_server_url': ['安装 Agent 需要 agent_server_url']})
+        else:
+            attrs['agent_server_url'] = ''
+            control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
+            if not control_plane_url:
+                raise serializers.ValidationError({'non_field_errors': ['控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server']})
+        return attrs
 
 
 class AgentControlSerializer(serializers.Serializer):

@@ -116,6 +116,7 @@ class AgentInstallRecord(models.Model):
     heartbeat_timeout = models.IntegerField(default=60, verbose_name="心跳超时(秒)")
     package_id = models.IntegerField(null=True, blank=True, verbose_name="安装包ID")
     package_version = models.CharField(max_length=50, blank=True, verbose_name="安装包版本")
+    control_plane_url = models.CharField(max_length=500, blank=True, default='', verbose_name="控制面URL")
     installed_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="安装人")
     installed_at = models.DateTimeField(auto_now_add=True, verbose_name="安装时间")
     message = models.TextField(blank=True, verbose_name="消息")
