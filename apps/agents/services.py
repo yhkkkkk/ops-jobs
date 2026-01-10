@@ -248,14 +248,6 @@ class AgentService:
         
         # 根据安装类型生成不同的配置
         if install_type == 'agent':
-            config_content = f"""mode: "agent-server"
-agent_server_url: "{agent_server_url}"
-ws_backoff_initial_ms: {ws_backoff_initial_ms}
-ws_backoff_max_ms: {ws_backoff_max_ms}
-ws_max_retries: {ws_max_retries}
-agent_token: "{agent_token}"
-host_id: {host.id}
-"""
             binary_name = "ops-job-agent"
             service_name = "ops-job-agent"
             install_dir = "/opt/ops-job-agent"
@@ -263,264 +255,22 @@ host_id: {host.id}
             control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
             if not control_plane_url:
                 raise ValueError("CONTROL_PLANE_URL is not configured on control plane; cannot generate agent-server config")
-            config_content = f"""server:
-  host: "{agent_server_listen_addr.split(':')[0]}"
-  port: {agent_server_listen_addr.split(':')[1]}
-
-control_plane:
-  url: "{control_plane_url}"
-  token: "{agent_token}"
-
-agent:
-  max_connections: {max_connections}
-  heartbeat_timeout: {heartbeat_timeout}s
-  cleanup_interval: 30s
-
-logging:
-  level: "info"
-  file: "logs/agent-server.log"
-"""
             binary_name = "ops-job-agent-server"
             service_name = "ops-job-agent-server"
             install_dir = "/opt/ops-job-agent-server"
 
-        # Linux 安装脚本模板（使用 config.example.yaml 作为基线，内置 python 覆盖关键参数）
-        linux_tpl = """#!/bin/bash
+        # 从模板文件加载 Linux 安装脚本（模板文件位于 apps/agents/templates/linux_install.sh）
+        import os as __os
+        tpl_path = __os.path.join(__os.path.dirname(__file__), "templates", "linux_install.sh")
+        try:
+            with open(tpl_path, "r", encoding="utf-8") as tpl_f:
+                linux_tpl = tpl_f.read()
+        except Exception:
+            # 如果模板缺失，回退为内联最小脚本（保证不会中断生成）
+            linux_tpl = """#!/bin/bash
 set -e
-
-# 配置
-AGENT_TOKEN="${AGENT_TOKEN}"
-INSTALL_DIR="${INSTALL_DIR}"
-BINARY_NAME="${BINARY_NAME}"
-SERVICE_NAME="${SERVICE_NAME}"
-DOWNLOAD_URL="${DOWNLOAD_URL}"
-CONFIG_DIR="$INSTALL_DIR/config"
-CONFIG_FILE="$CONFIG_DIR/config.yaml"
-CONFIG_EXAMPLE_SRC=""
-INSTALL_TYPE="${INSTALL_TYPE}"
-HOST_ID=${HOST_ID}
-AGENT_SERVER_URL="${AGENT_SERVER_URL}"
-CONTROL_PLANE_URL="${CONTROL_PLANE_URL}"
-WS_BACKOFF_INITIAL_MS=${WS_BACKOFF_INITIAL_MS}
-WS_BACKOFF_MAX_MS=${WS_BACKOFF_MAX_MS}
-WS_MAX_RETRIES=${WS_MAX_RETRIES}
-AGENT_SERVER_LISTEN_ADDR="${AGENT_SERVER_LISTEN_ADDR}"
-MAX_CONNECTIONS=${MAX_CONNECTIONS}
-HEARTBEAT_TIMEOUT=${HEARTBEAT_TIMEOUT}
-# 检查是否已安装
-if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
-    echo "Agent 服务已在运行，请先停止服务"
-    exit 1
-fi
-
-# 创建安装目录
-mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
-
-# 下载并解压/放置二进制与示例配置
-echo "正在下载 Agent 包..."
-TMP_PKG=""
-if echo "$DOWNLOAD_URL" | grep -Ei "\\.zip($|\\?)" >/dev/null; then
-    TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.zip)"
-    (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
-    unzip -o "$TMP_PKG" -d "$INSTALL_DIR"
-elif echo "$DOWNLOAD_URL" | grep -Ei "\\.(tar\\.gz|tgz)($|\\?)" >/dev/null; then
-    TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.tar.gz)"
-    (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
-    tar -xzf "$TMP_PKG" -C "$INSTALL_DIR"
-else
-    curl -fL -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL" || wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
-fi
-[ -n "$TMP_PKG" ] && rm -f "$TMP_PKG"
-
-# 归一化二进制命名
-[ -f "$INSTALL_DIR/agent" ] && mv -f "$INSTALL_DIR/agent" "$INSTALL_DIR/$BINARY_NAME"
-[ -f "$INSTALL_DIR/agent-server" ] && mv -f "$INSTALL_DIR/agent-server" "$INSTALL_DIR/$BINARY_NAME"
-CONFIG_EXAMPLE_SRC="$INSTALL_DIR/config.example.yaml"
-
-chmod +x "$BINARY_NAME"
-
-# 准备配置目录（与二进制同级的 config 目录）
-mkdir -p "$CONFIG_DIR"
-if [ -f "$CONFIG_FILE" ]; then
-    cp "$CONFIG_FILE" "$CONFIG_FILE.$(date +%Y%m%d%H%M%S).bak"
-fi
-# 复制 example 作为基线（如果存在）
-if [ -f "$CONFIG_EXAMPLE_SRC" ]; then
-    cp "$CONFIG_EXAMPLE_SRC" "$CONFIG_FILE"
-else
-    : > "$CONFIG_FILE"
-fi
-
-# 使用内置 python 覆盖关键字段
-export CONFIG_FILE INSTALL_TYPE AGENT_SERVER_URL WS_BACKOFF_INITIAL_MS WS_BACKOFF_MAX_MS WS_MAX_RETRIES AGENT_TOKEN HOST_ID AGENT_SERVER_LISTEN_ADDR MAX_CONNECTIONS HEARTBEAT_TIMEOUT
-python3 - <<'PY'
-import json
-import os
-
-CONFIG_FILE = os.environ.get("CONFIG_FILE")
-install_type = os.environ.get("INSTALL_TYPE", "agent")
-
-override = {}
-if install_type == "agent":
-    override = {
-        "mode": "agent-server",
-        "agent_server_url": os.environ.get("AGENT_SERVER_URL", ""),
-        "ws_backoff_initial_ms": int(os.environ.get("WS_BACKOFF_INITIAL_MS", "1000") or 1000),
-        "ws_backoff_max_ms": int(os.environ.get("WS_BACKOFF_MAX_MS", "30000") or 30000),
-        "ws_max_retries": int(os.environ.get("WS_MAX_RETRIES", "6") or 6),
-        "agent_token": os.environ.get("AGENT_TOKEN", ""),
-        "host_id": int(os.environ.get("HOST_ID", "0") or 0),
-        "log_level": "info",
-    }
-else:
-    listen_addr = os.environ.get("AGENT_SERVER_LISTEN_ADDR", "0.0.0.0:8080")
-    host, port = "0.0.0.0", "8080"
-    if ":" in listen_addr:
-        host, port = listen_addr.rsplit(":", 1)
-    override = {
-        "server": {
-            "host": host,
-            "port": int(port),
-        },
-        "control_plane": {
-            "url": os.environ.get("CONTROL_PLANE_URL", ""),
-            "token": os.environ.get("AGENT_TOKEN", ""),
-        },
-        "agent": {
-            "max_connections": int(os.environ.get("MAX_CONNECTIONS", "1000") or 1000),
-            "heartbeat_timeout": f"{os.environ.get('HEARTBEAT_TIMEOUT', '60')}s",
-            "cleanup_interval": "30s",
-        },
-        "logging": {
-            "level": "info",
-            "file": "logs/agent-server.log",
-        },
-    }
-
-try:
-    import yaml  # type: ignore
-except Exception:
-    # 若未安装 PyYAML，尝试通过 pip 自动安装（使用 --user 以降低权限要求）
-    import sys, subprocess
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "PyYAML"], check=False)
-    except Exception:
-        # 安装失败则继续后续判断
-        pass
-    try:
-        import yaml  # type: ignore
-    except Exception:
-        yaml = None
-
-data = {}
-if yaml:
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            loaded = yaml.safe_load(f) or {}
-            if isinstance(loaded, dict):
-                data.update(loaded)
-    except Exception:
-        pass
-
-def deep_update(dst, src):
-    for k, v in src.items():
-        if isinstance(v, dict) and isinstance(dst.get(k), dict):
-            deep_update(dst[k], v)
-        else:
-            dst[k] = v
-
-deep_update(data, override)
-
-if yaml:
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, allow_unicode=False, default_flow_style=False, sort_keys=False)
-else:
-    # 如果安装/导入 PyYAML 仍然失败，使用轻量级内置 emitter 将配置以 YAML 格式写出
-    # 目的：避免回退到 JSON，同时不依赖外部库（仅支持常见标量、列表、字典）
-    def _emit_yaml(obj, indent=0):
-        lines = []
-        pad = '  ' * indent
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                if isinstance(v, (dict, list)):
-                    lines.append(f"{pad}{k}:")
-                    lines.extend(_emit_yaml(v, indent + 1))
-                else:
-                    if v is True:
-                        val = "true"
-                    elif v is False:
-                        val = "false"
-                    elif v is None:
-                        val = ""
-                    elif isinstance(v, (int, float)):
-                        val = str(v)
-                    else:
-                        s = str(v)
-                        # 简单转义：当字符串包含特殊字符时加双引号
-                        if any(ch in s for ch in ['\n', ':', '"', "'']) or s.strip() != s:
-                            s = '"' + s.replace('"', '\\"') + '"'
-                        val = s
-                    lines.append(f"{pad}{k}: {val}")
-        elif isinstance(obj, list):
-            for item in obj:
-                if isinstance(item, (dict, list)):
-                    lines.append(f"{pad}-")
-                    lines.extend(_emit_yaml(item, indent + 1))
-                else:
-                    if item is True:
-                        vv = "true"
-                    elif item is False:
-                        vv = "false"
-                    elif item is None:
-                        vv = ""
-                    elif isinstance(item, (int, float)):
-                        vv = str(item)
-                    else:
-                        s = str(item)
-                        if any(ch in s for ch in ['\n', ':', '"', "'']) or s.strip() != s:
-                            s = '"' + s.replace('"', '\\"') + '"'
-                        vv = s
-                    lines.append(f"{pad}- {vv}")
-        else:
-            lines.append(pad + str(obj))
-        return lines
-
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            f.write("\n".join(_emit_yaml(data)))
-    except Exception:
-        import sys as __sys
-        print("Fatal: 无法写入 YAML 配置文件（内置 emitter 失败）", file=__sys.stderr)
-        __sys.exit(1)
-PY
-
-# 创建 systemd 服务
-cat > /etc/systemd/system/$SERVICE_NAME.service <<EOF
-[Unit]
-Description=Ops Job Agent
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/$BINARY_NAME
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 启动服务
-systemctl daemon-reload
-systemctl enable $SERVICE_NAME
-systemctl start $SERVICE_NAME
-
-echo "Agent 安装成功！"
-echo "服务状态: systemctl status $SERVICE_NAME"
-echo "查看日志: journalctl -u $SERVICE_NAME -f"
+echo "安装脚本模板缺失，请检查完整性"
+exit 1
 """
 
         linux_script = string.Template(linux_tpl).safe_substitute(
@@ -542,7 +292,6 @@ echo "查看日志: journalctl -u $SERVICE_NAME -f"
         )
         scripts['linux'] = linux_script
 
-        # 目前仅输出 Linux 安装脚本（暂不支持 Windows）
         return scripts
 
     @classmethod
