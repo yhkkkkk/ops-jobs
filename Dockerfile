@@ -23,6 +23,9 @@ ARG VITE_SSE_BASE_URL=/api/realtime/sse
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_SSE_BASE_URL=${VITE_SSE_BASE_URL}
 
+# Configure pnpm to use Chinese registry for faster package installation
+RUN pnpm config set registry https://registry.npmmirror.com
+
 # Install frontend deps
 COPY frontend/package*.json frontend/pnpm-lock.yaml ./
 RUN pnpm install

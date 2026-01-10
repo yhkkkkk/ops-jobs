@@ -857,28 +857,28 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
             # 创建初始安装记录
             from .models import AgentInstallRecord
-                install_record, created = AgentInstallRecord.objects.get_or_create(
-                    host=host,
-                    agent=agent,
-                    status='pending',
-                    defaults={
-                        'install_type': install_type,
-                        'install_mode': install_mode,
-                        'agent_server_url': agent_server_url if install_type == 'agent' else '',
-                        'agent_server_backup_url': '',
-                        'ws_backoff_initial_ms': ws_backoff_initial_ms,
-                        'ws_backoff_max_ms': ws_backoff_max_ms,
-                        'ws_max_retries': ws_max_retries,
-                        'agent_server_listen_addr': agent_server_listen_addr,
-                        'max_connections': max_connections,
-                        'heartbeat_timeout': heartbeat_timeout,
-                        'package_id': package_id,
-                        'package_version': package_version,
-                        'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
-                        'installed_by': user,
-                        'install_task_id': install_task_id,
-                    }
-                )
+            install_record, created = AgentInstallRecord.objects.get_or_create(
+                host=host,
+                agent=agent,
+                status='pending',
+                defaults={
+                    'install_type': install_type,
+                    'install_mode': install_mode,
+                    'agent_server_url': agent_server_url if install_type == 'agent' else '',
+                    'agent_server_backup_url': '',
+                    'ws_backoff_initial_ms': ws_backoff_initial_ms,
+                    'ws_backoff_max_ms': ws_backoff_max_ms,
+                    'ws_max_retries': ws_max_retries,
+                    'agent_server_listen_addr': agent_server_listen_addr,
+                    'max_connections': max_connections,
+                    'heartbeat_timeout': heartbeat_timeout,
+                    'package_id': package_id,
+                    'package_version': package_version,
+                    'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
+                    'installed_by': user,
+                    'install_task_id': install_task_id,
+                }
+            )
             if not created:
                 # 更新现有记录
                 install_record.install_type = install_type
