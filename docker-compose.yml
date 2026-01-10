@@ -51,6 +51,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CONTROL_PLANE_URL=${CONTROL_PLANE_URL:-http://localhost:8000}  # Agent-Server从宿主机访问
       - SECURE_SSL_REDIRECT=${SECURE_SSL_REDIRECT:-false}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
@@ -105,7 +106,7 @@ services:
     restart: unless-stopped
 
   agent-server-go:
-    profiles: ["agents"]   # 默认不构建/运行
+    profiles: ["agents"]   # 默认不构建/运行 (如果要在宿主机运行，请注释此服务)
     build:
       context: ./agent/agent-server-go
       dockerfile: Dockerfile
@@ -116,7 +117,7 @@ services:
       - ./agent/agent-server-go/config:/app/config
     environment:
       - SERVER_CONFIG=/app/config/config.yaml
-      - CONTROL_PLANE_URL=http://control-plane:8000
+      - CONTROL_PLANE_URL=http://control-plane:8000  # Docker内部网络访问
     depends_on:
       - control-plane
     restart: unless-stopped
