@@ -43,13 +43,25 @@ server:
   port: 8080
 
 control_plane:
-  url: "https://control-plane.example.com"
-  token: "server-auth-token"
-  scope: "default"  # 控制面作用域/租户标识，控制面调用需携带 X-Scope
+  url: "http://localhost:8000"  # 开发环境使用，或生产环境的实际URL
+  token: "server-auth-token"    # 从控制面获取的token
+  timeout: "30s"                # 请求超时时间
+  task_poll_interval: "5s"      # 任务轮询间隔
+  forward_heartbeat: true       # 是否转发心跳
+
+agent:
+  max_connections: 1000         # 最大Agent连接数
+  heartbeat_timeout: "60s"      # Agent心跳超时
+  cleanup_interval: "30s"       # 清理间隔
+
 auth:
-  shared_secret: ""      # 可选，启用后控制面请求需带 HMAC 签名
-  require_signature: false
-  clock_skew: "300s"     # 允许的时间偏移
+  shared_secret: ""             # 可选，启用后控制面请求需带 HMAC 签名
+  require_signature: false      # 是否要求签名
+  clock_skew: "300s"            # 允许的时间偏移
+
+logging:
+  level: "info"
+  file: "logs/agent-server.log"
 ```
 
 ### 运行

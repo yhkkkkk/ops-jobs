@@ -127,6 +127,16 @@
 - **系统监控**: gopsutil 3.24+ (跨平台系统信息收集)
 - **并发控制**: Semaphore (任务并发限制)
 
+### Agent-Server 技术栈
+
+- **语言**: Go 1.24+
+- **Web 框架**: Gin 1.10+ (HTTP API服务)
+- **WebSocket**: Gorilla WebSocket 1.5+ (Agent连接管理)
+- **任务队列**: Asynq (任务分发和重试)
+- **配置管理**: Viper 1.21+ (配置文件和环境变量)
+- **日志系统**: Logrus + Lumberjack (结构化日志)
+- **认证**: HMAC签名 (可选的安全认证)
+
 ### 前端技术栈
 
 - **框架**: Vue 3.4+ + TypeScript 5.3+
@@ -221,8 +231,67 @@
 - Python 3.10+
 - Redis 6.4+
 - Node.js 16+ (前端开发)
+- Go 1.24+ (Agent开发，可选)
+- Docker & Docker Compose (推荐)
 
-### 安装部署
+### 使用 Docker Compose (推荐)
+
+1. **克隆项目**
+
+```bash
+git clone https://github.com/yhkkkkk/ops-jobs.git
+cd ops-job
+```
+
+2. **配置环境变量**
+
+```bash
+# 复制环境变量文件
+cp .env.example .env
+
+# 编辑环境变量 (可选，Docker Compose 有默认值)
+vim .env
+```
+
+3. **启动服务**
+
+```bash
+# 启动所有服务 (控制面 + 前端 + 数据库 + Redis)
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f control-plane
+```
+
+4. **访问应用**
+
+- 前端应用: http://localhost:5173/
+- API 文档: http://localhost:8000/api/docs/
+- 管理后台: http://localhost:8000/admin/
+
+5. **启动 Agent (可选)**
+
+```bash
+# 方式1: 使用 Docker Compose 启动 Agent-Server
+docker-compose --profile agents up -d
+
+# 方式2: 在宿主机运行 Agent
+cd agent/agent-go
+go build -o ops-job-agent cmd/agent/main.go
+
+# 配置环境变量
+export AGENT_MODE=agent-server
+export AGENT_AGENT_SERVER_URL=ws://localhost:8080
+export AGENT_TOKEN=your-agent-token
+
+# 启动 Agent
+./ops-job-agent
+```
+
+### 手动安装部署
 
 1. **克隆项目**
 
@@ -390,6 +459,13 @@ REDIS_DB_REALTIME=3
 # 安全配置
 SECRET_KEY=your-secret-key
 DEBUG=False
+
+# 控制面配置 (重要!)
+# Agent-Server 用于连接控制面的URL
+# 开发环境: http://localhost:8000 (宿主机访问)
+# Docker环境: http://control-plane:8000 (容器内部访问)
+# 生产环境: https://your-domain.com (外部可访问URL)
+CONTROL_PLANE_URL=http://localhost:8000
 
 # 日志配置
 LOG_LEVEL=INFO
