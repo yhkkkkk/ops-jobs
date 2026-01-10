@@ -252,10 +252,47 @@
                         <!-- 实时日志内容 -->
                         <div class="log-section">
                           <div class="log-section-header">
-                            <h5>实时日志</h5>
+                            <div class="log-section-title">
+                              <h5>实时日志</h5>
+                              <span class="log-count" v-if="getHostLogCount(selectedStepId, hostLog.host_id) > 0">
+                                ({{ getHostLogCount(selectedStepId, hostLog.host_id) }}条)
+                              </span>
+                            </div>
                           </div>
                           <div class="log-text-container">
-                            <pre class="log-text">{{ getHostLogs(selectedStepId, hostLog.host_id) }}</pre>
+                            <!-- 小日志量：传统渲染 -->
+                            <pre
+                              v-if="getHostLogCount(selectedStepId, hostLog.host_id) <= 1000"
+                              class="log-text"
+                            >
+                              {{ getHostLogs(selectedStepId, hostLog.host_id) }}
+                            </pre>
+                            <!-- 大日志量：虚拟滚动渲染 -->
+                            <div
+                              v-else
+                              class="virtual-log-container"
+                              ref="logContainer"
+                              @scroll="handleScroll"
+                            >
+                              <div
+                                class="virtual-log-list"
+                                :style="{ height: virtualTotalHeight + 'px' }"
+                              >
+                                <div
+                                  v-for="(item, index) in visibleLogs"
+                                  :key="index + startIndex"
+                                  class="log-line"
+                                  :class="`log-${item.level || 'info'}`"
+                                  :style="{ transform: `translateY(${startIndex * 20}px)` }"
+                                >
+                                  <span class="log-time">[{{ formatTime(item.timestamp) }}]</span>
+                                  <span class="log-content">{{ item.content }}</span>
+                                  <span v-if="item.repeatCount > 1" class="log-repeat">
+                                    (重复{{ item.repeatCount }}次)
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -272,11 +309,67 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconCheckCircle, IconCloseCircle, IconDelete } from '@arco-design/web-vue/es/icon'
 import { useAuthStore } from '@/stores/auth'
 import { buildSseUrl } from '@/utils/env'
+import { SSE } from 'sse.js'
+
+// 日志压缩工具
+const LogCompressor = {
+  // 压缩重复内容
+  compress(logs: any[]) {
+    if (logs.length === 0) return logs
+
+    const compressed = []
+    let lastLog = null
+    let repeatCount = 1
+
+    for (const log of logs) {
+      if (lastLog &&
+          lastLog.content === log.content &&
+          lastLog.level === log.level &&
+          Math.abs(new Date(log.timestamp).getTime() - new Date(lastLog.timestamp).getTime()) < 1000) {
+        repeatCount++
+        // 更新最后一条的计数
+        if (compressed.length > 0) {
+          compressed[compressed.length - 1].repeatCount = repeatCount
+        }
+      } else {
+        if (lastLog) {
+          compressed.push({ ...lastLog, repeatCount: repeatCount > 1 ? repeatCount : undefined })
+        }
+        lastLog = log
+        repeatCount = 1
+      }
+    }
+
+    // 处理最后一条
+    if (lastLog) {
+      compressed.push({ ...lastLog, repeatCount: repeatCount > 1 ? repeatCount : undefined })
+    }
+
+    return compressed
+  },
+
+  // 解压（用于显示）
+  decompress(logs: any[]) {
+    const decompressed = []
+
+    for (const log of logs) {
+      const count = log.repeatCount || 1
+      for (let i = 0; i < count; i++) {
+        decompressed.push({
+          ...log,
+          repeatCount: undefined // 移除重复计数标记
+        })
+      }
+    }
+
+    return decompressed
+  }
+}
 
 interface Props {
   executionId: string
@@ -290,6 +383,8 @@ interface LogEntry {
   content: string
   step?: string
   stepOrder?: number
+  level?: string
+  repeatCount?: number
 }
 
 interface TaskStatus {
@@ -316,7 +411,6 @@ const selectedStepId = ref<string>('')
 const selectedHostIds = ref<Record<string, string>>({})
 const hostGroups = ref<Record<string, Record<string, any>>>({})
 const expandedSteps = ref<Record<string, boolean>>({})
-const logContainer = ref<HTMLElement>()
 const channelWarning = ref<string | null>(null)
 const structureWarning = ref(false)
 const missingFields = ref<string[]>([])
@@ -325,7 +419,13 @@ const missingFields = ref<string[]>([])
 const reconnectAttempts = ref(0)
 const maxReconnectAttempts = 5
 const reconnectTimeout = ref<NodeJS.Timeout | null>(null)
-const eventSource = ref<EventSource | null>(null)
+const eventSource = ref<SSE | null>(null)
+
+// 虚拟滚动相关
+const logContainer = ref<HTMLElement | null>(null)
+const startIndex = ref(0)
+const visibleCount = ref(20)
+const itemHeight = 20
 
 const recordStructureHints = (data: any) => {
   if (!data) return
@@ -392,13 +492,21 @@ const connect = async (isReconnect = false) => {
     // 获取执行ID
     const executionId = props.executionId
 
-    // 构建SSE URL，包含token参数，使用环境变量配置的基准路径
-    const sseUrl = token
-      ? buildSseUrl(`combined/${executionId}/`, `token=${encodeURIComponent(token)}`)
-      : buildSseUrl(`combined/${executionId}/`)
+    // 构建SSE URL（不包含token参数）
+    const sseUrl = buildSseUrl(`combined/${executionId}/`)
 
     console.log('SSE连接URL:', sseUrl)
-    eventSource.value = new EventSource(sseUrl)
+
+    // 使用sse.js创建安全的SSE连接
+    eventSource.value = new SSE(sseUrl, {
+      headers: token ? {
+        'Authorization': `Bearer ${token}`
+      } : {},
+      // 启用自动重连
+      start: true,
+      // 调试模式
+      debug: process.env.NODE_ENV === 'development'
+    })
 
     eventSource.value.onopen = (event) => {
       console.log('SSE连接已打开:', event)
@@ -583,9 +691,11 @@ const updateStepLogs = (stepName: string, stepOrder: number, hostName: string, l
   }
 
   // 构建日志条目
+  const logType = logData.log_type || 'info'
   const logEntry: any = {
     timestamp: logData.timestamp || new Date().toISOString(),
-    type: logData.log_type || 'info',
+    type: logType,
+    level: logType, // 用于虚拟滚动显示
     content: logData.content || ''
   }
 
@@ -602,8 +712,14 @@ const updateStepLogs = (stepName: string, stepOrder: number, hostName: string, l
     }
   }
 
-  // 添加日志到主机
-  stepLogs.value[stepId].hosts[hostKey].logs.push(logEntry)
+  // 添加日志到主机（应用压缩）
+  const hostLogs = stepLogs.value[stepId].hosts[hostKey].logs
+  hostLogs.push(logEntry)
+
+  // 对大日志量应用压缩（每1000条检查一次）
+  if (hostLogs.length % 1000 === 0 && hostLogs.length > 2000) {
+    stepLogs.value[stepId].hosts[hostKey].logs = LogCompressor.compress(hostLogs)
+  }
 
   // 更新主机状态
   const host = stepLogs.value[stepId].hosts[hostKey]
@@ -798,6 +914,51 @@ const toggleGroup = (stepId: string, status: string) => {
   hostGroups.value[stepId][status].expanded = !hostGroups.value[stepId][status].expanded
 }
 
+// 获取主机日志条目数量
+const getHostLogCount = (stepId: string, hostId: string) => {
+  if (!stepLogs.value[stepId] || !stepLogs.value[stepId].hosts[hostId]) {
+    return 0
+  }
+  return stepLogs.value[stepId].hosts[hostId].logs.length
+}
+
+// 获取主机日志条目数组（用于虚拟滚动）
+const getHostLogItems = (stepId: string, hostId: string) => {
+  if (!stepLogs.value[stepId] || !stepLogs.value[stepId].hosts[hostId]) {
+    return []
+  }
+
+  const compressedLogs = stepLogs.value[stepId].hosts[hostId].logs
+  return LogCompressor.decompress(compressedLogs)
+}
+
+// 虚拟滚动计算属性
+const visibleLogs = computed(() => {
+  const currentStepId = selectedStepId.value
+  const currentHost = selectedHostIds.value[currentStepId]
+  if (!currentStepId || !currentHost) return []
+
+  const allLogs = getHostLogItems(currentStepId, currentHost)
+  const endIndex = Math.min(startIndex.value + visibleCount.value, allLogs.length)
+  return allLogs.slice(startIndex.value, endIndex)
+})
+
+const virtualTotalHeight = computed(() => {
+  const currentStepId = selectedStepId.value
+  const currentHost = selectedHostIds.value[currentStepId]
+  if (!currentStepId || !currentHost) return 0
+
+  return getHostLogItems(currentStepId, currentHost).length * itemHeight
+})
+
+// 滚动处理
+const handleScroll = (event: Event) => {
+  const target = event.target as HTMLElement
+  const scrollTop = target.scrollTop
+  startIndex.value = Math.floor(scrollTop / itemHeight)
+}
+
+// 获取主机日志文本（用于小日志量场景）
 const getHostLogs = (stepId: string, hostId: string) => {
   if (!stepLogs.value[stepId] || !stepLogs.value[stepId].hosts[hostId]) {
     return ''
@@ -822,6 +983,23 @@ onMounted(() => {
   if (props.autoConnect) {
     connect()
   }
+
+  // 监听token变化，断开重连以使用新token
+  const authStore = useAuthStore()
+  watch(
+    () => authStore.token,
+    (newToken, oldToken) => {
+      if (eventSource.value && newToken !== oldToken && oldToken) {
+        console.log('Token已更新，正在重新连接SSE...')
+        addSystemLog('认证token已更新，正在重连...', 'info')
+        // 断开现有连接
+        disconnect()
+        // 使用新token重新连接
+        setTimeout(() => connect(), 500)
+      }
+    },
+    { immediate: false }
+  )
 })
 
 onUnmounted(() => {
@@ -1412,6 +1590,62 @@ onUnmounted(() => {
 
 .status-message {
   margin-top: 8px;
+}
+
+/* 虚拟滚动日志样式 */
+.virtual-log-container {
+  height: 400px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  overflow: hidden;
+}
+
+.virtual-log-list {
+  height: 100%;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.log-line {
+  display: flex;
+  padding: 2px 8px;
+  border-bottom: 1px solid #333;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-line.log-error {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: #ff6b6b;
+}
+
+.log-line.log-warning {
+  background-color: rgba(255, 152, 0, 0.1);
+  color: #ffb74d;
+}
+
+.log-line.log-info {
+  color: #81c784;
+}
+
+.log-time {
+  color: #888;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.log-content {
+  flex: 1;
+  color: inherit;
+}
+
+.log-count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #666;
+  font-weight: normal;
 }
 
 .log-content {
