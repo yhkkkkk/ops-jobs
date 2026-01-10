@@ -17,6 +17,8 @@ from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
 from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
 from utils.realtime_logs import realtime_log_service
 import uuid
+import subprocess
+import base64 as __base64
 
 class AgentService:
     """Agent 相关服务"""
@@ -273,6 +275,37 @@ echo "安装脚本模板缺失，请检查完整性"
 exit 1
 """
 
+        # 在 control-plane 上渲染 config.yaml 并将结果 base64 编码，嵌入到安装脚本中
+        render_script_path = __os.path.join(__os.path.dirname(__file__), "tools", "render_config.py")
+        config_b64 = ""
+        try:
+            if __os.path.exists(render_script_path):
+                cmd = [
+                    "python3",
+                    render_script_path,
+                    "--install-type", install_type,
+                    "--agent-token", agent_token,
+                    "--agent-server-url", agent_server_url or "",
+                    "--control-plane-url", control_plane_url or "",
+                    "--ws-backoff-initial", str(ws_backoff_initial_ms),
+                    "--ws-backoff-max", str(ws_backoff_max_ms),
+                    "--ws-max-retries", str(ws_max_retries),
+                    "--agent-server-listen-addr", agent_server_listen_addr or "",
+                    "--max-connections", str(max_connections),
+                    "--heartbeat-timeout", str(heartbeat_timeout),
+                ]
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                if proc.returncode != 0:
+                    raise RuntimeError(f"render_config.py failed: {proc.returncode} {proc.stderr.strip()}")
+                rendered_yaml = proc.stdout
+                # base64 encode for safe insertion into shell script
+                config_b64 = __base64.b64encode(rendered_yaml.encode("utf-8")).decode("ascii")
+            else:
+                raise RuntimeError("control-plane render_config.py not found")
+        except Exception as e:
+            # 让上层调用负责处理错误（例如在批量安装中会捕获并记录）
+            raise RuntimeError(f"Failed to render agent config on control-plane: {e}")
+
         linux_script = string.Template(linux_tpl).safe_substitute(
             AGENT_TOKEN=agent_token,
             INSTALL_DIR=install_dir,
@@ -289,9 +322,11 @@ exit 1
             AGENT_SERVER_LISTEN_ADDR=agent_server_listen_addr,
             MAX_CONNECTIONS=max_connections,
             HEARTBEAT_TIMEOUT=heartbeat_timeout,
+            CONFIG_B64=config_b64,
         )
         scripts['linux'] = linux_script
 
+        # 目前仅输出 Linux 安装脚本（暂不支持 Windows）
         return scripts
 
     @classmethod

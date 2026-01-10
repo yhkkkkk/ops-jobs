@@ -146,8 +146,14 @@ class AgentUninstallRecord(models.Model):
         ('failed', '失败'),
     ]
 
+    UNINSTALL_TYPE_CHOICES = [
+        ('agent', 'Agent'),
+        ('agent-server', 'Agent-Server'),
+    ]
+
     host = models.ForeignKey(Host, on_delete=models.CASCADE, related_name='agent_uninstall_records', verbose_name="主机")
     agent = models.ForeignKey(Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name='uninstall_record', verbose_name="Agent")
+    agent_type = models.CharField(max_length=20, choices=UNINSTALL_TYPE_CHOICES, default='agent', verbose_name="卸载类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="状态")
     uninstalled_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="卸载人")
     uninstalled_at = models.DateTimeField(auto_now_add=True, verbose_name="卸载时间")
