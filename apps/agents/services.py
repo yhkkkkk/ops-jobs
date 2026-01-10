@@ -352,7 +352,7 @@ else
     : > "$CONFIG_FILE"
 fi
 
-# 使用内置 python 覆盖关键字段（无外部依赖，若缺少 PyYAML 则写 JSON 语法，YAML 兼容）
+# 使用内置 python 覆盖关键字段
 export CONFIG_FILE INSTALL_TYPE AGENT_SERVER_URL WS_BACKOFF_INITIAL_MS WS_BACKOFF_MAX_MS WS_MAX_RETRIES AGENT_TOKEN HOST_ID AGENT_SERVER_LISTEN_ADDR MAX_CONNECTIONS HEARTBEAT_TIMEOUT
 python3 - <<'PY'
 import json
@@ -401,7 +401,17 @@ else:
 try:
     import yaml  # type: ignore
 except Exception:
-    yaml = None
+    # 若未安装 PyYAML，尝试通过 pip 自动安装（使用 --user 以降低权限要求）
+    import sys, subprocess
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "PyYAML"], check=False)
+    except Exception:
+        # 安装失败则继续后续判断
+        pass
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        yaml = None
 
 data = {}
 if yaml:
@@ -426,8 +436,63 @@ if yaml:
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, allow_unicode=False, default_flow_style=False, sort_keys=False)
 else:
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data, indent=2))
+    # 如果安装/导入 PyYAML 仍然失败，使用轻量级内置 emitter 将配置以 YAML 格式写出
+    # 目的：避免回退到 JSON，同时不依赖外部库（仅支持常见标量、列表、字典）
+    def _emit_yaml(obj, indent=0):
+        lines = []
+        pad = '  ' * indent
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(v, (dict, list)):
+                    lines.append(f"{pad}{k}:")
+                    lines.extend(_emit_yaml(v, indent + 1))
+                else:
+                    if v is True:
+                        val = "true"
+                    elif v is False:
+                        val = "false"
+                    elif v is None:
+                        val = ""
+                    elif isinstance(v, (int, float)):
+                        val = str(v)
+                    else:
+                        s = str(v)
+                        # 简单转义：当字符串包含特殊字符时加双引号
+                        if any(ch in s for ch in ['\n', ':', '"', "'']) or s.strip() != s:
+                            s = '"' + s.replace('"', '\\"') + '"'
+                        val = s
+                    lines.append(f"{pad}{k}: {val}")
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    lines.append(f"{pad}-")
+                    lines.extend(_emit_yaml(item, indent + 1))
+                else:
+                    if item is True:
+                        vv = "true"
+                    elif item is False:
+                        vv = "false"
+                    elif item is None:
+                        vv = ""
+                    elif isinstance(item, (int, float)):
+                        vv = str(item)
+                    else:
+                        s = str(item)
+                        if any(ch in s for ch in ['\n', ':', '"', "'']) or s.strip() != s:
+                            s = '"' + s.replace('"', '\\"') + '"'
+                        vv = s
+                    lines.append(f"{pad}- {vv}")
+        else:
+            lines.append(pad + str(obj))
+        return lines
+
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(_emit_yaml(data)))
+    except Exception:
+        import sys as __sys
+        print("Fatal: 无法写入 YAML 配置文件（内置 emitter 失败）", file=__sys.stderr)
+        __sys.exit(1)
 PY
 
 # 创建 systemd 服务

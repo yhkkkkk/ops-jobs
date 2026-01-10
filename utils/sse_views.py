@@ -3,6 +3,7 @@ Server-Sent Events (SSE) 视图 - 实时日志推送
 基于现有的Redis Stream实时日志服务，支持ASGI异步环境
 """
 import json
+import yaml
 import time
 import logging
 import uuid

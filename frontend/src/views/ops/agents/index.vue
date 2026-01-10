@@ -459,6 +459,61 @@
             </a-form>
           </div>
         </a-tab-pane>
+
+        <!-- 安装进度面板 -->
+        <a-tab-pane key="progress" title="安装进度" v-if="installProgress.status !== 'idle'">
+          <div class="install-step">
+            <a-space direction="vertical" :size="16" style="width: 100%">
+              <!-- 进度信息 -->
+              <a-card>
+                <a-space direction="vertical" :size="12" style="width: 100%">
+                  <div style="display: flex; justify-content: space-between; align-items: center">
+                    <span>安装进度</span>
+                    <a-tag :color="installProgress.status === 'completed' ? 'green' : installProgress.status === 'completed_with_errors' ? 'orange' : 'blue'">
+                      {{ installProgress.status === 'completed' ? '已完成' : installProgress.status === 'completed_with_errors' ? '部分失败' : '进行中' }}
+                    </a-tag>
+                  </div>
+                  <a-progress
+                    :percent="installProgress.total > 0 ? Math.round((installProgress.completed / installProgress.total) * 100) : 0"
+                    :status="installProgress.status === 'completed' ? 'success' : installProgress.status === 'completed_with_errors' ? 'warning' : 'normal'"
+                  />
+                  <div style="display: flex; gap: 24px; font-size: 14px">
+                    <span>总数: <strong>{{ installProgress.total }}</strong></span>
+                    <span style="color: #00b42a">成功: <strong>{{ installProgress.success_count }}</strong></span>
+                    <span style="color: #f53f3f">失败: <strong>{{ installProgress.failed_count }}</strong></span>
+                    <span>已完成: <strong>{{ installProgress.completed }}</strong></span>
+                  </div>
+                  <div v-if="installProgress.message" style="color: #86909c; font-size: 12px">
+                    {{ installProgress.message }}
+                  </div>
+                </a-space>
+              </a-card>
+
+              <!-- 实时日志 -->
+              <a-card title="实时日志">
+                <div style="max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px">
+                  <div
+                    v-for="(log, index) in installProgress.logs"
+                    :key="index"
+                    :style="{
+                      padding: '4px 8px',
+                      marginBottom: '4px',
+                      backgroundColor: log.log_type === 'error' ? '#fff2f0' : log.log_type === 'info' ? '#f0f9ff' : '#f7f8fa',
+                      color: log.log_type === 'error' ? '#f53f3f' : '#1d2129'
+                    }"
+                  >
+                    <span style="color: #86909c">[{{ log.timestamp }}]</span>
+                    <span v-if="log.host_name" style="color: #165dff; margin-left: 8px">[{{ log.host_name }}]</span>
+                    <span style="margin-left: 8px">{{ log.content }}</span>
+                  </div>
+                  <div v-if="installProgress.logs.length === 0" style="color: #86909c; text-align: center; padding: 20px">
+                    暂无日志
+                  </div>
+                </div>
+              </a-card>
+            </a-space>
+          </div>
+        </a-tab-pane>
         <a-tab-pane key="script" title="安装脚本" v-if="installScripts">
           <div class="install-step install-step-scripts">
             <div class="install-script-tip">
@@ -475,7 +530,7 @@
               <p class="install-script-tip-warning">
                 <strong>注意：Token 仅显示一次，请妥善保存；如需重新获取，请在列表或安装记录中使用“重新生成脚本”操作。</strong>
               </p>
-                </div>
+            </div>
             <div v-for="(scriptGroup, osType) in installScripts" :key="String(osType)">
               <h3 style="margin: 16px 0 8px 0;">{{ String(osType) === 'linux' ? 'Linux' : 'Windows' }} 安装脚本</h3>
               <div v-for="item in scriptGroup" :key="item.host_id" style="margin-bottom: 24px">
@@ -490,12 +545,12 @@
                   </template>
                   <div class="install-script-token-row">
                     <span class="install-script-token-label"><strong>Agent Token:</strong></span>
-                    <code class="install-script-token-value">{{ item.agent_token || item.register_token }}</code>
-                    <a-button type="text" size="mini" @click="copyText(item.agent_token || item.register_token)" style="margin-left: 8px">
-                            <template #icon>
-                              <IconCopy />
-                            </template>
-                          </a-button>
+                    <code class="install-script-token-value">{{ item.agent_token }}</code>
+                    <a-button type="text" size="mini" @click="copyText(item.agent_token)" style="margin-left: 8px">
+                      <template #icon>
+                        <IconCopy />
+                      </template>
+                    </a-button>
                   </div>
                   <a-textarea
                     :model-value="item.script"
@@ -622,6 +677,7 @@ import { agentsApi, packageApi, type Agent, type AgentPackage } from '@/api/agen
 import { hostApi } from '@/api/ops'
 import dayjs from 'dayjs'
 import { buildSseUrl } from '@/utils/env'
+import { SSE } from 'sse.js'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -685,7 +741,7 @@ const installProgress = ref<{
   message: '',
   logs: []
 })
-const sseEventSource = ref<EventSource | null>(null)
+const sseEventSource = ref<any | null>(null)
 
 // 卸载相关
 const uninstallModalVisible = ref(false)
@@ -717,7 +773,7 @@ const uninstallProgress = ref<{
   message: '',
   logs: []
 })
-const uninstallSseEventSource = ref<EventSource | null>(null)
+const uninstallSseEventSource = ref<any | null>(null)
 
 // 搜索表单
 const searchForm = reactive({
@@ -1114,11 +1170,15 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   // 获取 token
   const token = getAccessToken()
   // 使用相对路径，因为 SSE 请求会通过代理
-  // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
-  const sseUrl = buildSseUrl(`agent-install/${uninstallTaskId}/`, `token=${token || ''}`)
+  // backend route is /api/realtime/sse/agent-install/<id>/
+  const sseUrl = buildSseUrl(`agent-install/${uninstallTaskId}/`)
 
-  // 创建 SSE 连接
-  const eventSource = new EventSource(sseUrl)
+  // 使用 sse.js 建立连接并通过 Authorization header 认证（比把 token 放在 URL 更安全）
+  const eventSource = new SSE(sseUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    start: true,
+    debug: process.env.NODE_ENV === 'development'
+  })
   uninstallSseEventSource.value = eventSource
 
   eventSource.onmessage = (event) => {
@@ -1420,11 +1480,14 @@ const connectInstallProgressSSE = (installTaskId: string) => {
   // 获取 token
   const token = getAccessToken()
   // 使用相对路径，因为sse请求会通过代理
-  // backend route is /api/realtime/sse/agent-install/<id>/ (already prefixed in SSE_BASE_URL)
-  const sseUrl = buildSseUrl(`agent-install/${installTaskId}/`, `token=${token || ''}`)
+  const sseUrl = buildSseUrl(`agent-install/${installTaskId}/`)
 
-  // 创建 SSE 连接
-  const eventSource = new EventSource(sseUrl)
+  // 使用 sse.js 创建连接并通过 Authorization header 认证（避免把 token 放在 URL）
+  const eventSource = new SSE(sseUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    start: true,
+    debug: process.env.NODE_ENV === 'development'
+  })
   sseEventSource.value = eventSource
   // 确保显示进度抽屉并切到进度标签页，避免在连接过程中因异常导致界面仍停留在选择页
   installModalVisible.value = true
