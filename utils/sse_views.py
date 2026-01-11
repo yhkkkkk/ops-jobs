@@ -1,15 +1,10 @@
 """
 Server-Sent Events (SSE) 视图 - 实时日志推送
-基于现有的Redis Stream实时日志服务，支持ASGI异步环境
+基于 Redis Stream 实时日志服务，完全异步实现以支持 ASGI 环境
 """
-import json
-import yaml
-import time
-import logging
-import uuid
-import threading
-import queue
 import asyncio
+import json
+import logging
 from datetime import datetime
 from django.http import StreamingHttpResponse, HttpResponse, JsonResponse
 from django.views import View
@@ -24,19 +19,41 @@ logger = logging.getLogger(__name__)
 
 
 class SSEBaseView(View):
-    """SSE基础视图 - 支持Session和JWT认证，CORS支持"""
+    """
+    SSE 异步基础视图
+    - 支持 Session 和 JWT 认证
+    - CORS 支持
+    - 完全异步实现，适配 ASGI 环境
+    """
 
-    def normalize_log_message(self, log_data, execution_id: str):
-        """容错并补全日志字段，标记结构缺失/通道回退"""
+    # 子类可覆盖的配置
+    heartbeat_interval = 2  # 心跳间隔（秒）
+    max_consecutive_errors = 5  # 最大连续错误次数
+
+    # ==================== 工具方法 ====================
+
+    @staticmethod
+    def format_sse_message(data, event_id=None):
+        """格式化 SSE 消息"""
+        message = ""
+        if event_id:
+            message += f"id: {event_id}\n"
+        message += "event: message\n"
+        message += f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        return message
+
+    @staticmethod
+    def normalize_log_message(log_data, execution_id: str):
+        """容错并补全日志字段"""
         data = dict(log_data or {})
         missing_fields = []
 
-        # 执行/任务ID
+        # 执行/任务 ID
         data.setdefault('execution_id', str(execution_id))
         data.setdefault('task_id', str(execution_id))
         data['id'] = data.get('id')
 
-        # 通道标记（默认 redis_stream），用于前端提示回退
+        # 通道标记
         channel = data.get('channel') or data.get('log_channel') or 'redis_stream'
         data['channel'] = channel
         data['fallback_channel'] = channel not in ('redis_stream', 'redis', 'default')
@@ -62,12 +79,10 @@ class SSEBaseView(View):
             missing_fields.append('host')
             host_id = 'unknown_host'
         data['host_id'] = host_id
-
-        host_name = data.get('host_name') or host_id
-        data['host_name'] = host_name
+        data['host_name'] = data.get('host_name') or host_id
         data['host_ip'] = data.get('host_ip') or ''
 
-        # 日志类型/时间戳容错
+        # 日志类型/时间戳
         data['log_type'] = data.get('log_type') or data.get('stream') or 'info'
         data['timestamp'] = data.get('timestamp') or datetime.now().isoformat()
 
@@ -76,120 +91,92 @@ class SSEBaseView(View):
         data['structured'] = not data['structure_missing']
         return data
 
-    def options(self, request, *args, **kwargs):
-        """处理CORS预检请求"""
-        response = JsonResponse({})
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Cache-Control, Authorization, Content-Type'
-        response['Access-Control-Max-Age'] = '86400'  # 24小时
-        return response
-
-    def dispatch(self, request, *args, **kwargs):
-        """统一的认证和权限检查"""
-        execution_id = kwargs.get('execution_id')
-        logger.info(f"SSE dispatch开始: method={request.method}, execution_id={execution_id}")
-
-        # 1. 检查用户认证
-        user = self.authenticate_user(request)
-        if not user:
-            logger.warning(f"用户认证失败: execution_id={execution_id}")
-            return HttpResponse("Unauthorized", status=401)
-
-        logger.info(f"用户认证成功: user={user.username}, execution_id={execution_id}")
-        # 设置认证用户
-        request.user = user
-
-        # 2. 检查执行记录访问权限
-        if execution_id:
-            if not self.check_execution_permission(request.user, execution_id):
-                logger.warning(f"权限检查失败: user={user.username}, execution_id={execution_id}")
-                return HttpResponse("Forbidden", status=403)
-            logger.info(f"权限检查通过: user={user.username}, execution_id={execution_id}")
-
-        return super().dispatch(request, *args, **kwargs)
+    # ==================== 认证方法 ====================
 
     def authenticate_user(self, request):
-        """认证用户 - 支持Session和JWT Token"""
-        # 1. 尝试Session认证
-        if request.user.is_authenticated:
+        """认证用户 - 支持 Session 和 JWT Token"""
+        # 1. 尝试 session 认证
+        if hasattr(request, 'user') and request.user.is_authenticated:
             return request.user
 
-        # 2. 尝试JWT Token认证
-        token = request.GET.get('token')
-        if token:
-            try:
-                jwt_auth = JWTAuthentication()
-                validated_token = jwt_auth.get_validated_token(token)
-                user = jwt_auth.get_user(validated_token)
-                return user
-
-            except (InvalidToken, TokenError, Exception) as e:
-                logger.warning(f"JWT认证失败: {str(e)}")
-                return None
-
-        # 3. 尝试从Authorization header获取token
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        # 2. 尝试从 Authorization header 获取 jwt
+        auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
             try:
                 jwt_auth = JWTAuthentication()
                 validated_token = jwt_auth.get_validated_token(token)
-                user = jwt_auth.get_user(validated_token)
-                return user
-
+                return jwt_auth.get_user(validated_token)
             except (InvalidToken, TokenError, Exception) as e:
                 logger.warning(f"JWT认证失败: {str(e)}")
                 return None
 
         return None
 
-    def check_execution_permission(self, user, execution_id):
-        """检查用户是否有权限访问执行记录"""
-        try:
-            from apps.executor.models import ExecutionRecord
+    def check_permission(self, user, resource_id):
+        """
+        权限检查 - 子类应覆盖此方法
+        默认实现：超级用户通过
+        """
+        return user.is_superuser
 
-            execution_record = ExecutionRecord.objects.filter(
-                execution_id=execution_id
-            ).first()
+    # ==================== 请求处理 ====================
 
-            if not execution_record:
-                logger.warning(f"执行记录不存在: {execution_id}")
-                return False
+    def options(self, request, *args, **kwargs):
+        """处理 CORS 预检请求"""
+        response = HttpResponse()
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Cache-Control, Authorization, Content-Type'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
 
-            # 超级用户权限
-            if user.is_superuser:
-                return True
+    def dispatch(self, request, *args, **kwargs):
+        """统一的认证和权限检查"""
+        # 获取资源 ID（子类通过 get_resource_id 方法定义）
+        resource_id = self.get_resource_id(kwargs)
+        logger.info(f"SSE dispatch: method={request.method}, resource_id={resource_id}")
 
-            # 执行者权限
-            if execution_record.executed_by == user:
-                return True
+        # OPTIONS 请求直接返回
+        if request.method == 'OPTIONS':
+            return self.options(request, *args, **kwargs)
 
-            # 对象级权限检查
-            if execution_record.related_object:
-                permission_name = f'view_{execution_record.related_object._meta.model_name}'
-                return user.has_perm(permission_name, execution_record.related_object)
+        # 认证检查
+        user = self.authenticate_user(request)
+        if not user:
+            logger.warning(f"用户认证失败: resource_id={resource_id}")
+            return HttpResponse("Unauthorized", status=401)
 
-            # 如果没有相关对象，检查是否有查看执行记录的权限
-            return user.has_perm('executor.view_executionrecord')
+        logger.info(f"用户认证成功: user={user.username}, resource_id={resource_id}")
+        request.user = user
 
-        except Exception as e:
-            logger.error(f"权限检查异常: {execution_id} - {e}")
-            return False
+        # 权限检查
+        if resource_id and not self.check_permission(user, resource_id):
+            logger.warning(f"权限检查失败: user={user.username}, resource_id={resource_id}")
+            return HttpResponse("Forbidden", status=403)
 
-    def create_sse_response(self, event_stream):
+        logger.info(f"权限检查通过: user={user.username}, resource_id={resource_id}")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_resource_id(self, kwargs):
+        """获取资源 ID - 子类应覆盖"""
+        return kwargs.get('execution_id') or kwargs.get('install_task_id')
+
+    # ==================== SSE 响应创建 ====================
+
+    def create_sse_response(self, async_generator):
         """创建SSE响应"""
         response = StreamingHttpResponse(
-            event_stream,
+            async_generator,
             content_type='text/event-stream; charset=utf-8'
         )
 
-        # 设置SSE必需的头
+        # SSE必需的头
         response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response['Pragma'] = 'no-cache'
         response['Expires'] = '0'
-        response['Connection'] = 'keep-alive'  # ASGI 服务器支持
-        response['X-Accel-Buffering'] = 'no'  # 禁用nginx缓冲
+        response['Connection'] = 'keep-alive'
+        response['X-Accel-Buffering'] = 'no'
 
         # CORS设置
         response['Access-Control-Allow-Origin'] = '*'
@@ -199,395 +186,347 @@ class SSEBaseView(View):
 
         return response
 
-    def format_sse_message(self, data, event_id=None):
-        """格式化SSE消息 - 统一使用message事件类型，通过data.type区分"""
-        message = ""
+    # ==================== 异步 redis 操作 ====================
 
-        if event_id:
-            message += f"id: {event_id}\n"
+    @staticmethod
+    async def redis_xread(streams_dict, count=200, block=2000):
+        """异步 redis xread"""
+        return await sync_to_async(
+            realtime_log_service.redis_client.xread
+        )(streams_dict, count=count, block=block)
 
-        # 统一使用message事件类型，通过data.type字段区分具体事件类型
-        message += "event: message\n"
-        message += f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+    @staticmethod
+    async def redis_xrevrange(stream_key, count=20):
+        """异步 redis xrevrange"""
+        return await sync_to_async(
+            realtime_log_service.redis_client.xrevrange
+        )(stream_key, count=count)
 
-        return message
+    @staticmethod
+    async def redis_ensure_connection():
+        """异步确保 redis 连接"""
+        return await sync_to_async(
+            realtime_log_service._ensure_connection
+        )()
 
-    def _create_error_stream(self, error_message):
-        """创建错误流"""
-        def error_generator():
-            yield self.format_sse_message({
-                'type': 'error',
-                'message': error_message,
-                'timestamp': datetime.now().isoformat()
-            })
-        return error_generator()
+    @staticmethod
+    async def get_historical_logs_async(task_id, limit=50, stream_key=None):
+        """异步获取历史日志"""
+        return await sync_to_async(
+            realtime_log_service.get_historical_logs
+        )(task_id, limit=limit, stream_key=stream_key)
 
+
+# ==================== 作业执行 SSE 视图 ====================
 
 @method_decorator(csrf_exempt, name='dispatch')
 class JobLogsSSEView(SSEBaseView):
     """作业日志SSE视图"""
 
+    def check_permission(self, user, execution_id):
+        """检查执行记录访问权限"""
+        try:
+            from apps.executor.models import ExecutionRecord
+
+            record = ExecutionRecord.objects.filter(execution_id=execution_id).first()
+            if not record:
+                logger.warning(f"执行记录不存在: {execution_id}")
+                return False
+
+            if user.is_superuser:
+                return True
+
+            if record.executed_by == user:
+                return True
+
+            if record.related_object:
+                perm = f'view_{record.related_object._meta.model_name}'
+                return user.has_perm(perm, record.related_object)
+
+            return user.has_perm('executor.view_executionrecord')
+
+        except Exception as e:
+            logger.error(f"权限检查异常: {execution_id} - {e}")
+            return False
+
     def get(self, request, execution_id):
         """获取作业日志流"""
         logger.info(f"SSE日志连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        # 使用execution_id作为stream key（Agent-Server已按此聚合）
         task_id = str(execution_id)
-        logger.info(f"SSE日志连接: 执行ID={execution_id}")
-
-        # 获取起始ID
         last_id = request.GET.get('last_id', '0')
-
-        # 获取可选的过滤参数
         filter_host_id = request.GET.get('host_id')
         filter_step_id = request.GET.get('step_id')
 
-        def event_stream(last_id=None):
-            """事件流生成器"""
+        async def event_stream():
+            nonlocal last_id
             try:
-                # 发送连接建立消息
+                # 连接建立消息
                 yield self.format_sse_message({
                     'type': 'connection_established',
                     'message': f'已连接到执行记录 {execution_id} 的日志流',
                     'execution_id': execution_id,
                     'channel': 'redis_stream',
-                    'structured': True,
-                    'filters': {
-                        'host_id': filter_host_id,
-                        'step_id': filter_step_id
-                    }
-                })
+                    'filters': {'host_id': filter_host_id, 'step_id': filter_step_id}
+                }).encode('utf-8')
 
-                # 如果是新连接，先发送历史日志
+                # 发送历史日志
                 if last_id == '0':
-                    historical_logs = realtime_log_service.get_historical_logs(task_id, limit=50)
+                    historical_logs = await self.get_historical_logs_async(task_id, limit=50)
                     logger.info(f"发送历史日志: {len(historical_logs)} 条")
                     for log in historical_logs:
-                        normalized_log = self.normalize_log_message(log, execution_id)
+                        normalized = self.normalize_log_message(log, execution_id)
                         # 应用过滤器
-                        if filter_host_id and normalized_log.get('host_id') != filter_host_id:
+                        if filter_host_id and normalized.get('host_id') != filter_host_id:
                             continue
-                        if filter_step_id and normalized_log.get('step_id') != filter_step_id:
+                        if filter_step_id and normalized.get('step_id') != filter_step_id:
                             continue
-
+                        last_id = normalized.get('id') or log.get('id', '0')
                         yield self.format_sse_message({
-                            'type': 'log',
-                            **normalized_log
-                        }, event_id=normalized_log.get('id') or log['id'])
-                        # 更新 last_id 为最后一条历史日志的 ID
-                        last_id = normalized_log.get('id') or log['id']
+                            'type': 'log', **normalized
+                        }, event_id=last_id).encode('utf-8')
 
-                # 开始实时日志流
+                # 实时日志流
                 logger.info(f"开始实时日志流: execution_id={execution_id}")
-                for message in realtime_log_service.get_logs_stream(task_id, last_id):
-                    if message['type'] == 'log':
-                        normalized_log = self.normalize_log_message(message['data'], execution_id)
-                        # 应用过滤器
-                        if filter_host_id and normalized_log.get('host_id') != filter_host_id:
-                            continue
-                        if filter_step_id and normalized_log.get('step_id') != filter_step_id:
+                stream_key = realtime_log_service.log_stream_key
+                consecutive_errors = 0
+
+                while True:
+                    try:
+                        if not await self.redis_ensure_connection():
+                            consecutive_errors += 1
+                            if consecutive_errors >= self.max_consecutive_errors:
+                                yield self.format_sse_message({
+                                    'type': 'error', 'message': 'Redis连接失败'
+                                }).encode('utf-8')
+                                break
+                            await asyncio.sleep(2)
                             continue
 
-                        yield self.format_sse_message({
-                            'type': 'log',
-                            **normalized_log
-                        }, event_id=message['id'])
-                    elif message['type'] == 'heartbeat':
-                        yield self.format_sse_message({
-                            'type': 'heartbeat',
-                            **message['data']
-                        })
-                    elif message['type'] == 'error':
-                        yield self.format_sse_message({
-                            'type': 'error',
-                            **message['data']
-                        })
-                        break
+                        consecutive_errors = 0
+                        messages = await self.redis_xread({stream_key: last_id}, count=200, block=2000)
+
+                        if messages:
+                            for stream, msgs in messages:
+                                for msg_id, fields in msgs:
+                                    exec_id = fields.get('execution_id') or fields.get('task_id')
+                                    if str(exec_id) != task_id:
+                                        continue
+                                    last_id = msg_id
+                                    normalized = self.normalize_log_message(fields, execution_id)
+                                    # 应用过滤器
+                                    if filter_host_id and normalized.get('host_id') != filter_host_id:
+                                        continue
+                                    if filter_step_id and normalized.get('step_id') != filter_step_id:
+                                        continue
+                                    yield self.format_sse_message({
+                                        'type': 'log', **normalized
+                                    }, event_id=msg_id).encode('utf-8')
+                        else:
+                            # 心跳
+                            yield self.format_sse_message({
+                                'type': 'heartbeat',
+                                'timestamp': datetime.now().isoformat()
+                            }).encode('utf-8')
+
+                    except Exception as e:
+                        consecutive_errors += 1
+                        logger.error(f"日志流异常 ({consecutive_errors}): {e}")
+                        if consecutive_errors >= self.max_consecutive_errors:
+                            yield self.format_sse_message({
+                                'type': 'error', 'message': str(e)
+                            }).encode('utf-8')
+                            break
+                        await asyncio.sleep(1)
 
             except Exception as e:
                 logger.error(f"SSE日志流异常: {execution_id} - {e}")
                 yield self.format_sse_message({
-                    'type': 'error',
-                    'message': str(e)
-                })
+                    'type': 'error', 'message': str(e)
+                }).encode('utf-8')
 
-        return self.create_sse_response(event_stream(last_id))
+        return self.create_sse_response(event_stream())
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class JobStatusSSEView(SSEBaseView):
-    """作业状态SSE视图"""
+    """作业状态 SSE 视图"""
+
+    def check_permission(self, user, execution_id):
+        """复用 JobLogsSSEView 的权限检查"""
+        return JobLogsSSEView.check_permission(self, user, execution_id)
 
     def get(self, request, execution_id):
         """获取作业状态流"""
         logger.info(f"SSE状态连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        # 直接使用execution_id作为task_id
         task_id = str(execution_id)
-        logger.info(f"SSE状态连接: 执行ID={execution_id}, 任务ID={task_id}")
-
-        # 获取起始ID
         last_id = request.GET.get('last_id', '0')
 
-        def event_stream():
-            """事件流生成器"""
+        async def event_stream():
+            nonlocal last_id
             try:
-                # 发送连接建立消息
+                # 连接建立消息
                 yield self.format_sse_message({
                     'type': 'connection_established',
                     'message': f'已连接到执行记录 {execution_id} 的状态流',
-                    'execution_id': execution_id,
-                    'task_id': task_id
-                })
+                    'execution_id': execution_id
+                }).encode('utf-8')
 
-                # 开始实时状态流
+                # 实时状态流
                 logger.info(f"开始实时状态流: task_id={task_id}")
-                for message in realtime_log_service.get_status_stream(task_id, last_id):
-                    if message['type'] == 'status':
-                        yield self.format_sse_message({
-                            'type': 'status',
-                            **message['data']
-                        }, event_id=message['id'])
-                    elif message['type'] == 'heartbeat':
-                        yield self.format_sse_message({
-                            'type': 'heartbeat',
-                            **message['data']
-                        })
-                    elif message['type'] == 'error':
-                        yield self.format_sse_message({
-                            'type': 'error',
-                            **message['data']
-                        })
-                        break
+                status_stream_key = f"{realtime_log_service.status_stream_prefix}{task_id}"
+                consecutive_errors = 0
+
+                while True:
+                    try:
+                        if not await self.redis_ensure_connection():
+                            consecutive_errors += 1
+                            if consecutive_errors >= self.max_consecutive_errors:
+                                yield self.format_sse_message({
+                                    'type': 'error', 'message': 'Redis连接失败'
+                                }).encode('utf-8')
+                                break
+                            await asyncio.sleep(2)
+                            continue
+
+                        consecutive_errors = 0
+                        messages = await self.redis_xread({status_stream_key: last_id}, count=100, block=2000)
+
+                        if messages:
+                            for stream, msgs in messages:
+                                for msg_id, fields in msgs:
+                                    last_id = msg_id
+                                    yield self.format_sse_message({
+                                        'type': 'status', **fields
+                                    }, event_id=msg_id).encode('utf-8')
+                        else:
+                            yield self.format_sse_message({
+                                'type': 'heartbeat',
+                                'timestamp': datetime.now().isoformat()
+                            }).encode('utf-8')
+
+                    except Exception as e:
+                        consecutive_errors += 1
+                        logger.error(f"状态流异常 ({consecutive_errors}): {e}")
+                        if consecutive_errors >= self.max_consecutive_errors:
+                            yield self.format_sse_message({
+                                'type': 'error', 'message': str(e)
+                            }).encode('utf-8')
+                            break
+                        await asyncio.sleep(1)
 
             except Exception as e:
                 logger.error(f"SSE状态流异常: {execution_id} - {e}")
                 yield self.format_sse_message({
-                    'type': 'error',
-                    'message': str(e)
-                })
+                    'type': 'error', 'message': str(e)
+                }).encode('utf-8')
 
         return self.create_sse_response(event_stream())
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class JobCombinedSSEView(SSEBaseView):
-    """作业日志和状态合并SSE视图 - 异步实现以支持ASGI环境"""
+    """作业日志和状态合并 SSE 视图"""
+
+    def check_permission(self, user, execution_id):
+        """复用 JobLogsSSEView 的权限检查"""
+        return JobLogsSSEView.check_permission(self, user, execution_id)
 
     def get(self, request, execution_id):
         """获取作业日志和状态的合并流"""
-        try:
-            logger.info(f"SSE合并流连接: 用户={request.user.username}, 执行ID={execution_id}")
+        logger.info(f"SSE合并流连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-            # 直接使用execution_id作为task_id
-            task_id = str(execution_id)
-            logger.info(f"SSE合并流连接: 执行ID={execution_id}, 任务ID={task_id}")
+        task_id = str(execution_id)
+        last_id = request.GET.get('last_id', '0')
 
-            # 创建异步SSE流
-            response = StreamingHttpResponse(
-                self._build_log_stream_async(task_id, execution_id),
-                content_type='text/event-stream; charset=utf-8'
-            )
+        async def event_stream():
+            log_last_id = last_id
+            status_last_id = last_id
 
-            # 设置SSE相关的HTTP头
-            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response['Pragma'] = 'no-cache'
-            response['Expires'] = '0'
-            response['Access-Control-Allow-Origin'] = '*'
-            response['Access-Control-Allow-Headers'] = 'Cache-Control, Authorization, Content-Type'
-            response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-            response['X-Accel-Buffering'] = 'no'  # 禁用nginx缓冲
-
-            return response
-            
-        except Exception as e:
-            logger.error(f"创建SSE流失败: {str(e)}", exc_info=True)
-            return StreamingHttpResponse(
-                self._create_error_stream(f"服务器错误: {str(e)}"),
-                content_type='text/event-stream; charset=utf-8'
-            )
-
-    async def _build_log_stream_async(self, task_id, execution_id):
-        """异步生成日志流"""
-        # 生成唯一的客户端ID
-        client_id = str(uuid.uuid4())
-
-        try:
-            # 发送连接建立消息
-            yield self.format_sse_message({
-                'type': 'connection_established',
-                'message': f'已连接到执行记录 {execution_id} 的合并流',
-                'execution_id': execution_id,
-                'channel': 'redis_stream',
-                'structured': True,
-                'timestamp': datetime.now().isoformat()
-            })
-
-            # 发送历史日志
-            last_id = '0'
             try:
-                historical_logs = realtime_log_service.get_historical_logs(task_id, limit=100)
-                logger.info(f"发送历史日志: {len(historical_logs)} 条")
-
-                for log in historical_logs:
-                    normalized_log = self.normalize_log_message(log, execution_id)
-                    yield self.format_sse_message({
-                        'type': 'log',
-                        **normalized_log
-                    }, event_id=normalized_log.get('id') or log.get('id'))
-                    # 更新 last_id 为最后一条历史日志的 ID
-                    last_id = normalized_log.get('id') or log.get('id', '0')
-
-            except Exception as e:
-                logger.error(f"获取历史日志失败: {task_id} - {e}")
+                # 连接建立消息
                 yield self.format_sse_message({
-                    'type': 'error',
-                    'message': f'获取历史日志失败: {str(e)}'
-                })
+                    'type': 'connection_established',
+                    'message': f'已连接到执行记录 {execution_id} 的合并流',
+                    'execution_id': execution_id,
+                    'channel': 'redis_stream'
+                }).encode('utf-8')
 
-            # 开始实时日志流
-            heartbeat_counter = 0
-            message_count = 0
-
-            # 获取异步日志流，使用历史日志的最后一条 ID 作为起始点
-            async for log_msg in self._async_log_stream(task_id, client_id, last_id):
-                if log_msg is None:
-                    # 心跳包
-                    heartbeat_counter += 1
-                    if heartbeat_counter >= 30:  # 每30秒发送一次心跳
+                # 发送历史日志
+                if last_id == '0':
+                    historical_logs = await self.get_historical_logs_async(task_id, limit=100)
+                    logger.info(f"发送历史日志: {len(historical_logs)} 条")
+                    for log in historical_logs:
+                        normalized = self.normalize_log_message(log, execution_id)
+                        log_last_id = normalized.get('id') or log.get('id', '0')
                         yield self.format_sse_message({
-                            'type': 'heartbeat',
-                            'timestamp': int(time.time())
-                        })
-                        heartbeat_counter = 0
-                    continue
+                            'type': 'log', **normalized
+                        }, event_id=log_last_id).encode('utf-8')
 
-                # 重置心跳计数器
-                heartbeat_counter = 0
-                message_count += 1
+                # 实时合并流
+                logger.info(f"开始实时合并流: task_id={task_id}")
+                log_stream_key = realtime_log_service.log_stream_key
+                status_stream_key = f"{realtime_log_service.status_stream_prefix}{task_id}"
+                consecutive_errors = 0
 
-                # 处理不同类型的消息
-                if log_msg['type'] == 'log':
-                    normalized_log = self.normalize_log_message(log_msg['data'], execution_id)
-                    yield self.format_sse_message({
-                        'type': 'log',
-                        **normalized_log
-                    }, event_id=log_msg.get('id'))
-                elif log_msg['type'] == 'status':
-                    yield self.format_sse_message({
-                        'type': 'status',
-                        **log_msg['data']
-                    }, event_id=log_msg['id'])
-                elif log_msg['type'] == 'error':
-                    yield self.format_sse_message({
-                        'type': 'error',
-                        **log_msg['data']
-                    })
-                    break
-
-        except Exception as e:
-            logger.error(f"生成日志流时发生错误: {str(e)}", exc_info=True)
-            yield self.format_sse_message({
-                'type': 'error',
-                'message': f'日志流发生错误: {str(e)}'
-            })
-
-    async def _async_log_stream(self, task_id, client_id, last_id='0'):
-        """异步日志流生成器"""
-        async_queue = None
-        thread = None
-        stop_event = None
-
-        try:
-            async_queue = asyncio.Queue(maxsize=2000)  # 增加队列大小
-            stop_event = asyncio.Event()
-            loop = asyncio.get_running_loop()
-            error_count = 0
-            max_errors = 10  # 增加最大错误次数
-
-            def sync_log_reader():
-                """在单独线程中读取同步日志流"""
-                nonlocal error_count
-                try:
-                    logger.info(f"开始同步日志读取器: task_id={task_id}, last_id={last_id}")
-                    for message in realtime_log_service.get_logs_stream(task_id, last_id):
-                        if stop_event.is_set():
-                            logger.info(f"停止事件已设置，退出同步日志读取器")
-                            break
-
-                        # 使用线程安全的方式添加到异步队列，增加超时
-                        try:
-                            asyncio.run_coroutine_threadsafe(
-                                async_queue.put(message), loop
-                            ).result(timeout=5.0)  # 增加超时到5秒
-                            error_count = 0  # 重置错误计数
-                        except asyncio.TimeoutError:
-                            error_count += 1
-                            logger.debug(f"队列添加超时 ({error_count}/{max_errors})")
-                            if error_count >= max_errors:
-                                logger.warning(f"队列超时过多，退出同步日志读取器")
-                                break
-                        except Exception as queue_error:
-                            error_count += 1
-                            logger.debug(f"队列添加失败 ({error_count}/{max_errors}): {queue_error}")
-                            if error_count >= max_errors:
-                                logger.warning(f"队列错误过多，退出同步日志读取器")
-                                break
-
-                    # 发送结束信号
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            async_queue.put(StopAsyncIteration), loop
-                        ).result(timeout=1.0)
-                    except Exception:
-                        pass  # 忽略结束信号发送失败
-
-                except Exception as e:
-                    logger.error(f"同步日志读取器出错: {str(e)}", exc_info=True)
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            async_queue.put(StopAsyncIteration), loop
-                        ).result(timeout=1.0)
-                    except Exception:
-                        pass
-
-            # 在线程池中启动同步日志读取器
-            thread = threading.Thread(target=sync_log_reader, daemon=True, name=f"LogReader-{client_id[:8]}")
-            thread.start()
-
-            try:
                 while True:
                     try:
-                        # 异步等待日志消息，使用较短的超时以提供更好的响应性
-                        log_msg = await asyncio.wait_for(async_queue.get(), timeout=1.0)
+                        if not await self.redis_ensure_connection():
+                            consecutive_errors += 1
+                            if consecutive_errors >= self.max_consecutive_errors:
+                                yield self.format_sse_message({
+                                    'type': 'error', 'message': 'Redis连接失败'
+                                }).encode('utf-8')
+                                break
+                            await asyncio.sleep(2)
+                            continue
 
-                        if log_msg is StopAsyncIteration:
-                            logger.info(f"收到结束信号，退出异步日志流")
-                            break
+                        consecutive_errors = 0
 
-                        yield log_msg
+                        # 同时监听日志流和状态流
+                        messages = await self.redis_xread({
+                            log_stream_key: log_last_id,
+                            status_stream_key: status_last_id
+                        }, count=200, block=2000)
 
-                    except asyncio.TimeoutError:
-                        # 超时，发送心跳
-                        yield None
+                        if messages:
+                            for stream, msgs in messages:
+                                for msg_id, fields in msgs:
+                                    if stream == status_stream_key:
+                                        status_last_id = msg_id
+                                        yield self.format_sse_message({
+                                            'type': 'status', **fields
+                                        }, event_id=msg_id).encode('utf-8')
+                                    elif stream == log_stream_key:
+                                        exec_id = fields.get('execution_id') or fields.get('task_id')
+                                        if str(exec_id) != task_id:
+                                            continue
+                                        log_last_id = msg_id
+                                        normalized = self.normalize_log_message(fields, execution_id)
+                                        yield self.format_sse_message({
+                                            'type': 'log', **normalized
+                                        }, event_id=msg_id).encode('utf-8')
+                        else:
+                            yield self.format_sse_message({
+                                'type': 'heartbeat',
+                                'timestamp': datetime.now().isoformat()
+                            }).encode('utf-8')
 
                     except Exception as e:
-                        logger.error(f"异步日志流处理错误: {str(e)}")
-                        error_count += 1
-                        if error_count >= max_errors:
-                            logger.warning(f"异步日志流错误过多，退出")
+                        consecutive_errors += 1
+                        logger.error(f"合并流异常 ({consecutive_errors}): {e}")
+                        if consecutive_errors >= self.max_consecutive_errors:
+                            yield self.format_sse_message({
+                                'type': 'error', 'message': str(e)
+                            }).encode('utf-8')
                             break
-                        yield None
+                        await asyncio.sleep(1)
 
-            finally:
-                # 设置停止事件，清理资源
-                if stop_event:
-                    stop_event.set()
-                if thread and thread.is_alive():
-                    thread.join(timeout=5.0)  # 增加join超时
-                    if thread.is_alive():
-                        logger.warning(f"日志读取线程未能正常退出: {thread.name}")
+            except Exception as e:
+                logger.error(f"SSE合并流异常: {execution_id} - {e}")
+                yield self.format_sse_message({
+                    'type': 'error', 'message': str(e)
+                }).encode('utf-8')
 
-        except Exception as e:
-            logger.error(f"异步日志流错误: {str(e)}", exc_info=True)
-            yield None  # 确保生成器正常结束
+        return self.create_sse_response(event_stream())

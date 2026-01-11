@@ -77,6 +77,7 @@ class RealtimeLogService:
             stream_key: 可选，覆盖默认日志流
         """
         log_stream = stream_key or self.log_stream_key
+        logger.info(f"push_log 开始: task_id={task_id}, host_id={host_id}, stream_key={log_stream}")
         try:
             self._ensure_connection()
         except Exception as e:
@@ -105,9 +106,9 @@ class RealtimeLogService:
             unified_message['received_at'] = datetime.now().timestamp() * 1000  # 毫秒时间戳
 
             # 仅写入统一日志流
-            self._xadd(log_stream, unified_message)
+            msg_id = self._xadd(log_stream, unified_message)
 
-            logger.debug(f"推送日志到 {log_stream}: {message}")
+            logger.info(f"push_log 成功: task_id={task_id}, stream={log_stream}, msg_id={msg_id}")
         except Exception as e:
             logger.error(f"推送日志失败: {task_id} - {e}")
 
@@ -277,17 +278,21 @@ class RealtimeLogService:
                 'data': {'message': str(e)}
             }
     
-    def get_historical_logs(self, task_id: str, limit: int = 100) -> list:
-        """获取历史日志（从统一流 agent_logs 过滤 execution_id）"""
-        stream_key = self.log_stream_key
+    def get_historical_logs(self, task_id: str, limit: int = 100, stream_key: str = None) -> list:
+        """获取历史日志（从指定流过滤 execution_id）"""
+        stream_key = stream_key or self.log_stream_key
+        logger.info(f"get_historical_logs: task_id={task_id}, stream_key={stream_key}, limit={limit}")
 
         try:
             messages = self.redis_client.xrevrange(stream_key, count=limit * 10)
+            logger.info(f"Redis xrevrange: stream_key={stream_key}, count={limit * 10}, messages_count={len(messages)}")
 
             logs = []
             for msg_id, fields in messages:
                 exec_id = fields.get("execution_id") or fields.get("task_id")
+                logger.info(f"检查消息: msg_id={msg_id}, exec_id='{exec_id}' (type: {type(exec_id)}), task_id='{task_id}' (type: {type(task_id)}), match={exec_id == task_id}")
                 if exec_id != task_id:
+                    logger.info(f"跳过消息: exec_id != task_id")
                     continue
                 logs.append({
                     'id': msg_id,

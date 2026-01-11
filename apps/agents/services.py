@@ -17,8 +17,7 @@ from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
 from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
 from utils.realtime_logs import realtime_log_service
 import uuid
-import subprocess
-import base64 as __base64
+import base64
 
 class AgentService:
     """Agent 相关服务"""
@@ -276,32 +275,24 @@ exit 1
 """
 
         # 在 control-plane 上渲染 config.yaml 并将结果 base64 编码，嵌入到安装脚本中
-        render_script_path = __os.path.join(__os.path.dirname(__file__), "tools", "render_config.py")
+        # 直接调用渲染函数，避免 subprocess 在 Windows 上的兼容性问题
         config_b64 = ""
         try:
-            if __os.path.exists(render_script_path):
-                cmd = [
-                    "python3",
-                    render_script_path,
-                    "--install-type", install_type,
-                    "--agent-token", agent_token,
-                    "--agent-server-url", agent_server_url or "",
-                    "--control-plane-url", control_plane_url or "",
-                    "--ws-backoff-initial", str(ws_backoff_initial_ms),
-                    "--ws-backoff-max", str(ws_backoff_max_ms),
-                    "--ws-max-retries", str(ws_max_retries),
-                    "--agent-server-listen-addr", agent_server_listen_addr or "",
-                    "--max-connections", str(max_connections),
-                    "--heartbeat-timeout", str(heartbeat_timeout),
-                ]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
-                if proc.returncode != 0:
-                    raise RuntimeError(f"render_config.py failed: {proc.returncode} {proc.stderr.strip()}")
-                rendered_yaml = proc.stdout
-                # base64 encode for safe insertion into shell script
-                config_b64 = __base64.b64encode(rendered_yaml.encode("utf-8")).decode("ascii")
-            else:
-                raise RuntimeError("control-plane render_config.py not found")
+            from .tools.render_config import render_config_yaml
+            rendered_yaml = render_config_yaml(
+                install_type=install_type,
+                agent_token=agent_token,
+                agent_server_url=agent_server_url or "",
+                control_plane_url=control_plane_url or "",
+                ws_backoff_initial=ws_backoff_initial_ms,
+                ws_backoff_max=ws_backoff_max_ms,
+                ws_max_retries=ws_max_retries,
+                agent_server_listen_addr=agent_server_listen_addr or "",
+                max_connections=max_connections,
+                heartbeat_timeout=heartbeat_timeout,
+            )
+            # base64 encode for safe insertion into shell script
+            config_b64 = base64.b64encode(rendered_yaml.encode("utf-8")).decode("ascii")
         except Exception as e:
             # 让上层调用负责处理错误（例如在批量安装中会捕获并记录）
             raise RuntimeError(f"Failed to render agent config on control-plane: {e}")

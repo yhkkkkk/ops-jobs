@@ -42,8 +42,8 @@ def emit_yaml(obj: Any, indent: int = 0) -> str:
                     val = str(v)
                 else:
                     s = str(v)
-                    if any(ch in s for ch in ['\n', ':', '"', "'"]) or s.strip() != s:
-                        s = '"' + s.replace('"', '\\"') + '"'
+                    if any(ch in s for ch in ['\\n', ':', '"', "'"]) or s.strip() != s:
+                        s = '"' + s.replace('"', '\\\\"') + '"'
                     val = s
                 lines.append(f"{pad}{k}: {val}")
     elif isinstance(obj, list):
@@ -62,8 +62,8 @@ def emit_yaml(obj: Any, indent: int = 0) -> str:
                     vv = str(item)
                 else:
                     s = str(item)
-                    if any(ch in s for ch in ['\n', ':', '"', "'']) or s.strip() != s:
-                        s = '"' + s.replace('"', '\\"') + '"'
+                    if any(ch in s for ch in ['\\n', ':', '"', "'"]) or s.strip() != s:
+                        s = '"' + s.replace('"', '\\\\"') + '"'
                     vv = s
                 lines.append(f"{pad}- {vv}")
     else:
@@ -87,34 +87,84 @@ def parse_args():
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
+def render_config_yaml(
+    install_type: str = "agent",
+    agent_token: str = "",
+    agent_server_url: str = "",
+    control_plane_url: str = "",
+    ws_backoff_initial: int = None,
+    ws_backoff_max: int = None,
+    ws_max_retries: int = None,
+    agent_server_listen_addr: str = None,
+    max_connections: int = None,
+    heartbeat_timeout: int = None,
+    base_config_path: str = None,
+) -> str:
+    """
+    渲染配置 YAML 字符串（可直接被 Python 调用）
+
+    Args:
+        install_type: 安装类型 ('agent' 或 'agent-server')
+        agent_token: Agent Token
+        agent_server_url: Agent Server URL
+        control_plane_url: Control Plane URL
+        ws_backoff_initial: WebSocket 初始退避时间（毫秒）
+        ws_backoff_max: WebSocket 最大退避时间（毫秒）
+        ws_max_retries: WebSocket 最大重试次数
+        agent_server_listen_addr: Agent Server 监听地址
+        max_connections: 最大连接数
+        heartbeat_timeout: 心跳超时（秒）
+        base_config_path: 基础配置文件路径（可选）
+
+    Returns:
+        str: 渲染后的 YAML 配置字符串
+    """
     overrides: Dict[str, Any] = {}
-    if args.install_type == "agent":
+    if install_type == "agent":
         overrides = {
             "mode": "agent-server",
-            "agent_server_url": args.agent_server_url,
-            "ws_backoff_initial_ms": int(args.ws_backoff_initial) if args.ws_backoff_initial else None,
-            "ws_backoff_max_ms": int(args.ws_backoff_max) if args.ws_backoff_max else None,
-            "ws_max_retries": int(args.ws_max_retries) if args.ws_max_retries else None,
-            "agent_token": args.agent_token,
+            "agent_server_url": agent_server_url,
+            "agent_token": agent_token,
             "log_level": "info",
         }
+        # Add optional fields only if provided
+        if ws_backoff_initial:
+            overrides["ws_backoff_initial_ms"] = int(ws_backoff_initial)
+        if ws_backoff_max:
+            overrides["ws_backoff_max_ms"] = int(ws_backoff_max)
+        if ws_max_retries:
+            overrides["ws_max_retries"] = int(ws_max_retries)
     else:
         host = "0.0.0.0"
         port = 8080
-        if args.agent_server_listen_addr and ":" in args.agent_server_listen_addr:
-            host, port = args.agent_server_listen_addr.rsplit(":", 1)
+        if agent_server_listen_addr and ":" in agent_server_listen_addr:
+            host, port_str = agent_server_listen_addr.rsplit(":", 1)
+            try:
+                port = int(port_str)
+            except ValueError:
+                port = 8080
+
         overrides = {
-            "server": {"host": host, "port": int(port)},
-            "control_plane": {"url": args.control_plane_url, "token": args.agent_token},
-            "agent": {"max_connections": int(args.max_connections) if args.max_connections else 1000,
-                      "heartbeat_timeout": f"{args.heartbeat_timeout}s" if args.heartbeat_timeout else "60s",
-                      "cleanup_interval": "30s"},
+            "server": {"host": host, "port": port},
+            "control_plane": {"url": control_plane_url, "token": agent_token},
             "logging": {"level": "info", "file": "logs/agent-server.log"},
         }
 
-    base_path = args.config
+        # Add agent config section
+        agent_config = {"cleanup_interval": "30s"}
+        if max_connections:
+            agent_config["max_connections"] = int(max_connections)
+        else:
+            agent_config["max_connections"] = 1000
+
+        if heartbeat_timeout:
+            agent_config["heartbeat_timeout"] = f"{heartbeat_timeout}s"
+        else:
+            agent_config["heartbeat_timeout"] = "60s"
+
+        overrides["agent"] = agent_config
+
+    base_path = base_config_path
     # Try PyYAML first for structured merge
     try:
         import yaml  # type: ignore
@@ -131,9 +181,7 @@ def main():
                 if not isinstance(loaded, dict):
                     loaded = {}
                 deep_update(loaded, overrides)
-                out = yaml.safe_dump(loaded, allow_unicode=False, default_flow_style=False, sort_keys=False)
-                print(out)
-                return
+                return yaml.safe_dump(loaded, allow_unicode=False, default_flow_style=False, sort_keys=False)
             except Exception:
                 # fallback to template/text rendering
                 pass
@@ -143,15 +191,31 @@ def main():
                 from jinja2 import Template  # type: ignore
                 tpl = Template(base_text)
                 ctx = overrides.copy()
-                ctx["install_type"] = args.install_type
-                out = tpl.render(**ctx)
-                print(out)
-                return
+                ctx["install_type"] = install_type
+                return tpl.render(**ctx)
             except Exception:
                 pass
 
     # Fallback: emit YAML only from overrides
-    print(emit_yaml(overrides))
+    return emit_yaml(overrides)
+
+
+def main():
+    args = parse_args()
+    result = render_config_yaml(
+        install_type=args.install_type,
+        agent_token=args.agent_token,
+        agent_server_url=args.agent_server_url,
+        control_plane_url=args.control_plane_url,
+        ws_backoff_initial=int(args.ws_backoff_initial) if args.ws_backoff_initial else None,
+        ws_backoff_max=int(args.ws_backoff_max) if args.ws_backoff_max else None,
+        ws_max_retries=int(args.ws_max_retries) if args.ws_max_retries else None,
+        agent_server_listen_addr=args.agent_server_listen_addr,
+        max_connections=int(args.max_connections) if args.max_connections else None,
+        heartbeat_timeout=int(args.heartbeat_timeout) if args.heartbeat_timeout else None,
+        base_config_path=args.config,
+    )
+    print(result)
 
 
 if __name__ == "__main__":

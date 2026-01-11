@@ -1,5 +1,5 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api') as string;
-const SSE_BASE_URL = (import.meta.env.VITE_SSE_BASE_URL || '/api/realtime/sse') as string;
+const SSE_BASE_URL = (import.meta.env.VITE_SSE_BASE_URL || '/sse/sse') as string;
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
