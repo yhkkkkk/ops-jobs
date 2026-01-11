@@ -285,7 +285,7 @@ class RealtimeLogService:
 
         try:
             messages = self.redis_client.xrevrange(stream_key, count=limit * 10)
-            logger.info(f"Redis xrevrange: stream_key={stream_key}, count={limit * 10}, messages_count={len(messages)}")
+            logger.info(f"redis xrevrange: stream_key={stream_key}, count={limit * 10}, messages_count={len(messages)}")
 
             logs = []
             for msg_id, fields in messages:

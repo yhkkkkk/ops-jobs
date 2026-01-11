@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class AgentInstallProgressSSEView(SSEBaseView):
     """Agent 安装/卸载进度 SSE 视图"""
 
+    terminal_statuses = {'completed', 'completed_with_errors', 'failed', 'success', 'error', 'stopped'}
+
     def get_resource_id(self, kwargs):
         """获取安装任务 ID"""
         return kwargs.get('install_task_id')
@@ -69,6 +71,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
             status_stream_key = f"{status_prefix}{install_task_id}"
             status_last_id = last_id
             log_last_id = last_id
+            finished = False
 
             try:
                 # 发送连接建立消息
@@ -86,6 +89,9 @@ class AgentInstallProgressSSEView(SSEBaseView):
                             status_history = await self.redis_xrevrange(status_stream_key, count=20)
                             for msg_id, fields in reversed(status_history):
                                 status_last_id = msg_id
+                                status_value = str(fields.get('status') or '').lower()
+                                if status_value in self.terminal_statuses:
+                                    finished = True
                                 yield self.format_sse_message({
                                     'type': 'status', **fields
                                 }, event_id=msg_id).encode('utf-8')
@@ -107,12 +113,21 @@ class AgentInstallProgressSSEView(SSEBaseView):
                     except Exception as e:
                         logger.warning(f"发送历史状态/日志失败: {e}")
 
+                # 如果历史中已经包含终态，则直接结束
+                if finished:
+                    logger.info(f"安装任务 {install_task_id} 已达终态（历史），关闭 SSE")
+                    return
+
                 # 开始实时合并流
                 logger.info(f"开始实时进度流: install_task_id={install_task_id}")
                 consecutive_errors = 0
 
                 while True:
                     try:
+                        if finished:
+                            logger.info(f"安装任务 {install_task_id} 已达终态，关闭实时进度流")
+                            break
+
                         # 检查 redis 连接
                         if not await self.redis_ensure_connection():
                             consecutive_errors += 1
@@ -142,9 +157,12 @@ class AgentInstallProgressSSEView(SSEBaseView):
                                 for msg_id, fields in msgs:
                                     if stream == status_stream_key:
                                         status_last_id = msg_id
+                                        status_value = str(fields.get('status') or '').lower()
                                         yield self.format_sse_message({
                                             'type': 'status', **fields
                                         }, event_id=msg_id).encode('utf-8')
+                                        if status_value in self.terminal_statuses:
+                                            finished = True
                                     elif stream == log_stream_key:
                                         exec_id = fields.get('execution_id') or fields.get('task_id')
                                         if str(exec_id) != str(install_task_id):

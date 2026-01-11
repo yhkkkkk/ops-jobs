@@ -320,6 +320,119 @@ exit 1
         # 目前仅输出 Linux 安装脚本（暂不支持 Windows）
         return scripts
 
+    @staticmethod
+    def _should_fallback_to_public(result: Dict[str, Any]) -> bool:
+        """判断是否应从内网IP回退到外网IP"""
+        if not result or result.get('success'):
+            return False
+
+        msg_blob = f"{result.get('message', '')} {result.get('stderr', '')}".lower()
+        return (
+            result.get('exit_code') == -1
+            or 'ssh连接失败' in msg_blob
+            or 'ssh 连接失败' in msg_blob
+            or 'authentication' in msg_blob
+            or 'timed out' in msg_blob
+            or '超时' in msg_blob
+        )
+
+    @classmethod
+    def _execute_install_with_ip_fallback(
+        cls,
+        *,
+        host: Host,
+        script_content: str,
+        script_type: str,
+        timeout: int,
+        account_id: Optional[int],
+        install_task_id: str,
+        log_stream_key: str,
+        connection_timeout_internal: int = 5,
+    ) -> Dict[str, Any]:
+        """先尝试内网IP短连，失败时自动回退到外网IP执行脚本。"""
+        original_internal = host.internal_ip
+        original_public = host.public_ip
+        candidates = []
+        if original_internal:
+            candidates.append(("internal", original_internal, connection_timeout_internal))
+        if original_public and original_public != original_internal:
+            candidates.append(("public", original_public, None))
+
+        if not candidates:
+            return {
+                "success": False,
+                "host_id": getattr(host, "id", None),
+                "host_name": getattr(host, "name", None),
+                "host_ip": None,
+                "stdout": "",
+                "stderr": "缺少可用的SSH IP（内网/外网）",
+                "exit_code": -1,
+                "message": "缺少可用的SSH IP（内网/外网）",
+            }
+
+        last_result: Dict[str, Any] = {}
+        try:
+            for ip_type, ip, conn_timeout in candidates:
+                # 设置当前尝试的IP
+                if ip_type == "internal":
+                    host.internal_ip = ip
+                    host.public_ip = original_public
+                else:
+                    host.internal_ip = None
+                    host.public_ip = ip
+
+                result = fabric_ssh_manager.execute_script(
+                    host=host,
+                    script_content=script_content,
+                    script_type=script_type,
+                    timeout=timeout,
+                    account_id=account_id,
+                    task_id=install_task_id,
+                    log_stream_key=log_stream_key,
+                    connection_timeout=conn_timeout,
+                )
+
+                result["used_ip"] = ip
+                result["used_ip_type"] = ip_type
+                connection_info = result.get("connection_info", {}) or {}
+                connection_info.update({"ssh_ip": ip, "ssh_ip_type": ip_type})
+                result["connection_info"] = connection_info
+                last_result = result
+
+                if result.get("success"):
+                    return result
+
+                # 内网失败且具备外网时，记录日志并尝试外网
+                if (
+                    ip_type == "internal"
+                    and len(candidates) > 1
+                    and cls._should_fallback_to_public(result)
+                ):
+                    error_msg = result.get("stderr") or result.get("message") or "SSH连接失败"
+                    realtime_log_service.push_log(
+                        install_task_id,
+                        str(host.id),
+                        {
+                            "host_name": host.name,
+                            "host_ip": ip,
+                            "log_type": "warning",
+                            "content": f"内网IP {ip} SSH 连接失败，将尝试外网IP {original_public}: {error_msg}",
+                            "step_name": "安装 Agent",
+                            "step_order": 1,
+                        },
+                        stream_key=log_stream_key,
+                    )
+                    continue
+
+                # 其他失败直接返回，不再尝试后续IP
+                break
+        finally:
+            # 恢复原始IP数据，避免副作用
+            host.internal_ip = original_internal
+            host.public_ip = original_public
+
+        return last_result
+
     @classmethod
     def batch_install_agents(cls, host_ids: list, user, account_id: int = None,
                              install_type: str = 'agent', install_mode: str = 'agent-server',
@@ -502,23 +615,27 @@ exit 1
                     config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
                 try:
                     timeout = max(60, min(ssh_timeout or 300, 900))
-                    result = fabric_ssh_manager.execute_script(
+                    result = cls._execute_install_with_ip_fallback(
                         host=host,
                         script_content=script_content,
                         script_type=script_type,
                         timeout=timeout,
                         account_id=account_id,
-                        task_id=install_task_id,
-                        log_stream_key=install_log_stream
+                        install_task_id=install_task_id,
+                        log_stream_key=install_log_stream,
                     )
+                    used_ip = result.get('used_ip') or host.ip_address
+                    used_ip_type = result.get('used_ip_type') or ('internal' if host.internal_ip else 'public')
+                    ip_note = f"ssh_ip={used_ip} ({used_ip_type})" if used_ip else ""
+                    config_summary_with_ip = f"{config_summary} | {ip_note}" if ip_note else config_summary
                     if result['success']:
                         if install_type == 'agent-server':
                             install_record.status = 'success'
-                            install_record.message = f'Agent-Server 安装脚本执行成功 | {config_summary}'
+                            install_record.message = f'Agent-Server 安装脚本执行成功 | {config_summary_with_ip}'
                         else:
                             # Agent 安装等待首次上线
                             install_record.status = 'pending'
-                            install_record.message = f'安装脚本执行成功，等待 Agent 首次上线 | {config_summary}'
+                            install_record.message = f'安装脚本执行成功，等待 Agent 首次上线 | {config_summary_with_ip}'
                         install_record.error_message = ''
                         install_record.error_detail = ''
                         success_count += 1
@@ -532,9 +649,9 @@ exit 1
                         install_target = 'Agent-Server' if install_type == 'agent-server' else 'Agent'
                         realtime_log_service.push_log(install_task_id, str(host.id), {
                             'host_name': host.name,
-                            'host_ip': host.ip_address,
+                            'host_ip': used_ip or host.ip_address,
                             'log_type': 'info',
-                            'content': f'主机 {host.name} {install_target} 安装成功 | {config_summary}',
+                            'content': f'主机 {host.name} {install_target} 安装成功 | {config_summary_with_ip}',
                             'step_name': f'安装 {install_target}',
                             'step_order': 1
                         }, stream_key=install_log_stream)
@@ -542,7 +659,7 @@ exit 1
                         install_record.status = 'failed'
                         stderr = (result.get('stderr') or '').strip()
                         error_msg = stderr.splitlines()[0] if stderr else (result.get('message') or '安装失败')
-                        install_record.message = f'安装脚本执行失败：{error_msg} | {config_summary}'
+                        install_record.message = f'安装脚本执行失败：{error_msg} | {config_summary_with_ip}'
                         install_record.error_message = error_msg
                         install_record.error_detail = stderr or error_msg
                         failed_count += 1
@@ -555,9 +672,9 @@ exit 1
                         # 推送失败日志
                         realtime_log_service.push_log(install_task_id, str(host.id), {
                             'host_name': host.name,
-                            'host_ip': host.ip_address,
+                            'host_ip': used_ip or host.ip_address,
                             'log_type': 'error',
-                            'content': f'主机 {host.name} Agent 安装失败: {error_msg} | {config_summary}',
+                            'content': f'主机 {host.name} Agent 安装失败: {error_msg} | {config_summary_with_ip}',
                             'step_name': '安装 Agent',
                             'step_order': 1
                         }, stream_key=install_log_stream)
@@ -577,8 +694,10 @@ exit 1
                     
                 except Exception as e:
                     error_msg = f'SSH 执行失败: {str(e)}'
+                    ip_note = f"ssh_ip={host.ip_address}" if getattr(host, 'ip_address', None) else ''
+                    config_summary_with_ip = f"{config_summary} | {ip_note}" if ip_note else config_summary
                     install_record.status = 'failed'
-                    install_record.message = f'{error_msg} | {config_summary}'
+                    install_record.message = f'{error_msg} | {config_summary_with_ip}'
                     install_record.error_message = error_msg
                     install_record.error_detail = str(e)
                     install_record.save()
@@ -596,7 +715,7 @@ exit 1
                         'host_name': host.name,
                         'host_ip': host.ip_address,
                         'log_type': 'error',
-                        'content': f'主机 {host.name} SSH 执行失败: {str(e)}',
+                        'content': f'主机 {host.name} SSH 执行失败: {str(e)} | {config_summary_with_ip}',
                         'step_name': '安装 Agent',
                         'step_order': 1
                     }, stream_key=install_log_stream)
@@ -621,11 +740,13 @@ exit 1
                     config_summary = f"control_plane={control_plane_url or 'n/a'}, listen={agent_server_listen_addr}"
                 else:
                     config_summary = f"primary={agent_server_url or 'n/a'}, backoff_initial={ws_backoff_initial_ms}ms, backoff_max={ws_backoff_max_ms}ms, retries={ws_max_retries}"
+                ip_note = f"ssh_ip={getattr(host, 'ip_address', '')}" if getattr(host, 'ip_address', None) else ''
+                config_summary_with_ip = f"{config_summary} | {ip_note}" if ip_note else config_summary
                 results.append({
                     'host_id': host.id,
                     'host_name': host_name,
                     'success': False,
-                    'message': f'{error_msg} | {config_summary}'
+                    'message': f'{error_msg} | {config_summary_with_ip}'
                 })
                 
                 # 推送失败日志
@@ -633,7 +754,7 @@ exit 1
                     'host_name': host_name,
                     'host_ip': getattr(host, 'ip_address', ''),
                     'log_type': 'error',
-                    'content': f'主机 {host_name} 安装失败: {error_msg} | {config_summary}',
+                    'content': f'主机 {host_name} 安装失败: {error_msg} | {config_summary_with_ip}',
                     'step_name': '安装 Agent',
                     'step_order': 1
                 }, stream_key=install_log_stream)
