@@ -108,7 +108,7 @@ class SSEBaseView(View):
                 validated_token = jwt_auth.get_validated_token(token)
                 return jwt_auth.get_user(validated_token)
             except (InvalidToken, TokenError, Exception) as e:
-                logger.warning(f"JWT认证失败: {str(e)}")
+                logger.warning(f"jwt认证失败: {str(e)}")
                 return None
 
         return None

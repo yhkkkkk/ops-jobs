@@ -290,9 +290,7 @@ class RealtimeLogService:
             logs = []
             for msg_id, fields in messages:
                 exec_id = fields.get("execution_id") or fields.get("task_id")
-                logger.info(f"检查消息: msg_id={msg_id}, exec_id='{exec_id}' (type: {type(exec_id)}), task_id='{task_id}' (type: {type(task_id)}), match={exec_id == task_id}")
                 if exec_id != task_id:
-                    logger.info(f"跳过消息: exec_id != task_id")
                     continue
                 logs.append({
                     'id': msg_id,
