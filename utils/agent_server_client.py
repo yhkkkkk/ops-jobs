@@ -57,7 +57,7 @@ class AgentServerClient:
         mac.update(body)
         return mac.hexdigest()
 
-    def post(self, url: str, json: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None):
+    def post(self, url: str, json: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, timeout: int = None):
         data = b""
         if json is not None:
             import json as _json
@@ -76,6 +76,33 @@ class AgentServerClient:
             sig = self._compute_hmac("POST", url, ts, data)
             headers["X-Signature"] = sig
 
-        return self.session.post(url, data=data, headers=headers, timeout=self.timeout)
+        return self.session.post(url, data=data, headers=headers, timeout=timeout or self.timeout)
+
+    def get(self, url: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, timeout: int = None):
+        """
+        发送 GET 请求到 Agent-Server，带 HMAC 签名
+
+        Args:
+            url: 请求 URL
+            params: 查询参数
+            headers: 自定义请求头
+            timeout: 超时时间（秒），默认使用实例配置
+
+        Returns:
+            requests.Response: 响应对象
+        """
+        headers = headers.copy() if headers else {}
+
+        ts = str(int(time.time()))
+        # 允许调用方预先设置 X-Scope（按环境/业务多租户），否则使用默认 scope
+        headers.setdefault("X-Scope", self.scope)
+        headers["X-Timestamp"] = ts
+
+        # GET 请求的 body 为空
+        if self.shared_secret:
+            sig = self._compute_hmac("GET", url, ts, b"")
+            headers["X-Signature"] = sig
+
+        return self.session.get(url, params=params, headers=headers, timeout=timeout or self.timeout)
 
 

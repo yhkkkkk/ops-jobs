@@ -824,7 +824,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
         # 生成安任务ID
         import uuid
-        from concurrent.futures import ThreadPoolExecutor
+        from utils.thread_pool import get_global_thread_pool
 
         install_task_id = str(uuid.uuid4())
 
@@ -952,10 +952,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     'message': f'批量安装任务失败: {str(e)}'
                 })
 
-        # 在线程池中
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(run_batch_install)
-        executor.shutdown(wait=False)  # 不等待任务完成，立即返回
+        # 使用全局线程池提交后台任务
+        pool = get_global_thread_pool()
+        pool.submit(run_batch_install)
 
         logger.info(f"批量安装任务已启动: install_task_id={install_task_id}")
 
@@ -995,7 +994,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             return SycResponse.error(message=error_msg, code=400)
 
         import uuid
-        from concurrent.futures import ThreadPoolExecutor
+        from utils.thread_pool import get_global_thread_pool
 
         uninstall_task_id = str(uuid.uuid4())
         user = request.user
@@ -1043,9 +1042,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     'message': f'批量卸载任务失败: {str(e)}'
                 })
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(run_batch_uninstall)
-        executor.shutdown(wait=False)
+        # 使用全局线程池提交后台任务
+        pool = get_global_thread_pool()
+        pool.submit(run_batch_uninstall)
 
         logger.info(f"批量卸载任务已启动: uninstall_task_id={uninstall_task_id}")
 

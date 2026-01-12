@@ -125,7 +125,7 @@ class ExecutionPlanService:
             })
             execution_record.save()
 
-            from concurrent.futures import ThreadPoolExecutor
+            from utils.thread_pool import get_global_thread_pool
 
             def execute_workflow_debug():
                 try:
@@ -150,9 +150,9 @@ class ExecutionPlanService:
                     )
                     return {'success': False, 'error': str(e)}
 
-            executor = ThreadPoolExecutor(max_workers=1)
-            executor.submit(execute_workflow_debug)
-            executor.shutdown(wait=False)
+            # 使用全局线程池提交后台任务
+            pool = get_global_thread_pool()
+            pool.submit(execute_workflow_debug)
 
             # 更新执行记录状态
             ExecutionRecordService.update_execution_status(
@@ -298,7 +298,7 @@ class ExecutionPlanService:
 
                 # 启动异步工作流执行 - 使用Agent方式
                 from apps.agents.execution_service import AgentExecutionService
-                from concurrent.futures import ThreadPoolExecutor
+                from utils.thread_pool import get_global_thread_pool
 
                 # 在后台线程中执行工作流
                 def execute_workflow():
@@ -324,10 +324,9 @@ class ExecutionPlanService:
                         )
                         return {'success': False, 'error': str(e)}
 
-                # 使用线程池执行
-                executor = ThreadPoolExecutor(max_workers=1)
-                executor.submit(execute_workflow)
-                executor.shutdown(wait=False)
+                # 使用全局线程池提交后台任务
+                pool = get_global_thread_pool()
+                pool.submit(execute_workflow)
 
                 # 更新执行记录状态
                 ExecutionRecordService.update_execution_status(

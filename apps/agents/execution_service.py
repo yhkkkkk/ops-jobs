@@ -402,10 +402,14 @@ class AgentExecutionService:
         agent_server_url: str = None,
         account_id: int = None,  # 执行账号ID
         file_sources: List[Dict[str, Any]] = None,  # server 源需先 HTTP 拉取入库
+        execution_mode: str = 'parallel',  # 执行模式: parallel/serial/rolling
+        rolling_batch_size: int = 1,  # 滚动执行批次大小
+        rolling_batch_delay: int = 0,  # 滚动执行批次延迟（秒）
+        ignore_error: bool = False,  # 是否忽略错误继续执行
     ) -> Dict[str, Any]:
         """
         通过Agent执行脚本
-        
+
         Args:
             execution_record: 执行记录
             script_content: 脚本内容
@@ -415,103 +419,35 @@ class AgentExecutionService:
             global_variables: 全局变量
             step_id: 步骤ID（如果是工作流）
             agent_server_url: Agent-Server地址
-        
+            account_id: 执行账号ID
+            file_sources: 文件源列表
+            execution_mode: 执行模式 (parallel/serial/rolling)
+            rolling_batch_size: 滚动执行批次大小
+            rolling_batch_delay: 滚动执行批次延迟（秒）
+            ignore_error: 是否忽略错误继续执行
+
         Returns:
             Dict: 执行结果
         """
         try:
-            results = []
-            success_count = 0
-            failed_count = 0
+            from apps.agents.execution_strategies import get_execution_strategy
 
-            # 如果提供 file_sources，先处理 server 源入库
-            if file_sources:
-                materialized = []
-                for src in file_sources:
-                    if src.get('type') == 'server':
-                        art = AgentExecutionService._fetch_server_source_to_artifact_http(
-                            src, execution_id=str(execution_record.execution_id), timeout=timeout
-                        )
-                        if art:
-                            materialized.append(art)
-                        else:
-                            logger.error("server source 拉取失败，跳过")
-                    elif src.get('type') == 'artifact':
-                        materialized.append(src)
-                if materialized:
-                    first = materialized[0]
-                    download_url = first.get('download_url')
-                    checksum = first.get('sha256')
-                    size = first.get('size')
-                    auth_headers = first.get('auth_headers') or {}
-                    remote_path = first.get('remote_path') or remote_path
+            # 获取执行用户名（如果有account_id）
+            run_as = None
+            if account_id:
+                try:
+                    from apps.hosts.models import ServerAccount
+                    account = ServerAccount.objects.get(id=account_id)
+                    run_as = account.username
+                except ServerAccount.DoesNotExist:
+                    logger.warning(f"执行账号不存在: account_id={account_id}，将使用Agent默认用户")
+                except Exception as e:
+                    logger.warning(f"获取执行账号失败: account_id={account_id}, 错误: {str(e)}，将使用Agent默认用户")
 
-            # 如果提供 file_sources，先处理 server 源入库（HTTP 拉取），artifact 直接使用
-            if file_sources:
-                materialized = []
-                for src in file_sources:
-                    if src.get('type') == 'server':
-                        art = AgentExecutionService._fetch_server_source_to_artifact_http(
-                            src, execution_id=str(execution_record.execution_id), timeout=timeout
-                        )
-                        if art:
-                            materialized.append(art)
-                        else:
-                            logger.error("server source 拉取失败，跳过")
-                    elif src.get('type') == 'artifact':
-                        materialized.append(src)
-                # 采用第一个 artifact 配置下发
-                if materialized:
-                    first = materialized[0]
-                    download_url = first.get('download_url')
-                    checksum = first.get('sha256')
-                    size = first.get('size')
-                    auth_headers = first.get('auth_headers') or {}
-                    remote_path = first.get('remote_path') or remote_path
-
-            # 为每个主机创建任务
-            for host in target_hosts:
-                # 检查主机是否有Agent
-                if not hasattr(host, 'agent') or not host.agent:
-                    logger.warning(f"主机 {host.id} 没有Agent，跳过")
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'success': False,
-                        'error': '主机没有Agent'
-                    })
-                    failed_count += 1
-                    continue
-
-                agent = host.agent
-                if agent.status != 'online':
-                    logger.warning(f"主机 {host.id} 的Agent状态为 {agent.status}，跳过")
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'success': False,
-                        'error': f'Agent状态为 {agent.status}'
-                    })
-                    failed_count += 1
-                    continue
-
-                # 生成任务ID
+            # 创建任务规范的函数
+            def task_creator(host: Host) -> Dict[str, Any]:
                 task_id = f"{execution_record.execution_id}_{step_id or 'main'}_{host.id}_{uuid.uuid4().hex[:8]}"
-
-                # 获取执行用户名（如果有account_id）
-                run_as = None
-                if account_id:
-                    try:
-                        from apps.hosts.models import ServerAccount
-                        account = ServerAccount.objects.get(id=account_id)
-                        run_as = account.username
-                    except ServerAccount.DoesNotExist:
-                        logger.warning(f"执行账号不存在: account_id={account_id}，将使用Agent默认用户")
-                    except Exception as e:
-                        logger.warning(f"获取执行账号失败: account_id={account_id}, 错误: {str(e)}，将使用Agent默认用户")
-
-                # 创建任务规范
-                task_spec = AgentExecutionService.create_task_spec(
+                return AgentExecutionService.create_task_spec(
                     task_id=task_id,
                     name=f"{execution_record.name} - {host.name}",
                     task_type="script",
@@ -525,36 +461,52 @@ class AgentExecutionService:
                     run_as=run_as,
                 )
 
-                # 推送任务到Agent
-                push_result = AgentExecutionService.push_task_to_agent(
+            # 推送任务到Agent的函数
+            def task_pusher(agent: Agent, task_spec: Dict[str, Any]) -> Dict[str, Any]:
+                return AgentExecutionService.push_task_to_agent(
                     agent=agent,
                     task_spec=task_spec,
                     agent_server_url=agent_server_url,
                 )
 
-                if push_result['success']:
-                    success_count += 1
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'task_id': task_id,
-                        'success': True,
-                    })
-                else:
-                    failed_count += 1
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'task_id': task_id,
-                        'success': False,
-                        'error': push_result.get('error', '推送任务失败')
-                    })
+            # 获取执行策略
+            strategy = get_execution_strategy(
+                mode=execution_mode,
+                batch_size=rolling_batch_size,
+                batch_delay=rolling_batch_delay,
+            )
+
+            logger.info(f"使用执行策略: {execution_mode}, 目标主机数: {len(target_hosts)}")
+
+            # 执行任务
+            exec_result = strategy.execute(
+                hosts=target_hosts,
+                task_creator=task_creator,
+                task_pusher=task_pusher,
+                timeout=timeout,
+                ignore_error=ignore_error,
+            )
+
+            # 转换结果格式
+            results = []
+            for hr in exec_result.results:
+                results.append({
+                    'host_id': hr.host_id,
+                    'host_name': hr.host_name,
+                    'task_id': hr.task_id,
+                    'success': hr.success,
+                    'error': hr.error,
+                    'exit_code': hr.exit_code,
+                    'started_at': hr.started_at,
+                    'finished_at': hr.finished_at,
+                })
 
             return {
-                'success': success_count > 0,
-                'success_count': success_count,
-                'failed_count': failed_count,
-                'results': results
+                'success': exec_result.success,
+                'success_count': exec_result.success_count,
+                'failed_count': exec_result.failed_count,
+                'results': results,
+                'stopped_early': exec_result.stopped_early,
             }
 
         except Exception as e:
@@ -973,6 +925,10 @@ class AgentExecutionService:
                         step_id=str(step.id),
                         agent_server_url=agent_server_url,
                         account_id=step_data.get('account_id'),  # 传递执行账号ID
+                        execution_mode=execution_mode,  # 传递执行模式
+                        rolling_batch_size=rolling_batch_size,  # 传递滚动批次大小
+                        rolling_batch_delay=rolling_batch_delay,  # 传递滚动批次延迟
+                        ignore_error=step_data.get('ignore_error', False),  # 传递忽略错误标志
                     )
 
                     # 更新步骤结果
