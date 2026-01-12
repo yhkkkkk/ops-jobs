@@ -505,7 +505,11 @@ const connect = async (isReconnect = false) => {
       // 启用自动重连
       start: true,
       // 调试模式
-      debug: process.env.NODE_ENV === 'development'
+      debug: process.env.NODE_ENV === 'development',
+      autoReconnect: true,
+      reconnectDelay: 3000,
+      maxRetries: 3,
+      withCredentials: true
     })
 
     eventSource.value.onopen = (event) => {

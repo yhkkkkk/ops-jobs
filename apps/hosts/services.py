@@ -482,7 +482,8 @@ class HostService:
                 host=host,
                 script_content='echo "status_check"',
                 script_type='shell',
-                timeout=10
+                timeout=10,
+                connection_timeout=5
             )
             return 'online' if result['success'] else 'offline'
         except Exception:
@@ -527,9 +528,10 @@ df -h 2>/dev/null || echo "N/A"
                 host=host,
                 script_content=script_content,
                 script_type='shell',
-                timeout=30
+                timeout=30,
+                connection_timeout=10
             )
-            
+
             if result['success']:
                 return {
                     'success': True,
@@ -790,9 +792,10 @@ df -h 2>/dev/null || echo "N/A"
                 host=host,
                 script_content=command,
                 script_type='shell',
-                timeout=timeout
+                timeout=timeout,
+                connection_timeout=10
             )
-            
+
             # 记录操作日志
             if user:
                 AuditLogService.log_action(

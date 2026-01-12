@@ -79,13 +79,14 @@ def test_ssh_connection(host_info: dict) -> dict:
             host=host,
             script_content='echo "connection_test"',
             script_type='shell',
-            timeout=10
+            timeout=10,
+            connection_timeout=5
         )
         
         return {
             'success': result['success'],
             'message': result.get('message', '连接测试完成'),
-            'latency': 0,  # Fabric不提供延迟信息
+            'latency': 0,  # fabric不提供延迟信息
             'system_info': {}
         }
     except Exception as e:

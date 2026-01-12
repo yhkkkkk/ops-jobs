@@ -200,4 +200,4 @@ class AgentInstallProgressSSEView(SSEBaseView):
                     'message': str(e)
                 }).encode('utf-8')
 
-        return self.create_sse_response(event_stream())
+        return self.create_sse_response(event_stream(), request)

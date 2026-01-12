@@ -1177,14 +1177,21 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   const eventSource = new SSE(sseUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     start: true,
-    debug: process.env.NODE_ENV === 'development'
+    debug: process.env.NODE_ENV === 'development',
+    autoReconnect: true,
+    reconnectDelay: 3000,
+    maxRetries: 3,
+    withCredentials: true
   })
   uninstallSseEventSource.value = eventSource
+
+  // 定义卸载终态集合
+  const uninstallTerminalStatuses = new Set(['completed', 'completed_with_errors', 'failed', 'success', 'error', 'stopped'])
 
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
-      
+
       if (data.type === 'connection_established') {
         uninstallProgress.value.message = data.message || '已连接到卸载进度流'
         uninstallProgress.value.status = 'running'
@@ -1195,6 +1202,22 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
         uninstallProgress.value.failed_count = data.failed_count || data.failed_hosts || 0
         uninstallProgress.value.status = data.status || 'running'
         uninstallProgress.value.message = data.message || ''
+
+        // 检测终态：收到终态后主动关闭连接，避免自动重连
+        const statusValue = (data.status || '').toLowerCase()
+        if (uninstallTerminalStatuses.has(statusValue)) {
+          console.log(`卸载任务已达终态: ${statusValue}，关闭 SSE 连接`)
+          // 禁用自动重连并关闭连接
+          try {
+            eventSource.autoReconnect = false
+            eventSource.close()
+          } catch (e) {
+            console.warn('关闭 SSE 连接失败:', e)
+          }
+          uninstallSseEventSource.value = null
+          // 刷新 Agent 列表
+          fetchAgents()
+        }
       } else if (data.type === 'log') {
         uninstallProgress.value.logs.push({
           host_name: data.host_name || '',
@@ -1217,6 +1240,12 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
           log_type: 'error',
           timestamp: new Date().toISOString()
         })
+        // 关闭连接
+        try {
+          eventSource.autoReconnect = false
+          eventSource.close()
+        } catch (e) {}
+        uninstallSseEventSource.value = null
       }
     } catch (error) {
       console.error('解析 SSE 消息失败:', error)
@@ -1225,12 +1254,23 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
 
   eventSource.onerror = (error) => {
     console.error('SSE 连接错误:', error)
-    if (eventSource.readyState === EventSource.CLOSED) {
+
+    // 检查是否已达终态，如果是则不需要标记为 error
+    const currentStatus = (uninstallProgress.value.status || '').toLowerCase()
+    if (!uninstallTerminalStatuses.has(currentStatus)) {
+      // 只有在非终态时才标记为 error
       if (uninstallProgress.value.status === 'running') {
         uninstallProgress.value.status = 'error'
         uninstallProgress.value.message = '连接已断开'
       }
     }
+
+    // 禁用自动重连并关闭连接
+    try {
+      eventSource.autoReconnect = false
+      eventSource.close()
+    } catch (e) {}
+    uninstallSseEventSource.value = null
   }
 
   // 切换到进度标签页
@@ -1486,17 +1526,24 @@ const connectInstallProgressSSE = (installTaskId: string) => {
   const eventSource = new SSE(sseUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     start: true,
-    debug: process.env.NODE_ENV === 'development'
+    debug: process.env.NODE_ENV === 'development',
+    autoReconnect: true,
+    reconnectDelay: 3000,
+    maxRetries: 3,
+    withCredentials: true
   })
   sseEventSource.value = eventSource
   // 确保显示进度抽屉并切到进度标签页，避免在连接过程中因异常导致界面仍停留在选择页
   installModalVisible.value = true
   installTab.value = 'progress'
 
+  // 定义安装终态集合
+  const terminalStatuses = new Set(['completed', 'completed_with_errors', 'failed', 'success', 'error', 'stopped'])
+
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
-      
+
       if (data.type === 'connection_established') {
         installProgress.value.message = data.message || '已连接到安装进度流'
         installProgress.value.status = 'running'
@@ -1507,6 +1554,22 @@ const connectInstallProgressSSE = (installTaskId: string) => {
         installProgress.value.failed_count = data.failed_count || data.failed_hosts || 0
         installProgress.value.status = data.status || 'running'
         installProgress.value.message = data.message || ''
+
+        // 检测终态：收到终态后主动关闭连接，避免自动重连
+        const statusValue = (data.status || '').toLowerCase()
+        if (terminalStatuses.has(statusValue)) {
+          console.log(`安装任务已达终态: ${statusValue}，关闭 SSE 连接`)
+          // 禁用自动重连并关闭连接
+          try {
+            eventSource.autoReconnect = false
+            eventSource.close()
+          } catch (e) {
+            console.warn('关闭 SSE 连接失败:', e)
+          }
+          sseEventSource.value = null
+          // 刷新 Agent 列表
+          fetchAgents()
+        }
       } else if (data.type === 'log') {
         installProgress.value.logs.push({
           host_name: data.host_name || '',
@@ -1531,7 +1594,11 @@ const connectInstallProgressSSE = (installTaskId: string) => {
         })
         // 切换到进度页并关闭连接，确保用户能看到错误并避免悬挂的连接
         installTab.value = 'progress'
-        try { eventSource.close() } catch (e) {}
+        try {
+          eventSource.autoReconnect = false
+          eventSource.close()
+        } catch (e) {}
+        sseEventSource.value = null
       }
     } catch (error) {
       console.error('解析 SSE 消息失败:', error)
@@ -1542,11 +1609,23 @@ const connectInstallProgressSSE = (installTaskId: string) => {
     console.error('SSE 连接错误:', error)
     // 作为保险：切换到进度页并标记连接断开，关闭连接
     installTab.value = 'progress'
-    if (installProgress.value.status === 'running') {
-      installProgress.value.status = 'error'
-      installProgress.value.message = '连接已断开'
+
+    // 检查是否已达终态，如果是则不需要标记为 error
+    const currentStatus = (installProgress.value.status || '').toLowerCase()
+    if (!terminalStatuses.has(currentStatus)) {
+      // 只有在非终态时才标记为 error
+      if (installProgress.value.status === 'running') {
+        installProgress.value.status = 'error'
+        installProgress.value.message = '连接已断开'
+      }
     }
-    try { eventSource.close() } catch (e) {}
+
+    // 禁用自动重连并关闭连接
+    try {
+      eventSource.autoReconnect = false
+      eventSource.close()
+    } catch (e) {}
+    sseEventSource.value = null
   }
 }
 

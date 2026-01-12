@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from django.http import StreamingHttpResponse, HttpResponse, JsonResponse
 from django.views import View
+from django.conf import settings
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.utils.decorators import method_decorator
@@ -125,9 +126,9 @@ class SSEBaseView(View):
     def options(self, request, *args, **kwargs):
         """处理 CORS 预检请求"""
         response = HttpResponse()
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Cache-Control, Authorization, Content-Type'
+        cors_headers = self._build_cors_headers(request)
+        for k, v in cors_headers.items():
+            response[k] = v
         response['Access-Control-Max-Age'] = '86400'
         return response
 
@@ -164,7 +165,7 @@ class SSEBaseView(View):
 
     # ==================== SSE 响应创建 ====================
 
-    def create_sse_response(self, async_generator):
+    def create_sse_response(self, async_generator, request=None):
         """创建SSE响应"""
         response = StreamingHttpResponse(
             async_generator,
@@ -179,12 +180,44 @@ class SSEBaseView(View):
         response['X-Accel-Buffering'] = 'no'
 
         # CORS设置
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Headers'] = 'Cache-Control, Authorization, Content-Type'
-        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response['Access-Control-Expose-Headers'] = 'Cache-Control, Content-Type'
+        cors_headers = self._build_cors_headers(request)
+        for k, v in cors_headers.items():
+            response[k] = v
 
         return response
+
+    def _build_cors_headers(self, request):
+        """
+        基于 settings 和请求 Origin 构建 CORS 头，支持凭证。
+        """
+        origin = request.headers.get('Origin') if request else None
+        allow_all = getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False)
+        allow_credentials = getattr(settings, 'CORS_ALLOW_CREDENTIALS', False)
+        allowed_origins = [o for o in getattr(settings, 'CORS_ALLOWED_ORIGINS', []) if o] if not allow_all else []
+
+        acao = '*'
+        credentials_enabled = False
+
+        if allow_credentials:
+            if allow_all and origin:
+                acao = origin
+                credentials_enabled = True
+            elif origin and origin in allowed_origins:
+                acao = origin
+                credentials_enabled = True
+        else:
+            if not allow_all and origin and origin in allowed_origins:
+                acao = origin
+
+        headers = {
+            'Access-Control-Allow-Origin': acao,
+            'Access-Control-Allow-Headers': 'Cache-Control, Authorization, Content-Type',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Expose-Headers': 'Cache-Control, Content-Type',
+        }
+        if credentials_enabled:
+            headers['Access-Control-Allow-Credentials'] = 'true'
+        return headers
 
     # ==================== 异步 redis 操作 ====================
 
@@ -345,7 +378,7 @@ class JobLogsSSEView(SSEBaseView):
                     'type': 'error', 'message': str(e)
                 }).encode('utf-8')
 
-        return self.create_sse_response(event_stream())
+        return self.create_sse_response(event_stream(), request)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -422,7 +455,7 @@ class JobStatusSSEView(SSEBaseView):
                     'type': 'error', 'message': str(e)
                 }).encode('utf-8')
 
-        return self.create_sse_response(event_stream())
+        return self.create_sse_response(event_stream(), request)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -529,4 +562,4 @@ class JobCombinedSSEView(SSEBaseView):
                     'type': 'error', 'message': str(e)
                 }).encode('utf-8')
 
-        return self.create_sse_response(event_stream())
+        return self.create_sse_response(event_stream(), request)

@@ -190,7 +190,7 @@ class RealtimeLogService:
                         }
                         break
 
-                    # 从redis stream读取新消息 - 优化参数
+                    # 从redis stream读取新消息
                     # count增加到100，block增加到5秒，减少轮询频率
                     messages = self.redis_client.xread(
                         {stream_key: last_id},
@@ -212,7 +212,7 @@ class RealtimeLogService:
                                     'data': fields
                                 }
                     else:
-                        # 没有新消息时发送心跳（现在5秒才发一次）
+                        # 没有新消息时发送心跳
                         yield {
                             'id': last_id,
                             'type': 'heartbeat',

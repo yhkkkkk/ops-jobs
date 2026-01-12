@@ -348,6 +348,7 @@ exit 1
         install_task_id: str,
         log_stream_key: str,
         connection_timeout_internal: int = 5,
+        connection_timeout_public: int = 10,
     ) -> Dict[str, Any]:
         """先尝试内网IP短连，失败时自动回退到外网IP执行脚本。"""
         original_internal = host.internal_ip
@@ -356,7 +357,7 @@ exit 1
         if original_internal:
             candidates.append(("internal", original_internal, connection_timeout_internal))
         if original_public and original_public != original_internal:
-            candidates.append(("public", original_public, None))
+            candidates.append(("public", original_public, connection_timeout_public))
 
         if not candidates:
             return {
@@ -885,6 +886,7 @@ echo "Agent 卸载完成"
                     host=host,
                     script_content=uninstall_script,
                     script_type='shell',
+                    connection_timeout=5,
                     timeout=timeout,
                     account_id=account_id
                 )
@@ -894,7 +896,7 @@ echo "Agent 卸载完成"
                     uninstall_record.message = '卸载脚本执行成功'
                     success_count += 1
 
-                    # 安全：吊销 token，标记离线
+                    # 吊销 token，标记离线
                     try:
                         cls.revoke_active_token(agent)
                     except Exception:
