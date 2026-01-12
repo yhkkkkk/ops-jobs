@@ -244,12 +244,21 @@ class TaskResultWaiter:
             except (ValueError, TypeError):
                 exit_code = -1
 
+        # 获取 host_id（Agent-Server 从 task_id 中解析并写入）
+        host_id = data.get('host_id')
+        if host_id is not None:
+            try:
+                host_id = int(host_id)
+            except (ValueError, TypeError):
+                host_id = 0
+
         # 判断是否成功
         success = (status == 'completed' or status == 'success') and exit_code == 0
 
         return {
             'task_id': data.get('task_id', ''),
             'agent_id': data.get('agent_id', ''),
+            'host_id': host_id,  # 添加 host_id 字段
             'status': status,
             'exit_code': exit_code,
             'error_msg': data.get('error_msg', ''),

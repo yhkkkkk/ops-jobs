@@ -3,11 +3,7 @@
 """
 from django.db import models
 from django.contrib.auth.models import User
-from django.utils import timezone
 from utils.validators import validate_cron_expression, validate_timezone
-from apps.job_templates.models import ExecutionPlan
-from apps.hosts.models import Host, HostGroup
-import json
 
 
 class ScheduledJob(models.Model):

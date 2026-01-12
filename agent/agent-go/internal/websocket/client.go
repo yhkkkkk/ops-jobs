@@ -278,12 +278,36 @@ func (c *Client) handleMessage(msg Message) {
 		if c.onTask != nil {
 			c.onTask(msg.Task)
 		}
+	case "tasks_batch":
+		// 批量任务处理
+		if len(msg.Tasks) == 0 {
+			return
+		}
+		if c.onTask != nil {
+			for _, task := range msg.Tasks {
+				if task != nil {
+					c.onTask(task)
+				}
+			}
+		}
 	case "cancel_task":
 		if msg.TaskID == "" {
 			return
 		}
 		if c.onCancel != nil {
 			c.onCancel(msg.TaskID)
+		}
+	case "cancel_tasks_batch":
+		// 批量取消任务处理
+		if len(msg.TaskIDs) == 0 {
+			return
+		}
+		if c.onCancel != nil {
+			for _, taskID := range msg.TaskIDs {
+				if taskID != "" {
+					c.onCancel(taskID)
+				}
+			}
 		}
 	case constants.MessageTypeAck:
 		if msg.AckID != "" {

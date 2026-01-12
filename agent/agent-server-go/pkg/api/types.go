@@ -118,7 +118,9 @@ type WebSocketMessage struct {
 	MessageID string                 `json:"message_id,omitempty"`
 	AckID     string                 `json:"ack_id,omitempty"`
 	Task      *TaskSpec              `json:"task,omitempty"`
+	Tasks     []*TaskSpec            `json:"tasks,omitempty"`     // 批量任务
 	TaskID    string                 `json:"task_id,omitempty"`
+	TaskIDs   []string               `json:"task_ids,omitempty"`  // 批量任务ID
 	Result    *TaskResult            `json:"result,omitempty"`
 	Logs      []LogEntry             `json:"logs,omitempty"`
 	Payload   map[string]interface{} `json:"payload,omitempty"`

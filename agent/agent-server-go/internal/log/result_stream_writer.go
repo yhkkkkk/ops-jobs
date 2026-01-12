@@ -3,6 +3,8 @@ package log
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"ops-job-agent-server/internal/config"
@@ -39,9 +41,15 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 	if logPointer == "" && result.LogSize > 0 {
 		logPointer = "redis:job_logs/" + result.TaskID + "@"
 	}
+
+	// 解析 task_id 提取 host_id
+	// task_id 格式: {execution_id}_{step_id}_{host_id}_{random}
+	hostID := extractHostID(result.TaskID)
+
 	values := map[string]interface{}{
 		"task_id":     result.TaskID,
 		"agent_id":    agentID,
+		"host_id":     hostID, // 添加 host_id 字段供控制面使用
 		"status":      result.Status,
 		"exit_code":   result.ExitCode,
 		"error_msg":   result.ErrorMsg,
@@ -63,4 +71,16 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 		Stream: w.key,
 		Values: values,
 	}).Err()
+}
+
+// extractHostID 从 task_id 中提取 host_id
+// task_id 格式: {execution_id}_{step_id}_{host_id}_{random}
+func extractHostID(taskID string) int {
+	parts := strings.Split(taskID, "_")
+	if len(parts) >= 3 {
+		if hostID, err := strconv.Atoi(parts[2]); err == nil {
+			return hostID
+		}
+	}
+	return 0 // 如果解析失败，返回 0
 }

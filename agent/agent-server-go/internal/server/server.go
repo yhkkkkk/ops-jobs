@@ -158,8 +158,12 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		api.GET("/agents/:id", s.handleGetAgent)
 		// 控制面推送任务到指定 Agent
 		api.POST("/agents/:id/tasks", s.handlePushTask)
+		// 批量推送任务到指定 Agent
+		api.POST("/agents/:id/tasks/batch", s.handlePushTasksBatch)
 		// 取消指定 Agent 的任务
 		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
+		// 批量取消指定 Agent 的任务
+		api.POST("/agents/:id/tasks/cancel/batch", s.handleCancelTasksBatch)
 		// 任务队列统计信息
 		api.GET("/stats/queues", func(c *gin.Context) {
 			metrics.HandleQueueStats(c, s.taskQueue)
@@ -389,6 +393,80 @@ func (s *Server) handlePushTask(c *gin.Context) {
 	})
 }
 
+// handlePushTasksBatch 批量推送任务到指定 Agent
+func (s *Server) handlePushTasksBatch(c *gin.Context) {
+	agentID := c.Param("id")
+
+	var taskSpecs []api.TaskSpec
+	if err := c.ShouldBindJSON(&taskSpecs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(taskSpecs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tasks array is empty"})
+		return
+	}
+
+	// 从请求头中获取scope
+	requestScope := c.GetHeader(auth.HeaderScope)
+	if requestScope == "" {
+		requestScope = s.cfg.ControlPlane.Scope
+	}
+
+	// 获取 Agent 连接
+	conn, exists := s.agentManager.Get(agentID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		return
+	}
+
+	// 检查 scope
+	if requestScope != "" && conn.GetScope() != requestScope {
+		c.JSON(http.StatusForbidden, gin.H{"error": "scope mismatch"})
+		return
+	}
+
+	// 转换为指针数组
+	taskPtrs := make([]*api.TaskSpec, len(taskSpecs))
+	for i := range taskSpecs {
+		taskPtrs[i] = &taskSpecs[i]
+	}
+
+	// 批量发送任务
+	if err := conn.SendTasks(taskPtrs); err != nil {
+		if err == agent.ErrConnectionClosed {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection closed"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 记录所有任务为运行状态
+	for _, task := range taskPtrs {
+		conn.AddRunningTask(task)
+	}
+
+	taskIDs := make([]string, len(taskSpecs))
+	for i, task := range taskSpecs {
+		taskIDs[i] = task.ID
+	}
+
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id":   agentID,
+		"task_count": len(taskSpecs),
+		"task_ids":   taskIDs,
+	}).Info("batch tasks pushed to agent")
+
+	c.JSON(http.StatusOK, gin.H{
+		"task_ids": taskIDs,
+		"agent_id": agentID,
+		"status":   constants.StatusDispatched,
+		"count":    len(taskSpecs),
+	})
+}
+
 // handleCancelTask 处理取消任务请求
 // 支持两种情况：
 // 1. Agent 在线：通过 WebSocket 发送取消消息
@@ -470,6 +548,117 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active"})
+}
+
+// handleCancelTasksBatch 批量取消任务
+func (s *Server) handleCancelTasksBatch(c *gin.Context) {
+	agentID := c.Param("id")
+
+	var req struct {
+		TaskIDs []string `json:"task_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task_ids array is empty"})
+		return
+	}
+
+	conn, exists := s.agentManager.Get(agentID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		return
+	}
+
+	results := make([]map[string]interface{}, 0, len(req.TaskIDs))
+	successCount := 0
+	failedCount := 0
+
+	// Agent 在线，通过 WebSocket 批量发送取消消息
+	if conn.Status == constants.StatusActive && conn.Conn != nil {
+		if err := conn.SendCancelTasks(req.TaskIDs); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"agent_id":   agentID,
+				"task_count": len(req.TaskIDs),
+			}).Error("send cancel tasks batch message failed")
+
+			// WebSocket 发送失败，逐个尝试从队列中删除
+			if s.taskQueue != nil {
+				for _, taskID := range req.TaskIDs {
+					if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
+						results = append(results, map[string]interface{}{
+							"task_id": taskID,
+							"status":  constants.StatusCancelled,
+							"source":  "queue",
+						})
+						successCount++
+					} else {
+						results = append(results, map[string]interface{}{
+							"task_id": taskID,
+							"status":  "failed",
+							"error":   err.Error(),
+						})
+						failedCount++
+					}
+				}
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			// WebSocket 批量发送成功
+			for _, taskID := range req.TaskIDs {
+				results = append(results, map[string]interface{}{
+					"task_id": taskID,
+					"status":  constants.StatusCancelled,
+					"source":  "websocket",
+				})
+				successCount++
+			}
+		}
+	} else {
+		// Agent 离线，尝试从队列中逐个删除
+		if s.taskQueue != nil {
+			for _, taskID := range req.TaskIDs {
+				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
+					results = append(results, map[string]interface{}{
+						"task_id": taskID,
+						"status":  constants.StatusCancelled,
+						"source":  "queue",
+					})
+					successCount++
+				} else {
+					results = append(results, map[string]interface{}{
+						"task_id": taskID,
+						"status":  "failed",
+						"error":   err.Error(),
+					})
+					failedCount++
+				}
+			}
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active"})
+			return
+		}
+	}
+
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id":      agentID,
+		"task_count":    len(req.TaskIDs),
+		"success_count": successCount,
+		"failed_count":  failedCount,
+	}).Info("batch cancel tasks completed")
+
+	c.JSON(http.StatusOK, gin.H{
+		"agent_id":      agentID,
+		"task_count":    len(req.TaskIDs),
+		"success_count": successCount,
+		"failed_count":  failedCount,
+		"results":       results,
+	})
 }
 
 // cancelTaskFromQueue 从队列中取消任务

@@ -135,6 +135,26 @@ func (c *Connection) SendTask(task *api.TaskSpec) error {
 	return c.Conn.WriteJSON(msg)
 }
 
+// SendTasks 批量发送任务到 Agent
+func (c *Connection) SendTasks(tasks []*api.TaskSpec) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return ErrConnectionClosed
+	}
+
+	// 批量发送消息
+	msg := api.WebSocketMessage{
+		Type:  "tasks_batch",
+		Tasks: tasks,
+	}
+	return c.Conn.WriteJSON(msg)
+}
+
 // SendCancelTask 发送取消任务消息
 func (c *Connection) SendCancelTask(taskID string) error {
 	c.mu.RLock()
@@ -146,6 +166,26 @@ func (c *Connection) SendCancelTask(taskID string) error {
 	msg := api.WebSocketMessage{
 		Type:   "cancel_task",
 		TaskID: taskID,
+	}
+	return c.Conn.WriteJSON(msg)
+}
+
+// SendCancelTasks 批量发送取消任务消息
+func (c *Connection) SendCancelTasks(taskIDs []string) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return ErrConnectionClosed
+	}
+
+	// 批量取消
+	msg := api.WebSocketMessage{
+		Type:    "cancel_tasks_batch",
+		TaskIDs: taskIDs,
 	}
 	return c.Conn.WriteJSON(msg)
 }

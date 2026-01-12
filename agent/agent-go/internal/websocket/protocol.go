@@ -10,10 +10,12 @@ type Message struct {
 	RequestID string `json:"request_id,omitempty"`
 	Timestamp int64  `json:"ts,omitempty"` // unix ms
 	TaskID    string `json:"task_id,omitempty"`
+	TaskIDs   []string `json:"task_ids,omitempty"` // 批量任务ID
 
-	Task   *api.TaskSpec   `json:"task,omitempty"`
-	Result *api.TaskResult `json:"result,omitempty"`
-	Logs   []api.LogEntry  `json:"logs,omitempty"`
+	Task   *api.TaskSpec     `json:"task,omitempty"`
+	Tasks  []*api.TaskSpec   `json:"tasks,omitempty"` // 批量任务
+	Result *api.TaskResult   `json:"result,omitempty"`
+	Logs   []api.LogEntry    `json:"logs,omitempty"`
 
 	Payload map[string]interface{} `json:"payload,omitempty"`
 	Error   *ErrorPayload          `json:"error,omitempty"`
