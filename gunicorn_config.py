@@ -32,7 +32,7 @@ keepalive = 5  # Keep-alive 连接超时时间（秒）
 # 进程管理
 max_requests = 1000  # 每个 Worker 处理的最大请求数，达到后重启（防止内存泄漏）
 max_requests_jitter = 50  # 随机抖动，避免所有 Worker 同时重启
-preload_app = True  # 预加载应用，减少内存占用，但可能导致 Worker 间数据不同步
+preload_app = False  # 不预加载应用，每个 Worker 独立加载，避免数据库连接线程安全问题
 
 # 日志配置
 accesslog = os.getenv('GUNICORN_ACCESS_LOG', '-')  # '-' 表示输出到 stdout
