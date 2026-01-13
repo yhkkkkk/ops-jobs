@@ -167,7 +167,7 @@ def render_config_yaml(
     base_path = base_config_path
     # Try PyYAML first for structured merge
     try:
-        import yaml  # type: ignore
+        import yaml
     except Exception:
         yaml = None
 
@@ -188,7 +188,7 @@ def render_config_yaml(
         # If base contains Jinja2 markers, render it as template
         if "{{" in base_text or "{%" in base_text:
             try:
-                from jinja2 import Template  # type: ignore
+                from jinja2 import Template
                 tpl = Template(base_text)
                 ctx = overrides.copy()
                 ctx["install_type"] = install_type
@@ -220,5 +220,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

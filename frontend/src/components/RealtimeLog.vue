@@ -37,22 +37,6 @@
       </div>
     </div>
 
-    <a-alert
-      v-if="channelWarning || structureWarning"
-      type="warning"
-      show-icon
-      class="sse-warning"
-    >
-      <template #message>日志通道提示</template>
-      <template #description>
-        <div v-if="channelWarning">
-          当前日志通道已回退为 {{ channelWarning }}，可能缺少结构化字段。
-        </div>
-        <div v-if="structureWarning">
-          部分日志缺少 {{ missingFields.join('、') || '必要' }} 字段，已按简化模式展示。
-        </div>
-      </template>
-    </a-alert>
 
     <!-- 执行概览 -->
     <div v-if="status" class="log-summary">
@@ -411,9 +395,6 @@ const selectedStepId = ref<string>('')
 const selectedHostIds = ref<Record<string, string>>({})
 const hostGroups = ref<Record<string, Record<string, any>>>({})
 const expandedSteps = ref<Record<string, boolean>>({})
-const channelWarning = ref<string | null>(null)
-const structureWarning = ref(false)
-const missingFields = ref<string[]>([])
 
 // 重连相关
 const reconnectAttempts = ref(0)
@@ -426,19 +407,6 @@ const logContainer = ref<HTMLElement | null>(null)
 const startIndex = ref(0)
 const visibleCount = ref(20)
 const itemHeight = 20
-
-const recordStructureHints = (data: any) => {
-  if (!data) return
-  if (data.fallback_channel || (data.channel && !['redis_stream', 'redis', 'default'].includes(data.channel))) {
-    channelWarning.value = data.channel || 'fallback'
-  }
-  if (data.structure_missing) {
-    structureWarning.value = true
-    const current = new Set(missingFields.value)
-    ;(data.missing_fields || []).forEach((f: string) => current.add(f))
-    missingFields.value = Array.from(current)
-  }
-}
 
 const connect = async (isReconnect = false) => {
   if (!props.executionId) {
@@ -469,11 +437,6 @@ const connect = async (isReconnect = false) => {
     clearTimeout(reconnectTimeout.value)
     reconnectTimeout.value = null
   }
-
-  // 重置告警提示
-  channelWarning.value = null
-  structureWarning.value = false
-  missingFields.value = []
 
   connecting.value = true
   connected.value = false
@@ -526,7 +489,6 @@ const connect = async (isReconnect = false) => {
       try {
         const data = JSON.parse(event.data)
         console.log('SSE事件数据:', data)
-        recordStructureHints(data)
 
         switch (data.type) {
           case 'connection_established':
@@ -1757,9 +1719,5 @@ onUnmounted(() => {
 
 .log-success .log-content-text {
   color: #4ec9b0;
-}
-
-.sse-warning {
-  margin: 12px 0;
 }
 </style>
