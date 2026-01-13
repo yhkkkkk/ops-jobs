@@ -1,6 +1,6 @@
 """
 Server-Sent Events (SSE) 视图 - 实时日志推送
-基于 Redis Stream 实时日志服务，完全异步实现以支持 ASGI 环境
+基于 redis stream 实时日志服务，完全异步实现以支持 ASGI 环境
 """
 import asyncio
 import json
@@ -330,7 +330,7 @@ class JobLogsSSEView(SSEBaseView):
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
                                 yield self.format_sse_message({
-                                    'type': 'error', 'message': 'Redis连接失败'
+                                    'type': 'error', 'message': 'redis连接失败'
                                 }).encode('utf-8')
                                 break
                             await asyncio.sleep(2)
@@ -417,7 +417,7 @@ class JobStatusSSEView(SSEBaseView):
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
                                 yield self.format_sse_message({
-                                    'type': 'error', 'message': 'Redis连接失败'
+                                    'type': 'error', 'message': 'redis连接失败'
                                 }).encode('utf-8')
                                 break
                             await asyncio.sleep(2)
@@ -509,7 +509,7 @@ class JobCombinedSSEView(SSEBaseView):
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
                                 yield self.format_sse_message({
-                                    'type': 'error', 'message': 'Redis连接失败'
+                                    'type': 'error', 'message': 'redis连接失败'
                                 }).encode('utf-8')
                                 break
                             await asyncio.sleep(2)
