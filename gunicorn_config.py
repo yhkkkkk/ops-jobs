@@ -20,9 +20,9 @@ cpu_count = multiprocessing.cpu_count()
 workers = int(os.getenv('GUNICORN_WORKERS', cpu_count * 2 + 1))
 
 # Worker 类型
-worker_class = 'sync'  # 同步 Worker，适合 I/O 密集型应用
-# worker_class = 'gevent'  # 异步 Worker，需要安装 gevent: pip install gevent
-# worker_connections = 1000  # gevent 模式下每个 worker 的连接数
+# worker_class = 'sync'  # 同步 Worker，适合 I/O 密集型应用
+worker_class = 'gevent'  # 异步 Worker，支持更高并发，适合作业等待场景
+worker_connections = 1000  # gevent 模式下每个 worker 的并发连接数
 
 # Worker 超时配置
 timeout = 120  # Worker 超时时间（秒），超过此时间会被重启

@@ -70,6 +70,8 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 	return w.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: w.key,
 		Values: values,
+		MaxLen: 10000, // 限制 Stream 最大长度，防止无限增长
+		Approx: true,  // 使用近似裁剪提升性能
 	}).Err()
 }
 
