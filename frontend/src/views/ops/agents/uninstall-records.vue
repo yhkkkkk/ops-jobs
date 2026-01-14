@@ -123,6 +123,9 @@
             <div><strong>IP 地址：</strong>{{ currentRecord.host_ip }}</div>
           </div>
         </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.agent_id" label="Agent ID">
+          {{ currentRecord.agent_id }}
+        </a-descriptions-item>
         <a-descriptions-item label="Agent类型">
           <a-tag :color="currentRecord.agent_type === 'agent-server' ? 'purple' : 'blue'">
             {{ currentRecord.agent_type_display }}
@@ -212,6 +215,12 @@ const columns = [
     key: 'host',
     slot: 'host',
     width: 200
+  },
+  {
+    title: 'Agent ID',
+    key: 'agent_id',
+    dataIndex: 'agent_id',
+    width: 100
   },
   {
     title: 'Agent类型',

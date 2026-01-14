@@ -247,6 +247,11 @@ const columns = [
     width: 180,
   },
   {
+    title: 'Agent ID',
+    dataIndex: 'agent_id',
+    width: 100,
+  },
+  {
     title: '状态',
     dataIndex: 'status',
     slotName: 'status',

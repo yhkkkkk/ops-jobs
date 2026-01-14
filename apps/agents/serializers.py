@@ -311,6 +311,7 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
     host_ip = serializers.CharField(source='host.ip_address', read_only=True)
     uninstalled_by_name = serializers.CharField(source='uninstalled_by.username', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    agent_type_display = serializers.CharField(source='get_agent_type_display', read_only=True)
     agent_id = serializers.IntegerField(source='agent.id', read_only=True, allow_null=True)
     agent_type = serializers.CharField(read_only=True)
 
@@ -323,6 +324,7 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
             'host_ip',
             'agent_id',
             'agent_type',
+            'agent_type_display',
             'status',
             'status_display',
             'error_message',
@@ -337,6 +339,7 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
             'host_ip',
             'agent_id',
             'agent_type',
+            'agent_type_display',
             'uninstalled_by',
             'uninstalled_by_name',
             'uninstalled_at',
