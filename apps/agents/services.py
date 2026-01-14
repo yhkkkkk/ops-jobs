@@ -921,9 +921,8 @@ exit 1
                 )
 
                 if exec_result.get('success'):
-                    uninstall_record.status = 'success'
-                    uninstall_record.message = f'{agent_display_name} 卸载脚本执行成功'
-                    success_count += 1
+                    # 保存agent信息以备后用
+                    agent_id = agent.id
 
                     # 吊销 token，删除 agent 记录
                     try:
@@ -941,8 +940,16 @@ exit 1
                         except Exception:
                             pass
 
+                    # 在删除agent后更新uninstall_record状态
+                    uninstall_record.status = 'success'
+                    uninstall_record.message = f'{agent_display_name} 卸载脚本执行成功'
+                    success_count += 1
+
+                    # 在删除agent之前保存uninstall_record
+                    uninstall_record.save()
+
                     results.append({
-                        'agent_id': agent.id,
+                        'agent_id': agent_id,
                         'host_id': host.id,
                         'host_name': host.name,
                         'success': True,
@@ -966,7 +973,7 @@ exit 1
                     failed_count += 1
 
                     results.append({
-                        'agent_id': agent.id,
+                        'agent_id': agent.id,  # 失败情况下agent还未删除，所以可以直接使用
                         'host_id': host.id,
                         'host_name': host.name,
                         'success': False,
@@ -982,8 +989,8 @@ exit 1
                         'step_order': 1
                     }, stream_key=install_log_stream)
 
-                uninstall_record.save()
-                completed += 1
+                    uninstall_record.save()
+                    completed += 1
 
                 realtime_log_service.push_status(uninstall_task_id, {
                     'status': 'running',
