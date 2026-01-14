@@ -267,7 +267,7 @@ class RealtimeLogService:
                     yield {
                         'id': last_id,
                         'type': 'heartbeat',
-                        'data': {'timestamp': datetime.now().isoformat()}
+                        'data': {'timestamp': timezone.now().isoformat()}
                     }
                     
         except Exception as e:
