@@ -244,7 +244,7 @@ const columns = [
     title: '操作者',
     key: 'uninstalled_by_name',
     dataIndex: 'uninstalled_by_name',
-    width: 120
+    width: 120,
     ellipsis: true
   },
   {
