@@ -90,7 +90,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/$BINARY_NAME
+ExecStart=$INSTALL_DIR/$BINARY_NAME start
 Restart=always
 RestartSec=5
 
@@ -106,5 +106,3 @@ systemctl start $SERVICE_NAME
 echo "Agent 安装成功！"
 echo "服务状态: systemctl status $SERVICE_NAME"
 echo "查看日志: journalctl -u $SERVICE_NAME -f"
-
-
