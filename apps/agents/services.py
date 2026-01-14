@@ -320,6 +320,53 @@ exit 1
         # 目前仅输出 Linux 安装脚本（暂不支持 Windows）
         return scripts
 
+    @classmethod
+    def generate_uninstall_script(cls, agent_type: str = 'agent') -> Dict[str, str]:
+        """
+        生成 Agent 或 Agent-Server 卸载脚本
+        Args:
+            agent_type: Agent 类型 ('agent' 或 'agent-server')
+        Returns:
+            Dict[str, str]: 包含不同操作系统的卸载脚本
+        """
+        scripts = {}
+
+        # 根据agent类型生成不同的配置
+        if agent_type == 'agent':
+            service_name = "ops-job-agent"
+            install_dir = "/opt/ops-job-agent"
+            backup_dir = "/opt/ops-job-agent-backup"
+        elif agent_type == 'agent-server':
+            service_name = "ops-job-agent-server"
+            install_dir = "/opt/ops-job-agent-server"
+            backup_dir = "/opt/ops-job-agent-server-backup"
+        else:
+            raise ValueError(f"Unsupported agent_type: {agent_type}")
+
+        # 从模板文件加载 Linux 卸载脚本（模板文件位于 apps/agents/templates/linux_uninstall.sh）
+        import os as __os
+        tpl_path = __os.path.join(__os.path.dirname(__file__), "templates", "linux_uninstall.sh")
+        try:
+            with open(tpl_path, "r", encoding="utf-8") as tpl_f:
+                linux_tpl = tpl_f.read()
+        except Exception:
+            # 如果模板缺失，回退为内联最小脚本（保证不会中断生成）
+            linux_tpl = """#!/bin/bash
+set -e
+echo "卸载脚本模板缺失，请检查完整性"
+exit 1
+"""
+
+        linux_script = string.Template(linux_tpl).safe_substitute(
+            SERVICE_NAME=service_name,
+            INSTALL_DIR=install_dir,
+            BACKUP_DIR=backup_dir,
+        )
+        scripts['linux'] = linux_script
+
+        # 目前仅输出 Linux 卸载脚本（暂不支持 Windows）
+        return scripts
+
     @staticmethod
     def _should_fallback_to_public(result: Dict[str, Any]) -> bool:
         """判断是否应从内网IP回退到外网IP"""
@@ -826,42 +873,20 @@ exit 1
 
         agents = Agent.objects.select_related('host').filter(id__in=agent_ids)
 
-        # 卸载脚本（尽量幂等）
-        uninstall_script = """#!/bin/bash
-set -e
-
-SERVICE_NAME="ops-job-agent"
-INSTALL_DIR="/opt/ops-job-agent"
-UNIT_FILE_1="/etc/systemd/system/${SERVICE_NAME}.service"
-UNIT_FILE_2="/lib/systemd/system/${SERVICE_NAME}.service"
-
-echo "[1/3] 停止并禁用服务（如存在）..."
-if systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}\\.service"; then
-  systemctl stop "${SERVICE_NAME}" || true
-  systemctl disable "${SERVICE_NAME}" || true
-fi
-
-echo "[2/3] 删除 systemd unit（如存在）..."
-rm -f "${UNIT_FILE_1}" "${UNIT_FILE_2}" || true
-systemctl daemon-reload || true
-
-echo "[3/3] 清理安装目录（如存在）..."
-if [ -d "${INSTALL_DIR}" ]; then
-  # 备份配置（可选）
-  if [ -f "${INSTALL_DIR}/config/config.yaml" ]; then
-    ts=$(date +%Y%m%d%H%M%S)
-    mkdir -p "/opt/ops-job-agent-backup" || true
-    cp "${INSTALL_DIR}/config/config.yaml" "/opt/ops-job-agent-backup/config.yaml.${ts}.bak" || true
-  fi
-  rm -rf "${INSTALL_DIR}"
-fi
-
-echo "Agent 卸载完成"
-"""
-
         for agent in agents:
             host = agent.host
             try:
+                # 根据agent类型生成对应的卸载脚本
+                uninstall_scripts = cls.generate_uninstall_script(agent.agent_type)
+                # 根据操作系统选择脚本
+                os_type = host.os_type.lower() if host.os_type else 'linux'
+                if 'windows' in os_type:
+                    uninstall_script = uninstall_scripts.get('windows', '')
+                    script_type = 'powershell'
+                else:
+                    uninstall_script = uninstall_scripts.get('linux', '')
+                    script_type = 'shell'
+
                 # 创建卸载记录
                 uninstall_record = AgentUninstallRecord.objects.create(
                     host=host,
@@ -872,12 +897,13 @@ echo "Agent 卸载完成"
                     message='开始卸载'
                 )
 
+                agent_display_name = 'Agent-Server' if agent.agent_type == 'agent-server' else 'Agent'
                 realtime_log_service.push_log(uninstall_task_id, str(host.id), {
                     'host_name': host.name,
                     'host_ip': host.ip_address,
                     'log_type': 'info',
-                    'content': f'开始卸载主机 {host.name} ({host.ip_address}) 的 Agent',
-                    'step_name': '卸载 Agent',
+                    'content': f'开始卸载主机 {host.name} ({host.ip_address}) 的 {agent_display_name}',
+                    'step_name': f'卸载 {agent_display_name}',
                     'step_order': 1
                 })
 
@@ -885,7 +911,7 @@ echo "Agent 卸载完成"
                 exec_result = fabric_ssh_manager.execute_script(
                     host=host,
                     script_content=uninstall_script,
-                    script_type='shell',
+                    script_type=script_type,
                     connection_timeout=5,
                     timeout=timeout,
                     account_id=account_id
@@ -893,7 +919,7 @@ echo "Agent 卸载完成"
 
                 if exec_result.get('success'):
                     uninstall_record.status = 'success'
-                    uninstall_record.message = '卸载脚本执行成功'
+                    uninstall_record.message = f'{agent_display_name} 卸载脚本执行成功'
                     success_count += 1
 
                     # 吊销 token，标记离线
@@ -920,12 +946,12 @@ echo "Agent 卸载完成"
                         'host_name': host.name,
                         'host_ip': host.ip_address,
                         'log_type': 'info',
-                        'content': f'主机 {host.name} Agent 卸载成功',
-                        'step_name': '卸载 Agent',
+                        'content': f'主机 {host.name} {agent_display_name} 卸载成功',
+                        'step_name': f'卸载 {agent_display_name}',
                         'step_order': 1
                     })
                 else:
-                    stderr = exec_result.get('stderr') or exec_result.get('message') or '卸载失败'
+                    stderr = exec_result.get('stderr') or exec_result.get('message') or f'{agent_display_name} 卸载失败'
                     uninstall_record.status = 'failed'
                     uninstall_record.message = stderr
                     uninstall_record.error_message = stderr
@@ -944,8 +970,8 @@ echo "Agent 卸载完成"
                         'host_name': host.name,
                         'host_ip': host.ip_address,
                         'log_type': 'error',
-                        'content': f'主机 {host.name} Agent 卸载失败: {stderr}',
-                        'step_name': '卸载 Agent',
+                        'content': f'主机 {host.name} {agent_display_name} 卸载失败: {stderr}',
+                        'step_name': f'卸载 {agent_display_name}',
                         'step_order': 1
                     })
 
@@ -964,7 +990,8 @@ echo "Agent 卸载完成"
             except Exception as e:
                 failed_count += 1
                 completed += 1
-                err = f'卸载失败: {str(e)}'
+                agent_display_name = 'Agent-Server' if getattr(agent, 'agent_type', None) == 'agent-server' else 'Agent'
+                err = f'{agent_display_name} 卸载失败: {str(e)}'
 
                 try:
                     AgentUninstallRecord.objects.create(
@@ -992,8 +1019,8 @@ echo "Agent 卸载完成"
                     'host_name': getattr(host, 'name', 'Unknown'),
                     'host_ip': getattr(host, 'ip_address', ''),
                     'log_type': 'error',
-                    'content': f'主机 {getattr(host, "name", "Unknown")} 卸载异常: {err}',
-                    'step_name': '卸载 Agent',
+                    'content': f'主机 {getattr(host, "name", "Unknown")} {agent_display_name} 卸载异常: {err}',
+                    'step_name': f'卸载 {agent_display_name}',
                     'step_order': 1
                 })
 
