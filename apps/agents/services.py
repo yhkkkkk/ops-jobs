@@ -862,6 +862,9 @@ exit 1
         success_count = 0
         failed_count = 0
 
+        install_status_prefix = "agent_install_status:"
+        install_log_stream = "agent_install_logs"
+
         realtime_log_service.push_status(uninstall_task_id, {
             'status': 'running',
             'total': total,
@@ -869,7 +872,7 @@ exit 1
             'success_count': 0,
             'failed_count': 0,
             'message': '开始批量卸载 Agent'
-        })
+        }, stream_prefix=install_status_prefix)
 
         agents = Agent.objects.select_related('host').filter(id__in=agent_ids)
 
@@ -905,7 +908,7 @@ exit 1
                     'content': f'开始卸载主机 {host.name} ({host.ip_address}) 的 {agent_display_name}',
                     'step_name': f'卸载 {agent_display_name}',
                     'step_order': 1
-                })
+                }, stream_key=install_log_stream)
 
                 timeout = max(60, min(ssh_timeout or 300, 900))
                 exec_result = fabric_ssh_manager.execute_script(
@@ -922,17 +925,21 @@ exit 1
                     uninstall_record.message = f'{agent_display_name} 卸载脚本执行成功'
                     success_count += 1
 
-                    # 吊销 token，标记离线
+                    # 吊销 token，删除 agent 记录
                     try:
                         cls.revoke_active_token(agent)
                     except Exception:
                         # 不影响卸载结果
                         pass
                     try:
-                        agent.status = 'offline'
-                        agent.save(update_fields=['status', 'updated_at'])
+                        agent.delete()  # 完全删除 agent 记录
                     except Exception:
-                        pass
+                        # 如果删除失败，至少标记为离线
+                        try:
+                            agent.status = 'offline'
+                            agent.save(update_fields=['status', 'updated_at'])
+                        except Exception:
+                            pass
 
                     results.append({
                         'agent_id': agent.id,
@@ -949,7 +956,7 @@ exit 1
                         'content': f'主机 {host.name} {agent_display_name} 卸载成功',
                         'step_name': f'卸载 {agent_display_name}',
                         'step_order': 1
-                    })
+                    }, stream_key=install_log_stream)
                 else:
                     stderr = exec_result.get('stderr') or exec_result.get('message') or f'{agent_display_name} 卸载失败'
                     uninstall_record.status = 'failed'
@@ -973,7 +980,7 @@ exit 1
                         'content': f'主机 {host.name} {agent_display_name} 卸载失败: {stderr}',
                         'step_name': f'卸载 {agent_display_name}',
                         'step_order': 1
-                    })
+                    }, stream_key=install_log_stream)
 
                 uninstall_record.save()
                 completed += 1
@@ -985,7 +992,7 @@ exit 1
                     'success_count': success_count,
                     'failed_count': failed_count,
                     'message': f'已完成 {completed}/{total} 个 Agent 的卸载'
-                })
+                }, stream_prefix=install_status_prefix)
 
             except Exception as e:
                 failed_count += 1
@@ -1022,7 +1029,7 @@ exit 1
                     'content': f'主机 {getattr(host, "name", "Unknown")} {agent_display_name} 卸载异常: {err}',
                     'step_name': f'卸载 {agent_display_name}',
                     'step_order': 1
-                })
+                }, stream_key=install_log_stream)
 
                 realtime_log_service.push_status(uninstall_task_id, {
                     'status': 'running',
@@ -1031,9 +1038,9 @@ exit 1
                     'success_count': success_count,
                     'failed_count': failed_count,
                     'message': f'已完成 {completed}/{total} 个 Agent 的卸载'
-                })
+                }, stream_prefix=install_status_prefix)
 
-        final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
+                final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
         realtime_log_service.push_status(uninstall_task_id, {
             'status': final_status,
             'total': total,
@@ -1041,7 +1048,7 @@ exit 1
             'success_count': success_count,
             'failed_count': failed_count,
             'message': f'批量卸载完成：成功 {success_count} 个，失败 {failed_count} 个'
-        })
+        }, stream_prefix=install_status_prefix)
 
         return {
             'results': results,
