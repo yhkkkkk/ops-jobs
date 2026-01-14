@@ -311,6 +311,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'agents/uninstall-records',
+        name: 'OpsAgentUninstallRecords',
+        component: () => import('@/views/ops/agents/uninstall-records.vue'),
+        meta: {
+          title: 'Agent 卸载记录',
+          icon: 'icon-delete',
+        },
+      },
+      {
         path: 'agents/packages',
         name: 'OpsAgentPackages',
         component: () => import('@/views/ops/agents/packages.vue'),

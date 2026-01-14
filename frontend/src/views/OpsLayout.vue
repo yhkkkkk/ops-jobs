@@ -160,6 +160,7 @@ const menuConfig = {
   '/ops/agents': { key: '/ops/agents', parent: 'ops' },
   '/ops/agents/packages': { key: '/ops/agents/packages', parent: 'ops' },
   '/ops/agents/install-records': { key: '/ops/agents', parent: 'ops' },
+  '/ops/agents/uninstall-records': { key: '/ops/agents', parent: 'ops' },
   '/ops/agents/detail': { key: '/ops/agents', parent: 'ops' },
   '/ops/hosts': { key: '/ops/hosts', parent: 'resource' },
   '/ops/system-config': { key: '/ops/system-config', parent: 'system' },

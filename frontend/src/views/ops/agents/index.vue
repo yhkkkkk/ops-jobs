@@ -71,6 +71,12 @@
               </template>
               安装记录
             </a-button>
+            <a-button @click="handleViewUninstallRecords">
+              <template #icon>
+                <IconDelete />
+              </template>
+              卸载记录
+            </a-button>
             <a-button @click="fetchAgents">
               <template #icon>
                 <icon-refresh />
@@ -1183,6 +1189,11 @@ const handleUpgradeAgent = (agent: Agent) => {
 // 查看安装记录
 const handleViewInstallRecords = () => {
   router.push({ name: 'OpsAgentInstallRecords' })
+}
+
+// 查看卸载记录
+const handleViewUninstallRecords = () => {
+  router.push({ name: 'OpsAgentUninstallRecords' })
 }
 
 // 卸载 Agent
