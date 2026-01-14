@@ -159,10 +159,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { IconRefresh, IconSearch, IconEye } from '@/components/icons'
+import { Message } from '@arco-design/web-vue'
+import {
+  IconRefresh,
+  IconSearch,
+  IconEye,
+} from '@arco-design/web-vue/es/icon'
 import { agentsApi } from '@/api/agents'
 import { formatDateTime } from '@/utils/date'
 
@@ -286,7 +290,7 @@ const loadData = async () => {
     pagination.total = response.total
   } catch (error) {
     console.error('加载卸载记录失败:', error)
-    message.error('加载卸载记录失败')
+    Message.error('加载卸载记录失败')
   } finally {
     loading.value = false
   }
