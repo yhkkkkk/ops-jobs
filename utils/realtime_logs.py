@@ -2,11 +2,11 @@
 实时日志服务 - 基于redis stream的实时日志推送
 """
 import logging
-from datetime import datetime
 from typing import Any, Dict, Generator
 
 import redis
 from django.conf import settings
+from django.utils import timezone
 from tenacity import (
     before_sleep_log,
     retry,
@@ -87,7 +87,7 @@ class RealtimeLogService:
         try:
             # 构建日志消息 - 统一字段名
             message = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': timezone.now().isoformat(),
                 'task_id': str(task_id),  # 保留完整task_id
                 'execution_id': str(task_id),  # 与Agent-Server保持一致
                 'host_id': str(host_id),
@@ -103,7 +103,7 @@ class RealtimeLogService:
 
             # 同时写入统一日志流（agent_logs），便于consume_agent_logs处理
             unified_message = message.copy()
-            unified_message['received_at'] = datetime.now().timestamp() * 1000  # 毫秒时间戳
+            unified_message['received_at'] = timezone.now().timestamp() * 1000  # 毫秒时间戳
 
             # 仅写入统一日志流
             msg_id = self._xadd(log_stream, unified_message)
@@ -144,7 +144,7 @@ class RealtimeLogService:
 
             # 构建状态消息（支持作业执行和Agent安装两种格式）
             message = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': timezone.now().isoformat(),
                 'status': status_data.get('status', ''),
                 'progress': status_data.get('progress', 0),
                 'current_step': status_data.get('current_step', ''),
@@ -216,7 +216,7 @@ class RealtimeLogService:
                         yield {
                             'id': last_id,
                             'type': 'heartbeat',
-                            'data': {'timestamp': datetime.now().isoformat()}
+                            'data': {'timestamp': timezone.now().isoformat()}
                         }
 
                 except (redis.ConnectionError, redis.TimeoutError) as e:

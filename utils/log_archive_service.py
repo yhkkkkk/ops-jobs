@@ -40,7 +40,7 @@ class LogArchiveService:
                 logger.warning(f"没有找到日志数据，但仍创建基本执行记录: task_id={task_id}")
                 # 创建一个基本的日志条目表示任务已执行
                 logs_data = [{
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': timezone.now().isoformat(),
                     'host_id': '0',
                     'host_name': '系统',
                     'host_ip': '',

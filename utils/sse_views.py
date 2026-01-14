@@ -5,10 +5,10 @@ Server-Sent Events (SSE) 视图 - 实时日志推送
 import asyncio
 import json
 import logging
-from datetime import datetime
 from django.http import StreamingHttpResponse, HttpResponse, JsonResponse
 from django.views import View
 from django.conf import settings
+from django.utils import timezone
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.utils.decorators import method_decorator
@@ -85,7 +85,7 @@ class SSEBaseView(View):
 
         # 日志类型/时间戳
         data['log_type'] = data.get('log_type') or data.get('stream') or 'info'
-        data['timestamp'] = data.get('timestamp') or datetime.now().isoformat()
+        data['timestamp'] = data.get('timestamp') or timezone.now().isoformat()
 
         data['structure_missing'] = bool(missing_fields)
         data['missing_fields'] = missing_fields
@@ -359,7 +359,7 @@ class JobLogsSSEView(SSEBaseView):
                             # 心跳
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
-                                'timestamp': datetime.now().isoformat()
+                                'timestamp': timezone.now().isoformat()
                             }).encode('utf-8')
 
                     except Exception as e:
@@ -436,7 +436,7 @@ class JobStatusSSEView(SSEBaseView):
                         else:
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
-                                'timestamp': datetime.now().isoformat()
+                                'timestamp': timezone.now().isoformat()
                             }).encode('utf-8')
 
                     except Exception as e:
@@ -543,7 +543,7 @@ class JobCombinedSSEView(SSEBaseView):
                         else:
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
-                                'timestamp': datetime.now().isoformat()
+                                'timestamp': timezone.now().isoformat()
                             }).encode('utf-8')
 
                     except Exception as e:

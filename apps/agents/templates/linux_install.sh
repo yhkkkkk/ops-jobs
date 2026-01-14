@@ -32,16 +32,19 @@ mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # 下载并解压/放置二进制与示例配置
-echo "正在下载 Agent 包..."
+echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 正在下载 Agent 包..."
 TMP_PKG=""
 if echo "$DOWNLOAD_URL" | grep -Ei "\.zip($|\?)" >/dev/null; then
     TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.zip)"
     (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
-    unzip -o "$TMP_PKG" -d "$INSTALL_DIR"
+    # unzip 使用 -q 静默模式，避免打印UTC时间戳，然后用自定义时间戳打印操作
+    unzip -q -o "$TMP_PKG" -d "$INSTALL_DIR"
+    echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 已解压文件到 $INSTALL_DIR"
 elif echo "$DOWNLOAD_URL" | grep -Ei "\.(tar\.gz|tgz)($|\?)" >/dev/null; then
     TMP_PKG="$(mktemp /tmp/ops-agent-pkg.XXXXXX.tar.gz)"
     (curl -fL "$DOWNLOAD_URL" -o "$TMP_PKG" || wget -O "$TMP_PKG" "$DOWNLOAD_URL")
     tar -xzf "$TMP_PKG" -C "$INSTALL_DIR"
+    echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 已解压文件到 $INSTALL_DIR"
 else
     curl -fL -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL" || wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
 fi
@@ -83,8 +86,9 @@ fi
 # 创建 systemd 服务
 cat > /etc/systemd/system/$SERVICE_NAME.service <<EOF
 [Unit]
-Description=Ops Job Agent
-After=network.target
+Description=Ops Job Agent Service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -93,6 +97,8 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/$BINARY_NAME start
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -101,7 +107,47 @@ EOF
 # 启动服务
 systemctl daemon-reload
 systemctl enable $SERVICE_NAME
+
+# 启动前验证
+echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 验证安装..."
+if [ ! -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+    echo "错误: 二进制文件不存在: $INSTALL_DIR/$BINARY_NAME"
+    exit 1
+fi
+if [ ! -x "$INSTALL_DIR/$BINARY_NAME" ]; then
+    echo "错误: 二进制文件没有执行权限: $INSTALL_DIR/$BINARY_NAME"
+    exit 1
+fi
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "错误: 配置文件不存在: $CONFIG_FILE"
+    exit 1
+fi
+
+# 打印配置文件内容（用于调试）
+echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 配置文件内容:"
+cat "$CONFIG_FILE"
+
+# 尝试验证二进制版本
+echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 二进制版本信息:"
+"$INSTALL_DIR/$BINARY_NAME" version 2>&1 || echo "无法获取版本信息"
+
+# 启动服务
+echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] 启动服务 $SERVICE_NAME..."
 systemctl start $SERVICE_NAME
+
+# 等待服务启动并检查状态
+sleep 2
+if systemctl is-active --quiet $SERVICE_NAME; then
+    echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] ✅ $SERVICE_NAME 服务启动成功！"
+else
+    echo "[$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')][$(hostname -s)] ❌ $SERVICE_NAME 服务启动失败"
+    echo "服务状态:"
+    systemctl status $SERVICE_NAME --no-pager || true
+    echo ""
+    echo "最近日志:"
+    journalctl -u $SERVICE_NAME -n 50 --no-pager || true
+    exit 1
+fi
 
 echo "Agent 安装成功！"
 echo "服务状态: systemctl status $SERVICE_NAME"

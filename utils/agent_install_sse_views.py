@@ -3,8 +3,8 @@ Agent 安装进度 SSE 视图 - 继承 SSEBaseView 异步实现
 """
 import asyncio
 import logging
-from datetime import datetime
 from django.conf import settings
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from .sse_views import SSEBaseView
@@ -176,7 +176,7 @@ class AgentInstallProgressSSEView(SSEBaseView):
                             # 心跳
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
-                                'timestamp': datetime.now().isoformat()
+                                'timestamp': timezone.now().isoformat()
                             }).encode('utf-8')
 
                     except Exception as e:

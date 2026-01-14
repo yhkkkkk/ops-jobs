@@ -56,6 +56,14 @@ FROM docker.1ms.run/ubuntu:22.04 AS python-builder
 RUN sed -i 's@http://archive.ubuntu.com/ubuntu/@http://mirrors.aliyun.com/ubuntu/@g' /etc/apt/sources.list \
     && sed -i 's@http://security.ubuntu.com/ubuntu/@http://mirrors.aliyun.com/ubuntu/@g' /etc/apt/sources.list
 
+# Set timezone to Asia/Shanghai
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python and system deps
 RUN apt-get update && apt-get install -y \
     python3.11 \
