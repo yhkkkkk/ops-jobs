@@ -25,6 +25,7 @@ from .serializers import (
     AgentInstallRecordSerializer,
     AgentSerializer,
     AgentTokenSerializer,
+    AgentUpgradeSerializer,
     BatchInstallSerializer,
     BatchOperationSerializer,
     BatchUninstallSerializer,
@@ -300,33 +301,207 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
 
-        server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
-        if not server_base:
-            return SycResponse.error(message="未配置agent-server，无法下发控制指令")
+        action = serializer.validated_data["action"]
+        reason = serializer.validated_data.get("reason", "")
+        agent_type = agent.agent_type or 'agent'
 
-        api_url = f"{server_base}/api/agents/{agent.host_id}/control"
-        # 使用统一 HMAC 客户端，并附加 X-Scope
-        client = AgentServerClient.from_settings()
-        scope = AgentExecutionService._get_agent_server_scope(agent)
-        headers = {}
-        if scope:
-            headers["X-Scope"] = scope
+        # 根据 agent_type 选择不同的控制方式
+        if agent_type == 'agent':
+            # Agent 控制：通过 agent-server 下发控制指令
+            server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
+            if not server_base:
+                return SycResponse.error(message="未配置agent-server，无法下发控制指令")
 
-        payload = {
-            "action": serializer.validated_data["action"],
-            "reason": serializer.validated_data.get("reason", ""),
-        }
+            api_url = f"{server_base}/api/agents/{agent.host_id}/control"
+            client = AgentServerClient.from_settings()
+            scope = AgentExecutionService._get_agent_server_scope(agent)
+            headers = {}
+            if scope:
+                headers["X-Scope"] = scope
+
+            payload = {
+                "action": action,
+                "reason": reason,
+            }
+
+            try:
+                resp = client.post(api_url, json=payload, headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    AgentService.audit(request.user, f"control_agent_{action}", agent, request=request)
+                    return SycResponse.success(content=resp.json(), message="管控指令已下发")
+                logger.error("管控agent失败 %s %s", resp.status_code, resp.text)
+                return SycResponse.error(message=f"管控失败: HTTP {resp.status_code}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("管控agent异常: %s", exc, exc_info=True)
+                return SycResponse.error(message=f"管控异常: {exc}")
+
+        elif agent_type == 'agent-server':
+            # Agent-Server 控制：调用 agent-server 自身的控制接口
+            agent_server_url = agent.endpoint
+            if not agent_server_url:
+                return SycResponse.error(message="Agent-Server 未配置 endpoint，无法下发控制指令")
+
+            # 如果 endpoint 只是地址，需要构建完整 URL
+            if not agent_server_url.startswith('http'):
+                agent_server_url = f"http://{agent_server_url}"
+
+            api_url = f"{agent_server_url}/api/self/control"
+            client = AgentServerClient.from_settings()
+
+            payload = {
+                "action": action,
+                "reason": reason,
+            }
+
+            try:
+                resp = client.post(api_url, json=payload, headers={}, timeout=5)
+                if resp.status_code == 200:
+                    AgentService.audit(request.user, f"control_agent_server_{action}", agent, request=request)
+                    return SycResponse.success(content=resp.json(), message="管控指令已下发")
+                logger.error("管控agent-server失败 %s %s", resp.status_code, resp.text)
+                return SycResponse.error(message=f"管控失败: HTTP {resp.status_code}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("管控agent-server异常: %s", exc, exc_info=True)
+                return SycResponse.error(message=f"管控异常: {exc}")
+
+        else:
+            return SycResponse.error(message=f"不支持的 agent_type: {agent_type}")
+
+    @action(detail=True, methods=["post"], url_path="upgrade")
+    def upgrade_agent(self, request, pk=None):
+        """升级 Agent 到指定版本"""
+        agent = self.get_object()
+        serializer = AgentUpgradeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        # 检查 Agent 是否在线
+        if agent.status != 'online' and agent.computed_status != 'online':
+            return SycResponse.error(message="只能升级在线状态的 Agent")
+
+        # 确定目标安装包（根据 agent_type 选择对应的 package_type）
+        package_id = serializer.validated_data.get("package_id")
+        target_version = serializer.validated_data.get("target_version", "")
+        package_type = agent.agent_type or 'agent'  # 使用 agent 的类型
 
         try:
-            resp = client.post(api_url, json=payload, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                AgentService.audit(request.user, f"control_agent_{payload['action']}", agent, request=request)
-                return SycResponse.success(content=resp.json(), message="管控指令已下发")
-            logger.error("管控agent失败 %s %s", resp.status_code, resp.text)
-            return SycResponse.error(message=f"管控失败: HTTP {resp.status_code}")
+            from apps.agents.models import AgentPackage
+
+            if package_id:
+                # 通过 package_id 查找
+                package = AgentPackage.objects.filter(
+                    id=package_id,
+                    is_active=True,
+                    package_type=package_type,
+                    os_type=agent.host.os_type
+                ).first()
+                if not package:
+                    return SycResponse.error(message=f"指定的 {agent.get_agent_type_display()} 安装包不存在或不可用")
+            elif target_version:
+                # 通过 version 查找
+                package = AgentPackage.objects.filter(
+                    version=target_version,
+                    is_active=True,
+                    package_type=package_type,
+                    os_type=agent.host.os_type
+                ).first()
+                if not package:
+                    return SycResponse.error(message=f"未找到 {agent.get_agent_type_display()} 版本 {target_version} 的安装包")
+            else:
+                # 使用默认版本（最新版本）
+                package = AgentPackage.objects.filter(
+                    is_default=True,
+                    is_active=True,
+                    package_type=package_type,
+                    os_type=agent.host.os_type
+                ).first()
+                if not package:
+                    return SycResponse.error(message=f"未找到 {agent.get_agent_type_display()} 的默认安装包")
+
+            # 检查版本是否相同
+            if agent.version == package.version:
+                return SycResponse.error(message=f"{agent.get_agent_type_display()} 已是目标版本 {package.version}")
+
+            # 根据 agent_type 选择不同的升级方式
+            if package_type == 'agent':
+                # Agent 升级：通过 agent-server 下发升级指令
+                server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
+                if not server_base:
+                    return SycResponse.error(message="未配置 agent-server，无法下发升级指令")
+
+                api_url = f"{server_base}/api/agents/{agent.host_id}/upgrade"
+                client = AgentServerClient.from_settings()
+                scope = AgentExecutionService._get_agent_server_scope(agent)
+                headers = {}
+                if scope:
+                    headers["X-Scope"] = scope
+
+                payload = {
+                    "target_version": package.version,
+                    "download_url": package.download_url,
+                    "md5_hash": package.md5_hash,
+                    "sha256_hash": package.sha256_hash,
+                }
+
+                resp = client.post(api_url, json=payload, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    AgentService.audit(
+                        request.user,
+                        "upgrade_agent",
+                        agent,
+                        request=request,
+                        extra_data={"from_version": agent.version, "to_version": package.version}
+                    )
+                    return SycResponse.success(
+                        content=resp.json(),
+                        message=f"升级指令已下发，Agent 将从 {agent.version} 升级到 {package.version}"
+                    )
+                logger.error("升级 agent 失败 %s %s", resp.status_code, resp.text)
+                return SycResponse.error(message=f"升级失败: HTTP {resp.status_code}")
+
+            elif package_type == 'agent-server':
+                # Agent-Server 升级：直接调用 agent-server 自身的升级接口
+                # Agent-Server 的 endpoint 字段存储的是它的监听地址
+                agent_server_url = agent.endpoint
+                if not agent_server_url:
+                    return SycResponse.error(message="Agent-Server 未配置 endpoint，无法下发升级指令")
+
+                # 如果 endpoint 只是地址，需要构建完整 URL
+                if not agent_server_url.startswith('http'):
+                    agent_server_url = f"http://{agent_server_url}"
+
+                api_url = f"{agent_server_url}/api/self/upgrade"
+                client = AgentServerClient.from_settings()
+
+                payload = {
+                    "target_version": package.version,
+                    "download_url": package.download_url,
+                    "md5_hash": package.md5_hash,
+                    "sha256_hash": package.sha256_hash,
+                }
+
+                resp = client.post(api_url, json=payload, headers={}, timeout=10)
+                if resp.status_code == 200:
+                    AgentService.audit(
+                        request.user,
+                        "upgrade_agent_server",
+                        agent,
+                        request=request,
+                        extra_data={"from_version": agent.version, "to_version": package.version}
+                    )
+                    return SycResponse.success(
+                        content=resp.json(),
+                        message=f"升级指令已下发，Agent-Server 将从 {agent.version} 升级到 {package.version}"
+                    )
+                logger.error("升级 agent-server 失败 %s %s", resp.status_code, resp.text)
+                return SycResponse.error(message=f"升级失败: HTTP {resp.status_code}")
+
+            else:
+                return SycResponse.error(message=f"不支持的 agent_type: {package_type}")
+
         except Exception as exc:  # noqa: BLE001
-            logger.error("管控agent异常: %s", exc, exc_info=True)
-            return SycResponse.error(message=f"管控异常: {exc}")
+            logger.error("升级 agent 异常: %s", exc, exc_info=True)
+            return SycResponse.error(message=f"升级异常: {exc}")
 
     def destroy(self, request, *args, **kwargs):
         """删除agent（仅允许删除 pending 状态的 agent）"""

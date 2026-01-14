@@ -149,3 +149,29 @@ type PushLogsRequest struct {
 	TaskID string     `json:"task_id"`
 	Logs   []LogEntry `json:"logs"`
 }
+
+// ControlRequest Agent 控制请求
+type ControlRequest struct {
+	Action string `json:"action"` // start/stop/restart
+	Reason string `json:"reason,omitempty"`
+}
+
+// ControlResponse Agent 控制响应
+type ControlResponse struct {
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
+// UpgradeRequest Agent 升级请求
+type UpgradeRequest struct {
+	TargetVersion string `json:"target_version"`
+	DownloadURL   string `json:"download_url"`
+	MD5Hash       string `json:"md5_hash,omitempty"`
+	SHA256Hash    string `json:"sha256_hash,omitempty"`
+}
+
+// UpgradeResponse Agent 升级响应
+type UpgradeResponse struct {
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}

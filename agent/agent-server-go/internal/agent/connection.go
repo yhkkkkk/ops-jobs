@@ -197,6 +197,44 @@ func (c *Connection) GetScope() string {
 	return c.Scope
 }
 
+// SendControl 发送控制消息到 Agent
+func (c *Connection) SendControl(action, reason string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return ErrConnectionClosed
+	}
+
+	msg := api.WebSocketMessage{
+		Type: "control",
+		Payload: map[string]interface{}{
+			"action": action,
+			"reason": reason,
+		},
+	}
+	return c.Conn.WriteJSON(msg)
+}
+
+// SendUpgrade 发送升级消息到 Agent
+func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return ErrConnectionClosed
+	}
+
+	msg := api.WebSocketMessage{
+		Type: "upgrade",
+		Payload: map[string]interface{}{
+			"target_version": targetVersion,
+			"download_url":   downloadURL,
+			"md5_hash":       md5Hash,
+			"sha256_hash":    sha256Hash,
+		},
+	}
+	return c.Conn.WriteJSON(msg)
+}
+
 // AddRunningTask registers a task as running for this connection (thread-safe).
 func (c *Connection) AddRunningTask(task *api.TaskSpec) {
 	if task == nil || task.ID == "" {

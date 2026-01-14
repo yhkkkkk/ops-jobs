@@ -164,6 +164,10 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		api.POST("/agents/:id/tasks/:task_id/cancel", s.handleCancelTask)
 		// 批量取消指定 Agent 的任务
 		api.POST("/agents/:id/tasks/cancel/batch", s.handleCancelTasksBatch)
+		// 控制指定 Agent（start/stop/restart）
+		api.POST("/agents/:id/control", s.handleAgentControl)
+		// 升级指定 Agent
+		api.POST("/agents/:id/upgrade", s.handleAgentUpgrade)
 		// 任务队列统计信息
 		api.GET("/stats/queues", func(c *gin.Context) {
 			metrics.HandleQueueStats(c, s.taskQueue)
@@ -176,6 +180,10 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		api.GET("/metrics", func(c *gin.Context) {
 			metrics.HandleOverview(c, s.agentManager, s.cfg, s.taskQueue)
 		})
+		// Agent-Server 自我控制
+		api.POST("/self/control", s.handleSelfControl)
+		// Agent-Server 自我升级
+		api.POST("/self/upgrade", s.handleSelfUpgrade)
 	}
 }
 

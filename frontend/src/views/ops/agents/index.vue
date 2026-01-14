@@ -242,6 +242,29 @@
               发Token
             </a-button>
             <a-button
+            v-if="((record.computed_status || record.status) === 'online') && record.is_version_outdated"
+              type="text"
+              status="warning"
+              size="small"
+              @click="handleUpgradeAgent(record)"
+            >
+              <template #icon>
+                <icon-arrow-up />
+              </template>
+              升级
+            </a-button>
+            <a-button
+            v-if="(record.computed_status || record.status) === 'online'"
+              type="text"
+              size="small"
+              @click="handleRestartAgent(record)"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              重启
+            </a-button>
+            <a-button
             v-if="((record.computed_status || record.status) !== 'disabled') && ((record.computed_status || record.status) !== 'pending')"
               type="text"
               status="warning"
@@ -1106,6 +1129,55 @@ const handleEnable = async (agent: Agent) => {
     const errorMsg = error?.response?.data?.message || error?.message || '启用失败'
     Message.error(errorMsg)
   }
+}
+
+// 重启 Agent
+const handleRestartAgent = (agent: Agent) => {
+  Modal.confirm({
+    title: '确认重启',
+    content: `确定要重启 Agent (${agent.host.name}) 吗？重启期间 Agent 将短暂离线。`,
+    okText: '确认重启',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await agentsApi.controlAgent(agent.id, {
+          action: 'restart',
+          reason: '用户手动重启'
+        })
+        Message.success('重启指令已下发，Agent 将在几秒内重启')
+        // 延迟刷新，等待 Agent 重启完成
+        setTimeout(() => fetchAgents(), 3000)
+      } catch (error: any) {
+        console.error('重启失败:', error)
+        const errorMsg = error?.response?.data?.message || error?.message || '重启失败'
+        Message.error(errorMsg)
+      }
+    }
+  })
+}
+
+// 升级 Agent
+const handleUpgradeAgent = (agent: Agent) => {
+  Modal.confirm({
+    title: '确认升级',
+    content: `确定要升级 Agent (${agent.host.name}) 吗？\n\n当前版本: ${agent.version}\n期望版本: ${agent.expected_min_version || '最新版本'}\n\n升级期间 Agent 将短暂离线。`,
+    okText: '确认升级',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await agentsApi.upgradeAgent(agent.id, {
+          target_version: agent.expected_min_version,
+          confirmed: true
+        })
+        Message.success('升级指令已下发，Agent 将在几秒内完成升级')
+        setTimeout(() => fetchAgents(), 5000)
+      } catch (error: any) {
+        console.error('升级失败:', error)
+        const errorMsg = error?.response?.data?.message || error?.message || '升级失败'
+        Message.error(errorMsg)
+      }
+    }
+  })
 }
 
 // 查看安装记录

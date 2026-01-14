@@ -144,6 +144,8 @@ func NewAgent(cfg *config.Config) *Agent {
 		wsClient := wsclient.NewClient(cfg.Connection.AgentServerURL, cfg.Identification.AgentToken)
 		wsClient.SetOnTask(agent.handleWebSocketTask)
 		wsClient.SetOnCancel(agent.handleWebSocketCancel)
+		wsClient.SetOnControl(agent.handleWebSocketControl)
+		wsClient.SetOnUpgrade(agent.handleWebSocketUpgrade)
 		agent.wsClient = wsClient
 	}
 

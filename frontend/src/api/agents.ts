@@ -121,6 +121,25 @@ export const agentsApi = {
     return http.post(`/agents/${id}/disable/`, data)
   },
 
+  // 控制 Agent（重启/启动/停止）
+  controlAgent(id: number, data: { action: 'start' | 'stop' | 'restart'; reason?: string }): Promise<{
+    message: string
+    status: string
+  }> {
+    return http.post(`/agents/${id}/control/`, data)
+  },
+
+  // 升级 Agent
+  upgradeAgent(id: number, data: {
+    target_version?: string
+    package_id?: number
+    confirmed: boolean
+  }): Promise<{
+    message: string
+  }> {
+    return http.post(`/agents/${id}/upgrade/`, data)
+  },
+
   // 批量禁用 Agent
   batchDisable(data: BatchOperationParams): Promise<{ count: number }> {
     return http.post('/agents/batch_disable/', data)

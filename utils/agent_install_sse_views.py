@@ -247,5 +247,3 @@ class AgentUninstallProgressSSEView(AgentOperationSSEView):
         """延迟导入避免循环依赖"""
         from apps.agents.models import AgentUninstallRecord
         return AgentUninstallRecord
-
-

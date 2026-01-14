@@ -53,8 +53,10 @@ type Client struct {
 	pendingTTL       time.Duration
 	pendingMax       int
 	// 回调函数
-	onTask   func(*api.TaskSpec)
-	onCancel func(string)
+	onTask    func(*api.TaskSpec)
+	onCancel  func(string)
+	onControl func(map[string]interface{})
+	onUpgrade func(map[string]interface{})
 }
 
 // SendMessage 发送一条协议消息（用于 outbox 冲刷等场景）
@@ -148,6 +150,16 @@ func (c *Client) SetOnTask(fn func(*api.TaskSpec)) {
 // SetOnCancel 设置任务取消回调
 func (c *Client) SetOnCancel(fn func(string)) {
 	c.onCancel = fn
+}
+
+// SetOnControl 设置控制消息回调
+func (c *Client) SetOnControl(fn func(map[string]interface{})) {
+	c.onControl = fn
+}
+
+// SetOnUpgrade 设置升级消息回调
+func (c *Client) SetOnUpgrade(fn func(map[string]interface{})) {
+	c.onUpgrade = fn
 }
 
 // SetOverrideURL 指定完整的 WebSocket 连接地址（用于 Agent-Server 返回的 ws_url）
@@ -312,6 +324,14 @@ func (c *Client) handleMessage(msg Message) {
 	case constants.MessageTypeAck:
 		if msg.AckID != "" {
 			c.removePending(msg.AckID)
+		}
+	case "control":
+		if msg.Payload != nil && c.onControl != nil {
+			c.onControl(msg.Payload)
+		}
+	case "upgrade":
+		if msg.Payload != nil && c.onUpgrade != nil {
+			c.onUpgrade(msg.Payload)
 		}
 	}
 }

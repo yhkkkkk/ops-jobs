@@ -673,3 +673,22 @@ class AgentControlSerializer(serializers.Serializer):
         max_length=255,
         help_text="可选备注"
     )
+
+
+class AgentUpgradeSerializer(serializers.Serializer):
+    """Agent 升级请求序列化器"""
+
+    target_version = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=50,
+        help_text="目标版本号，留空则升级到最新版本"
+    )
+    package_id = serializers.IntegerField(
+        required=False,
+        help_text="指定安装包ID，优先于 target_version"
+    )
+    confirmed = serializers.BooleanField(
+        required=True,
+        help_text="二次确认标志"
+    )
