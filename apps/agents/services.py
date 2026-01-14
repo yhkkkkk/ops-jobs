@@ -915,9 +915,11 @@ exit 1
                     host=host,
                     script_content=uninstall_script,
                     script_type=script_type,
-                    connection_timeout=5,
                     timeout=timeout,
-                    account_id=account_id
+                    account_id=account_id,
+                    task_id=uninstall_task_id,
+                    log_stream_key=install_log_stream,
+                    connection_timeout=5,
                 )
 
                 if exec_result.get('success'):
