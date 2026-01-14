@@ -566,12 +566,13 @@
       </a-tabs>
     </a-drawer>
 
-    <!-- 卸载 Agent 对话框 -->
-    <a-modal
-      v-model:visible="uninstallModalVisible"
+    <!-- 卸载 Agent 抽屉 -->
+    <a-drawer
+      v-model:visible="uninstallDrawerVisible"
       title="卸载 Agent"
       width="900px"
       :footer="false"
+      unmount-on-close
     >
       <a-tabs v-model:active-key="uninstallTab">
         <a-tab-pane key="select" title="选择 Agent">
@@ -664,7 +665,7 @@
           </div>
         </a-tab-pane>
       </a-tabs>
-    </a-modal>
+    </a-drawer>
   </div>
 </template>
 
@@ -744,7 +745,7 @@ const installProgress = ref<{
 const sseEventSource = ref<any | null>(null)
 
 // 卸载相关
-const uninstallModalVisible = ref(false)
+const uninstallDrawerVisible = ref(false)
 const uninstallTab = ref('select')
 const uninstallForm = reactive({
   agent_ids: [] as number[],
@@ -1114,7 +1115,7 @@ const handleViewInstallRecords = () => {
 
 // 卸载 Agent
 const handleUninstallAgent = () => {
-  uninstallModalVisible.value = true
+  uninstallDrawerVisible.value = true
   uninstallTab.value = 'select'
   uninstallForm.agent_ids = []
   // 重置进度
@@ -1170,8 +1171,8 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
   // 获取 token
   const token = getAccessToken()
   // 使用相对路径，因为 SSE 请求会通过代理
-  // backend route is /api/realtime/sse/agent-install/<id>/
-  const sseUrl = buildSseUrl(`agent-install/${uninstallTaskId}/`)
+  // backend route is /api/realtime/sse/agent-uninstall/<id>/
+  const sseUrl = buildSseUrl(`agent-uninstall/${uninstallTaskId}/`)
 
   // 使用 sse.js 建立连接并通过 Authorization header 认证（比把 token 放在 URL 更安全）
   const eventSource = new SSE(sseUrl, {
@@ -1321,7 +1322,7 @@ const handleBatchUninstall = async () => {
           }
 
           // 刷新列表
-          uninstallModalVisible.value = false
+          uninstallDrawerVisible.value = false
           fetchAgents()
         }
       } catch (error: any) {
