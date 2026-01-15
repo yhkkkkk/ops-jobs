@@ -102,6 +102,27 @@
             </a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="创建者">
+          <a-select
+            v-model="searchForm.created_by"
+            placeholder="请选择创建者"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 120px"
+          >
+            <a-option
+              v-for="user in availableUsers"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="收藏">
+          <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+        </a-form-item>
         <a-form-item class="search-actions">
           <a-space>
             <a-button type="primary" @click="handleSearch">
@@ -132,6 +153,21 @@
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
+        <template #name="{ record }">
+          <div class="template-name-cell">
+            <a-button
+              type="text"
+              size="mini"
+              class="favorite-btn"
+              @click.stop="toggleFavorite(record.id)"
+            >
+              <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
+              <icon-star v-else class="favorite-icon" />
+            </a-button>
+            <a-link @click="handleView(record)" class="template-link">{{ record.name }}</a-link>
+          </div>
+        </template>
+
         <template #script_type="{ record }">
           <a-tag :color="getScriptTypeColor(record.script_type)">
             {{ getScriptTypeText(record.script_type) }}
@@ -316,7 +352,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { scriptTemplateApi } from '@/api/ops'
+import { scriptTemplateApi, favoriteApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import dayjs from 'dayjs'
@@ -335,10 +371,68 @@ const searchForm = reactive({
   script_type: '',
   category: '',
   tags: [] as string[],
+  favorites_only: false,
+  created_by: undefined as number | undefined
 })
 
 // 可用标签列表
 const availableTags = ref<string[]>([])
+
+// 可用用户列表（创建者）
+const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
+
+// 收藏相关
+const favorites = reactive<Record<number, boolean>>({})
+
+// 加载收藏状态
+const loadFavoriteStatus = async () => {
+  try {
+    // 批量检查当前页面的收藏状态
+    const templateIds = templates.value.map(t => t.id)
+    if (templateIds.length === 0) return
+
+    const requests = templateIds.map(id =>
+      favoriteApi.check({
+        favorite_type: 'script_template',
+        object_id: id
+      }).catch(() => ({ data: { content: { is_favorited: false } } }))
+    )
+
+    const responses = await Promise.allSettled(requests)
+    const favoriteStatus: Record<number, boolean> = {}
+
+    responses.forEach((result, index) => {
+      const templateId = templateIds[index]
+      if (result.status === 'fulfilled') {
+        favoriteStatus[templateId] = result.value.is_favorited || false
+      } else {
+        favoriteStatus[templateId] = false
+      }
+    })
+
+    Object.assign(favorites, favoriteStatus)
+  } catch (e) {
+    console.error('加载收藏状态失败:', e)
+  }
+}
+
+const isFavorite = (id: number) => favorites[id] || false
+
+const toggleFavorite = async (id: number) => {
+  try {
+    const response = await favoriteApi.toggle({
+      favorite_type: 'script_template',
+      object_id: id,
+      category: 'personal'
+    })
+
+    favorites[id] = response.is_favorited
+    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+  } catch (e) {
+    console.error('切换收藏状态失败:', e)
+    Message.error('操作失败')
+  }
+}
 
 // 分页配置
 const pagination = reactive({
@@ -356,7 +450,8 @@ const columns = [
     title: '模板名称',
     dataIndex: 'name',
     key: 'name',
-    width: 120,
+    slotName: 'name',
+    width: 280,
     ellipsis: true,
     tooltip: true
   },
@@ -435,6 +530,29 @@ const fetchAvailableTags = async () => {
   }
 }
 
+// 获取可用用户列表（创建者）
+const fetchAvailableUsers = async () => {
+  try {
+    // 这里可以调用用户API，或者从现有模板中提取唯一用户列表
+    // 暂时使用一个简化的实现，从当前模板列表中提取
+    if (templates.value.length > 0) {
+      const userMap = new Map<number, {id: number, username: string, name: string}>()
+      templates.value.forEach(template => {
+        if (template.created_by && template.created_by_name) {
+          userMap.set(template.created_by, {
+            id: template.created_by,
+            username: template.created_by_name,
+            name: template.created_by_name
+          })
+        }
+      })
+      availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+    }
+  } catch (error) {
+    console.error('获取用户列表失败:', error)
+  }
+}
+
 // 获取模板列表
 const fetchTemplates = async () => {
   loading.value = true
@@ -461,12 +579,25 @@ const fetchTemplates = async () => {
     console.log('调用模板列表API，参数:', params)
     const response = await scriptTemplateApi.getTemplates(params)
     console.log('获取到的模板列表响应:', response)
-    templates.value = response.results
-    pagination.total = response.total
+    let resultTemplates = response.results
+
+    // 前端过滤收藏
+    if (searchForm.favorites_only) {
+      resultTemplates = resultTemplates.filter(t => favorites[t.id])
+    }
+
+    templates.value = resultTemplates
+    pagination.total = searchForm.favorites_only ? resultTemplates.length : response.total
     console.log('设置模板列表数据:', templates.value)
 
     // 拉取可用标签（独立接口，保持选项完整）
     fetchAvailableTags()
+
+    // 拉取可用用户列表
+    fetchAvailableUsers()
+
+    // 异步加载收藏状态
+    loadFavoriteStatus()
   } catch (error) {
     console.error('获取模板列表失败:', error)
     Message.error('获取模板列表失败')
@@ -491,6 +622,8 @@ const handleReset = () => {
     script_type: '',
     category: '',
     tags: [],
+    favorites_only: false,
+    created_by: undefined
   })
   pagination.current = 1
   fetchTemplates()
@@ -759,6 +892,39 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+/* 模板名称单元格样式 */
+.template-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.template-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-btn {
+  padding: 0 4px;
+  min-width: auto;
+  flex-shrink: 0;
+}
+
+.favorite-icon {
+  font-size: 14px;
+  color: var(--color-text-3);
+  transition: color 0.2s;
+}
+
+.favorite-icon.active {
+  color: var(--color-warning-6);
+}
+
+.favorite-btn:hover .favorite-icon {
+  color: var(--color-warning-5);
 }
 
 /* 表格样式优化 */

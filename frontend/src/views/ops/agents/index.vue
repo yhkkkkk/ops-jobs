@@ -48,9 +48,9 @@
               </template>
               批量禁用 ({{ selectedDisableableCount }})
             </a-button>
-            <a-button 
+            <a-button
               v-if="selectedAgentIds.length > 0 && hasEnableableAgents"
-              type="primary" 
+              type="primary"
               status="success"
               @click="handleBatchEnable"
             >
@@ -58,6 +58,17 @@
                 <icon-check-circle />
               </template>
               批量启用 ({{ selectedEnableableCount }})
+            </a-button>
+            <a-button
+              v-if="selectedAgentIds.length > 0"
+              type="primary"
+              status="warning"
+              @click="handleBatchRestart"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              批量重启 ({{ selectedAgentIds.length }})
             </a-button>
             <a-button type="primary" status="danger" @click="handleUninstallAgent">
               <template #icon>
@@ -87,8 +98,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 统计信息卡片（已移除，使用运维台 Dashboard 提供更全面的 KPI） -->
 
     <!-- 搜索栏 -->
     <a-card class="mb-4">
@@ -134,11 +143,115 @@
       </a-form>
     </a-card>
 
+    <!-- 快速状态过滤器 -->
+    <a-card class="mb-4">
+      <div class="filter-section">
+        <div class="filter-title">快速筛选：</div>
+        <a-space wrap>
+          <!-- 基础状态筛选 -->
+          <a-button
+            :type="statusFilters.online ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('online')"
+          >
+            <template #icon>
+              <icon-check-circle />
+            </template>
+            在线Agent ({{ onlineCount }})
+          </a-button>
+          <a-button
+            :type="statusFilters.offline ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('offline')"
+          >
+            <template #icon>
+              <icon-close-circle />
+            </template>
+            离线Agent ({{ offlineCount }})
+          </a-button>
+          <a-button
+            :type="statusFilters.pending ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('pending')"
+          >
+            <template #icon>
+              <icon-clock-circle />
+            </template>
+            待激活 ({{ pendingCount }})
+          </a-button>
+          <a-button
+            :type="statusFilters.disabled ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('disabled')"
+          >
+            <template #icon>
+              <icon-stop />
+            </template>
+            已禁用 ({{ disabledCount }})
+          </a-button>
+          <!-- 分割线 -->
+          <a-divider direction="vertical" style="height: 24px; margin: 0 8px;" />
+          <!-- 问题状态筛选 -->
+          <a-button
+            :type="statusFilters.outdated ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('outdated')"
+          >
+            <template #icon>
+              <icon-arrow-up />
+            </template>
+            版本落后 ({{ outdatedCount }})
+          </a-button>
+          <a-button
+            :type="statusFilters.failed ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('failed')"
+          >
+            <template #icon>
+              <icon-exclamation-circle />
+            </template>
+            最近失败 ({{ failedCount }})
+          </a-button>
+          <a-button
+            :type="statusFilters.inactive ? 'primary' : 'outline'"
+            @click="toggleStatusFilter('inactive')"
+          >
+            <template #icon>
+              <icon-sleep />
+            </template>
+            长时间未活跃 ({{ inactiveCount }})
+          </a-button>
+          <!-- 清除筛选按钮 -->
+          <a-button
+            v-if="hasActiveFilters"
+            @click="clearAllFilters"
+            type="outline"
+            status="danger"
+          >
+            <template #icon>
+              <icon-refresh />
+            </template>
+            清除筛选
+          </a-button>
+        </a-space>
+
+        <!-- 筛选统计信息 -->
+        <div v-if="hasActiveFilters" class="filter-stats">
+          <a-space>
+            <span class="stats-text">
+              当前显示: {{ filteredAgents.length }} / 总计: {{ agents.length }} 个Agent
+            </span>
+            <a-tag v-if="statusFilters.online" color="green">在线: {{ filteredOnlineCount }}</a-tag>
+            <a-tag v-if="statusFilters.offline" color="red">离线: {{ filteredOfflineCount }}</a-tag>
+            <a-tag v-if="statusFilters.pending" color="orange">待激活: {{ filteredPendingCount }}</a-tag>
+            <a-tag v-if="statusFilters.disabled" color="gray">已禁用: {{ filteredDisabledCount }}</a-tag>
+            <a-tag v-if="statusFilters.outdated" color="purple">版本落后: {{ filteredOutdatedCount }}</a-tag>
+            <a-tag v-if="statusFilters.failed" color="red">最近失败: {{ filteredFailedCount }}</a-tag>
+            <a-tag v-if="statusFilters.inactive" color="yellow">未活跃: {{ filteredInactiveCount }}</a-tag>
+          </a-space>
+        </div>
+      </div>
+    </a-card>
+
     <!-- Agent 列表 -->
     <div class="table-container">
       <a-table
         :columns="columns"
-        :data="agents"
+        :data="filteredAgents"
         :loading="loading"
         :pagination="pagination"
         :row-selection="rowSelection"
@@ -192,6 +305,39 @@
             {{ formatTime(record.last_heartbeat_at) }}
           </span>
           <span v-else>-</span>
+        </template>
+
+        <template #resources="{ record }">
+          <div v-if="(record.computed_status || record.status) === 'online' && resourcesOverview[record.id]" class="resource-overview">
+            <a-tooltip :content="`CPU: ${resourcesOverview[record.id].cpu_usage?.toFixed(1) || '-'}%`">
+              <div class="resource-item">
+                <span class="resource-label">CPU</span>
+                <a-progress
+                  :percent="resourcesOverview[record.id].cpu_usage || 0"
+                  :status="getResourceStatus(resourcesOverview[record.id].cpu_usage)"
+                  size="small"
+                  :show-text="false"
+                  style="width: 60px"
+                />
+                <span class="resource-value">{{ resourcesOverview[record.id].cpu_usage?.toFixed(0) || '-' }}%</span>
+              </div>
+            </a-tooltip>
+            <a-tooltip :content="`内存: ${resourcesOverview[record.id].memory_usage?.toFixed(1) || '-'}%`">
+              <div class="resource-item">
+                <span class="resource-label">内存</span>
+                <a-progress
+                  :percent="resourcesOverview[record.id].memory_usage || 0"
+                  :status="getResourceStatus(resourcesOverview[record.id].memory_usage)"
+                  size="small"
+                  :show-text="false"
+                  style="width: 60px"
+                />
+                <span class="resource-value">{{ resourcesOverview[record.id].memory_usage?.toFixed(0) || '-' }}%</span>
+              </div>
+            </a-tooltip>
+          </div>
+          <span v-else-if="(record.computed_status || record.status) !== 'online'" class="text-gray">-</span>
+          <span v-else class="text-gray">加载中...</span>
         </template>
 
         <template #last_error_code="{ record }">
@@ -386,9 +532,9 @@
                     v-for="host in availableHosts"
                     :key="host.id"
                     :value="host.id"
-                  :label="`${host.name} (${host.ip_address})`"
+                    :label="getHostLabel(host)"
                   >
-                    {{ host.name }} ({{ host.ip_address }}) - {{ host.os_type_display }}
+                    {{ getHostLabel(host) }}
                   </a-option>
                 </a-select>
                 <template #extra>
@@ -444,11 +590,6 @@
                 <a-col :span="12">
                   <a-form-item label="SSH 超时(秒)">
                     <a-input-number v-model="installForm.ssh_timeout" :min="60" :max="900" style="width: 100%" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="允许覆盖已安装">
-                    <a-switch v-model="installForm.allow_reinstall" />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -695,6 +836,67 @@
         </a-tab-pane>
       </a-tabs>
     </a-drawer>
+
+    <!-- 批量操作进度抽屉 -->
+    <a-drawer
+      v-model:visible="batchOperationDrawerVisible"
+      :title="`${batchOperationProgress.operation}进度`"
+      width="900px"
+      :footer="false"
+      unmount-on-close
+    >
+      <div class="install-step">
+        <a-space direction="vertical" :size="16" style="width: 100%">
+          <!-- 进度信息 -->
+          <a-card>
+            <a-space direction="vertical" :size="12" style="width: 100%">
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <span>{{ batchOperationProgress.operation }}进度</span>
+                <a-tag :color="batchOperationProgress.status === 'completed' ? 'green' : batchOperationProgress.status === 'completed_with_errors' ? 'orange' : 'blue'">
+                  {{ batchOperationProgress.status === 'completed' ? '已完成' : batchOperationProgress.status === 'completed_with_errors' ? '部分失败' : '进行中' }}
+                </a-tag>
+              </div>
+              <a-progress
+                :percent="batchOperationProgress.total > 0 ? Math.round((batchOperationProgress.completed / batchOperationProgress.total) * 100) : 0"
+                :status="batchOperationProgress.status === 'completed' ? 'success' : batchOperationProgress.status === 'completed_with_errors' ? 'warning' : 'normal'"
+              />
+              <div style="display: flex; gap: 24px; font-size: 14px">
+                <span>总数: <strong>{{ batchOperationProgress.total }}</strong></span>
+                <span style="color: #00b42a">成功: <strong>{{ batchOperationProgress.success_count }}</strong></span>
+                <span style="color: #f53f3f">失败: <strong>{{ batchOperationProgress.failed_count }}</strong></span>
+                <span>已完成: <strong>{{ batchOperationProgress.completed }}</strong></span>
+              </div>
+              <div v-if="batchOperationProgress.message" style="color: #86909c; font-size: 12px">
+                {{ batchOperationProgress.message }}
+              </div>
+            </a-space>
+          </a-card>
+
+          <!-- 实时日志 -->
+          <a-card title="实时日志">
+            <div style="max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px">
+              <div
+                v-for="(log, index) in batchOperationProgress.logs"
+                :key="index"
+                :style="{
+                  padding: '4px 8px',
+                  marginBottom: '4px',
+                  backgroundColor: log.log_type === 'error' ? '#fff2f0' : log.log_type === 'info' ? '#f0f9ff' : '#f7f8fa',
+                  color: log.log_type === 'error' ? '#f53f3f' : '#1d2129'
+                }"
+              >
+                <span style="color: #86909c">[{{ log.timestamp }}]</span>
+                <span v-if="log.host_name" style="color: #165dff; margin-left: 8px">[{{ log.host_name }}]</span>
+                <span style="margin-left: 8px">{{ log.content }}</span>
+              </div>
+              <div v-if="batchOperationProgress.logs.length === 0" style="color: #86909c; text-align: center; padding: 20px">
+                暂无日志
+              </div>
+            </div>
+          </a-card>
+        </a-space>
+      </div>
+    </a-drawer>
   </div>
 </template>
 
@@ -702,7 +904,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { IconCopy, IconHistory, IconDelete } from '@arco-design/web-vue/es/icon'
+import { IconCopy, IconHistory, IconDelete, IconCloseCircle, IconArrowUp, IconExclamationCircle, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { agentsApi, packageApi, type Agent, type AgentPackage } from '@/api/agents'
 import { hostApi } from '@/api/ops'
 import dayjs from 'dayjs'
@@ -737,7 +939,6 @@ const installForm = reactive({
   heartbeat_timeout: 60,
   // 通用配置
   ssh_timeout: 300,
-  allow_reinstall: false,
   package_id: undefined as number | undefined,
   package_version: undefined as string | undefined,
 })
@@ -805,11 +1006,51 @@ const uninstallProgress = ref<{
 })
 const uninstallSseEventSource = ref<any | null>(null)
 
+// 批量操作相关
+const batchOperationProgress = ref<{
+  total: number
+  completed: number
+  success_count: number
+  failed_count: number
+  status: string
+  message: string
+  operation: string
+  logs: Array<{
+    host_name: string
+    host_ip: string
+    content: string
+    log_type: string
+    timestamp: string
+  }>
+}>({
+  total: 0,
+  completed: 0,
+  success_count: 0,
+  failed_count: 0,
+  status: 'idle',
+  message: '',
+  operation: '',
+  logs: []
+})
+const batchOperationSseEventSource = ref<any | null>(null)
+const batchOperationDrawerVisible = ref(false)
+
 // 搜索表单
 const searchForm = reactive({
   search: '',
   status: '',
   tags: [] as string[]
+})
+
+// 状态过滤器
+const statusFilters = reactive({
+  online: false,
+  offline: false,
+  pending: false,
+  disabled: false,
+  outdated: false,
+  failed: false,
+  inactive: false
 })
 
 // Token 表单
@@ -827,6 +1068,13 @@ const pagination = reactive({
   showTotal: true,
   showPageSize: true
 })
+
+// 资源概览数据
+const resourcesOverview = ref<Record<number, {
+  cpu_usage: number | null
+  memory_usage: number | null
+  load_avg_1m: number | null
+}>>({})
 
 // 统计信息
 const statistics = reactive({
@@ -881,6 +1129,117 @@ const hasEnableableAgents = computed(() => {
   return selectedEnableableCount.value > 0
 })
 
+// 状态过滤器相关计算属性
+const onlineCount = computed(() => {
+  return agents.value.filter(a => (a.computed_status || a.status) === 'online').length
+})
+
+const offlineCount = computed(() => {
+  return agents.value.filter(a => (a.computed_status || a.status) === 'offline').length
+})
+
+const pendingCount = computed(() => {
+  return agents.value.filter(a => a.status === 'pending').length
+})
+
+const disabledCount = computed(() => {
+  return agents.value.filter(a => a.status === 'disabled').length
+})
+
+const outdatedCount = computed(() => {
+  return agents.value.filter(a => a.is_version_outdated).length
+})
+
+const failedCount = computed(() => {
+  return agents.value.filter(a => a.last_error_code).length
+})
+
+const inactiveCount = computed(() => {
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  return agents.value.filter(a => {
+    if (!a.last_heartbeat_at) return true
+    const lastHeartbeat = new Date(a.last_heartbeat_at)
+    return lastHeartbeat < sevenDaysAgo
+  }).length
+})
+
+const hasActiveFilters = computed(() => {
+  return statusFilters.online || statusFilters.offline || statusFilters.pending ||
+         statusFilters.disabled || statusFilters.outdated || statusFilters.failed ||
+         statusFilters.inactive
+})
+
+// 筛选统计信息
+const filteredOnlineCount = computed(() => {
+  return filteredAgents.value.filter(a => (a.computed_status || a.status) === 'online').length
+})
+
+const filteredOfflineCount = computed(() => {
+  return filteredAgents.value.filter(a => (a.computed_status || a.status) === 'offline').length
+})
+
+const filteredPendingCount = computed(() => {
+  return filteredAgents.value.filter(a => a.status === 'pending').length
+})
+
+const filteredDisabledCount = computed(() => {
+  return filteredAgents.value.filter(a => a.status === 'disabled').length
+})
+
+const filteredOutdatedCount = computed(() => {
+  return filteredAgents.value.filter(a => a.is_version_outdated).length
+})
+
+const filteredFailedCount = computed(() => {
+  return filteredAgents.value.filter(a => a.last_error_code).length
+})
+
+const filteredInactiveCount = computed(() => {
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  return filteredAgents.value.filter(a => {
+    if (!a.last_heartbeat_at) return true
+    const lastHeartbeat = new Date(a.last_heartbeat_at)
+    return lastHeartbeat < sevenDaysAgo
+  }).length
+})
+
+// 过滤后的Agent列表
+const filteredAgents = computed(() => {
+  let filtered = agents.value
+
+  if (statusFilters.online) {
+    filtered = filtered.filter(a => (a.computed_status || a.status) === 'online')
+  }
+  if (statusFilters.offline) {
+    filtered = filtered.filter(a => (a.computed_status || a.status) === 'offline')
+  }
+  if (statusFilters.pending) {
+    filtered = filtered.filter(a => a.status === 'pending')
+  }
+  if (statusFilters.disabled) {
+    filtered = filtered.filter(a => a.status === 'disabled')
+  }
+  if (statusFilters.outdated) {
+    filtered = filtered.filter(a => a.is_version_outdated)
+  }
+  if (statusFilters.failed) {
+    filtered = filtered.filter(a => a.last_error_code)
+  }
+  if (statusFilters.inactive) {
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    filtered = filtered.filter(a => {
+      if (!a.last_heartbeat_at) return true
+      const lastHeartbeat = new Date(a.last_heartbeat_at)
+      return lastHeartbeat < sevenDaysAgo
+    })
+  }
+
+  return filtered
+})
+
 // Agent 类型显示文本
 const agentTypeMap: Record<string, string> = {
   agent: 'Agent',
@@ -918,6 +1277,12 @@ const columns = [
     dataIndex: 'last_heartbeat_at',
     slotName: 'last_heartbeat_at',
     width: 180
+  },
+  {
+    title: '资源使用',
+    dataIndex: 'resources',
+    slotName: 'resources',
+    width: 200
   },
   {
     title: '错误码',
@@ -974,6 +1339,14 @@ const formatTime = (time: string) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 }
 
+// 获取资源使用状态颜色
+const getResourceStatus = (usage: number | null | undefined): 'success' | 'warning' | 'danger' | 'normal' => {
+  if (usage === null || usage === undefined) return 'normal'
+  if (usage >= 90) return 'danger'
+  if (usage >= 70) return 'warning'
+  return 'success'
+}
+
 // 获取 Agent 列表
 const fetchAgents = async () => {
   loading.value = true
@@ -1002,6 +1375,8 @@ const fetchAgents = async () => {
       pagination.total = response.total || 0
       // 更新统计信息
       updateStatistics()
+      // 获取在线 Agent 的资源概览
+      fetchResourcesOverview()
     } else {
       agents.value = []
       pagination.total = 0
@@ -1018,6 +1393,29 @@ const fetchAgents = async () => {
   }
 }
 
+// 获取资源概览（用于列表展示）
+const fetchResourcesOverview = async () => {
+  try {
+    // 获取在线 Agent 的 ID 列表
+    const onlineAgentIds = agents.value
+      .filter(a => (a.computed_status || a.status) === 'online')
+      .map(a => a.id)
+
+    if (onlineAgentIds.length === 0) {
+      resourcesOverview.value = {}
+      return
+    }
+
+    const response = await agentsApi.getResourcesOverview(onlineAgentIds)
+    if (response && response.resources) {
+      resourcesOverview.value = response.resources
+    }
+  } catch (error) {
+    console.error('获取资源概览失败:', error)
+    // 不显示错误消息，静默失败
+  }
+}
+
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
@@ -1030,6 +1428,24 @@ const handleReset = () => {
   searchForm.status = ''
   searchForm.tags = []
   handleSearch()
+}
+
+// 状态过滤器处理
+const toggleStatusFilter = (filterType: keyof typeof statusFilters) => {
+  statusFilters[filterType] = !statusFilters[filterType]
+  // 过滤器改变时重置分页
+  pagination.current = 1
+}
+
+const clearAllFilters = () => {
+  statusFilters.online = false
+  statusFilters.offline = false
+  statusFilters.pending = false
+  statusFilters.disabled = false
+  statusFilters.outdated = false
+  statusFilters.failed = false
+  statusFilters.inactive = false
+  pagination.current = 1
 }
 
 // 分页变化
@@ -1434,7 +1850,6 @@ const handleInstallAgent = () => {
   installForm.max_connections = 1000
   installForm.heartbeat_timeout = 60
   installForm.ssh_timeout = 300
-  installForm.allow_reinstall = false
   installForm.package_id = undefined
   installForm.package_version = undefined
   installScripts.value = null
@@ -1492,24 +1907,42 @@ const handleInstallTypeChange = () => {
   fetchAvailablePackages()
 }
 
-// 获取可用主机列表（根据安装类型动态过滤）
+// 获取可用主机列表（显示所有主机并标识Agent状态）
 const fetchAvailableHosts = async () => {
   try {
-    const response = await hostApi.getHosts({ page_size: 1000 })
-
-    const allHosts = (response.results || [])
-
-    // 按安装类型过滤：排除已存在相同类型 Agent 的主机（避免重复安装同类型）
-    const sameTypeHostIds = new Set(
-      agents.value
-        .filter(a => a && a.host && (a.agent_type ?? 'agent') === installForm.install_type) // 如果后端未返回 agent_type，则默认 'agent'
-        .map(a => a.host.id)
-    )
-    availableHosts.value = allHosts.filter((h: any) => !sameTypeHostIds.has(h.id))
+    // 获取主机和Agent状态信息
+    const response = await agentsApi.getHostAgentStatus()
+    availableHosts.value = response.hosts || []
   } catch (error) {
     console.error('获取主机列表失败:', error)
     Message.error('获取主机列表失败')
   }
+}
+
+// 获取主机标签（包含Agent状态）
+const getHostLabel = (host: any) => {
+  const baseLabel = `${host.name} (${host.ip_address})`
+  const targetType = installForm.install_type === 'agent-server' ? 'Agent-Server' : 'Agent'
+
+  // 已安装的主机：显示实际 agent 类型、版本和状态
+  if (host.agent_status) {
+    const statusText = host.computed_status_display || (
+      host.computed_status === 'online' ? '在线' :
+      host.computed_status === 'offline' ? '离线' :
+      host.computed_status === 'pending' ? '待激活' :
+      host.computed_status || host.agent_status
+    )
+
+    const typeText = host.agent_type_display
+      || (host.agent_type === 'agent-server' ? 'Agent-Server' : 'Agent')
+
+    const versionText = host.agent_version ? ` v${host.agent_version}` : ''
+
+    return `${baseLabel} - ${typeText}${versionText} (${statusText})`
+  }
+
+  // 未安装：根据当前选择的安装类型显示更明确的提示（Agent / Agent-Server）
+  return `${baseLabel} - 未安装${targetType}`
 }
 
 // 主机选项过滤
@@ -1728,74 +2161,99 @@ const handleBatchInstall = async () => {
     return
   }
 
+  // 检查是否有需要覆盖的Agent
+  const hostsToReinstall = availableHosts.value.filter((host: any) =>
+    installForm.host_ids.includes(host.id) &&
+    host.agent_type === installForm.install_type &&
+    host.agent_status === 'online'
+  )
+
   const installTarget = installForm.install_type === 'agent' ? 'Agent' : 'Agent-Server'
-  Modal.confirm({
-    title: `确认批量安装${installTarget}`,
-    content: `确定要在 ${installForm.host_ids.length} 台主机上安装 ${installTarget} 吗？`,
-    onOk: async () => {
-      installing.value = true
-      try {
-        const params: any = {
-          host_ids: installForm.host_ids,
-          install_type: installForm.install_type,
-          ssh_timeout: installForm.ssh_timeout,
-          allow_reinstall: installForm.allow_reinstall,
-          package_id: installForm.package_id,
-          package_version: installForm.package_version,
-          confirmed: true,
-        }
 
-        if (installForm.install_type === 'agent') {
-          params.install_mode = installForm.install_mode
-          params.agent_server_url = installForm.agent_server_url
-          // 备地址已移除，不传递
-          params.ws_backoff_initial_ms = installForm.ws_backoff_initial_ms
-          params.ws_backoff_max_ms = installForm.ws_backoff_max_ms
-          params.ws_max_retries = installForm.ws_max_retries
-        } else if (installForm.install_type === 'agent-server') {
-          params.agent_server_listen_addr = installForm.agent_server_listen_addr
-          params.max_connections = installForm.max_connections
-          params.heartbeat_timeout = installForm.heartbeat_timeout
-        }
-
-        const response = await agentsApi.batchInstall(params)
-
-        // 如果有 install_task_id，连接sse查看实时进度
-        if (response.install_task_id) {
-          connectInstallProgressSSE(response.install_task_id)
-          Message.info('安装已启动，正在查看实时进度...')
-        } else {
-          // 如果没有sse，显示最终结果
-          Message.success(
-            `批量安装完成：成功 ${response.success_count} 个，失败 ${response.failed_count} 个`
-          )
-
-          // 显示详细结果
-          if (response.failed_count > 0) {
-            const failedHosts = response.results
-              .filter((r: any) => !r.success)
-              .map((r: any) => `${r.host_name}: ${r.message}`)
-              .join('\n')
-            Modal.warning({
-              title: '部分主机安装失败',
-              content: failedHosts,
-              width: 600,
-            })
-          }
-
-          // 刷新列表
-          installModalVisible.value = false
-          fetchAgents()
-        }
-      } catch (error: any) {
-        console.error('批量安装失败:', error)
-        const errorMsg = error?.response?.data?.message || error?.message || '批量安装失败'
-        Message.error(errorMsg)
-      } finally {
-        installing.value = false
+  if (hostsToReinstall.length > 0) {
+    // 有需要覆盖的Agent，先确认覆盖
+    Modal.confirm({
+      title: `确认覆盖安装${installTarget}`,
+      content: `${hostsToReinstall.length} 台主机已安装${installTarget}，确定要覆盖安装吗？此操作将停止现有服务并重新安装。`,
+      onOk: () => {
+        performInstall(true) // allow_reinstall = true
       }
-    },
-  })
+    })
+  } else {
+    // 没有需要覆盖的Agent，直接安装
+    Modal.confirm({
+      title: `确认批量安装${installTarget}`,
+      content: `确定要在 ${installForm.host_ids.length} 台主机上安装 ${installTarget} 吗？`,
+      onOk: () => {
+        performInstall(false) // allow_reinstall = false
+      }
+    })
+  }
+}
+
+// 执行安装
+const performInstall = async (allowReinstall: boolean) => {
+  installing.value = true
+  try {
+    const params: any = {
+      host_ids: installForm.host_ids,
+      install_type: installForm.install_type,
+      ssh_timeout: installForm.ssh_timeout,
+      allow_reinstall: allowReinstall, // 使用传递的参数
+      package_id: installForm.package_id,
+      package_version: installForm.package_version,
+      confirmed: true,
+    }
+
+    if (installForm.install_type === 'agent') {
+      params.install_mode = installForm.install_mode
+      params.agent_server_url = installForm.agent_server_url
+      // 备地址已移除，不传递
+      params.ws_backoff_initial_ms = installForm.ws_backoff_initial_ms
+      params.ws_backoff_max_ms = installForm.ws_backoff_max_ms
+      params.ws_max_retries = installForm.ws_max_retries
+    } else if (installForm.install_type === 'agent-server') {
+      params.agent_server_listen_addr = installForm.agent_server_listen_addr
+      params.max_connections = installForm.max_connections
+      params.heartbeat_timeout = installForm.heartbeat_timeout
+    }
+
+    const response = await agentsApi.batchInstall(params)
+
+    // 如果有 install_task_id，连接sse查看实时进度
+    if (response.install_task_id) {
+      connectInstallProgressSSE(response.install_task_id)
+      Message.info('安装已启动，正在查看实时进度...')
+    } else {
+      // 如果没有sse，显示最终结果
+      Message.success(
+        `批量安装完成：成功 ${response.success_count} 个，失败 ${response.failed_count} 个`
+      )
+
+      // 显示详细结果
+      if (response.failed_count > 0) {
+        const failedHosts = response.results
+          .filter((r: any) => !r.success)
+          .map((r: any) => `${r.host_name}: ${r.message}`)
+          .join('\n')
+        Modal.warning({
+          title: '部分主机安装失败',
+          content: failedHosts,
+          width: 600,
+        })
+      }
+
+      // 刷新列表
+      installModalVisible.value = false
+      fetchAgents()
+    }
+  } catch (error: any) {
+    console.error('批量安装失败:', error)
+    const errorMsg = error?.response?.data?.message || error?.message || '批量安装失败'
+    Message.error(errorMsg)
+  } finally {
+    installing.value = false
+  }
 }
 
 // 复制脚本
@@ -2043,6 +2501,45 @@ const handleBatchEnable = async () => {
   }
 }
 
+// 批量重启 Agent
+const handleBatchRestart = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请先选择要重启的 Agent')
+    return
+  }
+
+  try {
+    await Modal.confirm({
+      title: '确认批量重启',
+      content: `确定要重启选中的 ${selectedAgentIds.value.length} 个 Agent 吗？重启期间这些 Agent 将短暂离线。`,
+      onOk: async () => {
+        try {
+          const result = await agentsApi.batchRestart({
+            agent_ids: selectedAgentIds.value,
+            confirmed: true
+          })
+
+          // 如果有 batch_task_id，连接 SSE 查看实时进度
+          if (result.batch_task_id) {
+            connectBatchOperationSSE(result.batch_task_id, '重启')
+            Message.info('重启已启动，正在查看实时进度...')
+          } else {
+            // 如果没有 SSE，显示最终结果
+            Message.success(`批量重启已启动`)
+            selectedAgentIds.value = []
+            fetchAgents()
+          }
+        } catch (error: any) {
+          console.error('批量重启失败:', error)
+          Message.error(error?.message || '批量重启失败')
+        }
+      }
+    })
+  } catch (error) {
+    // 用户取消
+  }
+}
+
 const handleBatchDeletePending = async () => {
   if (selectedAgentIds.value.length === 0) {
     Message.warning('请至少选择一个 Agent')
@@ -2091,6 +2588,135 @@ const cleanupUninstallSSE = () => {
   }
 }
 
+// 连接批量操作进度 SSE
+const connectBatchOperationSSE = (batchTaskId: string, operation: string) => {
+  // 关闭之前的连接
+  if (batchOperationSseEventSource.value) {
+    batchOperationSseEventSource.value.close()
+  }
+
+  // 重置进度
+  batchOperationProgress.value = {
+    total: 0,
+    completed: 0,
+    success_count: 0,
+    failed_count: 0,
+    status: 'running',
+    message: '正在连接...',
+    operation: operation,
+    logs: []
+  }
+
+  // 获取 token
+  const token = getAccessToken()
+  // 使用相对路径，因为 SSE 请求会通过代理
+  // backend route is /api/realtime/sse/agent-batch/<id>/
+  const sseUrl = buildSseUrl(`agent-batch/${batchTaskId}/`)
+
+  // 使用 sse.js 建立连接并通过 Authorization header 认证
+  const eventSource = new SSE(sseUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    start: true,
+    debug: process.env.NODE_ENV === 'development',
+    autoReconnect: true,
+    reconnectDelay: 3000,
+    maxRetries: 3,
+    withCredentials: true
+  })
+  batchOperationSseEventSource.value = eventSource
+
+  // 定义批量操作终态集合
+  const batchTerminalStatuses = new Set(['completed', 'completed_with_errors', 'failed', 'success', 'error', 'stopped'])
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+
+      if (data.type === 'connection_established') {
+        batchOperationProgress.value.message = data.message || `已连接到${operation}进度流`
+        batchOperationProgress.value.status = 'running'
+      } else if (data.type === 'status') {
+        batchOperationProgress.value.total = data.total || data.total_hosts || 0
+        batchOperationProgress.value.completed = data.completed || 0
+        batchOperationProgress.value.success_count = data.success_count || data.success_hosts || 0
+        batchOperationProgress.value.failed_count = data.failed_count || data.failed_hosts || 0
+        batchOperationProgress.value.status = data.status || 'running'
+        batchOperationProgress.value.message = data.message || ''
+
+        // 检测终态：收到终态后主动关闭连接，避免自动重连
+        const statusValue = (data.status || '').toLowerCase()
+        if (batchTerminalStatuses.has(statusValue)) {
+          console.log(`${operation}任务已达终态: ${statusValue}，关闭 SSE 连接`)
+          // 禁用自动重连并关闭连接
+          try {
+            eventSource.autoReconnect = false
+            eventSource.close()
+          } catch (e) {
+            console.warn('关闭 SSE 连接失败:', e)
+          }
+          batchOperationSseEventSource.value = null
+          // 刷新 Agent 列表
+          fetchAgents()
+        }
+      } else if (data.type === 'log') {
+        batchOperationProgress.value.logs.push({
+          host_name: data.host_name || '',
+          host_ip: data.host_ip || '',
+          content: data.content || '',
+          log_type: data.log_type || 'info',
+          timestamp: data.timestamp || new Date().toISOString()
+        })
+        // 限制日志数量，保留最近 500 条
+        if (batchOperationProgress.value.logs.length > 500) {
+          batchOperationProgress.value.logs = batchOperationProgress.value.logs.slice(-500)
+        }
+      } else if (data.type === 'error') {
+        batchOperationProgress.value.status = 'error'
+        batchOperationProgress.value.message = data.message || '发生错误'
+        batchOperationProgress.value.logs.push({
+          host_name: '',
+          host_ip: '',
+          content: `错误: ${data.message}`,
+          log_type: 'error',
+          timestamp: new Date().toISOString()
+        })
+        // 关闭连接
+        try {
+          eventSource.autoReconnect = false
+          eventSource.close()
+        } catch (e) {}
+        batchOperationSseEventSource.value = null
+      }
+    } catch (error) {
+      console.error('解析 SSE 消息失败:', error)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('SSE 连接错误:', error)
+
+    // 检查是否已达终态，如果是则不需要标记为 error
+    const currentStatus = (batchOperationProgress.value.status || '').toLowerCase()
+    if (!batchTerminalStatuses.has(currentStatus)) {
+      // 只有在非终态时才标记为 error
+      if (batchOperationProgress.value.status === 'running') {
+        batchOperationProgress.value.status = 'error'
+        batchOperationProgress.value.message = '连接已断开'
+      }
+    }
+
+    // 禁用自动重连并关闭连接
+    try {
+      eventSource.autoReconnect = false
+      eventSource.close()
+    } catch (e) {}
+    batchOperationSseEventSource.value = null
+  }
+
+  // 打开批量操作进度抽屉
+  batchOperationDrawerVisible.value = true
+}
+
 // 关闭安装抽屉时按需刷新列表
 watch(installModalVisible, (visible, wasVisible) => {
   if (!visible && wasVisible && shouldRefreshAfterInstall.value) {
@@ -2112,10 +2738,19 @@ const cleanupSSE = () => {
   }
 }
 
+// 清理批量操作 SSE 连接
+const cleanupBatchOperationSSE = () => {
+  if (batchOperationSseEventSource.value) {
+    batchOperationSseEventSource.value.close()
+    batchOperationSseEventSource.value = null
+  }
+}
+
 // 组件卸载时清理 SSE 连接
 onBeforeUnmount(() => {
   cleanupSSE()
   cleanupUninstallSSE()
+  cleanupBatchOperationSSE()
 })
 </script>
 
@@ -2153,6 +2788,19 @@ onBeforeUnmount(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.filter-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-title {
+  font-weight: 500;
+  color: #1d2129;
+  white-space: nowrap;
 }
 
 .table-container {
@@ -2233,6 +2881,34 @@ onBeforeUnmount(() => {
   color: var(--color-text-3);
 }
 
+/* 资源使用概览样式 */
+.resource-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.resource-label {
+  width: 28px;
+  color: var(--color-text-3);
+  flex-shrink: 0;
+}
+
+.resource-value {
+  width: 32px;
+  text-align: right;
+  color: var(--color-text-2);
+  font-family: 'Courier New', monospace;
+  flex-shrink: 0;
+}
+
 /* 表格样式优化 */
 :deep(.arco-table) {
   /* 普通表头背景色 */
@@ -2257,6 +2933,31 @@ onBeforeUnmount(() => {
     background-color: transparent !important;
     box-shadow: none !important;
   }
+}
+
+/* 筛选器样式 */
+.filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filter-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-2);
+  margin: 0;
+}
+
+.filter-stats {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-2);
+}
+
+.stats-text {
+  font-size: 13px;
+  color: var(--color-text-3);
+  font-weight: 500;
 }
 </style>
 

@@ -18,10 +18,14 @@ from .serializers import (
     JobTemplateCreateSerializer,
     JobTemplateUpdateSerializer,
     ExecutionPlanCreateSerializer,
-    ExecutionPlanUpdateSerializer
+    ExecutionPlanUpdateSerializer,
+    UserFavoriteSerializer,
+    UserFavoriteCreateSerializer,
+    FavoriteToggleSerializer
 )
 from .filters import JobTemplateFilter, ExecutionPlanFilter
 from .sync_views import TemplateSyncMixin, ExecutionPlanSyncMixin
+from ..script_templates.models import UserFavorite
 
 
 class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
@@ -725,3 +729,111 @@ class JobStepViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(step_type=step_type)
 
         return queryset.select_related('template').order_by('order')
+
+
+class UserFavoriteViewSet(viewsets.ModelViewSet):
+    """用户收藏ViewSet"""
+    serializer_class = UserFavoriteSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        """只返回当前用户的收藏"""
+        return UserFavorite.objects.filter(user=self.request.user).select_related('user')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserFavoriteCreateSerializer
+        return UserFavoriteSerializer
+
+    @action(detail=False, methods=['post'], url_path='toggle')
+    def toggle_favorite(self, request):
+        """切换收藏状态"""
+        serializer = FavoriteToggleSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        favorite_type = serializer.validated_data['favorite_type']
+        object_id = serializer.validated_data['object_id']
+        category = serializer.validated_data.get('category', 'personal')
+        note = serializer.validated_data.get('note', '')
+
+        # 检查是否已收藏
+        favorite = UserFavorite.objects.filter(
+            user=request.user,
+            favorite_type=favorite_type,
+            object_id=object_id
+        ).first()
+
+        if favorite:
+            # 取消收藏
+            favorite.delete()
+            return SycResponse.success(
+                content={'is_favorited': False},
+                message="已取消收藏"
+            )
+        else:
+            # 添加收藏
+            favorite = UserFavorite.objects.create(
+                user=request.user,
+                favorite_type=favorite_type,
+                object_id=object_id,
+                category=category,
+                note=note
+            )
+            serializer = self.get_serializer(favorite)
+            return SycResponse.success(
+                content={
+                    'is_favorited': True,
+                    'favorite': serializer.data
+                },
+                message="已添加到收藏"
+            )
+
+    @action(detail=False, methods=['get'], url_path='check')
+    def check_favorite(self, request):
+        """检查收藏状态"""
+        favorite_type = request.query_params.get('favorite_type')
+        object_id = request.query_params.get('object_id')
+
+        if not favorite_type or not object_id:
+            return SycResponse.error(message="缺少参数 favorite_type 或 object_id")
+
+        try:
+            object_id = int(object_id)
+        except ValueError:
+            return SycResponse.error(message="object_id 必须是整数")
+
+        favorite = UserFavorite.objects.filter(
+            user=request.user,
+            favorite_type=favorite_type,
+            object_id=object_id
+        ).first()
+
+        return SycResponse.success(
+            content={
+                'is_favorited': favorite is not None,
+                'favorite': self.get_serializer(favorite).data if favorite else None
+            }
+        )
+
+    @action(detail=False, methods=['get'], url_path='by-category')
+    def get_by_category(self, request):
+        """按分类获取收藏"""
+        category = request.query_params.get('category')
+        favorite_type = request.query_params.get('favorite_type')
+
+        queryset = self.get_queryset()
+
+        if category:
+            queryset = queryset.filter(category=category)
+        if favorite_type:
+            queryset = queryset.filter(favorite_type=favorite_type)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return SycResponse.success(content=serializer.data)

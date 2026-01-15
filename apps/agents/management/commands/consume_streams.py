@@ -12,6 +12,7 @@ from django.core.management.base import BaseCommand
 
 from utils.log_consumer_service import StreamConsumerService, StreamConfig
 from apps.agents.execution_service import AgentExecutionService
+from apps.agents.models import AgentSystemResource
 from apps.executor.models import ExecutionLog
 import redis
 
@@ -32,6 +33,8 @@ class Command(BaseCommand):
         parser.add_argument("--result-group", default=getattr(settings, "RESULT_STREAM_GROUP", "control-plane"))
         parser.add_argument("--status-stream", default=getattr(settings, "STATUS_STREAM_KEY", "agent_status"))
         parser.add_argument("--status-group", default=getattr(settings, "STATUS_STREAM_GROUP", "control-plane"))
+        parser.add_argument("--agent-status-stream", default=getattr(settings, "AGENT_STATUS_STREAM_KEY", "agent_status"))
+        parser.add_argument("--agent-status-group", default=getattr(settings, "AGENT_STATUS_STREAM_GROUP", "control-plane"))
         parser.add_argument("--count", type=int, default=100)
         parser.add_argument("--block-ms", type=int, default=1000)
         parser.add_argument("--reclaim-interval", type=int, default=60)
@@ -89,6 +92,22 @@ class Command(BaseCommand):
                     consumer_name=consumer_name,
                     handler=self.handle_status,
                     dead_letter_key=f"{status_stream}:dlq",
+                    count=count,
+                    block_ms=block_ms,
+                    reclaim_idle_ms=reclaim_idle_ms,
+                    reclaim_count=reclaim_count,
+                )
+            )
+
+        agent_status_stream = options["agent_status_stream"]
+        if agent_status_stream:
+            configs.append(
+                StreamConfig(
+                    stream_key=agent_status_stream,
+                    group=options["agent_status_group"],
+                    consumer_name=consumer_name,
+                    handler=self.handle_agent_status,
+                    dead_letter_key=f"{agent_status_stream}:dlq",
                     count=count,
                     block_ms=block_ms,
                     reclaim_idle_ms=reclaim_idle_ms,
@@ -200,6 +219,106 @@ class Command(BaseCommand):
             return True
         except Exception as exc:
             logger.exception("处理状态消息失败", extra={"id": msg_id, "error": str(exc)})
+            return False
+
+    @staticmethod
+    def handle_agent_status(msg_id: str, fields: dict) -> bool:
+        """
+        处理Agent状态流消息（心跳和系统资源）
+        """
+        try:
+            # 获取Agent ID
+            agent_id = fields.get("agent_id") or fields.get("id")
+            if not agent_id:
+                logger.warning("Agent状态消息缺少agent_id", extra={"msg_id": msg_id, "fields": fields})
+                return True  # 不阻塞处理
+
+            # 获取时间戳
+            timestamp = fields.get("timestamp") or fields.get("last_heartbeat")
+            if not timestamp:
+                logger.warning("Agent状态消息缺少时间戳", extra={"msg_id": msg_id, "agent_id": agent_id})
+                return True
+
+            # 转换为datetime对象
+            if isinstance(timestamp, (int, float)):
+                # Unix时间戳
+                timestamp = datetime.fromtimestamp(timestamp, tz=timezone.get_current_timezone())
+            elif isinstance(timestamp, str):
+                try:
+                    # ISO格式字符串
+                    if timestamp.endswith('Z'):
+                        timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    else:
+                        timestamp = datetime.fromisoformat(timestamp)
+                    if timezone.is_naive(timestamp):
+                        timestamp = timezone.make_aware(timestamp)
+                except ValueError:
+                    logger.warning("无法解析时间戳字符串", extra={"msg_id": msg_id, "timestamp": timestamp})
+                    return True
+            else:
+                logger.warning("不支持的时间戳格式", extra={"msg_id": msg_id, "timestamp": timestamp})
+                return True
+
+            # 提取系统资源数据
+            system_data = fields.get("system", {})
+            # Redis 可能将嵌套 dict 序列化为 JSON 字符串
+            if isinstance(system_data, str):
+                try:
+                    system_data = json.loads(system_data)
+                except (json.JSONDecodeError, TypeError):
+                    system_data = {}
+
+            # 创建或更新AgentSystemResource记录
+            resource_data = {
+                'agent_id': int(agent_id),
+                'timestamp': timestamp,
+            }
+
+            # CPU信息
+            if 'cpu_usage' in system_data:
+                resource_data['cpu_usage'] = float(system_data['cpu_usage'])
+
+            # 内存信息
+            if 'memory' in system_data:
+                memory_info = system_data['memory']
+                if isinstance(memory_info, dict):
+                    resource_data['memory_total'] = memory_info.get('total')
+                    resource_data['memory_used'] = memory_info.get('used')
+                    resource_data['memory_usage'] = memory_info.get('usage')
+
+            # 磁盘信息
+            if 'disk' in system_data:
+                resource_data['disk_usage'] = system_data['disk']
+
+            # 负载信息
+            if 'load_avg' in system_data:
+                load_info = system_data['load_avg']
+                if isinstance(load_info, dict):
+                    resource_data['load_avg_1m'] = load_info.get('1m')
+                    resource_data['load_avg_5m'] = load_info.get('5m')
+                    resource_data['load_avg_15m'] = load_info.get('15m')
+
+            # 系统运行时间
+            if 'uptime' in system_data:
+                resource_data['uptime'] = system_data['uptime']
+
+            # 保存原始数据
+            resource_data['raw_data'] = system_data
+
+            # 创建记录
+            AgentSystemResource.objects.create(**resource_data)
+
+            logger.debug("保存Agent系统资源数据", extra={
+                "msg_id": msg_id,
+                "agent_id": agent_id,
+                "timestamp": timestamp.isoformat(),
+                "cpu_usage": resource_data.get('cpu_usage')
+            })
+
+            return True
+
+        except Exception as exc:
+            logger.exception("处理Agent状态消息失败", extra={"msg_id": msg_id, "error": str(exc)})
             return False
 
 

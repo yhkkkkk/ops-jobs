@@ -538,16 +538,21 @@ exit 1
             try:
                 # 为所有类型的Agent创建/检查记录（agent和agent-server都需要）
                 agent = None
-                # 检查是否已有相同类型的在线Agent
+                reinstall_required = False
+
+                # 检查是否已有Agent
                 if hasattr(host, 'agent') and host.agent:
-                    if host.agent.agent_type == install_type and host.agent.status == 'online' and not allow_reinstall:
-                        results.append({
-                            'host_id': host.id,
-                            'host_name': host.name,
-                            'success': False,
-                            'message': f'该主机已有在线 {host.agent.get_agent_type_display()}（allow_reinstall=false）'
-                        })
-                        continue
+                    if host.agent.agent_type == install_type and host.agent.status == 'online':
+                        if not allow_reinstall:
+                            results.append({
+                                'host_id': host.id,
+                                'host_name': host.name,
+                                'success': False,
+                                'message': f'该主机已有在线 {host.agent.get_agent_type_display()}，需要允许覆盖安装才能重新安装'
+                            })
+                            continue
+                        else:
+                            reinstall_required = True
 
                     # 根据安装类型设置不同的endpoint
                     endpoint = agent_server_url or ''
@@ -1066,3 +1071,462 @@ exit 1
             'failed_count': failed_count,
             'uninstall_task_id': uninstall_task_id
         }
+
+    @classmethod
+    def batch_restart_agents(cls, agent_ids: list, user, batch_task_id: str = None) -> Dict[str, Any]:
+        """
+        批量重启 Agent
+
+        Args:
+            agent_ids: Agent ID列表
+            user: 执行用户
+            batch_task_id: 批量操作任务ID（用于SSE进度推送）
+
+        Returns:
+            Dict[str, Any]: 操作结果
+        """
+        if not batch_task_id:
+            batch_task_id = str(uuid.uuid4())
+
+        results = []
+        total = len(agent_ids)
+        completed = 0
+        success_count = 0
+        failed_count = 0
+
+        batch_status_prefix = "agent_batch_status:"
+        batch_log_stream = "agent_batch_logs"
+
+        # 推送初始状态
+        realtime_log_service.push_status(batch_task_id, {
+            'status': 'running',
+            'total': total,
+            'completed': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'message': '开始批量重启 Agent'
+        }, stream_prefix=batch_status_prefix)
+
+        # 获取Agent列表
+        agents = Agent.objects.filter(id__in=agent_ids).select_related('host')
+
+        for agent in agents:
+            completed += 1
+
+            # 推送开始操作日志
+            realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                'host_name': agent.host.name,
+                'host_ip': agent.host.ip_address,
+                'log_type': 'info',
+                'content': f'开始重启 Agent ({agent.host.name})',
+                'step_name': '重启 Agent',
+                'step_order': 1
+            }, stream_key=batch_log_stream)
+
+            try:
+                # 执行重启操作
+                cls.control_agent(agent, 'restart', user)
+
+                success_count += 1
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': True,
+                    'message': '重启指令已下发'
+                })
+
+                # 推送成功日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'info',
+                    'content': f'Agent 重启指令下发成功 ({agent.host.name})',
+                    'step_name': '重启 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            except Exception as e:
+                failed_count += 1
+                error_msg = str(e)
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': False,
+                    'message': error_msg
+                })
+
+                # 推送失败日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'error',
+                    'content': f'Agent 重启失败: {error_msg}',
+                    'step_name': '重启 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            # 更新进度
+            realtime_log_service.push_status(batch_task_id, {
+                'status': 'running',
+                'total': total,
+                'completed': completed,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'message': f'已完成 {completed}/{total} 个 Agent 的重启'
+            }, stream_prefix=batch_status_prefix)
+
+        # 推送完成状态
+        if failed_count == 0:
+            final_status = 'completed'
+            final_message = f'批量重启完成：成功 {success_count} 个'
+        else:
+            final_status = 'completed_with_errors'
+            final_message = f'批量重启完成：成功 {success_count} 个，失败 {failed_count} 个'
+
+        realtime_log_service.push_status(batch_task_id, {
+            'status': final_status,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': final_message
+        }, stream_prefix=batch_status_prefix)
+
+        return {
+            'results': results,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'batch_task_id': batch_task_id
+        }
+
+    @classmethod
+    def batch_disable_agents(cls, agent_ids: list, user, batch_task_id: str = None) -> Dict[str, Any]:
+        """
+        批量禁用 Agent
+
+        Args:
+            agent_ids: Agent ID列表
+            user: 执行用户
+            batch_task_id: 批量操作任务ID（用于SSE进度推送）
+
+        Returns:
+            Dict[str, Any]: 操作结果
+        """
+        if not batch_task_id:
+            batch_task_id = str(uuid.uuid4())
+
+        results = []
+        total = len(agent_ids)
+        completed = 0
+        success_count = 0
+        failed_count = 0
+
+        batch_status_prefix = "agent_batch_status:"
+        batch_log_stream = "agent_batch_logs"
+
+        # 推送初始状态
+        realtime_log_service.push_status(batch_task_id, {
+            'status': 'running',
+            'total': total,
+            'completed': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'message': '开始批量禁用 Agent'
+        }, stream_prefix=batch_status_prefix)
+
+        # 获取Agent列表
+        agents = Agent.objects.filter(id__in=agent_ids).select_related('host')
+
+        for agent in agents:
+            completed += 1
+
+            # 推送开始操作日志
+            realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                'host_name': agent.host.name,
+                'host_ip': agent.host.ip_address,
+                'log_type': 'info',
+                'content': f'开始禁用 Agent ({agent.host.name})',
+                'step_name': '禁用 Agent',
+                'step_order': 1
+            }, stream_key=batch_log_stream)
+
+            try:
+                # 执行禁用操作
+                cls.disable_agent(agent)
+                cls.audit(user, 'disable_agent', agent, success=True)
+
+                success_count += 1
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': True,
+                    'message': 'Agent 已禁用'
+                })
+
+                # 推送成功日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'info',
+                    'content': f'Agent 禁用成功 ({agent.host.name})',
+                    'step_name': '禁用 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            except Exception as e:
+                failed_count += 1
+                error_msg = str(e)
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': False,
+                    'message': error_msg
+                })
+
+                # 推送失败日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'error',
+                    'content': f'Agent 禁用失败: {error_msg}',
+                    'step_name': '禁用 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            # 更新进度
+            realtime_log_service.push_status(batch_task_id, {
+                'status': 'running',
+                'total': total,
+                'completed': completed,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'message': f'已完成 {completed}/{total} 个 Agent 的禁用'
+            }, stream_prefix=batch_status_prefix)
+
+        # 推送完成状态
+        if failed_count == 0:
+            final_status = 'completed'
+            final_message = f'批量禁用完成：成功 {success_count} 个'
+        else:
+            final_status = 'completed_with_errors'
+            final_message = f'批量禁用完成：成功 {success_count} 个，失败 {failed_count} 个'
+
+        realtime_log_service.push_status(batch_task_id, {
+            'status': final_status,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': final_message
+        }, stream_prefix=batch_status_prefix)
+
+        return {
+            'results': results,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'batch_task_id': batch_task_id
+        }
+
+    @classmethod
+    def batch_enable_agents(cls, agent_ids: list, user, batch_task_id: str = None) -> Dict[str, Any]:
+        """
+        批量启用 Agent
+
+        Args:
+            agent_ids: Agent ID列表
+            user: 执行用户
+            batch_task_id: 批量操作任务ID（用于SSE进度推送）
+
+        Returns:
+            Dict[str, Any]: 操作结果
+        """
+        if not batch_task_id:
+            batch_task_id = str(uuid.uuid4())
+
+        results = []
+        total = len(agent_ids)
+        completed = 0
+        success_count = 0
+        failed_count = 0
+
+        batch_status_prefix = "agent_batch_status:"
+        batch_log_stream = "agent_batch_logs"
+
+        # 推送初始状态
+        realtime_log_service.push_status(batch_task_id, {
+            'status': 'running',
+            'total': total,
+            'completed': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'message': '开始批量启用 Agent'
+        }, stream_prefix=batch_status_prefix)
+
+        # 获取Agent列表
+        agents = Agent.objects.filter(id__in=agent_ids).select_related('host')
+
+        for agent in agents:
+            completed += 1
+
+            # 推送开始操作日志
+            realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                'host_name': agent.host.name,
+                'host_ip': agent.host.ip_address,
+                'log_type': 'info',
+                'content': f'开始启用 Agent ({agent.host.name})',
+                'step_name': '启用 Agent',
+                'step_order': 1
+            }, stream_key=batch_log_stream)
+
+            try:
+                # 执行启用操作
+                cls.enable_agent(agent)
+                cls.audit(user, 'enable_agent', agent, success=True)
+
+                success_count += 1
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': True,
+                    'message': 'Agent 已启用'
+                })
+
+                # 推送成功日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'info',
+                    'content': f'Agent 启用成功 ({agent.host.name})',
+                    'step_name': '启用 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            except Exception as e:
+                failed_count += 1
+                error_msg = str(e)
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host.id,
+                    'host_name': agent.host.name,
+                    'success': False,
+                    'message': error_msg
+                })
+
+                # 推送失败日志
+                realtime_log_service.push_log(batch_task_id, str(agent.id), {
+                    'host_name': agent.host.name,
+                    'host_ip': agent.host.ip_address,
+                    'log_type': 'error',
+                    'content': f'Agent 启用失败: {error_msg}',
+                    'step_name': '启用 Agent',
+                    'step_order': 1
+                }, stream_key=batch_log_stream)
+
+            # 更新进度
+            realtime_log_service.push_status(batch_task_id, {
+                'status': 'running',
+                'total': total,
+                'completed': completed,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'message': f'已完成 {completed}/{total} 个 Agent 的启用'
+            }, stream_prefix=batch_status_prefix)
+
+        # 推送完成状态
+        if failed_count == 0:
+            final_status = 'completed'
+            final_message = f'批量启用完成：成功 {success_count} 个'
+        else:
+            final_status = 'completed_with_errors'
+            final_message = f'批量启用完成：成功 {success_count} 个，失败 {failed_count} 个'
+
+        realtime_log_service.push_status(batch_task_id, {
+            'status': final_status,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': final_message
+        }, stream_prefix=batch_status_prefix)
+
+        return {
+            'results': results,
+            'total': total,
+            'completed': completed,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'batch_task_id': batch_task_id
+        }
+
+    @staticmethod
+    def control_agent(agent: Agent, action: str, user) -> None:
+        """
+        控制单个 Agent（重启等）
+
+        Args:
+            agent: Agent实例
+            action: 控制动作 ('restart')
+            user: 执行用户
+        """
+        from utils.agent_server_client import AgentServerClient
+        from .execution_service import AgentExecutionService
+
+        agent_type = agent.agent_type or 'agent'
+
+        if agent_type == 'agent':
+            # Agent 控制：通过 agent-server 下发控制指令
+            server_base = agent.endpoint
+            if not server_base:
+                raise ValueError(f"Agent {agent.id} 未配置 agent-server 地址")
+
+            # 如果 endpoint 只是地址，需要构建完整 URL
+            if not server_base.startswith('http'):
+                server_base = f"http://{server_base}"
+
+            api_url = f"{server_base}/api/agents/{agent.host_id}/control"
+            client = AgentServerClient.from_settings()
+            scope = AgentExecutionService._get_agent_server_scope(agent)
+            headers = {"X-Scope": scope} if scope else {}
+
+            payload = {
+                "action": action,
+                "reason": f"用户 {user.username} 手动{action}"
+            }
+
+            resp = client.post(api_url, json=payload, headers=headers, timeout=5)
+            if resp.status_code != 200:
+                raise ValueError(f"Agent控制失败: HTTP {resp.status_code}")
+
+        elif agent_type == 'agent-server':
+            # Agent-Server 控制：调用 agent-server 自身的控制接口
+            agent_server_url = agent.endpoint
+            if not agent_server_url:
+                raise ValueError(f"Agent-Server {agent.id} 未配置 endpoint")
+
+            # 如果 endpoint 只是地址，需要构建完整 URL
+            if not agent_server_url.startswith('http'):
+                agent_server_url = f"http://{agent_server_url}"
+
+            api_url = f"{agent_server_url}/api/self/control"
+            client = AgentServerClient.from_settings()
+
+            payload = {
+                "action": action,
+                "reason": f"用户 {user.username} 手动{action}"
+            }
+
+            resp = client.post(api_url, json=payload, headers={}, timeout=5)
+            if resp.status_code != 200:
+                raise ValueError(f"Agent-Server控制失败: HTTP {resp.status_code}")
+
+        else:
+            raise ValueError(f"不支持的 agent_type: {agent_type}")

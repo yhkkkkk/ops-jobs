@@ -258,18 +258,22 @@ class HostViewSet(viewsets.ModelViewSet):
         updated_count = 0
         for host in editable_hosts:
             update_fields = []
+
             for field, value in update_data.items():
                 if field == 'tags':
+                    # 标签替换模式：完全替换标签
                     clean_list = []
                     if isinstance(value, list):
                         for item in value:
-                            if not isinstance(item, dict):
-                                continue
-                            key = str(item.get('key', '')).strip()
-                            if not key:
-                                continue
-                            val = '' if item.get('value') is None else str(item.get('value')).strip()
-                            clean_list.append({'key': key, 'value': val})
+                            if isinstance(item, str):
+                                # 前端发送的是字符串列表，转换为键值对格式
+                                clean_list.append({'key': item, 'value': ''})
+                            elif isinstance(item, dict):
+                                key = str(item.get('key', '')).strip()
+                                if not key:
+                                    continue
+                                val = '' if item.get('value') is None else str(item.get('value')).strip()
+                                clean_list.append({'key': key, 'value': val})
                     host.tags = clean_list
                     update_fields.append('tags')
                 else:

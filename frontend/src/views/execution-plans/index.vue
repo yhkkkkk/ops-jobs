@@ -87,6 +87,27 @@
             </a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="创建者">
+          <a-select
+            v-model="searchForm.created_by"
+            placeholder="请选择创建者"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 120px"
+          >
+            <a-option
+              v-for="user in availableUsers"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="收藏">
+          <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+        </a-form-item>
 
         <a-form-item>
           <a-space>
@@ -120,7 +141,18 @@
       >
         <template #name="{ record }">
           <div class="plan-name">
-            <a-link @click="handleView(record)">{{ record.name }}</a-link>
+            <div class="plan-name-row">
+              <a-button
+                type="text"
+                size="mini"
+                class="favorite-btn"
+                @click.stop="toggleFavorite(record.id)"
+              >
+                <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
+                <icon-star v-else class="favorite-icon" />
+              </a-button>
+              <a-link @click="handleView(record)">{{ record.name }}</a-link>
+            </div>
             <div class="plan-desc">{{ record.description || '无描述' }}</div>
           </div>
         </template>
@@ -278,7 +310,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { executionPlanApi, jobTemplateApi } from '@/api/ops'
+import { executionPlanApi, jobTemplateApi, favoriteApi } from '@/api/ops'
 import type { ExecutionPlan, JobTemplate } from '@/types'
 import { usePermissionsStore } from '@/stores/permissions'
 
@@ -293,6 +325,9 @@ const templateLoading = ref(false)
 const plans = ref<ExecutionPlan[]>([])
 const templates = ref<JobTemplate[]>([])
 
+// 可用用户列表（创建者）
+const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
+
 // 模板选择相关
 const templateSelectVisible = ref(false)
 const templateSearchText = ref('')
@@ -301,8 +336,63 @@ const selectedTemplateKeys = ref<number[]>([])
 // 搜索表单
 const searchForm = reactive({
   search: '',
-  template_id: undefined as number | undefined
+  template_id: undefined as number | undefined,
+  favorites_only: false,
+  created_by: undefined as number | undefined
 })
+
+// 收藏相关
+const favorites = reactive<Record<number, boolean>>({})
+
+// 加载收藏状态
+const loadFavoriteStatus = async () => {
+  try {
+    // 批量检查当前页面的收藏状态
+    const planIds = plans.value.map(p => p.id)
+    if (planIds.length === 0) return
+
+    const requests = planIds.map(id =>
+      favoriteApi.check({
+        favorite_type: 'execution_plan',
+        object_id: id
+      }).catch(() => ({ data: { content: { is_favorited: false } } }))
+    )
+
+    const responses = await Promise.allSettled(requests)
+    const favoriteStatus: Record<number, boolean> = {}
+
+    responses.forEach((result, index) => {
+      const planId = planIds[index]
+      if (result.status === 'fulfilled') {
+        favoriteStatus[planId] = result.value.is_favorited || false
+      } else {
+        favoriteStatus[planId] = false
+      }
+    })
+
+    Object.assign(favorites, favoriteStatus)
+  } catch (e) {
+    console.error('加载收藏状态失败:', e)
+  }
+}
+
+const isFavorite = (id: number) => favorites[id] || false
+
+const toggleFavorite = async (id: number) => {
+  try {
+    const response = await favoriteApi.toggle({
+      favorite_type: 'execution_plan',
+      object_id: id,
+      category: 'personal'
+    })
+
+    favorites[id] = response.is_favorited
+    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+  } catch (e) {
+    console.error('切换收藏状态失败:', e)
+    Message.error('操作失败')
+  }
+}
 
 // 分页配置
 const pagination = reactive({
@@ -397,13 +487,48 @@ const fetchPlans = async () => {
     }
 
     const response = await executionPlanApi.getPlans(params)
-    plans.value = response.results || []
-    pagination.total = response.total || 0
+    let resultPlans = response.results || []
+
+    // 前端过滤收藏
+    if (searchForm.favorites_only) {
+      resultPlans = resultPlans.filter(p => favorites[p.id])
+    }
+
+    plans.value = resultPlans
+    pagination.total = searchForm.favorites_only ? resultPlans.length : (response.total || 0)
+
+    // 异步加载收藏状态
+    loadFavoriteStatus()
+
+    // 拉取可用用户列表
+    fetchAvailableUsers()
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
     Message.error('获取执行方案列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 获取可用用户列表（创建者）
+const fetchAvailableUsers = async () => {
+  try {
+    // 从当前执行方案列表中提取唯一用户列表
+    if (plans.value.length > 0) {
+      const userMap = new Map<number, {id: number, username: string, name: string}>()
+      plans.value.forEach(plan => {
+        if (plan.created_by && plan.created_by_name) {
+          userMap.set(plan.created_by, {
+            id: plan.created_by,
+            username: plan.created_by_name,
+            name: plan.created_by_name
+          })
+        }
+      })
+      availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+    }
+  } catch (error) {
+    console.error('获取用户列表失败:', error)
   }
 }
 
@@ -430,6 +555,8 @@ const handleSearch = () => {
 const handleReset = () => {
   searchForm.search = ''
   searchForm.template_id = undefined
+  searchForm.favorites_only = false
+  searchForm.created_by = undefined
   pagination.current = 1
   fetchPlans()
 }
@@ -620,6 +747,31 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.plan-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.favorite-btn {
+  padding: 0 4px;
+  min-width: auto;
+}
+
+.favorite-icon {
+  font-size: 14px;
+  color: var(--color-text-3);
+  transition: color 0.2s;
+}
+
+.favorite-icon.active {
+  color: var(--color-warning-6);
+}
+
+.favorite-btn:hover .favorite-icon {
+  color: var(--color-warning-5);
 }
 
 .plan-desc {

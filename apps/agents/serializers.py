@@ -271,6 +271,70 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     agent_id = serializers.IntegerField(source='agent.id', read_only=True, allow_null=True)
 
+    # 包信息字段
+    package_os_type = serializers.SerializerMethodField()
+    package_arch = serializers.SerializerMethodField()
+    package_version_display = serializers.SerializerMethodField()
+
+    # 任务统计字段
+    task_total_hosts = serializers.SerializerMethodField()
+    task_success_count = serializers.SerializerMethodField()
+    task_failed_count = serializers.SerializerMethodField()
+
+    def get_package_os_type(self, obj):
+        if obj.package_id:
+            try:
+                from .models import AgentPackage
+                package = AgentPackage.objects.get(id=obj.package_id)
+                return package.get_os_type_display()
+            except AgentPackage.DoesNotExist:
+                pass
+        return obj.package_version or ''
+
+    def get_package_arch(self, obj):
+        if obj.package_id:
+            try:
+                from .models import AgentPackage
+                package = AgentPackage.objects.get(id=obj.package_id)
+                return package.get_arch_display()
+            except AgentPackage.DoesNotExist:
+                pass
+        return ''
+
+    def get_package_version_display(self, obj):
+        if obj.package_id:
+            try:
+                from .models import AgentPackage
+                package = AgentPackage.objects.get(id=obj.package_id)
+                return package.version
+            except AgentPackage.DoesNotExist:
+                pass
+        return obj.package_version or ''
+
+    def get_task_total_hosts(self, obj):
+        """获取该安装任务涉及的总主机数"""
+        if obj.install_task_id:
+            return AgentInstallRecord.objects.filter(install_task_id=obj.install_task_id).count()
+        return 1
+
+    def get_task_success_count(self, obj):
+        """获取该安装任务成功的记录数"""
+        if obj.install_task_id:
+            return AgentInstallRecord.objects.filter(
+                install_task_id=obj.install_task_id,
+                status='success'
+            ).count()
+        return 1 if obj.status == 'success' else 0
+
+    def get_task_failed_count(self, obj):
+        """获取该安装任务失败的记录数"""
+        if obj.install_task_id:
+            return AgentInstallRecord.objects.filter(
+                install_task_id=obj.install_task_id,
+                status='failed'
+            ).count()
+        return 1 if obj.status == 'failed' else 0
+
     class Meta:
         model = AgentInstallRecord
         fields = [
@@ -282,6 +346,12 @@ class AgentInstallRecordSerializer(serializers.ModelSerializer):
             'install_type',
             'status',
             'status_display',
+            'package_version_display',
+            'package_os_type',
+            'package_arch',
+            'task_total_hosts',
+            'task_success_count',
+            'task_failed_count',
             'agent_server_listen_addr',
             'max_connections',
             'heartbeat_timeout',
@@ -315,6 +385,65 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
     agent_id = serializers.IntegerField(source='agent.id', read_only=True, allow_null=True)
     agent_type = serializers.CharField(read_only=True)
 
+    # 包信息字段（通过agent.install_record关联获取）
+    package_version = serializers.SerializerMethodField()
+    package_os_type = serializers.SerializerMethodField()
+    package_arch = serializers.SerializerMethodField()
+
+    # 任务统计字段
+    task_total_hosts = serializers.SerializerMethodField()
+    task_success_count = serializers.SerializerMethodField()
+    task_failed_count = serializers.SerializerMethodField()
+
+    def get_package_version(self, obj):
+        if obj.agent and hasattr(obj.agent, 'install_record') and obj.agent.install_record:
+            return obj.agent.install_record.package_version or ''
+        return ''
+
+    def get_package_os_type(self, obj):
+        if obj.agent and hasattr(obj.agent, 'install_record') and obj.agent.install_record and obj.agent.install_record.package_id:
+            try:
+                from .models import AgentPackage
+                package = AgentPackage.objects.get(id=obj.agent.install_record.package_id)
+                return package.get_os_type_display()
+            except AgentPackage.DoesNotExist:
+                pass
+        return ''
+
+    def get_package_arch(self, obj):
+        if obj.agent and hasattr(obj.agent, 'install_record') and obj.agent.install_record and obj.agent.install_record.package_id:
+            try:
+                from .models import AgentPackage
+                package = AgentPackage.objects.get(id=obj.agent.install_record.package_id)
+                return package.get_arch_display()
+            except AgentPackage.DoesNotExist:
+                pass
+        return ''
+
+    def get_task_total_hosts(self, obj):
+        """获取该卸载任务涉及的总主机数"""
+        if obj.uninstall_task_id:
+            return AgentUninstallRecord.objects.filter(uninstall_task_id=obj.uninstall_task_id).count()
+        return 1
+
+    def get_task_success_count(self, obj):
+        """获取该卸载任务成功的记录数"""
+        if obj.uninstall_task_id:
+            return AgentUninstallRecord.objects.filter(
+                uninstall_task_id=obj.uninstall_task_id,
+                status='success'
+            ).count()
+        return 1 if obj.status == 'success' else 0
+
+    def get_task_failed_count(self, obj):
+        """获取该卸载任务失败的记录数"""
+        if obj.uninstall_task_id:
+            return AgentUninstallRecord.objects.filter(
+                uninstall_task_id=obj.uninstall_task_id,
+                status='failed'
+            ).count()
+        return 1 if obj.status == 'failed' else 0
+
     class Meta:
         model = AgentUninstallRecord
         fields = [
@@ -327,6 +456,12 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
             'agent_type_display',
             'status',
             'status_display',
+            'package_version',
+            'package_os_type',
+            'package_arch',
+            'task_total_hosts',
+            'task_success_count',
+            'task_failed_count',
             'error_message',
             'uninstalled_by',
             'uninstalled_by_name',
@@ -661,6 +796,70 @@ class BatchInstallSerializer(serializers.Serializer):
             if not control_plane_url:
                 raise serializers.ValidationError({'non_field_errors': ['控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server']})
         return attrs
+
+
+class HostAgentStatusSerializer(serializers.Serializer):
+    """主机Agent状态序列化器"""
+
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    ip_address = serializers.CharField()
+    agent_status = serializers.SerializerMethodField()
+    agent_type = serializers.SerializerMethodField()
+    agent_type_display = serializers.SerializerMethodField()
+    agent_id = serializers.SerializerMethodField()
+    agent_version = serializers.SerializerMethodField()
+    computed_status = serializers.SerializerMethodField()
+    computed_status_display = serializers.SerializerMethodField()
+    can_install = serializers.SerializerMethodField()
+
+    def get_agent_status(self, obj):
+        """获取主机的Agent状态"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.status
+        return None
+
+    def get_agent_type(self, obj):
+        """获取主机的Agent类型"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.agent_type
+        return None
+
+    def get_agent_type_display(self, obj):
+        """获取主机的Agent类型显示名"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.get_agent_type_display()
+        return None
+
+    def get_agent_id(self, obj):
+        """获取主机的Agent ID"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.id
+        return None
+
+    def get_agent_version(self, obj):
+        """获取主机的Agent版本"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.version
+        return None
+
+    def get_computed_status(self, obj):
+        """获取主机的Agent计算状态"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return AgentSerializer(context=self.context).get_computed_status(obj.agent)
+        return None
+
+    def get_computed_status_display(self, obj):
+        """获取主机的Agent计算状态显示名"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return AgentSerializer(context=self.context).get_computed_status_display(obj.agent)
+        return None
+
+    def get_can_install(self, obj):
+        """判断是否可以安装（没有在线Agent或Agent不在线）"""
+        if hasattr(obj, 'agent') and obj.agent:
+            return obj.agent.status != 'online'
+        return True
 
 
 class AgentControlSerializer(serializers.Serializer):

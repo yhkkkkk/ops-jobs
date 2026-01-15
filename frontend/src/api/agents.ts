@@ -150,6 +150,42 @@ export const agentsApi = {
     return http.post('/agents/batch_enable/', data)
   },
 
+  // 批量重启 Agent（带SSE进度监控）
+  batchRestart(data: BatchOperationParams): Promise<{
+    batch_task_id: string
+    total: number
+    status: string
+  }> {
+    return http.post('/agents/batch_restart/', data)
+  },
+
+  // 批量禁用 Agent（带SSE进度监控）
+  batchDisableV2(data: BatchOperationParams): Promise<{
+    batch_task_id: string
+    total: number
+    status: string
+  }> {
+    return http.post('/agents/batch_disable_v2/', data)
+  },
+
+  // 批量启用 Agent（带SSE进度监控）
+  batchEnableV2(data: BatchOperationParams): Promise<{
+    batch_task_id: string
+    total: number
+    status: string
+  }> {
+    return http.post('/agents/batch_enable_v2/', data)
+  },
+
+  // 重试安装记录中的失败主机
+  retryInstallRecord(data: { install_record_id: number; confirmed: boolean }): Promise<{
+    install_task_id: string
+    total: number
+    status: string
+  }> {
+    return http.post('/agents/retry_install_record/', data)
+  },
+
   // 删除 Agent（仅允许删除 pending 状态）
   deleteAgent(id: number, data: { confirmed: boolean }): Promise<void> {
     return http.delete(`/agents/${id}/`, { data })
@@ -291,6 +327,44 @@ export const agentsApi = {
     status?: string
   }): Promise<PaginatedResponse<any>> {
     return http.get('/agents/uninstall_records/', { params })
+  },
+
+  // 获取主机Agent状态
+  getHostAgentStatus(): Promise<{
+    hosts: Array<{
+      id: number
+      name: string
+      ip_address: string
+      agent_status: string | null
+      agent_type: string | null
+      agent_type_display: string | null
+      agent_id: number | null
+      agent_version: string | null
+      computed_status: string | null
+      computed_status_display: string | null
+      can_install: boolean
+    }>
+  }> {
+    return http.get('/agents/host_agent_status/')
+  },
+
+  // 获取Agent资源概览（用于列表页展示）
+  getResourcesOverview(agentIds?: number[]): Promise<{
+    resources: Record<number, {
+      agent_id: number
+      timestamp: string
+      cpu_usage: number | null
+      memory_usage: number | null
+      memory_total: number | null
+      memory_used: number | null
+      disk_usage: Record<string, number> | null
+      load_avg_1m: number | null
+      uptime: number | null
+    }>
+    total: number
+  }> {
+    const params = agentIds?.length ? { agent_ids: agentIds.join(',') } : {}
+    return http.get('/agents/resources_overview/', { params })
   },
 }
 

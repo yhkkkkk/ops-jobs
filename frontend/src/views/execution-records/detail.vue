@@ -97,6 +97,10 @@
     <a-card v-if="!executionInfo.is_running" class="logs-card" title="执行流程">
       <template #extra>
         <a-space>
+          <a-button size="small" @click="exportAllLogs" :disabled="!hasAnyLogs">
+            <template #icon><IconDownload /></template>
+            导出所有日志
+          </a-button>
           <a-button size="small" @click="refreshLogs">
             <template #icon><icon-refresh /></template>
             刷新
@@ -482,6 +486,10 @@
                             <template #icon><IconCopy /></template>
                             复制日志
                           </a-button>
+                          <a-button size="small" @click="exportHostLogs(hostLog, 'stdout')">
+                            <template #icon><IconDownload /></template>
+                            导出TXT
+                          </a-button>
                         </a-space>
                       </div>
                       <div class="log-text-container">
@@ -501,6 +509,10 @@
                           <a-button size="small" @click="copyLogs(hostLog.stderr || hostLog.error_logs)">
                             <template #icon><IconCopy /></template>
                             复制
+                          </a-button>
+                          <a-button size="small" @click="exportHostLogs(hostLog, 'stderr')">
+                            <template #icon><IconDownload /></template>
+                            导出TXT
                           </a-button>
                         </a-space>
                       </div>
@@ -575,7 +587,8 @@ import {
   IconEye,
   IconEyeInvisible,
   IconRight,
-  IconUser
+  IconUser,
+  IconDownload
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
@@ -1273,6 +1286,125 @@ const copyZoomLogs = async () => {
     console.error('复制失败:', error)
     Message.error('复制失败')
   }
+}
+
+// 导出主机日志为TXT文件
+const exportHostLogs = (hostLog, logType) => {
+  let logContent = ''
+  let logTitle = ''
+
+  if (logType === 'stdout') {
+    logContent = hostLog.stdout || hostLog.logs || ''
+    logTitle = '标准输出'
+  } else if (logType === 'stderr') {
+    logContent = hostLog.stderr || hostLog.error_logs || ''
+    logTitle = getErrorTitle()
+  }
+
+  if (!logContent.trim()) {
+    Message.warning('没有可导出的日志内容')
+    return
+  }
+
+  // 构建导出内容
+  const currentStep = stepLogs.value[selectedStepId.value]
+  const stepName = currentStep ? currentStep.step_name : '未知步骤'
+  const hostName = hostLog.hostname || hostLog.host_name || '未知主机'
+  const hostIP = hostLog.host_ip || '未知IP'
+  const hostStatus = getHostStatusText(hostLog.status)
+
+  let exportContent = `执行记录: ${executionInfo.value.execution_id || '未知'}\n`
+  exportContent += `步骤名称: ${stepName}\n`
+  exportContent += `主机信息: ${hostName} (${hostIP})\n`
+  exportContent += `主机状态: ${hostStatus}\n`
+  exportContent += `日志类型: ${logTitle}\n`
+  exportContent += `导出时间: ${formatDateTime(new Date())}\n`
+  exportContent += '='.repeat(50) + '\n\n'
+  exportContent += logContent
+
+  // 创建并下载文件
+  const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `执行日志_${stepName}_${hostName}_${logTitle}_${new Date().getTime()}.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  Message.success('日志导出成功')
+}
+
+// 检查是否有任何日志
+const hasAnyLogs = computed(() => {
+  return Object.keys(stepLogs.value).length > 0 || Object.keys(hostLogs.value).length > 0
+})
+
+// 导出所有执行日志为TXT文件
+const exportAllLogs = () => {
+  if (!hasAnyLogs.value) {
+    Message.warning('没有可导出的日志内容')
+    return
+  }
+
+  let exportContent = `执行记录: ${executionInfo.value.execution_id || '未知'}\n`
+  exportContent += `执行名称: ${displayName.value || '未知'}\n`
+  exportContent += `执行类型: ${getExecutionTypeText(executionInfo.value.execution_type)}\n`
+  exportContent += `执行状态: ${getStatusText(executionInfo.value.status)}\n`
+  exportContent += `开始时间: ${formatDateTime(executionInfo.value.started_at)}\n`
+  exportContent += `结束时间: ${formatDateTime(executionInfo.value.finished_at)}\n`
+  exportContent += `导出时间: ${formatDateTime(new Date())}\n`
+  exportContent += '='.repeat(80) + '\n\n'
+
+  // 按步骤导出日志
+  Object.keys(stepLogs.value).forEach(stepId => {
+    const step = stepLogs.value[stepId]
+    exportContent += `步骤: ${step.step_name}\n`
+    exportContent += `步骤顺序: ${step.step_order || '未知'}\n`
+    exportContent += `步骤状态: ${getStepStatusText(step.status)}\n`
+    exportContent += '-'.repeat(60) + '\n'
+
+    // 导出每个主机的日志
+    Object.keys(step.hosts || {}).forEach(hostId => {
+      const hostLog = step.hosts[hostId]
+      const hostName = hostLog.hostname || hostLog.host_name || '未知主机'
+      const hostIP = hostLog.host_ip || '未知IP'
+      const hostStatus = getHostStatusText(hostLog.status)
+
+      exportContent += `\n主机: ${hostName} (${hostIP})\n`
+      exportContent += `状态: ${hostStatus}\n`
+
+      // 标准输出日志
+      if (hostLog.stdout || hostLog.logs) {
+        exportContent += `标准输出:\n`
+        exportContent += `${hostLog.stdout || hostLog.logs}\n`
+      }
+
+      // 错误日志
+      if (hostLog.stderr || hostLog.error_logs) {
+        exportContent += `错误输出:\n`
+        exportContent += `${hostLog.stderr || hostLog.error_logs}\n`
+      }
+
+      exportContent += '\n'
+    })
+
+    exportContent += '\n' + '='.repeat(60) + '\n\n'
+  })
+
+  // 创建并下载文件
+  const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `完整执行日志_${executionInfo.value.execution_id}_${new Date().getTime()}.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  Message.success('完整日志导出成功')
 }
 
 // 复制主机IP

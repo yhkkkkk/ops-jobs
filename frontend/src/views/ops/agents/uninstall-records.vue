@@ -87,6 +87,23 @@
           </a-tag>
         </template>
 
+        <template #task_stats="{ record }">
+          <div class="task-stats">
+            <div class="stat-item">
+              <span class="stat-label">总数:</span>
+              <span class="stat-value">{{ record.task_total_hosts || 1 }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-success">成功:</span>
+              <span class="stat-value stat-success">{{ record.task_success_count || 0 }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-error">失败:</span>
+              <span class="stat-value stat-error">{{ record.task_failed_count || 0 }}</span>
+            </div>
+          </div>
+        </template>
+
         <template #uninstalled_at="{ record }">
           {{ formatDateTime(record.uninstalled_at) }}
         </template>
@@ -131,6 +148,15 @@
             {{ currentRecord.agent_type_display }}
           </a-tag>
         </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_version" label="版本">
+          {{ currentRecord.package_version }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_os_type" label="操作系统">
+          {{ currentRecord.package_os_type }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_arch" label="架构">
+          {{ currentRecord.package_arch }}
+        </a-descriptions-item>
         <a-descriptions-item label="卸载状态">
           <a-space>
             <a-tag :color="getStatusColor(currentRecord.status)">
@@ -140,6 +166,22 @@
         </a-descriptions-item>
         <a-descriptions-item label="卸载时间">
           {{ formatDateTime(currentRecord.uninstalled_at) }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.task_total_hosts" label="任务统计">
+          <div class="task-stats-detail">
+            <div class="stat-item">
+              <span class="stat-label">总主机数:</span>
+              <span class="stat-value">{{ currentRecord.task_total_hosts }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-success">成功:</span>
+              <span class="stat-value stat-success">{{ currentRecord.task_success_count }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-error">失败:</span>
+              <span class="stat-value stat-error">{{ currentRecord.task_failed_count }}</span>
+            </div>
+          </div>
         </a-descriptions-item>
         <a-descriptions-item label="操作者">
           {{ currentRecord.uninstalled_by_name }}
@@ -181,6 +223,9 @@ interface UninstallRecord {
   agent_type_display?: string
   status: 'pending' | 'success' | 'failed'
   status_display: string
+  package_version?: string
+  package_os_type?: string
+  package_arch?: string
   message?: string
   error_message?: string
   error_detail?: string
@@ -218,7 +263,7 @@ const columns = [
     title: '主机',
     key: 'host',
     slot: 'host',
-    width: 200
+    width: 180
   },
   {
     title: 'Agent ID',
@@ -237,6 +282,12 @@ const columns = [
     key: 'status',
     slot: 'status',
     width: 100
+  },
+  {
+    title: '任务统计',
+    key: 'task_stats',
+    slot: 'task_stats',
+    width: 150
   },
   {
     title: '卸载时间',
@@ -342,11 +393,15 @@ onMounted(() => {
 
 <style scoped>
 .uninstall-records-page {
-  padding: 24px;
+  padding: 0;
 }
 
 .page-header {
-  margin-bottom: 24px;
+  background: white;
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
 }
 
 .header-content {
@@ -356,7 +411,7 @@ onMounted(() => {
 }
 
 .header-left h2 {
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   font-size: 20px;
   font-weight: 600;
   color: #1d2129;
@@ -364,17 +419,79 @@ onMounted(() => {
 
 .header-desc {
   margin: 0;
-  color: #86909c;
   font-size: 14px;
-}
-
-.table-container {
-  background: #ffffff;
-  border-radius: 8px;
-  overflow: hidden;
+  color: #86909c;
 }
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.table-container {
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* 表格样式优化 */
+:deep(.arco-table) {
+  /* 普通表头背景色 */
+  .arco-table-th {
+    background-color: #fff !important;
+  }
+
+  /* 固定列样式 */
+  .arco-table-col-fixed-right {
+    background-color: transparent !important;
+  }
+
+  .arco-table-col-fixed-right .arco-table-td {
+    background-color: inherit !important;
+  }
+
+  .arco-table-col-fixed-right .arco-table-cell {
+    background-color: inherit !important;
+  }
+
+  .arco-table-col-fixed-right::before {
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .task-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+  }
+
+  .stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .stat-label {
+    color: #86909c;
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-weight: 600;
+  }
+
+  .stat-success {
+    color: #00b42a;
+  }
+
+  .stat-error {
+    color: #f53f3f;
+  }
+
+  .task-stats-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 </style>

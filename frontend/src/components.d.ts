@@ -57,6 +57,7 @@ declare module 'vue' {
     IconUser: typeof import('@arco-design/web-vue/es/icon')['IconUser']
     IconWifi: typeof import('@arco-design/web-vue/es/icon')['IconWifi']
     LightweightMonacoEditor: typeof import('./components/LightweightMonacoEditor.vue')['default']
+    LogViewer: typeof import('./components/LogViewer.vue')['default']
     MonacoEditor: typeof import('./components/MonacoEditor.vue')['default']
     OptimizedMonacoEditor: typeof import('./components/OptimizedMonacoEditor.vue')['default']
     PermissionButton: typeof import('./components/PermissionButton.vue')['default']

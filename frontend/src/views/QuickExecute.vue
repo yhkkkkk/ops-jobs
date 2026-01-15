@@ -3,6 +3,12 @@
     <div class="page-header">
       <h2>快速执行</h2>
       <a-space>
+        <a-button @click="showExecutionHistory = true" type="outline">
+          <template #icon>
+            <icon-history />
+          </template>
+          执行历史
+        </a-button>
         <a-button @click="handleLoadTemplate" type="outline" v-if="activeTab === 'script'">
           <template #icon>
             <icon-file />
@@ -855,10 +861,125 @@
     :selected-groups="selectedGroups"
     @confirm="handleHostSelection"
   />
+
+  <!-- 执行历史抽屉 -->
+  <a-drawer
+    v-model:visible="showExecutionHistory"
+    title="执行历史"
+    :width="500"
+    :footer="false"
+  >
+    <div class="execution-history">
+      <div v-if="executionHistoryList.length === 0" class="empty-history">
+        <a-empty description="暂无执行历史" />
+      </div>
+      <div v-else>
+        <div class="history-actions">
+          <a-button type="text" status="danger" size="small" @click="clearExecutionHistory">
+            <template #icon><icon-delete /></template>
+            清空历史
+          </a-button>
+        </div>
+        <!-- 历史记录搜索 -->
+        <div class="history-search" v-if="executionHistoryList.length > 5">
+          <a-input
+            v-model="historySearchKeyword"
+            placeholder="搜索历史记录..."
+            allow-clear
+            size="small"
+            @input="handleHistorySearch"
+          >
+            <template #prefix>
+              <icon-search />
+            </template>
+          </a-input>
+        </div>
+
+        <div class="history-list">
+          <div
+            v-for="(item, index) in filteredHistoryList"
+            :key="index"
+            class="history-item"
+            :class="{ 'history-item-hovered': hoveredIndex === index }"
+            @mouseenter="hoveredIndex = index"
+            @mouseleave="hoveredIndex = -1"
+          >
+            <!-- 快捷键提示 -->
+            <div v-if="index < 9" class="history-shortcut">{{ index + 1 }}</div>
+
+            <div class="history-item-header">
+              <div class="history-item-type">
+                <a-tag :color="item.type === 'script' ? 'blue' : 'green'" size="small">
+                  {{ item.type === 'script' ? '脚本执行' : '文件传输' }}
+                </a-tag>
+                <a-tag v-if="item.scriptType" size="small">{{ item.scriptType }}</a-tag>
+              </div>
+              <div class="history-item-time">{{ formatHistoryTime(item.timestamp) }}</div>
+            </div>
+            <div class="history-item-content">
+              <div v-if="item.type === 'script'" class="history-script-preview">
+                <code>{{ truncateScript(item.scriptContent) }}</code>
+              </div>
+              <div v-else class="history-file-info">
+                <span>目标路径: {{ item.remotePath }}</span>
+              </div>
+            </div>
+            <div class="history-item-hosts">
+              <icon-computer />
+              <span>{{ item.hostCount }} 台主机</span>
+            </div>
+            <div class="history-item-actions">
+              <a-button type="text" size="small" @click="loadFromHistory(item)" :title="`加载配置 (${index < 9 ? index + 1 : ''})`">
+                <template #icon><icon-import /></template>
+                加载
+              </a-button>
+              <a-button type="text" size="small" status="danger" @click="removeHistoryItem(index)">
+                <template #icon><icon-delete /></template>
+                删除
+              </a-button>
+            </div>
+
+            <!-- 悬停预览弹窗 -->
+            <div v-if="hoveredIndex === index" class="history-preview-popup">
+              <div class="preview-header">
+                <h4>{{ item.type === 'script' ? '脚本内容预览' : '传输配置预览' }}</h4>
+          </div>
+              <div class="preview-content">
+                <div v-if="item.type === 'script'">
+                  <pre class="preview-script">{{ item.scriptContent }}</pre>
+                  <div class="preview-details">
+                    <div v-if="item.scriptType" class="detail-item">
+                      <span class="label">脚本类型:</span> {{ item.scriptType }}
+        </div>
+                    <div v-if="item.timeout" class="detail-item">
+                      <span class="label">超时时间:</span> {{ item.timeout }}秒
+                    </div>
+                    <div v-if="item.executionMode" class="detail-item">
+                      <span class="label">执行方式:</span> {{ item.executionMode === 'parallel' ? '并行' : item.executionMode === 'serial' ? '串行' : '滚动' }}
+                    </div>
+                  </div>
+                </div>
+                <div v-else>
+                  <div class="preview-details">
+                    <div class="detail-item">
+                      <span class="label">目标路径:</span> {{ item.remotePath }}
+                    </div>
+                    <div v-if="item.timeout" class="detail-item">
+                      <span class="label">超时时间:</span> {{ item.timeout }}秒
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </a-drawer>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
@@ -876,6 +997,170 @@ const route = useRoute()
 
 const editorRef = ref()
 const executing = ref(false)
+
+// 执行历史相关
+const showExecutionHistory = ref(false)
+const EXECUTION_HISTORY_KEY = 'quick_execute_history'
+const MAX_HISTORY_ITEMS = 10
+const historySearchKeyword = ref('')
+const hoveredIndex = ref(-1)
+
+interface ExecutionHistoryItem {
+  type: 'script' | 'file'
+  timestamp: number
+  // 脚本执行相关
+  scriptContent?: string
+  scriptType?: string
+  timeout?: number
+  executionMode?: string
+  positionalArgs?: string[]
+  // 文件传输相关
+  remotePath?: string
+  // 通用
+  hostIds: number[]
+  groupIds: number[]
+  selectionType: 'static' | 'dynamic'
+  hostCount: number
+  accountId?: number
+}
+
+const executionHistoryList = ref<ExecutionHistoryItem[]>([])
+
+// 过滤后的历史列表
+const filteredHistoryList = computed(() => {
+  if (!historySearchKeyword.value.trim()) {
+    return executionHistoryList.value
+  }
+
+  const keyword = historySearchKeyword.value.toLowerCase()
+  return executionHistoryList.value.filter(item => {
+    if (item.type === 'script') {
+      return item.scriptContent?.toLowerCase().includes(keyword) ||
+             item.scriptType?.toLowerCase().includes(keyword)
+    } else {
+      return item.remotePath?.toLowerCase().includes(keyword)
+    }
+  })
+})
+
+// 加载执行历史
+const loadExecutionHistory = () => {
+  try {
+    const saved = localStorage.getItem(EXECUTION_HISTORY_KEY)
+    if (saved) {
+      executionHistoryList.value = JSON.parse(saved)
+    }
+  } catch (e) {
+    console.error('加载执行历史失败:', e)
+    executionHistoryList.value = []
+  }
+}
+
+// 保存执行历史
+const saveExecutionHistory = () => {
+  try {
+    localStorage.setItem(EXECUTION_HISTORY_KEY, JSON.stringify(executionHistoryList.value))
+  } catch (e) {
+    console.error('保存执行历史失败:', e)
+  }
+}
+
+// 添加执行历史
+const addExecutionHistory = (item: ExecutionHistoryItem) => {
+  executionHistoryList.value.unshift(item)
+  // 限制历史记录数量
+  if (executionHistoryList.value.length > MAX_HISTORY_ITEMS) {
+    executionHistoryList.value = executionHistoryList.value.slice(0, MAX_HISTORY_ITEMS)
+  }
+  saveExecutionHistory()
+}
+
+// 清空执行历史
+const clearExecutionHistory = () => {
+  Modal.confirm({
+    title: '确认清空',
+    content: '确定要清空所有执行历史吗？此操作不可恢复。',
+    onOk: () => {
+      executionHistoryList.value = []
+      saveExecutionHistory()
+      Message.success('执行历史已清空')
+    }
+  })
+}
+
+// 删除单条历史
+const removeHistoryItem = (index: number) => {
+  executionHistoryList.value.splice(index, 1)
+  saveExecutionHistory()
+  Message.success('已删除')
+}
+
+// 从历史加载
+const loadFromHistory = (item: ExecutionHistoryItem) => {
+  if (item.type === 'script') {
+    activeTab.value = 'script'
+    scriptContent.value = item.scriptContent || ''
+    scriptType.value = item.scriptType || 'shell'
+    timeout.value = item.timeout || 300
+    executionMode.value = (item.executionMode as any) || 'parallel'
+    positionalArgs.value = item.positionalArgs?.length ? item.positionalArgs : ['']
+  } else {
+    activeTab.value = 'file'
+    remotePath.value = item.remotePath || ''
+  }
+
+  // 恢复主机选择
+  selectionType.value = item.selectionType
+  selectedHosts.value = item.hostIds || []
+  selectedGroups.value = item.groupIds || []
+  selectedAccountId.value = item.accountId
+
+  showExecutionHistory.value = false
+  Message.success('已加载历史配置')
+}
+
+// 格式化历史时间
+const formatHistoryTime = (timestamp: number) => {
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diff = now.getTime() - timestamp
+
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
+
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+// 截断脚本内容
+const truncateScript = (content: string, maxLength: number = 100) => {
+  if (!content) return ''
+  const firstLine = content.split('\n')[0]
+  if (firstLine.length > maxLength) {
+    return firstLine.substring(0, maxLength) + '...'
+  }
+  return firstLine + (content.includes('\n') ? '...' : '')
+}
+
+// 处理历史搜索
+const handleHistorySearch = () => {
+  // 搜索逻辑已在computed中实现
+}
+
+// 键盘快捷键支持
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (!showExecutionHistory.value) return
+
+  const key = event.key
+  if (key >= '1' && key <= '9') {
+    const index = parseInt(key) - 1
+    if (index < filteredHistoryList.value.length) {
+      event.preventDefault()
+      loadFromHistory(filteredHistoryList.value[index])
+    }
+  }
+}
 
 // 脚本验证状态
 const validationResults = ref<ScriptValidationResult[]>([])
@@ -1734,6 +2019,22 @@ const handleConfirmExecute = async () => {
     const result = await quickExecuteApi.execute(data)
     Message.success('脚本执行已启动')
 
+    // 保存执行历史
+    addExecutionHistory({
+      type: 'script',
+      timestamp: Date.now(),
+      scriptContent: scriptContent.value,
+      scriptType: scriptType.value,
+      timeout: timeout.value,
+      executionMode: executionMode.value,
+      positionalArgs: positionalArgs.value.filter(arg => arg.trim() !== ''),
+      hostIds: selectedHosts.value,
+      groupIds: selectedGroups.value,
+      selectionType: selectionType.value,
+      hostCount: totalTargetCount.value,
+      accountId: selectedAccountId.value,
+    })
+
     // 跳转到执行记录详情页面
     router.push(`/execution-records/${result.execution_record_id}`)
   } catch (error) {
@@ -1927,6 +2228,15 @@ onMounted(() => {
   fetchHostGroups()
   fetchServerAccounts()
   insertExample() // 默认插入示例代码
+  loadExecutionHistory() // 加载执行历史
+
+  // 添加键盘快捷键监听
+  document.addEventListener('keydown', handleKeyDown)
+})
+
+// 组件卸载时移除事件监听
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
@@ -2648,5 +2958,191 @@ onMounted(() => {
 /* 统一表格选择列宽度，和 HostSelector 一致 */
 ::deep(.arco-table-selection) {
   width: 50px;
+}
+
+/* 执行历史样式 */
+.execution-history {
+  padding: 0;
+}
+
+.empty-history {
+  padding: 40px 0;
+}
+
+.history-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+
+.history-search {
+  margin-bottom: 16px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.history-item {
+  position: relative;
+  padding: 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background-color: var(--color-fill-1);
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  border-color: var(--color-primary-light-3);
+  background-color: var(--color-primary-light-1);
+}
+
+.history-item-hovered {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.history-shortcut {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  z-index: 10;
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-item-type {
+  display: flex;
+  gap: 6px;
+}
+
+.history-item-time {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.history-item-content {
+  margin-bottom: 8px;
+}
+
+.history-script-preview {
+  background-color: var(--color-fill-2);
+  padding: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.history-script-preview code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--color-text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.history-file-info {
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
+.history-item-hosts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-bottom: 8px;
+}
+
+.history-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-2);
+}
+
+/* 悬停预览弹窗样式 */
+.history-preview-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: var(--color-bg-popup);
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.preview-header {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+
+.preview-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-1);
+}
+
+.preview-content {
+  padding: 12px 16px;
+}
+
+.preview-script {
+  background-color: var(--color-fill-2);
+  padding: 12px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--color-text-1);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border-3);
+}
+
+.preview-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-item {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+
+.detail-item .label {
+  font-weight: 500;
+  color: var(--color-text-1);
+  margin-right: 8px;
 }
 </style>

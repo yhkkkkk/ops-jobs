@@ -309,3 +309,67 @@ class AgentPackage(models.Model):
                 is_default=True
             ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
+
+
+class AgentSystemResource(models.Model):
+    """Agent系统资源监控数据"""
+
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        related_name='system_resources',
+        verbose_name="Agent"
+    )
+    timestamp = models.DateTimeField(db_index=True, verbose_name="时间戳")
+
+    # CPU信息
+    cpu_usage = models.FloatField(null=True, blank=True, verbose_name="CPU使用率(%)")
+
+    # 内存信息
+    memory_total = models.BigIntegerField(null=True, blank=True, verbose_name="总内存(bytes)")
+    memory_used = models.BigIntegerField(null=True, blank=True, verbose_name="已用内存(bytes)")
+    memory_usage = models.FloatField(null=True, blank=True, verbose_name="内存使用率(%)")
+
+    # 磁盘信息 (JSON格式存储各挂载点的使用情况)
+    disk_usage = models.JSONField(null=True, blank=True, verbose_name="磁盘使用情况")
+
+    # 负载信息 (仅Linux)
+    load_avg_1m = models.FloatField(null=True, blank=True, verbose_name="1分钟负载")
+    load_avg_5m = models.FloatField(null=True, blank=True, verbose_name="5分钟负载")
+    load_avg_15m = models.FloatField(null=True, blank=True, verbose_name="15分钟负载")
+
+    # 系统运行时间
+    uptime = models.BigIntegerField(null=True, blank=True, verbose_name="运行时间(秒)")
+
+    # 原始数据 (保留完整的心跳数据以备将来扩展)
+    raw_data = models.JSONField(null=True, blank=True, verbose_name="原始数据")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "Agent系统资源"
+        verbose_name_plural = "Agent系统资源"
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['agent', '-timestamp']),
+            models.Index(fields=['-timestamp']),
+            models.Index(fields=['cpu_usage']),
+            models.Index(fields=['memory_usage']),
+        ]
+
+    def __str__(self):
+        return f"AgentSystemResource({self.agent_id})-{self.timestamp}"
+
+    @property
+    def memory_used_gb(self):
+        """已用内存(GB)"""
+        if self.memory_used:
+            return round(self.memory_used / (1024**3), 2)
+        return None
+
+    @property
+    def memory_total_gb(self):
+        """总内存(GB)"""
+        if self.memory_total:
+            return round(self.memory_total / (1024**3), 2)
+        return None

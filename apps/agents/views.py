@@ -13,9 +13,10 @@ from utils.agent_server_client import AgentServerClient
 from utils.audit_service import AuditLogService
 from utils.responses import SycResponse
 from apps.agents.execution_service import AgentExecutionService
+from apps.agents.status_reconciliation_service import status_reconciliation_service
 from .filters import AgentFilter, InstallRecordFilter, UninstallRecordFilter
 from .mixins import BatchOperationMixin
-from .models import Agent, AgentInstallRecord, AgentToken, AgentUninstallRecord
+from .models import Agent, AgentInstallRecord, AgentToken, AgentUninstallRecord, AgentSystemResource
 from .pagination import AgentPagination
 from .permissions import AgentPermission
 from .serializers import (
@@ -628,6 +629,208 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         return SycResponse.success(
             content={"count": count},
             message=f"批量启用{count}个agent成功"
+        )
+
+    @action(detail=False, methods=["post"], url_path="batch_restart")
+    def batch_restart(self, request):
+        """批量重启 Agent（带SSE进度监控）"""
+        serializer = BatchOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        data = serializer.validated_data
+        agent_ids = data['agent_ids']
+        confirmed = data.get('confirmed', False)
+
+        # 使用统一的批量操作校验
+        is_valid, error_msg, agents = self.validate_batch_operation_with_agents(
+            request=request,
+            agent_ids=agent_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
+
+        import uuid
+        from utils.thread_pool import get_global_thread_pool
+
+        batch_task_id = str(uuid.uuid4())
+        user = request.user
+
+        def run_batch_restart():
+            """在后台线程中执行批量重启"""
+            try:
+                result = AgentService.batch_restart_agents(
+                    agent_ids=[a.id for a in agents],
+                    user=user,
+                    batch_task_id=batch_task_id
+                )
+
+                # 记录审计日志
+                for restart_result in result.get('results', []):
+                    if restart_result.get('success') and restart_result.get('agent_id'):
+                        try:
+                            agent = Agent.objects.get(id=restart_result['agent_id'])
+                            AgentService.audit(
+                                user,
+                                "restart_agent",
+                                agent,
+                                request=None,  # 后台线程中没有 request 对象
+                                success=True,
+                                extra={'host_id': restart_result.get('host_id'), 'host_name': restart_result.get('host_name')}
+                            )
+                        except Agent.DoesNotExist:
+                            logger.warning(f"Agent {restart_result.get('agent_id')} 不存在，跳过审计日志")
+
+                logger.info(
+                    f"批量重启任务完成: batch_task_id={batch_task_id}, 成功={result.get('success_count')}, 失败={result.get('failed_count')}"
+                )
+            except Exception as e:
+                logger.error(f"批量重启任务失败: batch_task_id={batch_task_id}, 错误={str(e)}", exc_info=True)
+                # 推送错误状态
+                from utils.realtime_logs import realtime_log_service
+                realtime_log_service.push_status(batch_task_id, {
+                    'status': 'error',
+                    'message': f'批量重启任务失败: {str(e)}'
+                })
+
+        # 使用全局线程池提交后台任务
+        pool = get_global_thread_pool()
+        pool.submit(run_batch_restart)
+
+        logger.info(f"批量重启任务已启动: batch_task_id={batch_task_id}")
+
+        return SycResponse.success(
+            content={
+                'batch_task_id': batch_task_id,
+                'total': len(agent_ids),
+                'status': 'running'
+            },
+            message="批量重启已启动，正在后台执行，可通过 batch_task_id 连接 SSE 查看实时进度"
+        )
+
+    @action(detail=False, methods=["post"], url_path="batch_disable_v2")
+    def batch_disable_v2(self, request):
+        """批量禁用 Agent（带SSE进度监控）"""
+        serializer = BatchOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        data = serializer.validated_data
+        agent_ids = data['agent_ids']
+        confirmed = data.get('confirmed', False)
+
+        # 使用统一的批量操作校验
+        is_valid, error_msg, agents = self.validate_batch_operation_with_agents(
+            request=request,
+            agent_ids=agent_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
+
+        import uuid
+        from utils.thread_pool import get_global_thread_pool
+
+        batch_task_id = str(uuid.uuid4())
+        user = request.user
+
+        def run_batch_disable():
+            """在后台线程中执行批量禁用"""
+            try:
+                result = AgentService.batch_disable_agents(
+                    agent_ids=[a.id for a in agents],
+                    user=user,
+                    batch_task_id=batch_task_id
+                )
+
+                logger.info(
+                    f"批量禁用任务完成: batch_task_id={batch_task_id}, 成功={result.get('success_count')}, 失败={result.get('failed_count')}"
+                )
+            except Exception as e:
+                logger.error(f"批量禁用任务失败: batch_task_id={batch_task_id}, 错误={str(e)}", exc_info=True)
+                # 推送错误状态
+                from utils.realtime_logs import realtime_log_service
+                realtime_log_service.push_status(batch_task_id, {
+                    'status': 'error',
+                    'message': f'批量禁用任务失败: {str(e)}'
+                })
+
+        # 使用全局线程池提交后台任务
+        pool = get_global_thread_pool()
+        pool.submit(run_batch_disable)
+
+        logger.info(f"批量禁用任务已启动: batch_task_id={batch_task_id}")
+
+        return SycResponse.success(
+            content={
+                'batch_task_id': batch_task_id,
+                'total': len(agent_ids),
+                'status': 'running'
+            },
+            message="批量禁用已启动，正在后台执行，可通过 batch_task_id 连接 SSE 查看实时进度"
+        )
+
+    @action(detail=False, methods=["post"], url_path="batch_enable_v2")
+    def batch_enable_v2(self, request):
+        """批量启用 Agent（带SSE进度监控）"""
+        serializer = BatchOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        data = serializer.validated_data
+        agent_ids = data['agent_ids']
+        confirmed = data.get('confirmed', False)
+
+        # 使用统一的批量操作校验
+        is_valid, error_msg, agents = self.validate_batch_operation_with_agents(
+            request=request,
+            agent_ids=agent_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
+
+        import uuid
+        from utils.thread_pool import get_global_thread_pool
+
+        batch_task_id = str(uuid.uuid4())
+        user = request.user
+
+        def run_batch_enable():
+            """在后台线程中执行批量启用"""
+            try:
+                result = AgentService.batch_enable_agents(
+                    agent_ids=[a.id for a in agents],
+                    user=user,
+                    batch_task_id=batch_task_id
+                )
+
+                logger.info(
+                    f"批量启用任务完成: batch_task_id={batch_task_id}, 成功={result.get('success_count')}, 失败={result.get('failed_count')}"
+                )
+            except Exception as e:
+                logger.error(f"批量启用任务失败: batch_task_id={batch_task_id}, 错误={str(e)}", exc_info=True)
+                # 推送错误状态
+                from utils.realtime_logs import realtime_log_service
+                realtime_log_service.push_status(batch_task_id, {
+                    'status': 'error',
+                    'message': f'批量启用任务失败: {str(e)}'
+                })
+
+        # 使用全局线程池提交后台任务
+        pool = get_global_thread_pool()
+        pool.submit(run_batch_enable)
+
+        logger.info(f"批量启用任务已启动: batch_task_id={batch_task_id}")
+
+        return SycResponse.success(
+            content={
+                'batch_task_id': batch_task_id,
+                'total': len(agent_ids),
+                'status': 'running'
+            },
+            message="批量启用已启动，正在后台执行，可通过 batch_task_id 连接 SSE 查看实时进度"
         )
 
     @action(detail=True, methods=["post"], url_path="regenerate_script")
@@ -1281,6 +1484,104 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             message="获取安记录成功",
         )
 
+    @action(detail=False, methods=["post"], url_path="retry_install_record")
+    def retry_install_record(self, request):
+        """重试安装记录中的失败主机"""
+        install_record_id = request.data.get('install_record_id')
+        if not install_record_id:
+            return SycResponse.error(message="缺少 install_record_id 参数", code=400)
+
+        # 获取安装记录
+        from .models import AgentInstallRecord
+        try:
+            install_record = AgentInstallRecord.objects.select_related('host', 'agent', 'installed_by').get(id=install_record_id)
+        except AgentInstallRecord.DoesNotExist:
+            return SycResponse.error(message="安装记录不存在", code=404)
+
+        # 权限检查
+        if not request.user.is_superuser:
+            allowed_hosts = get_objects_for_user(
+                request.user,
+                'view_host',
+                accept_global_perms=False
+            )
+            if install_record.host not in allowed_hosts:
+                return SycResponse.error(message="无权限访问此安装记录", code=403)
+
+        # 获取同一批次安装任务中的所有记录
+        batch_records = AgentInstallRecord.objects.filter(
+            install_task_id=install_record.install_task_id,
+            status='failed'  # 只重试失败的记录
+        ).select_related('host', 'agent')
+
+        if not batch_records.exists():
+            return SycResponse.error(message="该安装任务中没有失败的记录", code=400)
+
+        # 提取失败的主机ID
+        failed_host_ids = [record.host_id for record in batch_records]
+
+        # 验证用户确认
+        confirmed = request.data.get('confirmed', False)
+        if not confirmed:
+            return SycResponse.error(message="高危操作需要二次确认，请设置 confirmed=true", code=400)
+
+        # 构造重试参数
+        retry_params = {
+            'host_ids': failed_host_ids,
+            'install_type': install_record.install_type,
+            'install_mode': install_record.install_mode,
+            'agent_server_url': install_record.agent_server_url,
+            'agent_server_backup_url': install_record.agent_server_backup_url,
+            'ws_backoff_initial_ms': install_record.ws_backoff_initial_ms,
+            'ws_backoff_max_ms': install_record.ws_backoff_max_ms,
+            'ws_max_retries': install_record.ws_max_retries,
+            'agent_server_listen_addr': install_record.agent_server_listen_addr,
+            'max_connections': install_record.max_connections,
+            'heartbeat_timeout': install_record.heartbeat_timeout,
+            'package_id': install_record.package_id,
+            'package_version': install_record.package_version,
+            'ssh_timeout': 300,  # 默认超时时间
+            'confirmed': True,
+            'allow_reinstall': True,  # 允许重新安装
+        }
+
+        # 直接调用batch_install方法，构造一个新的request对象
+        from django.http import HttpRequest
+        from django.contrib.auth.models import AnonymousUser
+
+        # 创建一个新的request对象，包含重试参数
+        retry_request = HttpRequest()
+        retry_request.method = 'POST'
+        retry_request.POST = retry_params
+        retry_request.user = request.user
+        retry_request.data = retry_params
+
+        # 调用batch_install方法
+        return self.batch_install(retry_request)
+
+    @action(detail=False, methods=["get"], url_path="host_agent_status")
+    def host_agent_status(self, request):
+        """获取主机Agent状态，用于安装时显示主机列表"""
+        from apps.hosts.models import Host
+        from .serializers import HostAgentStatusSerializer
+
+        queryset = Host.objects.select_related('agent').all()
+
+        # 权限过滤
+        if not request.user.is_superuser:
+            allowed_hosts = get_objects_for_user(
+                request.user,
+                'view_host',
+                accept_global_perms=False
+            )
+            queryset = queryset.filter(id__in=[h.id for h in allowed_hosts])
+
+        serializer = HostAgentStatusSerializer(queryset, many=True)
+        return SycResponse.success(
+            content={"hosts": serializer.data},
+            message="获取主机Agent状态成功"
+        )
+
     @action(detail=False, methods=["get"], url_path="uninstall_records")
     def uninstall_records(self, request):
         """查卸载记录"""
@@ -1429,3 +1730,154 @@ class ArtifactUploadView(APIView):
         except Exception as exc:
             logger.exception("制品上传失败")
             return SycResponse.error(message=f"制品上传失败: {str(exc)}")
+
+    @action(detail=True, methods=["get"], url_path="system_resources")
+    def system_resources(self, request, pk=None):
+        """
+        获取Agent的系统资源监控数据
+        """
+        agent = self.get_object()
+
+        # 参数解析
+        hours = int(request.query_params.get('hours', 24))  # 默认24小时
+        limit = int(request.query_params.get('limit', 100))  # 默认100条
+
+        # 计算时间范围
+        end_time = timezone.now()
+        start_time = end_time - timezone.timedelta(hours=hours)
+
+        # 查询系统资源数据
+        resources = AgentSystemResource.objects.filter(
+            agent=agent,
+            timestamp__gte=start_time,
+            timestamp__lte=end_time
+        ).order_by('-timestamp')[:limit]
+
+        # 序列化数据
+        resource_data = []
+        for resource in resources:
+            data = {
+                'id': resource.id,
+                'timestamp': resource.timestamp.isoformat(),
+                'cpu_usage': resource.cpu_usage,
+                'memory_total': resource.memory_total,
+                'memory_used': resource.memory_used,
+                'memory_usage': resource.memory_usage,
+                'memory_total_gb': resource.memory_total_gb,
+                'memory_used_gb': resource.memory_used_gb,
+                'disk_usage': resource.disk_usage,
+                'load_avg_1m': resource.load_avg_1m,
+                'load_avg_5m': resource.load_avg_5m,
+                'load_avg_15m': resource.load_avg_15m,
+                'uptime': resource.uptime,
+            }
+            resource_data.append(data)
+
+        # 计算统计信息
+        stats = {
+            'total_records': len(resource_data),
+            'avg_cpu_usage': None,
+            'avg_memory_usage': None,
+            'max_cpu_usage': None,
+            'max_memory_usage': None,
+        }
+
+        if resource_data:
+            cpu_values = [r['cpu_usage'] for r in resource_data if r['cpu_usage'] is not None]
+            memory_values = [r['memory_usage'] for r in resource_data if r['memory_usage'] is not None]
+
+            if cpu_values:
+                stats['avg_cpu_usage'] = round(sum(cpu_values) / len(cpu_values), 2)
+                stats['max_cpu_usage'] = max(cpu_values)
+
+            if memory_values:
+                stats['avg_memory_usage'] = round(sum(memory_values) / len(memory_values), 2)
+                stats['max_memory_usage'] = max(memory_values)
+
+        return SycResponse.success(content={
+            'agent_id': agent.id,
+            'agent_name': agent.host.name,
+            'time_range': {
+                'start': start_time.isoformat(),
+                'end': end_time.isoformat(),
+                'hours': hours
+            },
+            'resources': resource_data,
+            'stats': stats
+        })
+
+    @action(detail=False, methods=["get"], url_path="resources_overview")
+    def resources_overview(self, request):
+        """
+        批量获取Agent资源概览（用于列表页展示）
+        返回每个Agent的最新资源使用情况
+        """
+        from django.db.models import Max, Subquery, OuterRef
+
+        # 获取请求的agent_ids（可选，不传则返回所有在线Agent）
+        agent_ids = request.query_params.get('agent_ids')
+        if agent_ids:
+            agent_ids = [int(x) for x in agent_ids.split(',') if x.strip().isdigit()]
+
+        # 构建查询：获取每个Agent最新的资源记录
+        # 子查询：获取每个agent_id的最新timestamp
+        latest_timestamps = AgentSystemResource.objects.filter(
+            agent_id=OuterRef('agent_id')
+        ).order_by('-timestamp').values('timestamp')[:1]
+
+        # 获取最新的资源记录
+        queryset = AgentSystemResource.objects.filter(
+            timestamp=Subquery(latest_timestamps)
+        ).select_related('agent', 'agent__host')
+
+        if agent_ids:
+            queryset = queryset.filter(agent_id__in=agent_ids)
+
+        # 只返回最近1小时内有数据的Agent（过滤掉长时间未上报的）
+        one_hour_ago = timezone.now() - timezone.timedelta(hours=1)
+        queryset = queryset.filter(timestamp__gte=one_hour_ago)
+
+        # 构建返回数据
+        result = {}
+        for resource in queryset:
+            result[resource.agent_id] = {
+                'agent_id': resource.agent_id,
+                'timestamp': resource.timestamp.isoformat(),
+                'cpu_usage': resource.cpu_usage,
+                'memory_usage': resource.memory_usage,
+                'memory_total': resource.memory_total,
+                'memory_used': resource.memory_used,
+                'disk_usage': resource.disk_usage,
+                'load_avg_1m': resource.load_avg_1m,
+                'uptime': resource.uptime,
+            }
+
+        return SycResponse.success(content={
+            'resources': result,
+            'total': len(result)
+        })
+
+    @action(detail=True, methods=["post"], url_path="reconcile_status")
+    def reconcile_status(self, request, pk=None):
+        """
+        触发Agent状态同步
+        """
+        agent = self.get_object()
+
+        # 执行状态同步
+        result = status_reconciliation_service.reconcile_agent_status(agent.id)
+
+        # 审计日志
+        AuditLogService.log(
+            user=request.user,
+            action="reconcile_agent_status",
+            resource=agent,
+            details={
+                'agent_id': agent.id,
+                'conflicts_found': result.get('conflicts_found', 0),
+                'conflicts_resolved': result.get('conflicts_resolved', 0)
+            },
+            request=request
+        )
+
+        return SycResponse.success(content=result, message="状态同步完成")

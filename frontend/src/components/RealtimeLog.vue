@@ -24,9 +24,40 @@
 
       <div class="control-actions">
         <a-space>
+          <!-- 搜索和过滤 -->
+          <a-input
+            v-model="searchText"
+            placeholder="搜索日志内容..."
+            size="small"
+            style="width: 200px"
+            allow-clear
+          >
+            <template #prefix>
+              <icon-search />
+            </template>
+          </a-input>
+
+          <a-select
+            v-model="logLevelFilter"
+            placeholder="日志级别"
+            size="small"
+            style="width: 120px"
+            allow-clear
+          >
+            <a-option value="info">信息</a-option>
+            <a-option value="warning">警告</a-option>
+            <a-option value="error">错误</a-option>
+            <a-option value="debug">调试</a-option>
+          </a-select>
+
           <a-button size="small" @click="clearLogs">
             <template #icon><icon-delete /></template>
             清空日志
+          </a-button>
+
+          <a-button size="small" @click="exportLogs" :disabled="!hasSelectedStepLogs">
+            <template #icon><icon-download /></template>
+            导出TXT
           </a-button>
 
           <a-switch v-model="autoScroll" size="small">
@@ -295,7 +326,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { IconCheckCircle, IconCloseCircle, IconDelete } from '@arco-design/web-vue/es/icon'
+import { IconCheckCircle, IconCloseCircle, IconDelete, IconSearch, IconDownload } from '@arco-design/web-vue/es/icon'
 import { useAuthStore } from '@/stores/auth'
 import { buildSseUrl } from '@/utils/env'
 import { SSE } from 'sse.js'
@@ -395,6 +426,10 @@ const selectedStepId = ref<string>('')
 const selectedHostIds = ref<Record<string, string>>({})
 const hostGroups = ref<Record<string, Record<string, any>>>({})
 const expandedSteps = ref<Record<string, boolean>>({})
+
+// 搜索和过滤
+const searchText = ref('')
+const logLevelFilter = ref('')
 
 // 重连相关
 const reconnectAttempts = ref(0)
@@ -880,12 +915,14 @@ const toggleGroup = (stepId: string, status: string) => {
   hostGroups.value[stepId][status].expanded = !hostGroups.value[stepId][status].expanded
 }
 
-// 获取主机日志条目数量
+// 获取主机日志条目数量（支持过滤）
 const getHostLogCount = (stepId: string, hostId: string) => {
   if (!stepLogs.value[stepId] || !stepLogs.value[stepId].hosts[hostId]) {
     return 0
   }
-  return stepLogs.value[stepId].hosts[hostId].logs.length
+  const allLogs = getHostLogItems(stepId, hostId)
+  const filteredLogs = getFilteredLogs(allLogs)
+  return filteredLogs.length
 }
 
 // 获取主机日志条目数组（用于虚拟滚动）
@@ -898,6 +935,39 @@ const getHostLogItems = (stepId: string, hostId: string) => {
   return LogCompressor.decompress(compressedLogs)
 }
 
+// 检查是否有选中的步骤日志
+const hasSelectedStepLogs = computed(() => {
+  const currentStepId = selectedStepId.value
+  if (!currentStepId || !stepLogs.value[currentStepId]) return false
+
+  const step = stepLogs.value[currentStepId]
+  return Object.keys(step.hosts || {}).length > 0
+})
+
+// 过滤日志
+const getFilteredLogs = (logs: any[]) => {
+  if (!logs || logs.length === 0) return []
+
+  let filtered = logs
+
+  // 按日志级别过滤
+  if (logLevelFilter.value) {
+    filtered = filtered.filter(log =>
+      (log.level || log.log_type || 'info') === logLevelFilter.value
+    )
+  }
+
+  // 按内容搜索
+  if (searchText.value.trim()) {
+    const searchLower = searchText.value.toLowerCase()
+    filtered = filtered.filter(log =>
+      log.content && log.content.toLowerCase().includes(searchLower)
+    )
+  }
+
+  return filtered
+}
+
 // 虚拟滚动计算属性
 const visibleLogs = computed(() => {
   const currentStepId = selectedStepId.value
@@ -905,8 +975,14 @@ const visibleLogs = computed(() => {
   if (!currentStepId || !currentHost) return []
 
   const allLogs = getHostLogItems(currentStepId, currentHost)
-  const endIndex = Math.min(startIndex.value + visibleCount.value, allLogs.length)
-  return allLogs.slice(startIndex.value, endIndex)
+  const filteredLogs = getFilteredLogs(allLogs)
+
+  // 重新计算虚拟滚动的起始和结束索引
+  const totalFiltered = filteredLogs.length
+  const effectiveStartIndex = Math.min(startIndex.value, Math.max(0, totalFiltered - visibleCount.value))
+  const endIndex = Math.min(effectiveStartIndex + visibleCount.value, totalFiltered)
+
+  return filteredLogs.slice(effectiveStartIndex, endIndex)
 })
 
 const virtualTotalHeight = computed(() => {
@@ -914,7 +990,10 @@ const virtualTotalHeight = computed(() => {
   const currentHost = selectedHostIds.value[currentStepId]
   if (!currentStepId || !currentHost) return 0
 
-  return getHostLogItems(currentStepId, currentHost).length * itemHeight
+  const allLogs = getHostLogItems(currentStepId, currentHost)
+  const filteredLogs = getFilteredLogs(allLogs)
+
+  return filteredLogs.length * itemHeight
 })
 
 // 滚动处理
@@ -924,17 +1003,79 @@ const handleScroll = (event: Event) => {
   startIndex.value = Math.floor(scrollTop / itemHeight)
 }
 
-// 获取主机日志文本（用于小日志量场景）
+// 获取主机日志文本（用于小日志量场景，支持过滤）
 const getHostLogs = (stepId: string, hostId: string) => {
   if (!stepLogs.value[stepId] || !stepLogs.value[stepId].hosts[hostId]) {
     return ''
   }
 
-  return stepLogs.value[stepId].hosts[hostId].logs
+  const allLogs = getHostLogItems(stepId, hostId)
+  const filteredLogs = getFilteredLogs(allLogs)
+
+  return filteredLogs
     .map((log: any) => `[${formatTime(log.timestamp)}] ${log.content}`)
     .join('\n')
 }
 
+
+// 导出日志为TXT文件
+const exportLogs = () => {
+  const currentStepId = selectedStepId.value
+  if (!currentStepId || !stepLogs.value[currentStepId]) {
+    Message.warning('没有可导出的日志')
+    return
+  }
+
+  const step = stepLogs.value[currentStepId]
+  let exportContent = `执行步骤: ${step.step_name}\n`
+  exportContent += `导出时间: ${formatTime(new Date().toISOString())}\n`
+  exportContent += '='.repeat(50) + '\n\n'
+
+  // 按主机分组导出
+  Object.keys(step.hosts || {}).forEach(hostId => {
+    const hostLog = step.hosts[hostId]
+    exportContent += `主机: ${hostLog.host_name} (${hostLog.host_ip})\n`
+    exportContent += `状态: ${getHostStatusText(hostLog.status)}\n`
+    exportContent += '-'.repeat(30) + '\n'
+
+    const allLogs = getHostLogItems(currentStepId, hostId)
+    const filteredLogs = getFilteredLogs(allLogs)
+
+    if (filteredLogs.length === 0) {
+      exportContent += '无匹配的日志内容\n'
+    } else {
+      filteredLogs.forEach(log => {
+        exportContent += `[${formatTime(log.timestamp)}] ${log.content}\n`
+      })
+    }
+
+    exportContent += '\n'
+  })
+
+  // 创建并下载文件
+  const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `执行日志_${step.step_name}_${new Date().getTime()}.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  Message.success('日志导出成功')
+}
+
+// 监听搜索和过滤条件变化，重置虚拟滚动位置
+watch([searchText, logLevelFilter], () => {
+  startIndex.value = 0
+  nextTick(() => {
+    const container = logContainer.value
+    if (container) {
+      container.scrollTop = 0
+    }
+  })
+})
 
 // 监听 autoScroll 变化
 watch(autoScroll, (newVal) => {

@@ -2,6 +2,7 @@ package log
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -41,8 +42,23 @@ func (w *StatusStreamWriter) PushStatus(ctx context.Context, fields map[string]i
 	if _, ok := fields["timestamp"]; !ok {
 		fields["timestamp"] = time.Now().UnixMilli()
 	}
+
+	// Redis Stream 的 XADD 不支持嵌套结构，需要将嵌套的 map 序列化为 JSON 字符串
+	flatFields := make(map[string]interface{})
+	for k, v := range fields {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			// 将嵌套的 map 序列化为 JSON 字符串
+			if jsonBytes, err := json.Marshal(val); err == nil {
+				flatFields[k] = string(jsonBytes)
+			}
+		default:
+			flatFields[k] = v
+		}
+	}
+
 	return w.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: w.key,
-		Values: fields,
+		Values: flatFields,
 	}).Err()
 }

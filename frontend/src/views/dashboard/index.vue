@@ -68,200 +68,31 @@
       </a-col>
     </a-row>
 
-    <!-- 任务执行趋势图表 -->
-    <a-row :gutter="16" class="charts-row">
-      <a-col :span="24">
-        <a-card class="chart-card">
+    <!-- 活动与收藏区域：我的收藏（左） + 最近执行（右） -->
+    <a-row :gutter="24" class="activity-row" style="margin-top:12px;">
+      <a-col :span="14">
+        <a-card class="favorites-card">
           <template #title>
-            <div class="chart-header">
-              <span class="chart-title">任务执行趋势</span>
-              <div class="chart-filters">
-                <a-space>
-                  <a-select
-                    v-model="trendFilters.timeRange"
-                    placeholder="时间范围"
-                    style="width: 120px"
-                    @change="updateTrendChart"
-                  >
-                    <a-option value="today">今日</a-option>
-                    <a-option value="week">本周</a-option>
-                    <a-option value="month">本月</a-option>
-                    <a-option value="custom">自定义</a-option>
-                  </a-select>
-                  <a-range-picker
-                    v-if="trendFilters.timeRange === 'custom'"
-                    v-model="trendFilters.dateRange"
-                    @change="updateTrendChart"
-                    style="width: 240px"
-                  />
-                  <a-select
-                    v-model="trendFilters.planId"
-                    placeholder="执行方案"
-                    allow-clear
-                    style="width: 200px"
-                    @change="updateTrendChart"
-                  >
-                    <a-option
-                      v-for="plan in executionPlans"
-                      :key="plan.id"
-                      :value="plan.id"
-                    >
-                      {{ plan.name }} ({{ plan.execution_count }}次)
-                    </a-option>
-                  </a-select>
-                </a-space>
-              </div>
-            </div>
+            <span class="chart-title">我的收藏</span>
           </template>
-          <div ref="executionTrendChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 执行成功率趋势图表 -->
-    <a-row :gutter="16" class="charts-row">
-      <a-col :span="24">
-        <a-card class="chart-card">
-          <template #title>
-            <div class="chart-header">
-              <span class="chart-title">执行成功率趋势</span>
-              <div class="chart-filters">
-                <a-space>
-                  <a-select
-                    v-model="successRateFilters.timeRange"
-                    placeholder="时间范围"
-                    style="width: 120px"
-                    @change="updateSuccessRateChart"
-                  >
-                    <a-option value="today">今日</a-option>
-                    <a-option value="week">本周</a-option>
-                    <a-option value="month">本月</a-option>
-                    <a-option value="custom">自定义</a-option>
-                  </a-select>
-                  <a-range-picker
-                    v-if="successRateFilters.timeRange === 'custom'"
-                    v-model="successRateFilters.dateRange"
-                    @change="updateSuccessRateChart"
-                    style="width: 240px"
-                  />
-                </a-space>
-              </div>
-            </div>
-          </template>
-          <div ref="successRateChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 任务执行Top20图表 -->
-    <a-row :gutter="16" class="charts-row">
-      <a-col :span="24">
-        <a-card class="chart-card">
-          <template #title>
-            <div class="chart-header">
-              <span class="chart-title">任务执行Top20</span>
-              <div class="chart-filters">
-                <a-space>
-                  <a-select
-                    v-model="topFilters.timeRange"
-                    placeholder="时间范围"
-                    style="width: 120px"
-                    @change="updateTopChart"
-                  >
-                    <a-option value="today">今日</a-option>
-                    <a-option value="week">本周</a-option>
-                    <a-option value="month">本月</a-option>
-                    <a-option value="custom">自定义</a-option>
-                  </a-select>
-                  <a-range-picker
-                    v-if="topFilters.timeRange === 'custom'"
-                    v-model="topFilters.dateRange"
-                    @change="updateTopChart"
-                    style="width: 240px"
-                  />
-                  <a-select
-                    v-model="topFilters.sortBy"
-                    placeholder="排序方式"
-                    style="width: 120px"
-                    @change="updateTopChart"
-                  >
-                    <a-option value="count">执行次数</a-option>
-                    <a-option value="success_rate">成功率</a-option>
-                    <a-option value="avg_duration">平均耗时</a-option>
-                  </a-select>
-                </a-space>
-              </div>
-            </div>
-          </template>
-          <div ref="topExecutionChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 其他图表 -->
-    <a-row :gutter="16" class="charts-row">
-      <a-col :span="8">
-        <a-card class="chart-card">
-          <template #title>
-            <span class="chart-title">任务状态分布</span>
-          </template>
-          <div ref="statusDistributionChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card class="chart-card">
-          <template #title>
-            <span class="chart-title">模板分类统计</span>
-          </template>
-          <div ref="templateCategoryChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card class="chart-card">
-          <template #title>
-            <span class="chart-title">主机状态分布</span>
-          </template>
-          <div ref="hostStatusChart" class="chart-container"></div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 热力图和其他图表 -->
-    <a-row :gutter="16" class="charts-row">
-      <a-col :span="24">
-        <a-card class="chart-card">
-          <template #title>
-            <span class="chart-title">任务执行热力图</span>
-          </template>
-          <div class="chart-filters" style="position: absolute; right: 16px; top: 12px; z-index: 2;">
-            <a-space>
-              <a-select
-                v-model="heatmapFilters.timeRange"
-                placeholder="时间范围"
-                style="width: 120px"
-                @change="updateHeatmapChart"
-              >
-                <a-option value="today">今日</a-option>
-                <a-option value="week">本周</a-option>
-                <a-option value="month">本月</a-option>
-                <a-option value="custom">自定义</a-option>
-              </a-select>
-              <a-range-picker
-                v-if="heatmapFilters.timeRange === 'custom'"
-                v-model="heatmapFilters.dateRange"
-                @change="updateHeatmapChart"
-                style="width: 240px"
-              />
-            </a-space>
+          <div v-loading="loadingFavorites">
+            <div v-if="myFavorites.length === 0" class="text-gray-400">你还没有收藏任何项目</div>
+            <a-list v-else bordered>
+              <a-list-item v-for="item in myFavorites" :key="item.type + '-' + item.id">
+                <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
+                  <a @click="() => router.push(item.url)">{{ item.name }}</a>
+                  <a-button size="mini" type="text" @click="togglePin(item)">
+                    <icon-star-fill v-if="isPinned(item)" />
+                    <icon-star v-else />
+                  </a-button>
+                </div>
+              </a-list-item>
+            </a-list>
           </div>
-          <div ref="heatmapChart" class="chart-container"></div>
         </a-card>
       </a-col>
-    </a-row>
 
-    <!-- 最近活动 -->
-    <a-row :gutter="16" class="activity-row">
-      <a-col :span="12">
+      <a-col :span="10">
         <a-card class="activity-card">
           <template #title>
             <span class="chart-title">最近操作</span>
@@ -293,53 +124,18 @@
                 </div>
               </div>
             </div>
+            <div style="text-align:right;margin-top:8px">
+              <a-button type="text" @click="() => router.push('/execution-records')">更多执行记录</a-button>
+            </div>
           </div>
         </a-card>
       </a-col>
-      <a-col :span="12">
-        <a-card class="activity-card">
-          <template #title>
-            <span class="chart-title">系统状态</span>
-          </template>
-          <a-descriptions :column="1" bordered>
-            <a-descriptions-item label="系统版本">
-              <a-tag color="blue">v1.0.0</a-tag>
-            </a-descriptions-item>
-            <a-descriptions-item label="运行时间">
-              {{ systemInfo.uptime }}
-            </a-descriptions-item>
-            <a-descriptions-item label="CPU使用率">
-              <div style="display: flex; align-items: center; width: 100%;">
-                <div style="flex: 1; height: 8px; background: #f0f0f0; border-radius: 4px; margin-right: 10px; overflow: hidden;">
-                  <div :style="`width: ${Math.min(systemInfo.cpu, 100)}%; height: 100%; background: ${systemInfo.cpu > 80 ? '#ff4d4f' : systemInfo.cpu > 60 ? '#faad14' : '#52c41a'}; transition: width 0.3s ease;`"></div>
-                </div>
-                <span style="color: #666; min-width: 40px;">{{ systemInfo.cpu }}%</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="内存使用率">
-              <div style="display: flex; align-items: center; width: 100%;">
-                <div style="flex: 1; height: 8px; background: #f0f0f0; border-radius: 4px; margin-right: 10px; overflow: hidden;">
-                  <div :style="`width: ${Math.min(systemInfo.memory, 100)}%; height: 100%; background: ${systemInfo.memory > 80 ? '#ff4d4f' : systemInfo.memory > 60 ? '#faad14' : '#52c41a'}; transition: width 0.3s ease;`"></div>
-                </div>
-                <span style="color: #666; min-width: 40px;">{{ systemInfo.memory }}%</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="磁盘使用率">
-              <div style="display: flex; align-items: center; width: 100%;">
-                <div style="flex: 1; height: 8px; background: #f0f0f0; border-radius: 4px; margin-right: 10px; overflow: hidden;">
-                  <div :style="`width: ${Math.min(systemInfo.disk, 100)}%; height: 100%; background: ${systemInfo.disk > 80 ? '#ff4d4f' : systemInfo.disk > 60 ? '#faad14' : '#52c41a'}; transition: width 0.3s ease;`"></div>
-                </div>
-                <span style="color: #666; min-width: 40px;">{{ systemInfo.disk }}%</span>
-              </div>
-            </a-descriptions-item>
-          </a-descriptions>
-        </a-card>
-      </a-col>
     </a-row>
+
   </div>
 </template>
 
-<script setup>
+<script lang="ts" setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -351,10 +147,14 @@ import {
   IconClose,
   IconLoading,
   IconArrowUp,
-  IconArrowDown
+  IconArrowDown,
+  IconPlus,
+  IconPlayCircle,
+  IconDesktop,
+  IconCode
 } from '@arco-design/web-vue/es/icon'
-import * as echarts from 'echarts'
 import { dashboardApi } from '@/api/dashboard'
+import { favoriteApi, jobTemplateApi } from '@/api/ops'
 import { Message } from '@arco-design/web-vue'
 
 // 路由
@@ -386,48 +186,51 @@ const debugStats = computed(() => {
 const recentExecutions = ref([])
 const loadingExecutions = ref(false)
 const loadingStats = ref(false)
-const loadingSystemInfo = ref(false)
 const executionPlans = ref([])
 const loadingPlans = ref(false)
 
-const systemInfo = reactive({
-  uptime: '0天0小时',
-  cpu: 0,
-  memory: 0,
-  disk: 0
-})
+// 我的收藏列表（展示少量常用收藏）
+const myFavorites = ref([])
+const loadingFavorites = ref(false)
 
-// 图表引用
-const executionTrendChart = ref()
-const statusDistributionChart = ref()
-const templateCategoryChart = ref()
-const hostStatusChart = ref()
-const successRateChart = ref()
-const topExecutionChart = ref()
-const heatmapChart = ref()
+const fetchFavorites = async () => {
+  loadingFavorites.value = true
+  try {
+    // 先获取作业模板类型的收藏（限制少量）
+    const favResp = await favoriteApi.getFavorites({ favorite_type: 'job_template', page_size: 5 })
+    const favItems = favResp?.results || favResp || []
+    const entries = []
 
-// 过滤器数据
-const trendFilters = reactive({
-  timeRange: 'week',
-  dateRange: [],
-  planId: ''  // 按执行方案过滤
-})
+    // 为每个 favorite 取 object_id 并拉取模板名称（并发）
+    const limited = favItems.slice(0, 5)
+    const requests = limited.map(f => jobTemplateApi.getTemplate(f.object_id).catch(() => null))
+    const results = await Promise.allSettled(requests)
+    results.forEach((r, idx) => {
+      const fav = limited[idx]
+      if (r.status === 'fulfilled' && r.value) {
+        entries.push({
+          id: fav.object_id,
+          name: r.value.name || `模板 #${fav.object_id}`,
+          type: 'job_template',
+          url: `/job-templates/detail/${fav.object_id}`
+        })
+      } else {
+        entries.push({
+          id: fav.object_id,
+          name: `模板 #${fav.object_id}`,
+          type: 'job_template',
+          url: `/job-templates/detail/${fav.object_id}`
+        })
+      }
+    })
 
-const heatmapFilters = reactive({
-  timeRange: 'week',
-  dateRange: []
-})
-
-const successRateFilters = reactive({
-  timeRange: 'week',
-  dateRange: []
-})
-
-const topFilters = reactive({
-  timeRange: 'week',
-  dateRange: [],
-  sortBy: 'count'
-})
+    myFavorites.value = entries
+  } catch (e) {
+    console.error('加载收藏失败:', e)
+  } finally {
+    loadingFavorites.value = false
+  }
+}
 
 // 获取统计数据
 const fetchStats = async () => {
@@ -464,58 +267,52 @@ const fetchRecentExecutions = async () => {
   try {
     const content = await dashboardApi.getRecentActivity()
 
-    const activities = content.activities || []
+    // content can be different shapes: array, { activities: [...] }, { results: [...] }
+    let activities: any[] = []
+    if (!content) {
+      activities = []
+    } else if (Array.isArray(content)) {
+      activities = content
+    } else if (Array.isArray(content.activities)) {
+      activities = content.activities
+    } else if (Array.isArray(content.results)) {
+      activities = content.results
+    } else if (Array.isArray(content.items)) {
+      activities = content.items
+    } else {
+      // fallback: try to find any array-valued prop
+      const arr = Object.values(content).find(v => Array.isArray(v))
+      activities = Array.isArray(arr) ? arr : []
+    }
 
-      // 过滤出执行类型的活动
-      const executionActivities = activities.filter(
-        activity => activity.type === 'execution'
-      ).slice(0, 5) // 只取前5条
+    console.debug('dashboard: recent activities fetched', activities.length)
 
-      // 转换为前端需要的格式
-      recentExecutions.value = executionActivities.map(activity => ({
+    // 过滤出执行类型的活动，最多10条
+    const executionActivities = activities.filter((activity: any) => activity && activity.type === 'execution').slice(0, 10)
+
+    if (executionActivities.length > 0) {
+      recentExecutions.value = executionActivities.map((activity: any) => ({
         id: activity.id,
-        job_name: activity.description || '未知任务',
-        status: activity.status?.toUpperCase() || 'UNKNOWN',
-        start_time: activity.created_at
+        job_name: activity.description || activity.action || '未知任务',
+        status: (activity.status || '').toString().toUpperCase() || 'UNKNOWN',
+        start_time: activity.created_at || activity.timestamp || activity.time
       }))
-
-      // 如果没有执行记录，显示所有活动
-      if (executionActivities.length === 0) {
-        recentExecutions.value = activities.slice(0, 5).map(activity => ({
-          id: activity.id,
-          job_name: activity.description || activity.action || '系统活动',
-          status: 'INFO',
-          start_time: activity.created_at
-        }))
-      }
-  } catch (error) {
+    } else {
+      // 如果没有执行记录，显示最近的活动（最多10条）
+      recentExecutions.value = activities.slice(0, 10).map((activity: any) => ({
+        id: activity.id,
+        job_name: activity.description || activity.action || '系统活动',
+        status: 'INFO',
+        start_time: activity.created_at || activity.timestamp || activity.time
+      }))
+    }
+  } catch (error: any) {
     console.error('获取执行记录失败:', error)
-    Message.error('获取执行记录失败: ' + error.message)
+    const errMsg = error?.message || '获取执行记录失败'
+    Message.error(errMsg)
+    recentExecutions.value = []
   } finally {
     loadingExecutions.value = false
-  }
-}
-
-// 获取系统信息
-const fetchSystemInfo = async () => {
-  loadingSystemInfo.value = true
-  try {
-    const systemData = await dashboardApi.getSystemStatus()
-    const sysInfo = systemData.system_info || {}
-
-    // 使用真实的系统信息
-    systemInfo.cpu = Math.round(sysInfo.cpu_percent || 0)
-    systemInfo.memory = Math.round(sysInfo.memory_percent || 0)
-    systemInfo.disk = Math.round(sysInfo.disk_usage || 0)
-
-    if (sysInfo.uptime) {
-      systemInfo.uptime = sysInfo.uptime
-    }
-  } catch (error) {
-    console.error('获取系统信息失败:', error)
-    Message.error('获取系统信息失败: ' + error.message)
-  } finally {
-    loadingSystemInfo.value = false
   }
 }
 
@@ -533,714 +330,15 @@ const fetchExecutionPlans = async () => {
   }
 }
 
-// 初始化图表
-const initCharts = async () => {
-  await nextTick()
 
-  // 并行初始化所有图表，互不影响
+// 刷新所有数据
+const refreshAllData = async () => {
   await Promise.allSettled([
-    initExecutionTrendChart(),
-    initStatusDistributionChart(),
-    initTemplateCategoryChart(),
-    initHostStatusChart(),
-    initSuccessRateChart(),
-    initTopExecutionChart(),
-    initHeatmapChart()
+    fetchStats(),
+    fetchRecentExecutions(),
+    fetchExecutionPlans(),
+    fetchFavorites()
   ])
-}
-
-// 执行趋势图
-const initExecutionTrendChart = async () => {
-  if (!executionTrendChart.value) return
-
-  try {
-    const chart = echarts.init(executionTrendChart.value)
-
-    // 构建过滤器参数
-    const params = {
-      time_range: trendFilters.timeRange,
-      plan_id: trendFilters.planId || undefined
-    }
-
-    // 如果是自定义时间范围，添加日期参数
-    if (trendFilters.timeRange === 'custom' && trendFilters.dateRange && trendFilters.dateRange.length === 2) {
-      // 格式化日期为 YYYY-MM-DD 格式
-      const formatDate = (date) => {
-        if (!date) return ''
-        if (typeof date === 'string') return date
-        if (date instanceof Date) {
-          return date.toISOString().split('T')[0]
-        }
-        // 处理 moment 对象
-        if (date.format) {
-          return date.format('YYYY-MM-DD')
-        }
-        return date
-      }
-      params.start_date = formatDate(trendFilters.dateRange[0])
-      params.end_date = formatDate(trendFilters.dateRange[1])
-    }
-
-    // 获取真实的执行趋势数据
-    let data = [] // 默认空数据
-
-    try {
-      data = await dashboardApi.getExecutionTrend(params)
-
-    } catch (error) {
-      console.warn('获取执行趋势数据失败，使用空数据:', error)
-      data = []
-    }
-
-    const dates = data.map(item => item.date)
-    const totalData = data.map(item => item.total)
-    const successData = data.map(item => item.success)
-    const failedData = data.map(item => item.failed)
-
-    // 计算Y轴最大值，确保有足够的空间显示数据
-    const maxValue = Math.max(...totalData, ...successData, ...failedData)
-    const yAxisMax = maxValue > 0 ? Math.ceil(maxValue * 1.1) : 10 // 给10%的缓冲空间，最小为10
-
-    const option = {
-      tooltip: { 
-        animation: true,
-        animationDuration: 1000,
-        animationEasing: 'cubicInOut',
-        animationDurationUpdate: 1000,
-        animationEasingUpdate: 'cubicInOut',
-        trigger: 'axis',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        borderColor: '#e8e8e8',
-        borderWidth: 1,
-        // textStyle: { color: '#333', fontSize: 12 },
-        textStyle: {
-          fontSize: 14,
-          color: 'rgba(0, 0, 0, 0.75)'
-        },
-        padding: [8, 12],
-        shadowColor: 'rgba(0, 0, 0, 0.08)',
-        shadowBlur: 16,
-        shadowOffsetX: 0,
-        shadowOffsetY: 4,
-        extraCssText: 'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);'
-      },
-      legend: { 
-        data: ['成功', '失败'],
-        top: 15,
-        left: 'center',
-        // textStyle: { color: '#666', fontSize: 14 },
-        textStyle: {
-          fontSize: 14,
-          color: 'rgba(0, 0, 0, 0.75)'
-        },
-        itemGap: 20,
-        itemWidth: 12,
-        itemHeight: 8,
-        icon: 'roundRect'
-      },
-      grid: {
-        left: '5%',
-        right: '5%',
-        bottom: '8%',
-        top: '20%',
-        containLabel: true
-      },
-      xAxis: { 
-        type: 'category', 
-        data: dates,
-        axisLine: { lineStyle: { color: '#e8e8e8' } },
-        axisTick: { lineStyle: { color: '#e8e8e8' } },
-        axisLabel: { color: '#666', fontSize: 11, margin: 8 }
-      },
-      yAxis: { 
-        type: 'value',
-        min: 0,
-        max: yAxisMax,
-        interval: Math.ceil(yAxisMax / 5), // 动态计算间隔，分成5个区间
-        axisLine: { lineStyle: { color: '#e8e8e8' } },
-        axisTick: { lineStyle: { color: '#e8e8e8' } },
-        axisLabel: { color: '#666', fontSize: 12 },
-        splitLine: { 
-          show: true,
-          lineStyle: { 
-            color: '#f0f0f0',
-            type: 'dashed',
-            width: 1,
-            opacity: 0.8
-          }
-        }
-      },
-      series: [
-        { 
-          name: '成功', 
-          data: successData, 
-          type: 'line', 
-          smooth: true, 
-          symbol: 'circle',
-          symbolSize: 5,
-          itemStyle: { color: '#52c41a' },
-          lineStyle: { width: 2.5, color: '#52c41a' },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: 'rgba(82, 196, 26, 0.25)' },
-                { offset: 1, color: 'rgba(82, 196, 26, 0.05)' }
-              ]
-            }
-          }
-        },
-        { 
-          name: '失败', 
-          data: failedData, 
-          type: 'line', 
-          smooth: true, 
-          symbol: 'circle',
-          symbolSize: 5,
-          itemStyle: { color: '#ff4d4f' },
-          lineStyle: { width: 2.5, color: '#ff4d4f' },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: 'rgba(255, 77, 79, 0.25)' },
-                { offset: 1, color: 'rgba(255, 77, 79, 0.05)' }
-              ]
-            }
-          }
-        }
-      ]
-    }
-    chart.setOption(option)
-  } catch (error) {
-    console.error('初始化执行趋势图失败:', error)
-  }
-}
-
-// 状态分布图
-const initStatusDistributionChart = async () => {
-  if (!statusDistributionChart.value) return
-
-  try {
-    const chart = echarts.init(statusDistributionChart.value)
-
-    // 获取真实的状态分布数据
-    let data = [] // 默认空数据
-
-    try {
-      const content = await dashboardApi.getStatusDistribution()
-
-      // 为数据添加样式配置
-      const statusColors = {
-        'success': '#52c41a',
-        'failed': '#ff4d4f',
-        'running': '#1890ff',
-        'pending': '#fa8c16',
-        'cancelled': '#d9d9d9'
-      }
-
-      data = content.map(item => ({
-        ...item,
-        itemStyle: item.itemStyle || {
-          color: statusColors[item.status] || '#d9d9d9'
-        }
-      }))
-    } catch (error) {
-      console.error('获取状态分布数据失败:', error)
-      data = []
-    }
-
-    const option = {
-      tooltip: { 
-        trigger: 'item',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderColor: '#e8e8e8',
-        textStyle: { color: '#333' }
-      },
-      series: [{
-        type: 'pie',
-        radius: '70%',
-        center: ['50%', '50%'],
-        data: data,
-        label: {
-          show: true,
-          position: 'outside',
-          formatter: '{b}: {c} ({d}%)',
-          color: '#666'
-        },
-        labelLine: {
-          show: true,
-          lineStyle: { color: '#e8e8e8' }
-        }
-      }]
-    }
-    chart.setOption(option)
-  } catch (error) {
-    console.error('初始化状态分布图失败:', error)
-  }
-}
-
-// 模板分类图
-const initTemplateCategoryChart = async () => {
-  if (!templateCategoryChart.value) return
-
-  try {
-    const chart = echarts.init(templateCategoryChart.value)
-
-    // 获取真实的模板分类数据
-    let data = [] // 默认空数据
-
-    try {
-      const content = await dashboardApi.getTemplateCategoryStats()
-
-      // 为数据添加样式配置
-      const colors = ['#1890ff', '#52c41a', '#fa8c16', '#722ed1', '#eb2f96', '#13c2c2']
-
-      data = content.map((item, index) => ({
-        ...item,
-        itemStyle: item.itemStyle || {
-          color: colors[index % colors.length]
-        }
-      }))
-    } catch (error) {
-      console.warn('获取模板分类数据失败，使用空数据:', error)
-    }
-
-    const option = {
-      tooltip: { trigger: 'item' },
-      series: [{
-        type: 'pie',
-        radius: ['40%', '70%'],
-        data: data
-      }]
-    }
-    chart.setOption(option)
-  } catch (error) {
-    console.error('初始化模板分类图失败:', error)
-  }
-}
-
-// 主机状态图
-const initHostStatusChart = async () => {
-  if (!hostStatusChart.value) return
-
-  try {
-    const chart = echarts.init(hostStatusChart.value)
-
-    // 获取真实的主机状态数据
-    let data = [] // 默认空数据
-
-    try {
-      const content = await dashboardApi.getHostStatusStats()
-
-      // 为数据添加样式配置
-      const statusColors = {
-        'online': '#52c41a',
-        'offline': '#ff4d4f',
-        'error': '#fa541c',
-        'unknown': '#d9d9d9'
-      }
-
-      data = content.map(item => ({
-        ...item,
-        itemStyle: item.itemStyle || {
-          color: statusColors[item.status] || '#d9d9d9'
-        }
-      }))
-    } catch (error) {
-      console.warn('获取主机状态数据失败，使用空数据:', error)
-    }
-
-    const option = {
-      tooltip: { trigger: 'item' },
-      series: [{
-        type: 'pie',
-        radius: '60%',
-        data: data
-      }]
-    }
-    chart.setOption(option)
-  } catch (error) {
-    console.error('初始化主机状态图失败:', error)
-  }
-}
-
-// 成功率趋势图
-const initSuccessRateChart = async () => {
-  if (!successRateChart.value) return
-
-  try {
-    // 构建过滤器参数
-    const params = {
-      time_range: successRateFilters.timeRange
-    }
-
-    // 如果是自定义时间范围，添加日期参数
-    if (successRateFilters.timeRange === 'custom' && successRateFilters.dateRange && successRateFilters.dateRange.length === 2) {
-      // 格式化日期为 YYYY-MM-DD 格式
-      const formatDate = (date) => {
-        if (!date) return ''
-        if (typeof date === 'string') return date
-        if (date instanceof Date) {
-          return date.toISOString().split('T')[0]
-        }
-        // 处理 moment 对象
-        if (date.format) {
-          return date.format('YYYY-MM-DD')
-        }
-        return date
-      }
-      params.start_date = formatDate(successRateFilters.dateRange[0])
-      params.end_date = formatDate(successRateFilters.dateRange[1])
-    }
-
-    // 获取真实的执行趋势数据
-    const trendData = await dashboardApi.getExecutionTrend(params)
-
-    // 计算每天的成功率
-    const successRates = []
-    const labels = []
-
-    if (trendData && trendData.length > 0) {
-      trendData.forEach(item => {
-        labels.push(item.date)
-        // 计算当天的成功率
-        const successRate = item.total > 0 ? Math.round((item.success / item.total) * 100) : 0
-        successRates.push(successRate)
-      })
-    } else {
-      // 没有数据时显示默认标签和0值
-      const defaultLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-      labels.push(...defaultLabels)
-      successRates.push(...new Array(7).fill(0))
-    }
-
-    const chart = echarts.init(successRateChart.value)
-    const option = {
-      tooltip: {
-        trigger: 'axis',
-        formatter: '{b}: {c}%'
-      },
-      xAxis: { type: 'category', data: labels },
-      yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
-      series: [{
-        data: successRates,
-        type: 'line',
-        smooth: true,
-        itemStyle: { color: '#52c41a' },
-        areaStyle: { opacity: 0.3 }
-      }]
-    }
-    chart.setOption(option)
-  } catch (error) {
-    console.error('获取成功率趋势数据失败:', error)
-  }
-}
-
-// 热力图
-const initHeatmapChart = async () => {
-  if (!heatmapChart.value) return
-
-  // 如果已有实例，先释放以确保切换 timeRange 时能完全替换配置（避免 setOption merge 导致样式不变）
-  try {
-    const existing = echarts.getInstanceByDom(heatmapChart.value)
-    if (existing) {
-      existing.dispose()
-    }
-  } catch (e) {
-    // ignore
-  }
-  const chart = echarts.init(heatmapChart.value)
-
-  // 时间轴数据 - 更美观的时间格式
-  const hours = []
-  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  for (let i = 0; i < 24; i++) {
-    hours.push(String(i).padStart(2, '0') + ':00')
-  }
-
-  let data = []
-  let maxValue = 0
-
-  try {
-      // 构建过滤参数（默认最近一周）
-      const params = { time_range: heatmapFilters.timeRange }
-      if (heatmapFilters.timeRange === 'custom' && heatmapFilters.dateRange && heatmapFilters.dateRange.length === 2) {
-        const formatDate = (date) => {
-          if (!date) return ''
-          if (typeof date === 'string') return date
-          if (date instanceof Date) return date.toISOString().split('T')[0]
-          if (date.format) return date.format('YYYY-MM-DD')
-          return date
-        }
-        // 限制自定义时间范围最多 3 个月（约 92 天）
-        let startObj = heatmapFilters.dateRange[0]
-        let endObj = heatmapFilters.dateRange[1]
-        // 处理 moment 对象或字符串
-        const toDate = (d) => {
-          if (!d) return null
-          if (typeof d === 'string') return new Date(d)
-          if (d instanceof Date) return d
-          if (d.toDate) return d.toDate() // moment
-          return new Date(d)
-        }
-        const sd = toDate(startObj)
-        const ed = toDate(endObj)
-        if (sd && ed) {
-          const diffDays = Math.floor((ed - sd) / (1000 * 60 * 60 * 24)) + 1
-          const maxDays = 92
-          if (diffDays > maxDays) {
-            // 自动截断到最大允许范围，并提示用户
-            const msPerDay = 1000 * 60 * 60 * 24
-            const newEnd = new Date(sd.getTime() + (maxDays - 1) * msPerDay)
-            // 更新选择器的结束日期（支持 moment 对象也会被替换为 Date）
-            heatmapFilters.dateRange[1] = newEnd
-            Message.info(`自定义时间范围已截断为 ${maxDays} 天（约 3 个月），结束日期被设为 ${newEnd.toISOString().split('T')[0]}`)
-          }
-        }
-        params.start_date = formatDate(heatmapFilters.dateRange[0])
-        params.end_date = formatDate(heatmapFilters.dateRange[1])
-      }
-
-      // 获取真实的热力图数据（严格使用新版返回格式 {mode, data, x_labels?, y_labels?}）
-      const resp = await dashboardApi.getExecutionHeatmap(params)
-      if (!resp || !resp.mode || !resp.data) {
-        throw new Error('热力图接口返回格式不正确，期望 { mode, data, ... }')
-      }
-      if (resp.clamped) {
-        Message.info(`后端已将时间范围截断为 ${resp.start_date} - ${resp.end_date}`)
-      }
-      data = resp.data || []
-      chart.__heatmap_mode = resp.mode
-      chart.__heatmap_x_labels = resp.x_labels || null
-      chart.__heatmap_y_labels = resp.y_labels || null
-      chart.__heatmap_start_date = resp.start_date || null
-      chart.__heatmap_end_date = resp.end_date || null
-      chart.__heatmap_week_start_dates = resp.week_start_dates || null
-      // hide month labels (Dec) - not needed per UX
-      chart.__heatmap_month_labels = null
-
-    // 计算最大值用于颜色映射
-    if (data.length > 0) {
-      maxValue = Math.max(...data.map(item => item[2]))
-    }
-  } catch (error) {
-    console.warn('获取热力图数据失败，使用空数据:', error)
-    // 使用空数据而不是随机数据
-    for (let i = 0; i < 7; i++) {
-      for (let j = 0; j < 24; j++) {
-        data.push([j, i, 0])
-      }
-    }
-  }
-
-  const option = {
-    // 仅在 calendar 模式显示居中时间区间；hourly 模式不显示顶部时间文本
-    title: (chart.__heatmap_mode === 'calendar' ? {
-      text: (() => {
-        if (chart.__heatmap_start_date && chart.__heatmap_end_date) {
-          return `${chart.__heatmap_start_date} - ${chart.__heatmap_end_date}`
-        }
-        return ''
-      })(),
-      left: 'center',
-      top: 8,
-      textStyle: {
-        color: '#666',
-        fontSize: 12
-      }
-    } : null),
-    tooltip: {
-      position: 'top',
-      backgroundColor: 'rgba(50, 50, 50, 0.9)',
-      borderColor: '#333',
-      borderWidth: 1,
-      textStyle: {
-        color: '#fff',
-        fontSize: 12
-      },
-      formatter: function (params) {
-        const mode = chart.__heatmap_mode || 'hourly'
-        const count = params.data[2]
-        if (mode === 'calendar') {
-          // compute actual date: week_start + weekday offset
-          const weekIdx = params.data[0]
-          const weekdayIdx = params.data[1] // 0=Mon..6=Sun
-          let dateStr = ''
-          if (chart.__heatmap_week_start_dates && chart.__heatmap_week_start_dates[weekIdx]) {
-            const ws = chart.__heatmap_week_start_dates[weekIdx]
-            const d = new Date(ws)
-            d.setDate(d.getDate() + weekdayIdx)
-            const mm = String(d.getMonth() + 1).padStart(2, '0')
-            const dd = String(d.getDate()).padStart(2, '0')
-            dateStr = `${mm}-${dd}`
-          } else {
-            dateStr = (chart.__heatmap_x_labels && chart.__heatmap_x_labels[weekIdx]) || (`第${weekIdx+1}周`)
-          }
-          const dayName = (chart.__heatmap_y_labels && chart.__heatmap_y_labels[weekdayIdx]) || days[weekdayIdx]
-          return `${dateStr} ${dayName}<br/>执行次数: <strong>${count}</strong>`
-        } else {
-          const hour = hours[params.data[0]]
-          const dayLabel = (chart.__heatmap_y_labels && chart.__heatmap_y_labels[params.data[1]]) || days[params.data[1]]
-          return `${dayLabel} ${hour}<br/>执行次数: <strong>${count}</strong>`
-        }
-      }
-    },
-    grid: {
-      height: '65%',
-      top: '8%',
-      left: '8%',
-      right: '8%',
-      bottom: '20%'
-    },
-    xAxis: {
-      type: 'category',
-      data: (chart.__heatmap_mode === 'calendar' && chart.__heatmap_x_labels) ? chart.__heatmap_x_labels : hours,
-      position: 'top',
-      splitArea: {
-        show: true,
-        areaStyle: {
-          color: ['rgba(250,250,250,0.1)', 'rgba(200,200,200,0.1)']
-        }
-      },
-      axisLine: {
-        show: false
-      },
-      axisTick: {
-        show: false
-      },
-      axisLabel: {
-        fontSize: 11,
-        color: '#666',
-        interval: 0,
-        formatter: function (value, idx) {
-          // 不在日历模式顶部显示单列标签（避免 'Dec' 出现）——顶部已使用区间标题显示时间范围
-          if (chart.__heatmap_mode === 'calendar') {
-            return ''
-          }
-          // hourly 模式展示小时标签
-          return value
-        }
-      }
-    },
-    yAxis: {
-      type: 'category',
-      data: chart.__heatmap_y_labels || days,
-      splitArea: {
-        show: true,
-        areaStyle: {
-          color: ['rgba(250,250,250,0.1)', 'rgba(200,200,200,0.1)']
-        }
-      },
-      axisLine: {
-        show: false
-      },
-      axisTick: {
-        show: false
-      },
-      axisLabel: {
-        fontSize: 12,
-        color: '#333',
-        fontWeight: 'bold'
-      }
-    },
-    visualMap: {
-      min: 0,
-      max: Math.max(maxValue, 10),
-      calculable: true,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: '5%',
-      inRange: {
-        color: ['#ebedf0', '#c6e48b', '#7bc96f', '#239a3b', '#196127']
-      },
-      text: ['高', '低'],
-      textStyle: {
-        color: '#666',
-        fontSize: 11
-      },
-      itemWidth: 15,
-      itemHeight: 15
-    },
-    series: [{
-      type: 'heatmap',
-      data: data,
-      label: {
-        show: chart.__heatmap_mode !== 'calendar',
-        fontSize: 10,
-        color: '#333',
-        formatter: function (params) {
-          return params.data[2] > 0 ? params.data[2] : ''
-        }
-      },
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 10,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
-        }
-      },
-      itemStyle: {
-        borderRadius: 2,
-        borderWidth: 1,
-        borderColor: '#fff'
-      }
-    }]
-  }
-  // 使用 notMerge=true 完全替换旧配置，避免旧配置残留导致样式不变
-  chart.setOption(option, true)
-}
-
-// 工具函数
-const formatDateTime = (dateTime) => {
-  if (!dateTime) return '-'
-  return new Date(dateTime).toLocaleString('zh-CN')
-}
-
-const getStatusColor = (status) => {
-  const colors = {
-    'SUCCESS': 'green',
-    'FAILURE': 'red',
-    'RUNNING': 'blue',
-    'PENDING': 'orange',
-    'CANCELLED': 'gray',
-    'INFO': 'purple',
-    'UNKNOWN': 'gray'
-  }
-  return colors[status] || 'gray'
-}
-
-const getStatusText = (status) => {
-  const texts = {
-    'SUCCESS': '成功',
-    'FAILURE': '失败',
-    'RUNNING': '运行中',
-    'PENDING': '等待中',
-    'CANCELLED': '已取消',
-    'INFO': '系统活动',
-    'UNKNOWN': '未知操作'
-  }
-  return texts[status] || '未知操作'
-}
-
-const getStatusStyle = (status) => {
-  const colors = {
-    'SUCCESS': { backgroundColor: '#52c41a' },
-    'FAILURE': { backgroundColor: '#ff4d4f' },
-    'RUNNING': { backgroundColor: '#1890ff' },
-    'PENDING': { backgroundColor: '#fa8c16' },
-    'CANCELLED': { backgroundColor: '#d9d9d9' },
-    'INFO': { backgroundColor: '#722ed1' },
-    'UNKNOWN': { backgroundColor: '#8c8c8c' }
-  }
-  return colors[status] || { backgroundColor: '#8c8c8c' }
 }
 
 // 导航方法
@@ -1260,201 +358,60 @@ const navigateToHosts = () => {
   router.push('/hosts')
 }
 
-// 图表更新方法
-const updateTrendChart = () => {
-  // 重新初始化任务执行趋势图表
-  initExecutionTrendChart()
+const navigateToScriptTemplates = () => {
+  router.push('/script-templates')
 }
 
-const updateSuccessRateChart = () => {
-  // 重新初始化成功率趋势图表
-  initSuccessRateChart()
+// Helpers for execution status display
+const getStatusColor = (status: string) => {
+  const s = (status || '').toString().toUpperCase()
+  if (s === 'SUCCESS') return 'green'
+  if (s === 'FAILURE' || s === 'ERROR') return 'red'
+  if (s === 'RUNNING') return 'blue'
+  if (s === 'PENDING') return 'orange'
+  return 'gray'
 }
 
-const updateTopChart = () => {
-  // 重新初始化Top20图表
-  initTopExecutionChart()
+const getStatusText = (status: string) => {
+  const s = (status || '').toString().toUpperCase()
+  switch (s) {
+    case 'SUCCESS': return '成功'
+    case 'FAILURE':
+    case 'ERROR': return '失败'
+    case 'RUNNING': return '进行中'
+    case 'PENDING': return '等待'
+    default: return '未知'
+  }
 }
 
-const updateHeatmapChart = () => {
-  initHeatmapChart()
+const getStatusStyle = (status: string) => {
+  const color = getStatusColor(status)
+  return {
+    background: color,
+    color: '#fff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  }
 }
 
-// 初始化Top20图表
-const initTopExecutionChart = async () => {
-  if (!topExecutionChart.value) return
-
+const formatDateTime = (t: string | number | undefined) => {
+  if (!t) return ''
   try {
-    const chart = echarts.init(topExecutionChart.value)
-    
-    // 响应式处理
-    const resizeHandler = () => {
-      chart.resize()
-    }
-    window.addEventListener('resize', resizeHandler)
-    
-    // 组件卸载时移除监听器
-    onUnmounted(() => {
-      window.removeEventListener('resize', resizeHandler)
-      chart.dispose()
-    })
-
-    // 构建过滤器参数
-    const params = {
-      time_range: topFilters.timeRange,
-      sort_by: topFilters.sortBy
-    }
-
-    // 如果是自定义时间范围，添加日期参数
-    if (topFilters.timeRange === 'custom' && topFilters.dateRange && topFilters.dateRange.length === 2) {
-      // 格式化日期为 YYYY-MM-DD 格式
-      const formatDate = (date) => {
-        if (!date) return ''
-        if (typeof date === 'string') return date
-        if (date instanceof Date) {
-          return date.toISOString().split('T')[0]
-        }
-        // 处理 moment 对象
-        if (date.format) {
-          return date.format('YYYY-MM-DD')
-        }
-        return date
-      }
-      params.start_date = formatDate(topFilters.dateRange[0])
-      params.end_date = formatDate(topFilters.dateRange[1])
-    }
-
-    // 获取真实的Top20执行数据
-    let data = []
-
-    try {
-      data = await dashboardApi.getTopExecutions(params)
-    } catch (error) {
-      console.error('获取Top20执行数据失败:', error)
-    }
-
-    // 根据排序方式排序数据
-    let sortedData = [...data]
-  if (topFilters.sortBy === 'success_rate') {
-    sortedData.sort((a, b) => b.success_rate - a.success_rate)
-  } else if (topFilters.sortBy === 'avg_duration') {
-    sortedData.sort((a, b) => a.avg_duration - b.avg_duration)
-  } else {
-    sortedData.sort((a, b) => b.count - a.count)
+    const d = new Date(t)
+    return d.toLocaleString()
+  } catch {
+    return String(t)
   }
-
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: {
-        type: 'shadow'
-      },
-      formatter: function(params) {
-        const data = params[0]
-        const item = sortedData[data.dataIndex]
-        return `
-          <div style="padding: 8px;">
-            <div style="font-weight: bold; margin-bottom: 4px;">${item.name}</div>
-            <div>执行次数: ${item.count}</div>
-            <div>成功率: ${item.success_rate}%</div>
-            <div>平均耗时: ${item.avg_duration}s</div>
-          </div>
-        `
-      }
-    },
-    grid: {
-      left: '8%',
-      right: '8%',
-      bottom: '8%',
-      top: '5%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'value',
-      name: topFilters.sortBy === 'success_rate' ? '成功率(%)' :
-            topFilters.sortBy === 'avg_duration' ? '平均耗时(s)' : '执行次数',
-      nameLocation: 'middle',
-      nameGap: 30,
-      nameTextStyle: {
-        fontSize: 12,
-        color: '#666'
-      }
-    },
-    yAxis: {
-      type: 'category',
-      data: sortedData.map(item => item.name),
-      axisLabel: {
-        width: 120,
-        overflow: 'truncate',
-        ellipsis: '...',
-        fontSize: 11,
-        color: '#333',
-        lineHeight: 16,
-        formatter: function(value) {
-          // 如果名称过长，截断并添加省略号
-          if (value && value.length > 15) {
-            return value.substring(0, 15) + '...'
-          }
-          return value || '未知任务'
-        }
-      },
-      axisTick: {
-        show: false
-      },
-      axisLine: {
-        show: false
-      }
-    },
-    series: [{
-      type: 'bar',
-      data: sortedData.map(item => {
-        if (topFilters.sortBy === 'success_rate') {
-          return item.success_rate
-        } else if (topFilters.sortBy === 'avg_duration') {
-          return item.avg_duration
-        } else {
-          return item.count
-        }
-      }),
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#83bff6' },
-          { offset: 0.5, color: '#188df0' },
-          { offset: 1, color: '#188df0' }
-        ])
-      },
-      emphasis: {
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#2378f7' },
-            { offset: 0.7, color: '#2378f7' },
-            { offset: 1, color: '#83bff6' }
-          ])
-        }
-      }
-    }]
-  }
-
-  chart.setOption(option)
-  } catch (error) {
-    console.error('初始化Top20执行图失败:', error)
-  }
-}
-
-// 刷新所有数据
-const refreshAllData = async () => {
-  await Promise.allSettled([
-    fetchStats(),
-    fetchRecentExecutions(),
-    fetchSystemInfo(),
-    fetchExecutionPlans(),
-    initCharts()
-  ])
 }
 
 // 生命周期
 onMounted(async () => {
-  await refreshAllData()
+  try {
+    await refreshAllData()
+  } catch (e) {
+    console.error('refreshAllData failed:', e)
+  }
 })
 </script>
 
@@ -1563,53 +520,22 @@ onMounted(async () => {
   color: rgba(255, 255, 255, 0.7);
 }
 
-.charts-row {
+.quick-actions-row {
   margin-bottom: 20px;
 }
 
-.chart-card {
-  height: 450px;
+.quick-actions-card {
   transition: all 0.3s ease;
-  border-radius: 4px;
-  border: 1px solid #e8e8e8;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-  overflow: hidden;
 }
 
-.chart-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  border-color: #d9d9d9;
+.quick-actions-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
-.chart-card .arco-card-header {
-  background: linear-gradient(90deg, #f0f2f5 0%, #fafafa 100%);
-  border-bottom: 2px solid #e8e8e8;
-  padding: 16px 20px;
-}
-
-.chart-card .arco-card-header .arco-card-header-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-  display: flex;
-  align-items: center;
-}
-
-.chart-card .arco-card-header .arco-card-header-title::before {
-  content: '';
-  width: 4px;
-  height: 18px;
-  background: linear-gradient(135deg, #1890ff, #36cfc9);
-  border-radius: 2px;
-  margin-right: 10px;
-}
-
-.chart-container {
-  height: 360px;
-  width: 100%;
-  padding: 10px;
+.quick-actions {
+  padding: 20px;
+  text-align: center;
 }
 
 .activity-row {

@@ -5,6 +5,47 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class UserFavorite(models.Model):
+    """用户收藏"""
+
+    FAVORITE_TYPE_CHOICES = [
+        ('job_template', '作业模板'),
+        ('execution_plan', '执行方案'),
+        ('script_template', '脚本模板'),
+    ]
+
+    CATEGORY_CHOICES = [
+        ('personal', '个人'),
+        ('team', '团队'),
+        ('common', '常用'),
+        ('other', '其他'),
+    ]
+
+    # 用户
+    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="用户")
+
+    # 收藏类型和对象
+    favorite_type = models.CharField(max_length=20, choices=FAVORITE_TYPE_CHOICES, verbose_name="收藏类型")
+    object_id = models.IntegerField(verbose_name="对象ID")
+
+    # 分类和备注
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='personal', verbose_name="分类")
+    note = models.CharField(max_length=200, blank=True, verbose_name="备注")
+
+    # 时间
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="收藏时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "用户收藏"
+        verbose_name_plural = "用户收藏"
+        unique_together = ['user', 'favorite_type', 'object_id']
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.favorite_type} - {self.object_id}"
+
+
 class ScriptTemplate(models.Model):
     """脚本模板"""
     

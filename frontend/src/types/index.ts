@@ -239,6 +239,7 @@ export interface JobTemplate {
   step_count: number
   plan_count: number
   has_unsync_plans: boolean
+  created_by: number
   created_by_name: string
   created_at: string
   updated_at: string

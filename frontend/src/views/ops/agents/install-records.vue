@@ -91,6 +91,23 @@
           <a-tag color="blue">Agent-Server</a-tag>
         </template>
 
+        <template #task_stats="{ record }">
+          <div class="task-stats">
+            <div class="stat-item">
+              <span class="stat-label">总数:</span>
+              <span class="stat-value">{{ record.task_total_hosts || 1 }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-success">成功:</span>
+              <span class="stat-value stat-success">{{ record.task_success_count || 0 }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-error">失败:</span>
+              <span class="stat-value stat-error">{{ record.task_failed_count || 0 }}</span>
+            </div>
+          </div>
+        </template>
+
         <template #installed_at="{ record }">
           {{ formatDateTime(record.installed_at) }}
         </template>
@@ -103,16 +120,28 @@
               </template>
               查看详情
             </a-button>
-            <a-button 
-              v-if="record.agent_id" 
-              type="text" 
-              size="small" 
+            <a-button
+              v-if="record.agent_id"
+              type="text"
+              size="small"
               @click="handleViewAgent(record)"
             >
               <template #icon>
                 <IconRight />
               </template>
               查看 Agent
+            </a-button>
+            <a-button
+              v-if="canRetryFailedHosts(record)"
+              type="text"
+              size="small"
+              status="warning"
+              @click="handleRetryFailedHosts(record)"
+            >
+              <template #icon>
+                <IconRefresh />
+              </template>
+              重试失败主机
             </a-button>
           </a-space>
         </template>
@@ -142,6 +171,15 @@
           <a-tag color="blue">Agent-Server 模式
           </a-tag>
         </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_version_display" label="版本">
+          {{ currentRecord.package_version_display }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_os_type" label="操作系统">
+          {{ currentRecord.package_os_type }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.package_arch" label="架构">
+          {{ currentRecord.package_arch }}
+        </a-descriptions-item>
         <a-descriptions-item v-if="currentRecord && currentRecord.control_plane_url" label="控制面url">
           <div style="word-break: break-all">{{ currentRecord.control_plane_url }}</div>
         </a-descriptions-item>
@@ -168,6 +206,22 @@
         </a-descriptions-item>
         <a-descriptions-item label="安装时间">
           {{ formatDateTime(currentRecord.installed_at) }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentRecord.task_total_hosts" label="任务统计">
+          <div class="task-stats-detail">
+            <div class="stat-item">
+              <span class="stat-label">总主机数:</span>
+              <span class="stat-value">{{ currentRecord.task_total_hosts }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-success">成功:</span>
+              <span class="stat-value stat-success">{{ currentRecord.task_success_count }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label stat-error">失败:</span>
+              <span class="stat-value stat-error">{{ currentRecord.task_failed_count }}</span>
+            </div>
+          </div>
         </a-descriptions-item>
         <a-descriptions-item v-if="currentRecord.agent_id" label="关联 Agent">
           <a-button type="text" size="small" @click="handleViewAgent(currentRecord)">
@@ -261,6 +315,12 @@ const columns = [
     title: '安装用户',
     dataIndex: 'installed_by_name',
     width: 120,
+  },
+  {
+    title: '任务统计',
+    dataIndex: 'task_stats',
+    slotName: 'task_stats',
+    width: 150,
   },
   {
     title: '安装时间',
@@ -371,6 +431,37 @@ const handleViewAgent = (record: any) => {
   }
 }
 
+// 检查是否可以重试失败主机
+const canRetryFailedHosts = (record: any) => {
+  // 如果该记录对应的任务有失败的记录，则可以重试
+  return record.task_failed_count > 0 && record.status === 'failed'
+}
+
+// 重试失败主机
+const handleRetryFailedHosts = async (record: any) => {
+  Modal.confirm({
+    title: '确认重试失败主机',
+    content: `确定要重试该安装任务中的 ${record.task_failed_count} 个失败主机吗？`,
+    okText: '确认重试',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const result = await agentsApi.retryInstallRecord({
+          install_record_id: record.id,
+          confirmed: true,
+        })
+
+        Message.success(`重试任务已启动，可通过安装记录查看进度`)
+        // 可以选择刷新列表或跳转到新的安装任务进度
+        fetchRecords()
+      } catch (error: any) {
+        console.error('重试失败主机失败:', error)
+        Message.error(error?.message || '重试失败主机失败')
+      }
+    },
+  })
+}
+
 const handleViewHost = (record: any) => {
   if (record.host_id) {
     router.push({
@@ -393,7 +484,6 @@ const handleRetryInstall = async (record: any) => {
             host_ids: [record.host_id],
             agent_server_url: record.agent_server_url || '',
             agent_server_backup_url: record.agent_server_backup_url || '',
-            package_version: record.package_version || '',
             package_id: record.package_id || null,
             confirmed: true,
             allow_reinstall: true, // 允许重新安装
@@ -489,6 +579,42 @@ onMounted(() => {
   .arco-table-col-fixed-right::before {
     background-color: transparent !important;
     box-shadow: none !important;
+  }
+
+  .task-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+  }
+
+  .stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .stat-label {
+    color: #86909c;
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-weight: 600;
+  }
+
+  .stat-success {
+    color: #00b42a;
+  }
+
+  .stat-error {
+    color: #f53f3f;
+  }
+
+  .task-stats-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 }
 </style>

@@ -473,9 +473,38 @@ export const auditLogApi = {
 
   // 导出审计日志
   exportAuditLogs(params?: any): Promise<Blob> {
-    return http.get('/permissions/audit-logs/export/', { 
+    return http.get('/permissions/audit-logs/export/', {
       params,
       responseType: 'blob'
     })
   },
+}
+
+// 用户收藏API
+export const favoriteApi = {
+  // 切换收藏状态
+  toggle: (data: {
+    favorite_type: 'job_template' | 'execution_plan' | 'script_template',
+    object_id: number,
+    category?: 'personal' | 'team' | 'common' | 'other',
+    note?: string
+  }) => http.post('/script-templates/favorites/toggle/', data),
+
+  // 检查收藏状态
+  check: (params: {
+    favorite_type: 'job_template' | 'execution_plan' | 'script_template',
+    object_id: number
+  }) => http.get('/script-templates/favorites/check/', { params }),
+
+  // 获取收藏列表
+  getFavorites: (params?: {
+    category?: string,
+    favorite_type?: string
+  }) => http.get('/script-templates/favorites/', { params }),
+
+  // 按分类获取收藏
+  getByCategory: (params: {
+    category?: string,
+    favorite_type?: string
+  }) => http.get('/script-templates/favorites/by-category/', { params }),
 }

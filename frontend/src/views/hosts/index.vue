@@ -904,14 +904,25 @@
       </a-alert>
       <a-form :model="batchEditForm" layout="vertical">
         <a-form-item label="标签">
-          <a-select
-            v-model="batchEditForm.tags"
-            mode="tags"
-            allow-search
-            allow-create
-            allow-clear
-            placeholder="输入/选择标签（可选）"
-          />
+          <div class="tags-editor">
+            <div v-for="(t, idx) in batchTagEntries" :key="idx" class="tag-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+              <a-input v-model="t.key" placeholder="键" style="width:40%" />
+              <a-input v-model="t.value" placeholder="值（可选）" style="width:45%" />
+              <a-button type="text" status="danger" @click="batchTagEntries.splice(idx,1)" style="width:10%">
+                <template #icon><icon-delete /></template>
+              </a-button>
+            </div>
+            <div class="tags-input-row">
+              <a-button type="outline" size="small" @click="batchTagEntries.push({ key: '', value: '' })">
+                <template #icon><icon-plus /></template>
+                添加标签
+              </a-button>
+            </div>
+          </div>
+          <div class="form-tip" style="margin-top: 4px">
+            <icon-info-circle />
+            将完全替换选中主机的标签（键=值 格式）
+          </div>
         </a-form-item>
         <a-form-item label="负责人">
           <a-input
@@ -1056,6 +1067,10 @@ const batchEditForm = reactive({
   service_role: '' as string,
   remarks: '' as string,
 })
+
+// 临时 KV 编辑器数据（用于批量标签编辑界面），在打开弹窗时填充，从这里生成 batchEditForm.tags
+const batchTagEntries = ref<Array<{ key: string; value: string }>>([])
+
 
 // 搜索表单
 const searchForm = reactive({
@@ -1819,7 +1834,7 @@ const handleBatchTest = async () => {
 
   batchTesting.value = true
   try {
-        const result = await hostApi.batchTestConnection(selectedRowKeys.value)
+    const result = await hostApi.batchTestConnection(selectedRowKeys.value)
 
     // 增加健robustness check to prevent inconsistent return data structures
     if (result && result.details) {
@@ -2041,6 +2056,24 @@ const openBatchEdit = () => {
     Message.warning('请先选择要编辑的主机')
     return
   }
+  // 将现有 batchEditForm.tags（字符串数组）解析为 KV 结构供编辑器使用
+  batchTagEntries.value.splice(0, batchTagEntries.value.length)
+  if (Array.isArray(batchEditForm.tags) && batchEditForm.tags.length > 0) {
+    batchEditForm.tags.forEach((t: any) => {
+      if (t && typeof t === 'string') {
+        const [k, ...rest] = t.split('=')
+        const key = (k || '').trim()
+        const value = rest.length ? rest.join('=').trim() : ''
+        if (key) batchTagEntries.value.push({ key, value })
+      } else if (t && typeof t === 'object') {
+        const key = String(t.key ?? '').trim()
+        const value = t.value === undefined || t.value === null ? '' : String(t.value).trim()
+        if (key) batchTagEntries.value.push({ key, value })
+      }
+    })
+  }
+  // 如果没有条目，初始化一个空行，方便添加
+  if (batchTagEntries.value.length === 0) batchTagEntries.value.push({ key: '', value: '' })
   batchEditVisible.value = true
 }
 
@@ -2051,6 +2084,7 @@ const resetBatchEditForm = () => {
   batchEditForm.service_role = ''
   batchEditForm.remarks = ''
 }
+
 
 const cancelBatchEdit = () => {
   batchEditVisible.value = false
@@ -2065,7 +2099,20 @@ const submitBatchEdit = async () => {
 
   const data: Record<string, any> = {}
   Object.entries(batchEditForm).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
+    if (key === 'tags') {
+      // 将 batchTagEntries 转换为字符串数组 "key=value" 或 "key"
+      const cleanedTagsFromEntries = batchTagEntries.value
+        .map(e => {
+          const k = (e.key || '').trim()
+          const v = e.value === undefined || e.value === null ? '' : String(e.value).trim()
+          if (!k) return null
+          return v ? `${k}=${v}` : k
+        })
+        .filter((x): x is string => !!x)
+      if (cleanedTagsFromEntries.length > 0) {
+        data[key] = cleanedTagsFromEntries
+      }
+    } else if (Array.isArray(value)) {
       const cleaned = value.map(item => String(item).trim()).filter(item => item.length > 0)
       if (cleaned.length > 0) {
         data[key] = cleaned

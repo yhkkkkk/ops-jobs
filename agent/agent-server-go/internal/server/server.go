@@ -287,7 +287,66 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 		}
 	}
 
-	_ = payload // 预留：如需从心跳 payload 中提取更多信息
+	// 从心跳 payload 中提取系统资源监控数据
+	// payload 格式: {"timestamp": int64, "system": SystemInfo}
+	if payload != nil {
+		if systemRaw, ok := payload["system"]; ok && systemRaw != nil {
+			// system 可能是 map[string]interface{} 或 *api.SystemInfo
+			var systemData map[string]interface{}
+
+			switch sys := systemRaw.(type) {
+			case map[string]interface{}:
+				// 构建符合控制面期望的格式
+				systemData = make(map[string]interface{})
+
+				// CPU 使用率
+				if cpuUsage, ok := sys["cpu_usage"]; ok {
+					systemData["cpu_usage"] = cpuUsage
+				}
+
+				// 内存信息 - 控制面期望格式: memory: {total, used, usage}
+				memoryInfo := make(map[string]interface{})
+				if memUsage, ok := sys["memory_usage"]; ok {
+					memoryInfo["usage"] = memUsage
+				}
+				if memTotal, ok := sys["memory_total"]; ok {
+					memoryInfo["total"] = memTotal
+				}
+				if memUsed, ok := sys["memory_used"]; ok {
+					memoryInfo["used"] = memUsed
+				}
+				if len(memoryInfo) > 0 {
+					systemData["memory"] = memoryInfo
+				}
+
+				// 磁盘使用率
+				if diskUsage, ok := sys["disk_usage"]; ok {
+					systemData["disk"] = diskUsage
+				}
+
+				// 负载信息 - 控制面期望格式: load_avg: {1m, 5m, 15m}
+				if loadAvg, ok := sys["load_avg"]; ok {
+					if loadArr, ok := loadAvg.([]interface{}); ok && len(loadArr) >= 3 {
+						systemData["load_avg"] = map[string]interface{}{
+							"1m":  loadArr[0],
+							"5m":  loadArr[1],
+							"15m": loadArr[2],
+						}
+					}
+				}
+
+				// 系统运行时间
+				if uptime, ok := sys["uptime"]; ok {
+					systemData["uptime"] = uptime
+				}
+			}
+
+			// 将 system 数据写入 Redis
+			if len(systemData) > 0 {
+				fields["system"] = systemData
+			}
+		}
+	}
 
 	if err := s.statusStream.PushStatus(ctx, fields); err != nil {
 		logger.GetLogger().WithError(err).WithField("agent_id", conn.ID).Warn("push status to stream failed")

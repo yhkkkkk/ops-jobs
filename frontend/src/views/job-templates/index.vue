@@ -84,6 +84,27 @@
             </a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="创建者">
+          <a-select
+            v-model="searchForm.created_by"
+            placeholder="请选择创建者"
+            allow-clear
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 120px"
+          >
+            <a-option
+              v-for="user in availableUsers"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="收藏">
+          <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+        </a-form-item>
         <a-form-item>
           <a-space>
             <a-button type="primary" @click="handleSearch">
@@ -114,6 +135,20 @@
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
+        <template #name="{ record }">
+          <div class="template-name-cell">
+            <a-button
+              type="text"
+              size="mini"
+              class="favorite-btn"
+              @click.stop="toggleFavorite(record.id)"
+            >
+              <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
+              <icon-star v-else class="favorite-icon" />
+            </a-button>
+            <a-link @click="handleView(record)" class="template-link">{{ record.name }}</a-link>
+          </div>
+        </template>
         <template #category="{ record }">
           <a-tag v-if="record.category" :color="getCategoryColor(record.category)">
             {{ getCategoryText(record.category) }}
@@ -269,7 +304,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { jobTemplateApi } from '@/api/ops'
+import { jobTemplateApi, favoriteApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
@@ -292,10 +327,68 @@ const searchForm = reactive({
   search: '',
   category: '',
   tags: [] as string[],
+  favorites_only: false,
+  created_by: undefined as number | undefined
 })
+
+// 收藏相关
+const favorites = ref<Record<number, boolean>>({})
+
+// 加载收藏状态
+const loadFavoriteStatus = async () => {
+  try {
+    // 批量检查当前页面的收藏状态
+    const templateIds = templates.value.map(t => t.id)
+    if (templateIds.length === 0) return
+
+    const requests = templateIds.map(id =>
+      favoriteApi.check({
+        favorite_type: 'job_template',
+        object_id: id
+      }).catch(() => ({ data: { content: { is_favorited: false } } }))
+    )
+
+    const responses = await Promise.allSettled(requests)
+    const favoriteStatus: Record<number, boolean> = {}
+
+    responses.forEach((result, index) => {
+      const templateId = templateIds[index]
+      if (result.status === 'fulfilled') {
+        favoriteStatus[templateId] = result.value.is_favorited || false
+      } else {
+        favoriteStatus[templateId] = false
+      }
+    })
+
+    favorites.value = favoriteStatus
+  } catch (e) {
+    console.error('加载收藏状态失败:', e)
+  }
+}
+
+const isFavorite = (id: number) => favorites.value[id] || false
+
+const toggleFavorite = async (id: number) => {
+  try {
+    const response = await favoriteApi.toggle({
+      favorite_type: 'job_template',
+      object_id: id,
+      category: 'personal'
+    })
+
+    favorites.value[id] = response.is_favorited
+    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+  } catch (e) {
+    console.error('切换收藏状态失败:', e)
+    Message.error('操作失败')
+  }
+}
 
 // 可用标签列表
 const availableTags = ref<string[]>([])
+
+// 可用用户列表（创建者）
+const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
 
 // 分页配置
 const pagination = reactive({
@@ -313,9 +406,8 @@ const columns = [
     title: '模板名称',
     dataIndex: 'name',
     key: 'name',
-    width: 200,
-    ellipsis: true,
-    tooltip: true
+    slotName: 'name',
+    width: 250
   },
   {
     title: '分类',
@@ -382,6 +474,28 @@ const fetchAvailableTags = async () => {
   }
 }
 
+// 获取可用用户列表（创建者）
+const fetchAvailableUsers = async () => {
+  try {
+    // 从当前模板列表中提取唯一用户列表
+    if (templates.value.length > 0) {
+      const userMap = new Map<number, {id: number, username: string, name: string}>()
+      templates.value.forEach(template => {
+        if (template.created_by && template.created_by_name) {
+          userMap.set(template.created_by, {
+            id: template.created_by,
+            username: template.created_by_name,
+            name: template.created_by_name
+          })
+        }
+      })
+      availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+    }
+  } catch (error) {
+    console.error('获取用户列表失败:', error)
+  }
+}
+
 // 获取作业模板列表
 const fetchTemplates = async () => {
   try {
@@ -403,11 +517,21 @@ const fetchTemplates = async () => {
     })
 
     const response = await jobTemplateApi.getTemplates(params)
-    templates.value = response.results || []
-    pagination.total = response.total || 0
+    let resultTemplates = response.results || []
+
+    // 前端过滤收藏
+    if (searchForm.favorites_only) {
+      resultTemplates = resultTemplates.filter(t => favorites.value[t.id])
+    }
+
+    templates.value = resultTemplates
+    pagination.total = searchForm.favorites_only ? resultTemplates.length : (response.total || 0)
 
     // 异步刷新标签列表，确保下拉选项完整
     fetchAvailableTags()
+
+    // 拉取可用用户列表
+    fetchAvailableUsers()
   } catch (error) {
     console.error('获取作业模板列表失败:', error)
     Message.error('获取作业模板列表失败')
@@ -427,6 +551,8 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.category = ''
   searchForm.tags = []
+  searchForm.favorites_only = false
+  searchForm.created_by = undefined
   pagination.current = 1
   fetchTemplates()
 }
@@ -622,6 +748,7 @@ const canDeleteTemplate = (templateId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
+  loadFavoriteStatus()
   fetchTemplates()
 })
 </script>
@@ -660,6 +787,39 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+/* 模板名称单元格样式 */
+.template-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.template-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-btn {
+  padding: 0 4px;
+  min-width: auto;
+  flex-shrink: 0;
+}
+
+.favorite-icon {
+  font-size: 14px;
+  color: var(--color-text-3);
+  transition: color 0.2s;
+}
+
+.favorite-icon.active {
+  color: var(--color-warning-6);
+}
+
+.favorite-btn:hover .favorite-icon {
+  color: var(--color-warning-5);
 }
 
 .text-gray-400 {

@@ -9,6 +9,7 @@ app_name = 'script_templates'
 
 router = DefaultRouter()
 router.register(r'', views.ScriptTemplateViewSet, basename='script-template')
+router.register(r'favorites', views.UserFavoriteViewSet, basename='userfavorite')
 
 urlpatterns = [
     path('', include(router.urls)),

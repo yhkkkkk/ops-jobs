@@ -28,11 +28,14 @@ class StorageService:
         'minio': MinIOStorageBackend,
         'rustfs': RustFSStorageBackend,
     }
-    
+    # 缓存已创建的后端实例，避免每次请求都初始化底层客户端（例如 COS/S3 客户端会绑定连接池）
+    _instances: dict[str, StorageBackend] = {}
+    _lock = __import__('threading').Lock()
+
     @classmethod
     def get_backend(cls, storage_type: str) -> Optional[StorageBackend]:
         """
-        根据存储类型获取存储后端实例
+        根据存储类型获取存储后端实例（单例复用）
         
         Args:
             storage_type: 存储类型 (local, oss, s3, cos, minio, rustfs)
@@ -40,13 +43,26 @@ class StorageService:
         Returns:
             存储后端实例，如果类型不支持返回None
         """
+        # 快速路径：已有实例直接返回
+        inst = cls._instances.get(storage_type)
+        if inst is not None:
+            return inst
+
         backend_class = cls._backends.get(storage_type)
         if backend_class is None:
             logger.error(f"不支持的存储类型: {storage_type}")
             return None
-        
+
+        # 加锁创建实例，防止并发重复创建
         try:
-            return backend_class()
+            with cls._lock:
+                # 可能在等待锁的过程中已经创建好了
+                inst = cls._instances.get(storage_type)
+                if inst is not None:
+                    return inst
+                instance = backend_class()
+                cls._instances[storage_type] = instance
+                return instance
         except Exception as e:
             logger.error(f"初始化存储后端失败 ({storage_type}): {e}", exc_info=True)
             return None

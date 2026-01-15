@@ -5,6 +5,7 @@ from django.db import models
 from rest_framework import serializers
 from apps.hosts.models import Host, HostGroup
 from .models import JobTemplate, JobStep, ExecutionPlan, PlanStep
+from apps.script_templates.models import UserFavorite
 
 
 class JobStepListSerializer(serializers.ListSerializer):
@@ -764,3 +765,45 @@ class ExecutionPlanExecuteSerializer(serializers.Serializer):
         default='manual',
         help_text="触发类型"
     )
+
+
+class UserFavoriteSerializer(serializers.ModelSerializer):
+    """用户收藏序列化器"""
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    favorite_type_display = serializers.CharField(source='get_favorite_type_display', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = UserFavorite
+        fields = [
+            'id', 'user', 'user_name', 'favorite_type', 'favorite_type_display',
+            'object_id', 'category', 'category_display', 'note',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'user_name', 'created_at', 'updated_at']
+
+
+class UserFavoriteCreateSerializer(serializers.ModelSerializer):
+    """创建收藏序列化器"""
+
+    class Meta:
+        model = UserFavorite
+        fields = ['favorite_type', 'object_id', 'category', 'note']
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class FavoriteToggleSerializer(serializers.Serializer):
+    """收藏切换序列化器"""
+    favorite_type = serializers.ChoiceField(
+        choices=UserFavorite.FAVORITE_TYPE_CHOICES,
+        required=True
+    )
+    object_id = serializers.IntegerField(required=True)
+    category = serializers.ChoiceField(
+        choices=UserFavorite.CATEGORY_CHOICES,
+        default='personal'
+    )
+    note = serializers.CharField(max_length=200, required=False, allow_blank=True)

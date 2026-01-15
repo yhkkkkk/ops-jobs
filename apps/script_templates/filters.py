@@ -37,9 +37,12 @@ class ScriptTemplateFilter(django_filters.FilterSet):
     # 按标签过滤（使用新的tags_json字段）
     tags = django_filters.CharFilter(method='filter_tags', label='标签')
 
+    # 按创建者过滤
+    created_by = django_filters.NumberFilter(field_name='created_by', label='创建者ID')
+
     class Meta:
         model = ScriptTemplate
-        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags']
+        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags', 'created_by']
 
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""
