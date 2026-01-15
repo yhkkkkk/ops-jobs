@@ -1,87 +1,55 @@
 /**
  * 调度管理API
  */
-import request from '@/utils/request'
+import request, { http } from '@/utils/request'
 
 // 定时任务API
 export const scheduledJobApi = {
   // 获取定时任务列表
   list(params?: any) {
-    return request({
-      url: '/scheduler/scheduled-jobs/',
-      method: 'get',
-      params
-    })
+    return http.get('/scheduler/scheduled-jobs/', { params })
   },
 
   // 获取定时任务详情
   get(id: number) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/`,
-      method: 'get'
-    })
+    return http.get(`/scheduler/scheduled-jobs/${id}/`)
   },
 
   // 创建定时任务
   create(data: any) {
-    return request({
-      url: '/scheduler/scheduled-jobs/',
-      method: 'post',
-      data
-    })
+    return http.post('/scheduler/scheduled-jobs/', data)
   },
 
   // 更新定时任务
   update(id: number, data: any) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/`,
-      method: 'put',
-      data
-    })
+    return http.put(`/scheduler/scheduled-jobs/${id}/`, data)
   },
 
   // 部分更新定时任务
   patch(id: number, data: any) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/`,
-      method: 'patch',
-      data
-    })
+    return http.patch(`/scheduler/scheduled-jobs/${id}/`, data)
   },
 
   // 删除定时任务
   delete(id: number) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/`,
-      method: 'delete'
-    })
+    return http.delete(`/scheduler/scheduled-jobs/${id}/`)
   },
 
   // 切换任务状态
   toggleStatus(id: number, isActive: boolean) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/`,
-      method: 'patch',
-      data: { is_active: isActive }
-    })
+    return http.patch(`/scheduler/scheduled-jobs/${id}/`, { is_active: isActive })
   },
 
   // 立即执行任务
   executeNow(id: number) {
-    return request({
-      url: `/scheduler/scheduled-jobs/${id}/execute/`,
-      method: 'post'
-    })
+    return http.post(`/scheduler/scheduled-jobs/${id}/execute/`)
   },
 
 
 
   // 获取统计信息
   getStatistics() {
-    return request({
-      url: '/scheduler/scheduled-jobs/statistics/',
-      method: 'get'
-    })
+    return http.get('/scheduler/scheduled-jobs/statistics/')
   }
 }
 
@@ -89,19 +57,12 @@ export const scheduledJobApi = {
 export const executionPlanApi = {
   // 获取执行方案列表（简化版，用于选择器）
   list(params?: any) {
-    return request({
-      url: '/job-templates/plans/',
-      method: 'get',
-      params
-    })
+    return http.get('/job-templates/plans/', { params })
   },
 
   // 获取执行方案详情
   get(id: number) {
-    return request({
-      url: `/job-templates/plans/${id}/`,
-      method: 'get'
-    })
+    return http.get(`/job-templates/plans/${id}/`)
   }
 }
 

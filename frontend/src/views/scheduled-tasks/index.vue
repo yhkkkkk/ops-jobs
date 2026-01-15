@@ -73,6 +73,27 @@
             <a-option :value="false">禁用</a-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="创建者">
+          <a-select
+            v-model="searchForm.created_by"
+            placeholder="请输入创建者姓名"
+            allow-clear
+            show-search
+            filter-option="false"
+            @search="handleCreatorSearch"
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 120px"
+          >
+            <a-option
+              v-for="user in filteredCreators"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-form-item>
         <a-form-item>
           <a-button type="primary" @click="handleSearch">
             <template #icon><icon-search /></template>
@@ -204,7 +225,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
@@ -221,21 +242,26 @@ import {
 import { useRouter } from 'vue-router'
 import { scheduledJobApi } from '@/api/scheduler'
 import { usePermissionsStore } from '@/stores/permissions'
-
-const permissionsStore = usePermissionsStore()
+import type { ScheduledJob } from '@/types'
 
 const router = useRouter()
-
-// 响应式数据
 const loading = ref(false)
-const tasks = ref([])
+const tasks = ref<ScheduledJob[]>([])
+const permissionsStore = usePermissionsStore()
 
 // 搜索表单
 const searchForm = reactive({
   name: '',
   plan_name: '',
-  is_active: undefined
+  is_active: undefined,
+  created_by: undefined as number | undefined
 })
+
+// 可用用户列表（创建者）
+const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
+
+// 创建者搜索过滤结果
+const filteredCreators = ref<Array<{id: number, username: string, name: string}>>([])
 
 // 分页配置
 const pagination = reactive({
@@ -325,6 +351,44 @@ const columns = [
   }
 ]
 
+// 获取可用用户列表（创建者）
+const fetchAvailableUsers = async () => {
+  try {
+    // 从当前任务列表中提取唯一用户列表
+    if (tasks.value.length > 0) {
+      const userMap = new Map<number, { id: number; username: string; name: string }>()
+      tasks.value.forEach(task => {
+        if (task.created_by && task.created_by_name) {
+          userMap.set(task.created_by, {
+            id: task.created_by,
+            username: task.created_by_name,
+            name: task.created_by_name
+          })
+        }
+      })
+      availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+      // 初始化过滤结果为全部用户
+      filteredCreators.value = [...availableUsers.value]
+    }
+  } catch (error) {
+    console.error('获取用户列表失败:', error)
+  }
+}
+
+// 处理创建者搜索
+const handleCreatorSearch = (searchValue: string) => {
+  if (!searchValue.trim()) {
+    filteredCreators.value = [...availableUsers.value]
+    return
+  }
+
+  const searchTerm = searchValue.toLowerCase().trim()
+  filteredCreators.value = availableUsers.value.filter(user =>
+    user.name.toLowerCase().includes(searchTerm) ||
+    user.username.toLowerCase().includes(searchTerm)
+  )
+}
+
 // 获取定时任务列表
 const fetchTasks = async () => {
   loading.value = true
@@ -332,18 +396,26 @@ const fetchTasks = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
-      name: searchForm.name,
-      plan_name: searchForm.plan_name,
+      name: searchForm.name || undefined,
+      plan_name: searchForm.plan_name || undefined,
+      is_active: searchForm.is_active || undefined,
+      created_by: searchForm.created_by || undefined,
     }
 
-    // 状态筛选
-    if (searchForm.is_active !== undefined && searchForm.is_active !== null) {
-      params.is_active = searchForm.is_active
-    }
+    // 过滤空值
+    Object.keys(params).forEach(key => {
+      if (params[key] === undefined ||
+          (Array.isArray(params[key]) && params[key].length === 0)) {
+        delete params[key]
+      }
+    })
 
     const response = await scheduledJobApi.list(params)
     tasks.value = response.results || []
     pagination.total = response.total || 0
+
+    // 提取用户列表
+    fetchAvailableUsers()
   } catch (error) {
     console.error('获取定时任务列表失败:', error)
   } finally {
@@ -352,54 +424,56 @@ const fetchTasks = async () => {
 }
 
 // 搜索
-const handleSearch = () => {
+const handleSearch = (): void => {
   pagination.current = 1
   fetchTasks()
 }
 
 // 重置搜索
-const handleReset = () => {
+const handleReset = (): void => {
   Object.keys(searchForm).forEach(key => {
-    searchForm[key] = key === 'is_active' ? undefined : ''
+    searchForm[key] = key === 'is_active' || key === 'created_by' ? undefined : ''
   })
+  // 重置创建者过滤
+  filteredCreators.value = [...availableUsers.value]
   pagination.current = 1
   fetchTasks()
 }
 
 // 刷新
-const handleRefresh = () => {
+const handleRefresh = (): void => {
   fetchTasks()
 }
 
 // 分页处理
-const handlePageChange = (page) => {
+const handlePageChange = (page: number): void => {
   pagination.current = page
   fetchTasks()
 }
 
-const handlePageSizeChange = (pageSize) => {
+const handlePageSizeChange = (pageSize: number): void => {
   pagination.pageSize = pageSize
   pagination.current = 1
   fetchTasks()
 }
 
 // 创建任务
-const handleCreate = () => {
+const handleCreate = (): void => {
   router.push('/scheduled-tasks/create')
 }
 
 // 查看任务
-const handleView = (record) => {
+const handleView = (record: ScheduledJob): void => {
   router.push(`/scheduled-tasks/detail/${record.id}`)
 }
 
 // 编辑任务
-const handleEdit = (record) => {
+const handleEdit = (record: ScheduledJob): void => {
   router.push(`/scheduled-tasks/${record.id}/edit`)
 }
 
 // 切换任务状态
-const handleToggleStatus = async (record) => {
+const handleToggleStatus = async (record: ScheduledJob): Promise<void> => {
   try {
     const action = record.is_active ? '禁用' : '启用'
     await Modal.confirm({
@@ -417,7 +491,7 @@ const handleToggleStatus = async (record) => {
   }
 }
 
-const handleClickToggleStatus = (record) => {
+const handleClickToggleStatus = (record: ScheduledJob): void => {
   if (!canChangeTask(record.id)) {
     Message.warning('没有权限执行此操作，请联系管理员开放权限')
     return
@@ -426,7 +500,7 @@ const handleClickToggleStatus = (record) => {
 }
 
 // 删除任务
-const handleDelete = async (record) => {
+const handleDelete = async (record: ScheduledJob): Promise<void> => {
   try {
     await Modal.confirm({
       title: '确认删除',
@@ -442,7 +516,7 @@ const handleDelete = async (record) => {
   }
 }
 
-const handleClickDeleteTask = (record) => {
+const handleClickDeleteTask = (record: ScheduledJob): void => {
   if (!canDeleteTask(record.id)) {
     Message.warning('没有权限执行此操作，请联系管理员开放权限')
     return
@@ -451,12 +525,12 @@ const handleClickDeleteTask = (record) => {
 }
 
 // 工具函数
-const formatDateTime = (dateTime) => {
+const formatDateTime = (dateTime: string): string => {
   if (!dateTime) return '-'
   return new Date(dateTime).toLocaleString('zh-CN')
 }
 
-const getCronDescription = (cronExpression) => {
+const getCronDescription = (cronExpression: string): string => {
   // 简单的cron表达式描述
   const parts = cronExpression.split(' ')
   if (parts.length !== 5) return cronExpression
@@ -472,13 +546,13 @@ const getCronDescription = (cronExpression) => {
   return cronExpression
 }
 
-const getProgressColor = (percent) => {
+const getProgressColor = (percent: number): string => {
   if (percent >= 90) return '#00b42a'
   if (percent >= 70) return '#ff7d00'
   return '#f53f3f'
 }
 
-const canChangeTask = (taskId) => {
+const canChangeTask = (taskId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
   return (
     permissionsStore.hasPermission('job', 'change', taskId) ||
@@ -486,7 +560,7 @@ const canChangeTask = (taskId) => {
   )
 }
 
-const canDeleteTask = (taskId) => {
+const canDeleteTask = (taskId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
   return (
     permissionsStore.hasPermission('job', 'delete', taskId) ||

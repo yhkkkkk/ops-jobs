@@ -105,14 +105,17 @@
         <a-form-item label="创建者">
           <a-select
             v-model="searchForm.created_by"
-            placeholder="请选择创建者"
+            placeholder="请输入创建者姓名"
             allow-clear
+            show-search
+            filter-option="false"
+            @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
             style="width: 120px"
           >
             <a-option
-              v-for="user in availableUsers"
+              v-for="user in filteredCreators"
               :key="user.id"
               :value="user.id"
             >
@@ -381,6 +384,9 @@ const availableTags = ref<string[]>([])
 // 可用用户列表（创建者）
 const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
 
+// 创建者搜索过滤结果
+const filteredCreators = ref<Array<{id: number, username: string, name: string}>>([])
+
 // 收藏相关
 const favorites = reactive<Record<number, boolean>>({})
 
@@ -533,8 +539,7 @@ const fetchAvailableTags = async () => {
 // 获取可用用户列表（创建者）
 const fetchAvailableUsers = async () => {
   try {
-    // 这里可以调用用户API，或者从现有模板中提取唯一用户列表
-    // 暂时使用一个简化的实现，从当前模板列表中提取
+    // 从现有模板中提取唯一用户列表
     if (templates.value.length > 0) {
       const userMap = new Map<number, {id: number, username: string, name: string}>()
       templates.value.forEach(template => {
@@ -547,10 +552,26 @@ const fetchAvailableUsers = async () => {
         }
       })
       availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+      // 初始化过滤结果为全部用户
+      filteredCreators.value = [...availableUsers.value]
     }
   } catch (error) {
     console.error('获取用户列表失败:', error)
   }
+}
+
+// 处理创建者搜索
+const handleCreatorSearch = (searchValue: string) => {
+  if (!searchValue.trim()) {
+    filteredCreators.value = [...availableUsers.value]
+    return
+  }
+
+  const searchTerm = searchValue.toLowerCase().trim()
+  filteredCreators.value = availableUsers.value.filter(user =>
+    user.name.toLowerCase().includes(searchTerm) ||
+    user.username.toLowerCase().includes(searchTerm)
+  )
 }
 
 // 获取模板列表
@@ -625,6 +646,8 @@ const handleReset = () => {
     favorites_only: false,
     created_by: undefined
   })
+  // 重置创建者过滤
+  filteredCreators.value = [...availableUsers.value]
   pagination.current = 1
   fetchTemplates()
 }

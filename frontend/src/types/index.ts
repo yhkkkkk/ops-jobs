@@ -387,23 +387,29 @@ export interface ExecutionRecord {
   }
 }
 
-// 定时任务类型
-export interface ScheduledTask {
+// 定时作业类型
+export interface ScheduledJob {
   id: number
   name: string
   description: string
-  plan_id: number
-  plan_name: string
+  execution_plan?: number | null
+  execution_plan_name?: string
+  plan_name?: string
+  template_name?: string
   cron_expression: string
-  enabled: boolean
-  next_run_time?: string
-  last_run_time?: string
-  last_run_status?: 'success' | 'failed' | 'running'
-  run_count: number
-  success_count: number
+  timezone?: string
+  is_active: boolean
+  execution_parameters?: Record<string, any>
+  created_by: number
   created_by_name: string
   created_at: string
   updated_at: string
+  total_runs: number
+  success_runs: number
+  failed_runs: number
+  last_run_time?: string | null
+  next_run_time?: string | null
+  success_rate: number
 }
 
 // 审计日志类型
