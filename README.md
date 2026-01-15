@@ -1,4 +1,4 @@
-# OPS Job - 运维作业平台
+# OPS Job - 运维作业平台（还在开发完善...）
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-5.0.1-green.svg)](https://www.djangoproject.com/)
