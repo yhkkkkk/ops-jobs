@@ -157,8 +157,6 @@
                     >
                       <a-option value="linux">Linux</a-option>
                       <a-option value="windows">Windows</a-option>
-                      <a-option value="aix">AIX</a-option>
-                      <a-option value="solaris">Solaris</a-option>
                     </a-select>
                   </a-form-item>
                   <a-form-item label="状态">
@@ -602,8 +600,11 @@
         </template>
 
         <template #os_type="{ record }">
-          <a-tag :class="`os-${record.os_type}`" size="small">
-            {{ getOSText(record.os_type) }}
+          <a-tag v-if="record.os_type === 'windows'" class="os-windows" size="small">
+            Windows
+          </a-tag>
+          <a-tag v-else class="os-linux" size="small">
+            Linux
           </a-tag>
         </template>
 
@@ -1475,12 +1476,10 @@ const toggleAdvancedFilter = () => {
 // OS类型显示文本
 const getOSText = (osType: string) => {
   const osMap = {
-    'linux': 'Linux',
-    'windows': 'Windows',
-    'aix': 'AIX',
-    'solaris': 'Solaris'
+    linux: 'Linux',
+    windows: 'Windows',
   }
-  return osMap[osType as keyof typeof osMap] || osType
+  return osMap[osType as keyof typeof osMap] || 'Linux'
 }
 
 // 拖拽调整侧边栏宽度
@@ -2577,18 +2576,6 @@ watch(
   background-color: var(--color-cyan-light-1) !important;
   color: var(--color-cyan) !important;
   border-color: var(--color-cyan-light-3) !important;
-}
-
-:deep(.os-aix) {
-  background-color: var(--color-purple-light-1) !important;
-  color: var(--color-purple) !important;
-  border-color: var(--color-purple-light-3) !important;
-}
-
-:deep(.os-solaris) {
-  background-color: var(--color-orange-light-1) !important;
-  color: var(--color-orange) !important;
-  border-color: var(--color-orange-light-3) !important;
 }
 
 /* 搜索容器样式 */

@@ -76,6 +76,8 @@ def parse_args():
     p.add_argument("--config", "-c", help="base config file (optional)", default=None)
     p.add_argument("--install-type", help="install type", default="agent")
     p.add_argument("--agent-token", help="agent token", default="")
+    p.add_argument("--host-id", help="host id", default=None)
+    p.add_argument("--agent-name", help="agent name", default=None)
     p.add_argument("--agent-server-url", help="agent server url", default="")
     p.add_argument("--control-plane-url", help="control plane url", default="")
     p.add_argument("--ws-backoff-initial", help="ws backoff initial", default=None)
@@ -90,6 +92,8 @@ def parse_args():
 def render_config_yaml(
     install_type: str = "agent",
     agent_token: str = "",
+    host_id: int = None,
+    agent_name: str = None,
     agent_server_url: str = "",
     control_plane_url: str = "",
     ws_backoff_initial: int = None,
@@ -122,18 +126,37 @@ def render_config_yaml(
     overrides: Dict[str, Any] = {}
     if install_type == "agent":
         overrides = {
-            "mode": "agent-server",
-            "agent_server_url": agent_server_url,
-            "agent_token": agent_token,
-            "log_level": "info",
+            "connection": {
+                "mode": "agent-server",
+                "agent_server_url": agent_server_url,
+            },
+            "identification": {
+                "agent_token": agent_token,
+                "agent_name": agent_name or "",
+            },
+            "logging": {
+                "log_level": "info",
+            },
+            "task": {
+                "heartbeat_interval": 10,
+                "task_poll_interval": 5,
+                "max_concurrent_tasks": 5,
+            },
+            "resource_limit": {
+                "bandwidth_limit": 0,
+                "cpu_limit": 0.0,
+                "memory_limit": 0,
+            },
         }
         # Add optional fields only if provided
         if ws_backoff_initial:
-            overrides["ws_backoff_initial_ms"] = int(ws_backoff_initial)
+            overrides["connection"]["ws_backoff_initial_ms"] = int(ws_backoff_initial)
         if ws_backoff_max:
-            overrides["ws_backoff_max_ms"] = int(ws_backoff_max)
+            overrides["connection"]["ws_backoff_max_ms"] = int(ws_backoff_max)
         if ws_max_retries:
-            overrides["ws_max_retries"] = int(ws_max_retries)
+            overrides["connection"]["ws_max_retries"] = int(ws_max_retries)
+        if host_id:
+            overrides["identification"]["host_id"] = int(host_id)
     else:
         host = "0.0.0.0"
         port = 8080
@@ -205,6 +228,8 @@ def main():
     result = render_config_yaml(
         install_type=args.install_type,
         agent_token=args.agent_token,
+        host_id=int(args.host_id) if args.host_id else None,
+        agent_name=args.agent_name,
         agent_server_url=args.agent_server_url,
         control_plane_url=args.control_plane_url,
         ws_backoff_initial=int(args.ws_backoff_initial) if args.ws_backoff_initial else None,

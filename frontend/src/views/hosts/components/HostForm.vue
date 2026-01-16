@@ -42,8 +42,6 @@
             >
               <a-option value="linux">Linux</a-option>
               <a-option value="windows">Windows</a-option>
-              <a-option value="aix">AIX</a-option>
-              <a-option value="solaris">Solaris</a-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -200,10 +198,7 @@
               placeholder="请选择设备类型（可选）"
               allow-clear
             >
-              <a-option value="vm">虚拟机</a-option>
-              <a-option value="container">容器</a-option>
-              <a-option value="physical">物理机</a-option>
-              <a-option value="k8s_node">K8s节点</a-option>
+              <a-option value="physical">宿主机</a-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -506,7 +501,7 @@ const form = reactive({
   region: '',
   zone: '',
   // 硬件信息
-  device_type: 'vm',
+  device_type: 'physical',
   cpu_cores: null as number | null,
   memory_gb: null as number | null,
   disk_gb: null as number | null,
@@ -609,7 +604,7 @@ const resetForm = () => {
     region: '',
     zone: '',
     // 硬件信息
-    device_type: 'vm',
+    device_type: 'physical',
     cpu_cores: null,
     memory_gb: null,
   disk_gb: null,
@@ -650,7 +645,7 @@ watch(
         region: host.region || '',
         zone: host.zone || '',
         // 硬件信息
-        device_type: host.device_type || 'vm',
+        device_type: host.device_type || 'physical',
         cpu_cores: host.cpu_cores || null,
         memory_gb: host.memory_gb || null,
         disk_gb: host.disk_gb || null,
@@ -726,7 +721,7 @@ const handleSubmit = async () => {
     loading.value = true
 
     const allowedCloudProviders = ['aliyun', 'tencent', 'aws', 'azure', 'huawei', 'baidu', 'ucloud', 'qiniu', 'idc', 'other']
-    const allowedDeviceTypes = ['vm', 'container', 'physical', 'k8s_node']
+const allowedDeviceTypes = ['physical']
     const cleanTags = tagEntries
       .map(({ key, value }) => {
         const k = (key || '').trim()

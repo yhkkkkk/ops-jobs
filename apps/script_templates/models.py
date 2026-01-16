@@ -14,6 +14,7 @@ class UserFavorite(models.Model):
         ('script_template', '脚本模板'),
     ]
 
+    # 目前只有个人收藏，后续可扩展其他
     CATEGORY_CHOICES = [
         ('personal', '个人'),
         ('team', '团队'),

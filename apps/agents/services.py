@@ -18,6 +18,7 @@ from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
 from utils.realtime_logs import realtime_log_service
 import uuid
 import base64
+from pathlib import Path
 
 class AgentService:
     """Agent 相关服务"""
@@ -279,9 +280,19 @@ exit 1
         config_b64 = ""
         try:
             from .tools.render_config import render_config_yaml
+
+            # 选择对应的示例配置作为基础模板，保证完整字段
+            repo_root = Path(__file__).resolve().parents[2]
+            if install_type == 'agent':
+                base_config_path = repo_root / "agent" / "agent-go" / "bin" / "config.example.yaml"
+            else:
+                base_config_path = repo_root / "agent" / "agent-server-go" / "bin" / "config.example.yaml"
+
             rendered_yaml = render_config_yaml(
                 install_type=install_type,
                 agent_token=agent_token,
+                host_id=host.id,
+                agent_name=host.name,
                 agent_server_url=agent_server_url or "",
                 control_plane_url=control_plane_url or "",
                 ws_backoff_initial=ws_backoff_initial_ms,
@@ -290,6 +301,7 @@ exit 1
                 agent_server_listen_addr=agent_server_listen_addr or "",
                 max_connections=max_connections,
                 heartbeat_timeout=heartbeat_timeout,
+                base_config_path=str(base_config_path),
             )
             # base64 encode for safe insertion into shell script
             config_b64 = base64.b64encode(rendered_yaml.encode("utf-8")).decode("ascii")
