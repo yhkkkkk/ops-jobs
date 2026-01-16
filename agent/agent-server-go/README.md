@@ -166,7 +166,8 @@ CMD ["./agent-server", "start"]
 ```ini
 [Unit]
 Description=Agent-Server
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -178,8 +179,3 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 ```
-
-## 许可证
-
-MIT
-
