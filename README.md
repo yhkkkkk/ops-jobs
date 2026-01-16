@@ -193,7 +193,13 @@
 
 ### 仪表盘
 
+![运维台仪表盘](images/运维台仪表盘.png)
 ![仪表盘](images/仪表盘.png)
+
+### Agent 与安装包
+
+![Agent 管理](images/agent管理.png)
+![安装包管理](images/agent安装包管理.png)
 
 ### 主机与账号
 
@@ -206,8 +212,8 @@
 ### 脚本模板
 
 ![脚本模板](images/脚本模板.png)
+![版本管理](images/脚本模板版本管理.png)
 ![新建脚本](images/新建脚本.png)
-![脚本预览](images/脚本预览.png)
 
 ### 作业与执行
 
