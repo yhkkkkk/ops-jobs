@@ -214,6 +214,7 @@ import CronHelper from './components/CronHelper.vue'
 
 const route = useRoute()
 const router = useRouter()
+const presetPlanId = computed(() => route.query.plan_id ? Number(route.query.plan_id) : undefined)
 
 // 响应式数据
 const formRef = ref()
@@ -296,6 +297,15 @@ const handleExecutionPlanChange = async (planId) => {
   try {
     const response = await executionPlanApi.get(planId)
     const plan = response
+
+    // 确保下拉列表包含当前选择的方案（来自外部跳转时可能不在默认列表中）
+    if (!executionPlans.value.some(p => p.id === planId)) {
+      executionPlans.value.unshift({
+        id: plan.id,
+        name: plan.name,
+        template_name: plan.template_name
+      })
+    }
 
     // 获取执行方案的全局变量
     const templateGlobalParams = plan.template_global_parameters || {}
@@ -478,7 +488,17 @@ watch(() => form.cron_expression, () => {
 
 // 生命周期
 onMounted(() => {
-  fetchExecutionPlans()
+  fetchExecutionPlans().finally(async () => {
+    // 新建页支持通过查询参数预填执行方案
+    if (!isEdit.value && presetPlanId.value) {
+      form.execution_plan = presetPlanId.value
+      await handleExecutionPlanChange(presetPlanId.value)
+      if (!form.name) {
+        const matched = executionPlans.value.find(p => p.id === presetPlanId.value)
+        form.name = matched ? `${matched.name}-定时任务` : '定时任务'
+      }
+    }
+  })
   loadTask()
 })
 </script>
@@ -648,5 +668,4 @@ onMounted(() => {
   border-radius: 3px;
 }
 </style>
-
 

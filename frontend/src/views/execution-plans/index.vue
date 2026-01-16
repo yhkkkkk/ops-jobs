@@ -245,6 +245,17 @@
               </template>
               执行
             </a-button>
+            <a-button
+              type="text"
+              size="small"
+              @click="handleSchedule(record)"
+              v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: record.id }"
+            >
+              <template #icon>
+                <icon-schedule />
+              </template>
+              定时执行
+            </a-button>
             <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
@@ -690,6 +701,10 @@ const handleEdit = (plan: ExecutionPlan) => {
 // 执行方案
 const handleExecute = (plan: ExecutionPlan) => {
   router.push(`/execution-plans/detail/${plan.id}/execute`)
+}
+
+const handleSchedule = (plan: ExecutionPlan) => {
+  router.push(`/scheduled-tasks/create?plan_id=${plan.id}`)
 }
 
 // 更多操作

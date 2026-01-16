@@ -1906,6 +1906,20 @@ const handleFileTransfer = async () => {
     const result = await quickExecuteApi.transferFile(data)
     Message.success(`文件传输任务已启动，任务ID: ${result.task_id}`)
 
+    // 保存执行历史
+    addExecutionHistory({
+      type: 'file',
+      timestamp: Date.now(),
+      remotePath: remotePath.value,
+      timeout: timeout.value,
+      executionMode: executionMode.value,
+      hostIds: selectedHosts.value,
+      groupIds: selectedGroups.value,
+      selectionType: selectionType.value,
+      hostCount: totalTargetCount.value,
+      accountId: selectedAccountId.value,
+    })
+
     router.push(`/execution-records/${result.execution_record_id}`)
   } catch (error) {
     console.error('文件传输失败:', error)

@@ -241,7 +241,7 @@
             <a-tag v-if="statusFilters.disabled" color="gray">已禁用: {{ filteredDisabledCount }}</a-tag>
             <a-tag v-if="statusFilters.outdated" color="purple">版本落后: {{ filteredOutdatedCount }}</a-tag>
             <a-tag v-if="statusFilters.failed" color="red">最近失败: {{ filteredFailedCount }}</a-tag>
-            <a-tag v-if="statusFilters.inactive" color="yellow">未活跃: {{ filteredInactiveCount }}</a-tag>
+            <a-tag v-if="statusFilters.inactive" color="arcoblue">未活跃: {{ filteredInactiveCount }}</a-tag>
           </a-space>
         </div>
       </div>
@@ -2961,4 +2961,3 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 </style>
-
