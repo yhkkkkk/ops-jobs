@@ -72,6 +72,64 @@
                 {{ plan.changes.summary }}
               </div>
 
+              <!-- 全局变量变更 -->
+              <div
+                v-if="plan.changes.global_parameters_changed"
+                class="p-3 bg-blue-50 border border-blue-100 rounded text-sm mb-3"
+              >
+                <div class="text-blue-800 font-medium mb-3">
+                  全局变量已更新 ({{ getGlobalParamChanges(plan).length }})
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="item in getGlobalParamChanges(plan)"
+                    :key="item.key"
+                    class="global-param-item"
+                  >
+                    <div class="flex items-center gap-2 mb-2">
+                      <a-tag color="blue" size="small">{{ item.key }}</a-tag>
+                      <a-tag v-if="item.typeOld || item.typeNew" size="small" color="arcoblue">
+                        {{ item.typeNew || item.typeOld }}
+                      </a-tag>
+                      <a-tag v-if="item.status === 'added'" size="small" color="green">新增</a-tag>
+                      <a-tag v-else-if="item.status === 'deleted'" size="small" color="red">删除</a-tag>
+                    </div>
+                    <div class="global-param-values">
+                      <div class="param-value old">
+                        <span class="label">原值:</span>
+                        <span class="value">{{ item.oldDisplay || '(空)' }}</span>
+                      </div>
+                      <div class="param-value new">
+                        <span class="label">新值:</span>
+                        <span class="value">{{ item.newDisplay || '(空)' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 新增/删除步骤提示 -->
+              <div v-if="plan.changes.added_steps?.length || plan.changes.deleted_steps?.length" class="space-y-2 mb-3">
+                <div v-if="plan.changes.added_steps?.length" class="p-3 bg-green-50 border border-green-100 rounded text-sm">
+                  <div class="font-medium text-green-800 mb-1">新增步骤 ({{ plan.changes.added_steps.length }})</div>
+                  <div class="flex flex-col gap-1">
+                    <div v-for="step in plan.changes.added_steps" :key="step.step_id" class="flex items-center justify-between text-sm">
+                      <span>步骤 {{ step.order }} · {{ step.name }}</span>
+                      <a-tag size="small" color="green">新增</a-tag>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="plan.changes.deleted_steps?.length" class="p-3 bg-red-50 border border-red-100 rounded text-sm">
+                  <div class="font-medium text-red-800 mb-1">删除步骤 ({{ plan.changes.deleted_steps.length }})</div>
+                  <div class="flex flex-col gap-1">
+                    <div v-for="step in plan.changes.deleted_steps" :key="step.step_id" class="flex items-center justify-between text-sm">
+                      <span>步骤 {{ step.order }} · {{ step.name }}</span>
+                      <a-tag size="small" color="red">删除</a-tag>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- 详细变更 -->
               <div class="space-y-3">
                 <!-- 修改的步骤 -->
@@ -259,6 +317,38 @@ const formatJson = (value: any) => {
   if (!value) return '(空)'
   if (typeof value === 'string') return value
   return JSON.stringify(value, null, 2)
+}
+
+// 全局变量变更列表
+const getGlobalParamChanges = (plan: any) => {
+  const oldParams = plan?.changes?.old_global_parameters || {}
+  const newParams = plan?.changes?.new_global_parameters || {}
+  const keys = Array.from(new Set([...Object.keys(oldParams), ...Object.keys(newParams)]))
+
+  return keys.map((key) => {
+    const oldParam = oldParams[key]
+    const newParam = newParams[key]
+    const oldDisplay = extractParamValue(oldParam)
+    const newDisplay = extractParamValue(newParam)
+    const typeOld = extractParamType(oldParam)
+    const typeNew = extractParamType(newParam)
+    let status: 'changed' | 'added' | 'deleted' = 'changed'
+    if (oldParam === undefined) status = 'added'
+    else if (newParam === undefined) status = 'deleted'
+
+    return { key, oldDisplay, newDisplay, typeOld, typeNew, status }
+  })
+}
+
+const extractParamValue = (param: any) => {
+  if (param === null || param === undefined) return ''
+  if (typeof param === 'object' && 'value' in param) return (param as any).value
+  return typeof param === 'object' ? JSON.stringify(param) : param
+}
+
+const extractParamType = (param: any) => {
+  if (param && typeof param === 'object' && 'type' in param) return (param as any).type
+  return ''
 }
 
 // 计算是否有需要同步的方案
@@ -488,5 +578,49 @@ const handleCancel = () => {
   padding: 8px;
   background-color: #fef3cd;
   border-radius: 4px;
+}
+
+.global-param-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fff;
+}
+
+.global-param-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.param-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.param-value.old {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.param-value.new {
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.param-value .label {
+  font-weight: 600;
+  min-width: 36px;
+}
+
+.param-value .value {
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 </style>

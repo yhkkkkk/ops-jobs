@@ -152,8 +152,8 @@
         :data="plans"
         :loading="loading"
         :pagination="pagination"
-      :row-selection="rowSelection"
-      @selection-change="handleSelectionChange"
+        :row-selection="rowSelection"
+        @selection-change="handleSelectionChange"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
         row-key="id"
@@ -269,6 +269,11 @@
         </template>
       </a-table>
     </a-card>
+    <BatchSyncPreviewModal
+      v-model="batchSyncModalVisible"
+      :plan-ids="batchSyncPlanIds"
+      @sync-success="handleBatchSyncSuccess"
+    />
 
     <!-- 模板选择弹窗 -->
     <a-modal
@@ -333,6 +338,9 @@ import type { ExecutionPlan, JobTemplate } from '@/types'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useAuthStore } from '@/stores/auth'
+import { defineAsyncComponent } from 'vue'
+// @ts-ignore - some editors/tsserver may not immediately include newly added .vue files in project file list
+const BatchSyncPreviewModal = defineAsyncComponent(() => import('./components/BatchSyncPreviewModal.vue'))
 
 const permissionsStore = usePermissionsStore()
 const favoritesStore = useFavoritesStore()
@@ -360,6 +368,15 @@ const selectedTemplateKeys = ref<number[]>([])
 
 // 批量操作相关
 const selectedRowKeys = ref<number[]>([])
+// rowSelection 配置（与 Agent 页面一致）
+const rowSelection = reactive({
+  type: 'checkbox',
+  showCheckedAll: true,
+  onlyCurrent: false
+})
+// 批量同步模态状态
+const batchSyncModalVisible = ref(false)
+let batchSyncPlanIds: number[] = []
 
 // 搜索表单
 const searchForm = reactive({
@@ -472,7 +489,9 @@ const fetchPlans = async () => {
       page: pagination.current,
       page_size: pagination.pageSize,
       search: searchForm.search || undefined,
-      template: searchForm.template_id || undefined
+      template: searchForm.template_id || undefined,
+      // 如果启用“我的方案”，把创建者传给后端以便服务器端过滤
+      created_by: searchForm.my_plans_only ? authStore.user?.id : undefined
     }
 
     const response = await executionPlanApi.getPlans(params)
@@ -616,22 +635,13 @@ const handleTemplateRowClick = (record: any) => {
   }
 }
 
-// 表格行选择
-const handleRowSelect = (selectedKeys: number[]) => {
-  selectedRowKeys.value = selectedKeys
+// 表格行选择（兼容 selection-change 事件）
+const handleRowSelect = (selectedKeys: number[] | (string | number)[]) => {
+  selectedRowKeys.value = selectedKeys as number[]
 }
-
-// 兼容 selection-change 事件（Arco 表格会触发）
 const handleSelectionChange = (rowKeys: (string | number)[]) => {
   selectedRowKeys.value = rowKeys as number[]
 }
-
-// rowSelection 配置（与 Agent 页面一致）
-const rowSelection = reactive({
-  type: 'checkbox',
-  showCheckedAll: true,
-  onlyCurrent: false
-})
 // 确认选择模板
 const handleTemplateSelect = () => {
   if (selectedTemplateKeys.value.length === 0) {
@@ -651,59 +661,20 @@ const handleTemplateSelectCancel = () => {
   templateSearchText.value = ''
 }
 
-// 批量同步
-const handleBatchSync = async () => {
+// 批量同步 - 打开预览模态，由模态执行真正的同步
+const handleBatchSync = () => {
   if (selectedRowKeys.value.length === 0) {
     Message.warning('请先选择要同步的执行方案')
     return
   }
+  batchSyncPlanIds = [...selectedRowKeys.value]
+  batchSyncModalVisible.value = true
+}
 
-  Modal.confirm({
-    title: '确认批量同步',
-    content: `确定要同步选中的 ${selectedRowKeys.value.length} 个执行方案吗？`,
-    okText: '确认同步',
-    cancelText: '取消',
-    okButtonProps: { status: 'warning' },
-    onOk: async () => {
-      try {
-        // 并发同步选中的执行方案
-        const syncPromises = selectedRowKeys.value.map(planId =>
-          executionPlanApi.syncPlan(planId)
-        )
-
-        const results = await Promise.allSettled(syncPromises)
-
-        // 统计同步结果
-        let successCount = 0
-        let failCount = 0
-
-        results.forEach((result, index) => {
-          const planId = selectedRowKeys.value[index]
-          if (result.status === 'fulfilled') {
-            successCount++
-          } else {
-            failCount++
-            console.error(`方案 ${planId} 同步失败:`, result.reason)
-          }
-        })
-
-        if (failCount === 0) {
-          Message.success(`批量同步完成，共同步 ${successCount} 个执行方案`)
-        } else {
-          Message.warning(`批量同步完成，成功 ${successCount} 个，失败 ${failCount} 个`)
-        }
-
-        // 清空选择
-        selectedRowKeys.value = []
-
-        // 刷新列表
-        fetchPlans()
-      } catch (error) {
-        Message.error('批量同步失败')
-        console.error('批量同步错误:', error)
-      }
-    }
-  })
+const handleBatchSyncSuccess = () => {
+  selectedRowKeys.value = []
+  batchSyncModalVisible.value = false
+  fetchPlans()
 }
 
 // 查看方案

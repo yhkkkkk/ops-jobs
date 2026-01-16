@@ -484,6 +484,8 @@ const fetchTemplates = async () => {
       search: searchForm.search || undefined,
       category: searchForm.category || undefined,
       tags: searchForm.tags.length > 0 ? searchForm.tags.join(',') : undefined,
+      // 如果启用“我的作业”，让后端返回只属于当前用户的模板
+      created_by: searchForm.my_templates_only ? authStore.user?.id : undefined
     }
 
     // 过滤空值
@@ -783,6 +785,7 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+/* 搜索按钮定位（与脚本模板保持一致） */
 .search-actions {
   margin-left: auto;
   display: flex;
