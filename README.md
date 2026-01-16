@@ -228,7 +228,7 @@
 ![定时任务](images/定时任务.png)
 ![定时任务2](images/定时任务2.png)
 ![定时任务3](images/定时任务3.png)
-![审计日志](images/审计.png)
+![审计日志](images/审计日志.png)
 
 ## 🚀 快速开始
 
