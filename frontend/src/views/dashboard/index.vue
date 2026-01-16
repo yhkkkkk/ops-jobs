@@ -547,7 +547,7 @@ onMounted(async () => {
 }
 
 .activity-card {
-  height: 400px;
+  height: 550px;
   transition: all 0.3s ease;
 }
 

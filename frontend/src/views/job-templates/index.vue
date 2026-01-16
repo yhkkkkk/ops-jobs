@@ -108,7 +108,10 @@
         <a-form-item label="收藏">
           <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
         </a-form-item>
-        <a-form-item>
+        <a-form-item label="我的作业">
+          <a-switch v-model="searchForm.my_templates_only" @change="handleSearch" />
+        </a-form-item>
+        <a-form-item class="search-actions">
           <a-space>
             <a-button type="primary" @click="handleSearch">
               <template #icon>
@@ -265,27 +268,15 @@
                   </template>
                   复制
                 </a-doption>
-                <template v-if="canDeleteTemplate(record.id)">
-                  <a-popconfirm
-                    title="确定要删除此模板？此操作不可撤销。"
-                    @ok="() => handleDelete(record)"
-                  >
-                    <a-doption>
-                      <template #icon>
-                        <icon-delete />
-                      </template>
-                      删除
-                    </a-doption>
-                  </a-popconfirm>
-                </template>
-                <template v-else>
-                  <a-doption class="text-red-500 disabled-option">
-                    <template #icon>
-                      <icon-delete />
-                    </template>
-                    删除
-                  </a-doption>
-                </template>
+                <a-doption
+                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id) }]"
+                  @click="handleClickDeleteTemplate(record)"
+                >
+                  <template #icon>
+                    <icon-delete />
+                  </template>
+                  删除
+                </a-doption>
               </template>
             </a-dropdown>
           </a-space>
@@ -306,15 +297,17 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
+import { useAuthStore } from '@/stores/auth'
 
 const permissionsStore = usePermissionsStore()
 const favoritesStore = useFavoritesStore()
+const authStore = useAuthStore()
 
 const router = useRouter()
 
@@ -333,6 +326,7 @@ const searchForm = reactive({
   category: '',
   tags: [] as string[],
   favorites_only: false,
+  my_templates_only: false,
   created_by: undefined as number | undefined
 })
 
@@ -420,7 +414,7 @@ const columns = [
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 150
+    width: 160
   },
   {
     title: '操作',
@@ -508,6 +502,11 @@ const fetchTemplates = async () => {
       resultTemplates = resultTemplates.filter(t => favoritesStore.isFavorite('job_template', t.id))
     }
 
+    // 前端过滤我的作业
+    if (searchForm.my_templates_only) {
+      resultTemplates = resultTemplates.filter(t => t.created_by === authStore.user?.id)
+    }
+
     templates.value = resultTemplates
     pagination.total = searchForm.favorites_only ? resultTemplates.length : (response.total || 0)
 
@@ -539,6 +538,7 @@ const handleReset = () => {
   searchForm.category = ''
   searchForm.tags = []
   searchForm.favorites_only = false
+  searchForm.my_templates_only = false
   searchForm.created_by = undefined
   // 重置创建者过滤
   filteredCreators.value = [...availableUsers.value]
@@ -606,15 +606,21 @@ const handleCopy = async (record: JobTemplate) => {
   }
 }
 
-const handleDelete = async (record: JobTemplate) => {
-  try {
-    await jobTemplateApi.deleteTemplate(record.id)
-    Message.success('模板删除成功')
-    fetchTemplates()
-  } catch (error) {
-    console.error('删除模板失败:', error)
-    Message.error('删除模板失败')
-  }
+const handleDelete = (record: JobTemplate) => {
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定要删除模板"${record.name}"吗？此操作不可恢复。`,
+    onOk: async () => {
+      try {
+        await jobTemplateApi.deleteTemplate(record.id)
+        Message.success('模板删除成功')
+        fetchTemplates()
+      } catch (error) {
+        console.error('删除模板失败:', error)
+        Message.error('删除模板失败')
+      }
+    }
+  })
 }
 
 const showNoPermissionMessage = () => {
@@ -775,6 +781,13 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.search-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding-top: 0;
 }
 
 /* 模板名称单元格样式 */

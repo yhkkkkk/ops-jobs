@@ -2938,8 +2938,9 @@ onBeforeUnmount(() => {
 /* 筛选器样式 */
 .filter-section {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 12px;
+  align-items: center;
 }
 
 .filter-title {

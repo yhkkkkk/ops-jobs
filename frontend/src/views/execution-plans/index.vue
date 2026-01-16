@@ -50,6 +50,17 @@
                 </a-doption>
               </template>
             </a-dropdown>
+            <a-button
+              type="outline"
+              :disabled="selectedRowKeys.length === 0"
+              @click="handleBatchSync"
+              v-permission="{ resourceType: 'executionplan', permission: 'change' }"
+            >
+              <template #icon>
+                <icon-sync />
+              </template>
+              批量同步
+            </a-button>
           </a-space>
         </div>
       </div>
@@ -111,6 +122,9 @@
         <a-form-item label="收藏">
           <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
         </a-form-item>
+        <a-form-item label="我的方案">
+          <a-switch v-model="searchForm.my_plans_only" @change="handleSearch" />
+        </a-form-item>
 
         <a-form-item>
           <a-space>
@@ -138,6 +152,8 @@
         :data="plans"
         :loading="loading"
         :pagination="pagination"
+      :row-selection="rowSelection"
+      @selection-change="handleSelectionChange"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
         row-key="id"
@@ -239,8 +255,7 @@
 
                 <a-doption
                   value="delete"
-                  class="danger-option"
-                  :class="{ 'disabled-option': !canDeletePlan(record.id) }"
+                  :class="['text-red-500', { 'disabled-option': !canDeletePlan(record.id) }]"
                   @click="handleClickMoreAction('delete', record)"
                 >
                   <template #icon>
@@ -317,9 +332,11 @@ import { executionPlanApi, jobTemplateApi } from '@/api/ops'
 import type { ExecutionPlan, JobTemplate } from '@/types'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
+import { useAuthStore } from '@/stores/auth'
 
 const permissionsStore = usePermissionsStore()
 const favoritesStore = useFavoritesStore()
+const authStore = useAuthStore()
 
 const router = useRouter()
 const route = useRoute()
@@ -341,11 +358,15 @@ const templateSelectVisible = ref(false)
 const templateSearchText = ref('')
 const selectedTemplateKeys = ref<number[]>([])
 
+// 批量操作相关
+const selectedRowKeys = ref<number[]>([])
+
 // 搜索表单
 const searchForm = reactive({
   search: '',
   template_id: undefined as number | undefined,
   favorites_only: false,
+  my_plans_only: false,
   created_by: undefined as number | undefined
 })
 
@@ -462,6 +483,11 @@ const fetchPlans = async () => {
       resultPlans = resultPlans.filter(p => favoritesStore.isFavorite('execution_plan', p.id))
     }
 
+    // 前端过滤我的方案
+    if (searchForm.my_plans_only) {
+      resultPlans = resultPlans.filter(p => p.created_by === authStore.user?.id)
+    }
+
     plans.value = resultPlans
     pagination.total = searchForm.favorites_only ? resultPlans.length : (response.total || 0)
 
@@ -540,6 +566,7 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.template_id = undefined
   searchForm.favorites_only = false
+  searchForm.my_plans_only = false
   searchForm.created_by = undefined
   // 重置创建者过滤
   filteredCreators.value = [...availableUsers.value]
@@ -555,12 +582,14 @@ const handleRefresh = () => {
 // 分页处理
 const handlePageChange = (page: number) => {
   pagination.current = page
+  selectedRowKeys.value = [] // 清空选择
   fetchPlans()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  selectedRowKeys.value = [] // 清空选择
   fetchPlans()
 }
 
@@ -586,6 +615,23 @@ const handleTemplateRowClick = (record: any) => {
     selectedTemplateKeys.value = [record.id]
   }
 }
+
+// 表格行选择
+const handleRowSelect = (selectedKeys: number[]) => {
+  selectedRowKeys.value = selectedKeys
+}
+
+// 兼容 selection-change 事件（Arco 表格会触发）
+const handleSelectionChange = (rowKeys: (string | number)[]) => {
+  selectedRowKeys.value = rowKeys as number[]
+}
+
+// rowSelection 配置（与 Agent 页面一致）
+const rowSelection = reactive({
+  type: 'checkbox',
+  showCheckedAll: true,
+  onlyCurrent: false
+})
 // 确认选择模板
 const handleTemplateSelect = () => {
   if (selectedTemplateKeys.value.length === 0) {
@@ -603,6 +649,61 @@ const handleTemplateSelectCancel = () => {
   templateSelectVisible.value = false
   selectedTemplateKeys.value = []
   templateSearchText.value = ''
+}
+
+// 批量同步
+const handleBatchSync = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    Message.warning('请先选择要同步的执行方案')
+    return
+  }
+
+  Modal.confirm({
+    title: '确认批量同步',
+    content: `确定要同步选中的 ${selectedRowKeys.value.length} 个执行方案吗？`,
+    okText: '确认同步',
+    cancelText: '取消',
+    okButtonProps: { status: 'warning' },
+    onOk: async () => {
+      try {
+        // 并发同步选中的执行方案
+        const syncPromises = selectedRowKeys.value.map(planId =>
+          executionPlanApi.syncPlan(planId)
+        )
+
+        const results = await Promise.allSettled(syncPromises)
+
+        // 统计同步结果
+        let successCount = 0
+        let failCount = 0
+
+        results.forEach((result, index) => {
+          const planId = selectedRowKeys.value[index]
+          if (result.status === 'fulfilled') {
+            successCount++
+          } else {
+            failCount++
+            console.error(`方案 ${planId} 同步失败:`, result.reason)
+          }
+        })
+
+        if (failCount === 0) {
+          Message.success(`批量同步完成，共同步 ${successCount} 个执行方案`)
+        } else {
+          Message.warning(`批量同步完成，成功 ${successCount} 个，失败 ${failCount} 个`)
+        }
+
+        // 清空选择
+        selectedRowKeys.value = []
+
+        // 刷新列表
+        fetchPlans()
+      } catch (error) {
+        Message.error('批量同步失败')
+        console.error('批量同步错误:', error)
+      }
+    }
+  })
 }
 
 // 查看方案
@@ -819,15 +920,6 @@ onMounted(() => {
 .created-time {
   font-size: 12px;
   color: var(--color-text-3);
-}
-
-.danger-option {
-  color: var(--color-danger-6);
-}
-
-.danger-option:hover {
-  background-color: var(--color-danger-1);
-  color: var(--color-danger-6);
 }
 
 .disabled-option {
