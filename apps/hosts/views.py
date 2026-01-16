@@ -1,4 +1,5 @@
 from django.http.response import HttpResponse
+from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -706,7 +707,18 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """删除账号"""
         instance = self.get_object()
-        instance.delete()
+
+        try:
+            instance.delete()
+        except ProtectedError as e:
+            # 获取被保护的外键引用信息
+            protected_objects = e.protected_objects
+            host_names = [str(host) for host in protected_objects]
+
+            return SycResponse.error(
+                message=f"该账号正在被以下主机使用，无法删除：{', '.join(host_names)}",
+                code=400
+            )
 
         # 返回统一格式的响应
         return SycResponse.success(

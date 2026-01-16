@@ -198,7 +198,7 @@
               placeholder="请选择设备类型（可选）"
               allow-clear
             >
-              <a-option value="physical">宿主机</a-option>
+              <a-option value="physical">物理机</a-option>
             </a-select>
           </a-form-item>
         </a-col>

@@ -37,7 +37,7 @@
       </div>
     </div>
 
-    <!-- 搜索栏 -->
+    <!-- 搜索栏（对齐脚本管理风格） -->
     <a-card class="mb-4">
       <a-form :model="searchForm" layout="inline">
         <a-form-item label="账号名称">
@@ -61,33 +61,35 @@
           >
             <a-option value="password">密码认证</a-option>
             <a-option value="key">密钥认证</a-option>
-            <a-option value="none">未配置</a-option>
           </a-select>
         </a-form-item>
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            <template #icon>
-              <icon-search />
-            </template>
-            搜索
-          </a-button>
-          <a-button @click="handleReset" style="margin-left: 8px">
-            <template #icon>
-              <icon-refresh />
-            </template>
-            重置
-          </a-button>
+        <a-form-item class="search-actions">
+          <a-space>
+            <a-button type="primary" @click="handleSearch">
+              <template #icon>
+                <icon-search />
+              </template>
+              搜索
+            </a-button>
+            <a-button @click="handleReset">
+              <template #icon>
+                <icon-refresh />
+              </template>
+              重置
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
     </a-card>
 
     <!-- 账号列表 -->
-    <div class="table-container">
+    <a-card>
       <a-table
         :columns="columns"
         :data="accounts"
         :loading="loading"
         :pagination="pagination"
+        :scroll="{ x: 800 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -112,36 +114,34 @@
         </template>
 
         <template #actions="{ record }">
-          <a-button 
-            v-permission="{ resourceType: 'serveraccount', permission: 'change', resourceId: record.id }"
-            type="text" 
-            size="small" 
-            @click="handleEdit(record)"
-          >
-            <template #icon>
-              <icon-edit />
-            </template>
-            编辑
-          </a-button>
-          <a-popconfirm
-            content="确定要删除这个账号吗？"
-            @ok="handleDelete(record.id)"
-          >
-            <a-button 
-              v-permission="{ resourceType: 'serveraccount', permission: 'delete', resourceId: record.id }"
-              type="text" 
-              status="danger" 
+          <a-space>
+            <a-button
+              v-permission="{ resourceType: 'serveraccount', permission: 'change', resourceId: record.id }"
+              type="text"
               size="small"
+              @click="handleEdit(record)"
+            >
+              <template #icon>
+                <icon-edit />
+              </template>
+              编辑
+            </a-button>
+            <a-button
+              v-permission="{ resourceType: 'serveraccount', permission: 'delete', resourceId: record.id }"
+              type="text"
+              size="small"
+              class="text-red-500"
+              @click="handleClickDelete(record)"
             >
               <template #icon>
                 <icon-delete />
               </template>
               删除
             </a-button>
-          </a-popconfirm>
+          </a-space>
         </template>
       </a-table>
-    </div>
+    </a-card>
 
     <!-- 账号表单弹窗 -->
     <AccountForm
@@ -154,15 +154,17 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { accountApi, type ServerAccount } from '@/api/account'
 import AccountForm from './components/AccountForm.vue'
+import { usePermissionsStore } from '@/stores/permissions'
 
 // 响应式数据
 const loading = ref(false)
 const accounts = ref<ServerAccount[]>([])
 const formVisible = ref(false)
 const currentAccount = ref<ServerAccount | null>(null)
+const permissionsStore = usePermissionsStore()
 
 // 搜索表单
 const searchForm = reactive({
@@ -176,7 +178,8 @@ const pagination = reactive({
   pageSize: 20,
   total: 0,
   showTotal: true,
-  showPageSize: true
+  showPageSize: true,
+  pageSizeOptions: ['10', '20', '50', '100']
 })
 
 // 表格列配置
@@ -185,7 +188,7 @@ const columns = [
     title: '账号信息',
     dataIndex: 'name',
     slotName: 'name',
-    width: 200
+    width: 220
   },
   {
     title: '认证方式',
@@ -196,7 +199,10 @@ const columns = [
   {
     title: '描述',
     dataIndex: 'description',
-    slotName: 'description'
+    slotName: 'description',
+    ellipsis: true,
+    tooltip: true,
+    width: 240
   },
   {
     title: '操作',
@@ -273,14 +279,32 @@ const handleEdit = (account: ServerAccount) => {
 }
 
 // 删除账号
-const handleDelete = async (id: number) => {
-  try {
-    await accountApi.deleteAccount(id)
-    Message.success('账号删除成功')
-    fetchAccounts()
-  } catch (error) {
-    console.error('删除账号失败:', error)
-  }
+const handleDelete = (record: ServerAccount) => {
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定要删除账号"${record.name}"吗？此操作不可恢复。`,
+    onOk: async () => {
+      try {
+        await accountApi.deleteAccount(record.id)
+        Message.success('账号删除成功')
+        fetchAccounts()
+      } catch (error: any) {
+        console.error('删除账号失败:', error)
+
+        // 检查是否有具体的错误信息
+        const errorMessage = error.message || error.response?.data?.message || error.response?.data?.detail
+        if (errorMessage && errorMessage !== '请求失败') {
+          Message.error(errorMessage)
+        } else {
+          Message.error('账号删除失败，请稍后重试')
+        }
+      }
+    }
+  })
+}
+
+const handleClickDelete = (record: ServerAccount) => {
+  handleDelete(record)
 }
 
 // 表单提交成功
@@ -330,23 +354,18 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
-.search-bar {
-  background: var(--color-bg-2);
-  padding: 16px;
-  border-radius: 6px;
-  margin-bottom: 16px;
+.search-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding-top: 0;
 }
 
-.table-container {
-  background: white;
-  border-radius: 6px;
-  overflow: hidden;
-}
 
 .account-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .account-name {
@@ -370,6 +389,12 @@ onMounted(() => {
   color: var(--color-text-2);
 }
 
+.disabled-option {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
 /* 表格样式优化 */
 :deep(.arco-table) {
   .arco-table-th {
@@ -377,22 +402,13 @@ onMounted(() => {
     font-weight: 600;
   }
 
-  /* 固定列样式 */
-  .arco-table-col-fixed-right {
-    background-color: transparent !important;
+  .arco-table-td {
+    padding: 12px 16px;
   }
 
-  .arco-table-col-fixed-right .arco-table-td {
-    background-color: inherit !important;
-  }
-
-  .arco-table-col-fixed-right .arco-table-cell {
-    background-color: inherit !important;
-  }
-
-  .arco-table-col-fixed-right::before {
-    background-color: transparent !important;
-    box-shadow: none !important;
+  /* 操作列按钮间距 */
+  .arco-space-item {
+    margin-right: 8px;
   }
 }
 </style>
