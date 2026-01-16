@@ -111,7 +111,7 @@ def render_config_yaml(
         install_type: 安装类型 ('agent' 或 'agent-server')
         agent_token: Agent Token
         agent_server_url: Agent Server URL
-        control_plane_url: Control Plane URL
+        control_plane_url: Control Plane URL（仅 agent-server 安装使用）
         ws_backoff_initial: WebSocket 初始退避时间（毫秒）
         ws_backoff_max: WebSocket 最大退避时间（毫秒）
         ws_max_retries: WebSocket 最大重试次数
@@ -127,7 +127,6 @@ def render_config_yaml(
     if install_type == "agent":
         overrides = {
             "connection": {
-                "mode": "agent-server",
                 "agent_server_url": agent_server_url,
             },
             "identification": {
@@ -139,13 +138,11 @@ def render_config_yaml(
             },
             "task": {
                 "heartbeat_interval": 10,
-                "task_poll_interval": 5,
                 "max_concurrent_tasks": 5,
+                "max_execution_time_sec": 7200,
             },
             "resource_limit": {
                 "bandwidth_limit": 0,
-                "cpu_limit": 0.0,
-                "memory_limit": 0,
             },
         }
         # Add optional fields only if provided

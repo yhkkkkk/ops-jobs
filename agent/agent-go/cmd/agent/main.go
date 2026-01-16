@@ -32,7 +32,6 @@ var startCmd = &cobra.Command{
 
 		logFields := map[string]interface{}{
 			"agent_name":       cfg.Identification.AgentName,
-			"mode":             cfg.Connection.Mode,
 			"agent_server_url": cfg.Connection.AgentServerURL,
 		}
 

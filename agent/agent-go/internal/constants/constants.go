@@ -40,7 +40,7 @@ const (
 	WSBackoffInitialMs          = 1000
 	WSBackoffMaxMs              = 30000
 	WSMaxRetries                = 6
-	OutboxFlushBatchSize        = 200
+	OutboxFlushBatchSize        = 200 // 可被配置覆盖
 
 	// Buffers
 	LogBufferSize    = 4096

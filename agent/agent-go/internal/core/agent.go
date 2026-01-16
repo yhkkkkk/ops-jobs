@@ -44,7 +44,6 @@ type HeartbeatStats struct {
 // Agent 是 Agent 进程的核心对象，负责注册、心跳、拉任务等
 type Agent struct {
 	cfg             *config.Config
-	client          *httpclient.Client   // HTTP 客户端（用于注册）
 	wsClient        *wsclient.Client     // WebSocket 客户端（agent-server 模式）
 	taskQueue       *taskqueue.TaskQueue // asynq任务队列（可选）
 	info            *AgentInfo
@@ -74,6 +73,8 @@ type Agent struct {
 	// 心跳监控统计
 	heartbeatStats HeartbeatStats
 	heartbeatLock  sync.RWMutex
+	// outboxFlushBatch 控制 WS outbox 每次冲刷的批量大小
+	outboxFlushBatch int
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -91,9 +92,6 @@ func NewAgent(cfg *config.Config) *Agent {
 		maxConcurrent = constants.DefaultMaxConcurrentTasks
 	}
 	taskSemaphore := semaphore.New(maxConcurrent)
-
-	// 创建http客户端
-	httpClient := httpclient.NewClient(cfg.Connection.ControlPlaneURL, cfg.Identification.AgentToken)
 
 	// 创建asynq任务队列
 	var taskQueue *taskqueue.TaskQueue
@@ -114,9 +112,14 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	exec.SetMaxTaskTime(maxTaskTime)
 
+	// Outbox 批量冲刷大小（可配置，默认 constants.OutboxFlushBatchSize）
+	outboxBatch := cfg.Logging.LogBatchSize
+	if outboxBatch <= 0 {
+		outboxBatch = constants.OutboxFlushBatchSize
+	}
+
 	agent := &Agent{
 		cfg:              cfg,
-		client:           httpClient,
 		taskQueue:        taskQueue,
 		system:           collectSystemInfo(),
 		wsOutbox:         wsclient.NewOutbox(cfg.Connection.WSOutboxMaxSize),
@@ -133,6 +136,9 @@ func NewAgent(cfg *config.Config) *Agent {
 		maxTaskTime:      maxTaskTime,
 	}
 
+	// 存储配置化的 outbox 批量大小
+	agent.outboxFlushBatch = outboxBatch
+
 	// 初始化心跳间隔（秒），为后续动态刷新做准备
 	hb := cfg.Task.HeartbeatInterval
 	if hb <= 0 {
@@ -140,14 +146,12 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	agent.heartbeatIntervalSec = int64(hb)
 
-	if cfg.Connection.Mode == "agent-server" {
-		wsClient := wsclient.NewClient(cfg.Connection.AgentServerURL, cfg.Identification.AgentToken)
-		wsClient.SetOnTask(agent.handleWebSocketTask)
-		wsClient.SetOnCancel(agent.handleWebSocketCancel)
-		wsClient.SetOnControl(agent.handleWebSocketControl)
-		wsClient.SetOnUpgrade(agent.handleWebSocketUpgrade)
-		agent.wsClient = wsClient
-	}
+	wsClient := wsclient.NewClient(cfg.Connection.AgentServerURL, cfg.Identification.AgentToken)
+	wsClient.SetOnTask(agent.handleWebSocketTask)
+	wsClient.SetOnCancel(agent.handleWebSocketCancel)
+	wsClient.SetOnControl(agent.handleWebSocketControl)
+	wsClient.SetOnUpgrade(agent.handleWebSocketUpgrade)
+	agent.wsClient = wsClient
 
 	return agent
 }
@@ -192,6 +196,25 @@ func (a *Agent) Start() error {
 	// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
 	if err := a.ensureWebSocketConnection(); err != nil {
 		return err
+	}
+
+	// 定期冲刷 WS outbox（若配置了刷写间隔）
+	flushInterval := time.Duration(a.cfg.Logging.LogFlushInterval) * time.Millisecond
+	if flushInterval > 0 {
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			ticker := time.NewTicker(flushInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-a.ctx.Done():
+					return
+				case <-ticker.C:
+					a.flushWSOutbox()
+				}
+			}
+		}()
 	}
 
 	// 订阅配置变更（动态调整部分运行参数，如心跳间隔、日志级别）
@@ -666,6 +689,10 @@ func (a *Agent) executeTaskByType(task *TaskSpec, logCallback func(string)) (*ap
 	var err error
 	switch task.Type {
 	case constants.TaskTypeFileTransfer:
+		// 如果任务未显式配置带宽限制且全局配置了带宽限制，则套用全局值（单位：MB/s）
+		if task.FileTransfer != nil && task.FileTransfer.BandwidthLimit <= 0 && a.cfg.ResourceLimit.BandwidthLimit > 0 {
+			task.FileTransfer.BandwidthLimit = a.cfg.ResourceLimit.BandwidthLimit
+		}
 		result, err = a.fileExecutor.ExecuteTransfer(taskCtx, task, logCallback)
 	case constants.TaskTypeFilePreview:
 		result, err = a.previewExecutor.ExecutePreview(taskCtx, task, logCallback)
@@ -1038,13 +1065,17 @@ func (a *Agent) connectWithBackoff() error {
 }
 
 func (a *Agent) flushWSOutbox() {
-	if a.cfg.Connection.Mode != "agent-server" || a.wsClient == nil || !a.wsClient.IsConnected() || a.wsOutbox == nil {
+	if a.wsClient == nil || !a.wsClient.IsConnected() || a.wsOutbox == nil {
 		return
 	}
 
 	// 小批量冲刷，避免一次性写太多导致阻塞
+	batchSize := a.outboxFlushBatch
+	if batchSize <= 0 {
+		batchSize = constants.OutboxFlushBatchSize
+	}
 	for {
-		batch := a.wsOutbox.Drain(constants.OutboxFlushBatchSize)
+		batch := a.wsOutbox.Drain(batchSize)
 		if len(batch) == 0 {
 			return
 		}

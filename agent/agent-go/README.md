@@ -5,10 +5,11 @@
 ## 功能特性
 
 ### 核心功能
+
 - ✅ Agent 注册和心跳机制
 - ✅ 任务拉取和执行
 - ✅ 脚本执行（支持 shell/python/powershell）
-- ✅ 文件传输（上传/下载）
+- ✅ 文件传输
 - ✅ 任务取消机制
 - ✅ 实时日志上报
 - ✅ 系统信息收集（CPU、内存、磁盘等）
@@ -19,12 +20,14 @@
 - ✅ 统一错误码体系
 - ✅ 资源限制（带宽限制）
 - ✅ 性能监控和指标上报
+- ✅ WebSocket 客户端（agent-server 模式）
+- ✅ 存储管理
 - ✅ 测试覆盖
 
 ### 技术栈
 
 - **日志**: logrus + lumberjack（日志轮转）
-- **配置**: viper（支持 YAML/JSON/环境变量）
+- **配置**: viper（YAML/环境变量）
 - **并发控制**: semaphore（信号量库）
 - **HTTP 客户端**: resty
 - **Web 框架**: gin
@@ -37,15 +40,29 @@ agent-go/
 ├── internal/
 │   ├── api/           # API 类型定义
 │   ├── config/        # 配置管理（使用 viper）
+│   ├── constants/     # 常量定义
 │   ├── core/          # Agent 核心逻辑
+│   │   ├── agent.go           # Agent 主逻辑
+│   │   ├── model.go           # 数据模型
+│   │   └── websocket_handler.go # WebSocket 处理
+│   ├── errors/        # 错误处理
 │   ├── executor/      # 任务执行器
 │   │   ├── executor.go        # 基础执行器
 │   │   ├── script_executor.go # 脚本执行器
-│   │   └── file_transfer.go  # 文件传输执行器
+│   │   ├── file_transfer.go   # 文件传输执行器
+│   │   └── file_preview.go    # 文件预览
 │   ├── httpclient/    # HTTP 客户端
 │   ├── logger/        # 日志管理（使用 logrus + lumberjack）
+│   ├── metrics/       # 性能监控和指标上报
+│   ├── resource/      # 资源限制（带宽限制）
 │   ├── server/        # HTTP 服务器（健康检查等）
-│   └── system/        # 系统信息收集
+│   ├── storage/       # 存储管理
+│   ├── system/        # 系统信息收集
+│   ├── taskqueue/     # 任务队列管理
+│   └── websocket/     # WebSocket 客户端
+│       ├── client.go          # WebSocket 客户端
+│       ├── outbox.go          # 消息队列
+│       └── protocol.go        # 协议定义
 ```
 
 ## 快速开始
@@ -65,19 +82,32 @@ go build -o ops-job-agent ./cmd/agent
 
 ### 配置
 
-#### 方式1：环境变量
+#### 方式1：环境变量（层级名）
 
 ```bash
-export CONTROL_PLANE_URL=http://localhost:8000
-export AGENT_TOKEN=your-token-here
-export AGENT_NAME=my-agent
-export AGENT_LABELS=env=prod,region=us-east-1
-export AGENT_MODE=direct                 # direct 或 agent-server
-export AGENT_SERVER_URL=wss://agent-server.example.com
-export AGENT_SERVER_BACKUP_URL=wss://agent-server-backup.example.com
-export AGENT_WS_BACKOFF_INITIAL_MS=1000
-export AGENT_WS_BACKOFF_MAX_MS=30000
-export AGENT_WS_MAX_RETRIES=6
+export AGENT_CONNECTION_AGENT_SERVER_URL=wss://agent-server.example.com
+export AGENT_CONNECTION_AGENT_SERVER_BACKUP_URL=wss://agent-server-backup.example.com
+export AGENT_CONNECTION_WS_BACKOFF_INITIAL_MS=1000
+export AGENT_CONNECTION_WS_BACKOFF_MAX_MS=30000
+export AGENT_CONNECTION_WS_MAX_RETRIES=6
+export AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE=1000
+
+export AGENT_IDENTIFICATION_AGENT_TOKEN=your-token-here
+export AGENT_IDENTIFICATION_AGENT_NAME=my-agent
+# 标签支持逗号分隔的顶层 AGENT_LABELS（备用）或层级名：
+export AGENT_IDENTIFICATION_AGENT_LABELS=env=prod,region=us-east-1
+# 或 export AGENT_LABELS=env=prod,region=us-east-1
+# 可选任务配置（使用层级名覆盖默认值）
+export AGENT_TASK_HEARTBEAT_INTERVAL=10
+export AGENT_TASK_MAX_CONCURRENT_TASKS=5
+export AGENT_TASK_MAX_EXECUTION_TIME_SEC=7200
+
+# Outbox 冲刷配置（可选，<=0 则使用默认/禁用）
+export AGENT_LOGGING_LOG_BATCH_SIZE=200
+export AGENT_LOGGING_LOG_FLUSH_INTERVAL=200
+
+# 可选资源配置（当前仅带宽限制，单位 MB/s，0 为不限制）
+export AGENT_RESOURCE_LIMIT_BANDWIDTH_LIMIT=0
 ```
 
 #### 方式2：配置文件（YAML）
@@ -85,13 +115,12 @@ export AGENT_WS_MAX_RETRIES=6
 创建 `~/.ops-job-agent/config.yaml`:
 
 ```yaml
-mode: "direct"  # 或 "agent-server"
-control_plane_url: "http://localhost:8000"
 agent_server_url: "wss://agent-server.example.com"
 agent_server_backup_url: "wss://agent-server-backup.example.com"
 ws_backoff_initial_ms: 1000
 ws_backoff_max_ms: 30000
 ws_max_retries: 6
+ws_outbox_max_size: 1000
 agent_token: "your-token-here"
 agent_name: "my-agent"
 agent_labels:
@@ -101,35 +130,15 @@ log_dir: "/var/log/ops-job-agent"
 log_max_size: 10        # MB
 log_max_files: 5
 log_max_age: 7          # 天
-heartbeat_interval: 10   # 秒
-task_poll_interval: 5   # 秒
-max_concurrent_tasks: 5
-enable_tls: false
-tls_cert_file: ""
-tls_key_file: ""
-```
-
-#### 方式3：配置文件（JSON）
-
-创建 `~/.ops-job-agent/config.json`:
-
-```json
-{
-  "control_plane_url": "http://localhost:8000",
-  "agent_token": "your-token-here",
-  "agent_name": "my-agent",
-  "agent_labels": {
-    "env": "prod",
-    "region": "us-east-1"
-  },
-  "log_dir": "/var/log/ops-job-agent",
-  "log_max_size": 10,
-  "log_max_files": 5,
-  "log_max_age": 7,
-  "heartbeat_interval": 10,
-  "task_poll_interval": 5,
-  "max_concurrent_tasks": 5
-}
+# 任务配置
+task:
+  heartbeat_interval: 10   # 秒
+  max_concurrent_tasks: 5
+  max_execution_time_sec: 7200  # 秒
+# Outbox（离线/重连缓存）冲刷配置
+logging:
+  log_batch_size: 200          # 每批冲刷条数（<=0 回退默认 200）
+  log_flush_interval: 200      # 冲刷间隔（毫秒，<=0 不启用周期冲刷）
 ```
 
 ### 运行
@@ -140,57 +149,48 @@ tls_key_file: ""
 
 ## 配置说明
 
-| 环境变量 | 配置文件字段 | 默认值 | 说明 |
-|---------|------------|--------|------|
-| `AGENT_MODE` | `mode` | `direct` | 连接模式：`direct` or `agent-server` |
-| `CONTROL_PLANE_URL` | `control_plane_url` | `http://localhost:8000` | 控制面 URL |
-| `AGENT_SERVER_URL` | `agent_server_url` | `ws://localhost:8080` | Agent-Server WebSocket 入口（agent-server 模式） |
-| `AGENT_SERVER_BACKUP_URL` | `agent_server_backup_url` | `` | 备用 Agent-Server WS 入口 |
-| `AGENT_WS_BACKOFF_INITIAL_MS` | `ws_backoff_initial_ms` | `1000` | WS 重连初始退避（毫秒） |
-| `AGENT_WS_BACKOFF_MAX_MS` | `ws_backoff_max_ms` | `30000` | WS 重连最大退避（毫秒） |
-| `AGENT_WS_MAX_RETRIES` | `ws_max_retries` | `6` | WS 重试次数 |
-| `AGENT_TOKEN` | `agent_token` | - | Agent 认证 Token |
-| `AGENT_NAME` | `agent_name` | 主机名 | Agent 名称 |
-| `AGENT_LABELS` | `agent_labels` | - | Agent 标签（格式：key1=value1,key2=value2） |
-| `AGENT_LOG_DIR` | `log_dir` | `/tmp/ops-job-agent/logs` | 日志目录 |
-| `AGENT_LOG_MAX_SIZE` | `log_max_size` | `10` | 日志文件最大大小（MB） |
-| `AGENT_LOG_MAX_FILES` | `log_max_files` | `5` | 最大保留日志文件数 |
-| `AGENT_LOG_MAX_AGE` | `log_max_age` | `7` | 日志保留天数 |
-| `AGENT_HEARTBEAT_INTERVAL` | `heartbeat_interval` | `10` | 心跳间隔（秒） |
-| `AGENT_TASK_POLL_INTERVAL` | `task_poll_interval` | `5` | 任务轮询间隔（秒） |
-| `AGENT_MAX_CONCURRENT_TASKS` | `max_concurrent_tasks` | `5` | 最大并发任务数 |
-| `AGENT_CONFIG_FILE` | - | `~/.ops-job-agent/config.yaml` | 配置文件路径 |
+| 环境变量（层级名）                                      | 配置文件字段                | 默认值                           | 说明                                             |
+| ------------------------------------------------------- | --------------------------- | -------------------------------- | ------------------------------------------------ |
+| `AGENT_CONNECTION_AGENT_SERVER_URL`                   | `agent_server_url`        | `ws://localhost:8080`          | Agent-Server WebSocket 入口（唯一传输通道）      |
+| `AGENT_CONNECTION_AGENT_SERVER_BACKUP_URL`            | `agent_server_backup_url` | ``                               | 备用 Agent-Server WS 入口                        |
+| `AGENT_CONNECTION_WS_BACKOFF_INITIAL_MS`              | `ws_backoff_initial_ms`   | `1000`                         | WS 重连初始退避（毫秒）                          |
+| `AGENT_CONNECTION_WS_BACKOFF_MAX_MS`                  | `ws_backoff_max_ms`       | `30000`                        | WS 重连最大退避（毫秒）                          |
+| `AGENT_CONNECTION_WS_MAX_RETRIES`                     | `ws_max_retries`          | `6`                            | WS 重试次数                                      |
+| `AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE`                 | `ws_outbox_max_size`      | `2000`                         | WS 断线本地缓冲上限（条）                        |
+| `AGENT_IDENTIFICATION_AGENT_TOKEN`                    | `agent_token`             | -                                | Agent 认证 Token                                 |
+| `AGENT_IDENTIFICATION_AGENT_NAME`                     | `agent_name`              | 主机名                           | Agent 名称                                       |
+| `AGENT_IDENTIFICATION_AGENT_LABELS` 或 `AGENT_LABELS` | `agent_labels`            | -                                | Agent 标签（格式：key1=value1,key2=value2）      |
+| `AGENT_LOGGING_LOG_DIR`                               | `log_dir`                 | `/tmp/ops-job-agent/logs`      | 日志目录                                         |
+| `AGENT_LOGGING_LOG_MAX_SIZE`                          | `log_max_size`            | `10`                           | 日志文件最大大小（MB）                           |
+| `AGENT_LOGGING_LOG_MAX_FILES`                         | `log_max_files`           | `5`                            | 最大保留日志文件数                               |
+| `AGENT_LOGGING_LOG_MAX_AGE`                           | `log_max_age`             | `7`                            | 日志保留天数                                     |
+| `AGENT_TASK_HEARTBEAT_INTERVAL`                       | `task.heartbeat_interval` | `10`                           | 心跳间隔（秒，WS）                               |
+| `AGENT_TASK_MAX_CONCURRENT_TASKS`                     | `task.max_concurrent_tasks` | `5`                          | 最大并发任务数                                   |
+| `AGENT_TASK_MAX_EXECUTION_TIME_SEC`                   | `task.max_execution_time_sec` | `7200`                      | 全局最大任务执行时间（秒）                       |
+| `AGENT_LOGGING_LOG_BATCH_SIZE`                        | `logging.log_batch_size`     | `200`                          | Outbox 每批冲刷条数（<=0 回退默认 200）          |
+| `AGENT_LOGGING_LOG_FLUSH_INTERVAL`                    | `logging.log_flush_interval` | `200`                          | Outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷）      |
+| `AGENT_RESOURCE_LIMIT_BANDWIDTH_LIMIT`                | `resource_limit.bandwidth_limit` | `0`                   | 带宽限制（MB/s，0 表示不限制）                   |
+| `AGENT_CONFIG_FILE`                                   | -                           | `~/.ops-job-agent/config.yaml` | 配置文件路径                                     |
 
 **注意**: 环境变量优先级高于配置文件。
 
 ### 连接模式
 
-- **direct**（默认）：Agent 直接通过 HTTP 连接控制面，适合节点较少、无跨网需求的场景。
-- **agent-server**：Agent 通过 Agent-Server 注册，并使用 WebSocket 接收任务、心跳和日志；控制面仅需向 Agent-Server 使用 HTTP 主动推送任务，适合大规模或跨网络部署。此模式需要配置 `AGENT_SERVER_URL` 并保证 Agent 出站可访问。
+- 仅支持 **agent-server** 模式：Agent 先通过 HTTP 注册到 Agent-Server，随后所有任务/心跳/日志/结果均通过单一 WebSocket 通道传输，消息必须带 `message_id` 并依赖 ACK/Outbox 做可靠投递，无 HTTP 回退通道。
 
 ## API 接口
 
-Agent 与控制面通过以下 API 交互：
+Agent 与 Agent-Server/控制面通过以下方式交互（仅 WS 通道）：
 
-### 1. 注册
-```
-POST /api/agents/register/
-```
-
-### 2. 心跳
-```
-POST /api/agents/{agent_id}/heartbeat/
-```
-
-### 3. 拉取任务
-```
-POST /api/agents/{agent_id}/next-task/
-```
-
-### 4. 上报结果
-```
-POST /api/agents/{agent_id}/tasks/{task_id}/report/
-```
+- 注册（HTTP，仅一次）：`POST /api/agents/register/`
+- WebSocket：`ws://agent-server:8080/ws/agent/{agent_id}?token={agent_token}`
+  - `type=task/tasks_batch`：任务下发
+  - `type=cancel_task/cancel_tasks_batch`：取消任务
+  - `type=heartbeat`：Agent 心跳（仅 WS）
+  - `type=log`：日志上报（必须携带 `message_id`，ACK 后视为落盘）
+  - `type=result`：任务结果上报（必须携带 `message_id`，ACK 后视为落盘）
+  - `type=ack`：Agent-Server 对日志/结果的持久化确认
+  - 无 HTTP/SSE 回退通道
 
 ## 任务类型
 
@@ -251,12 +251,13 @@ Agent 会定期收集并上报以下系统信息：
 
 ## 开发计划
 
-- [ ] WebSocket 实时日志推送
+- [x] WebSocket 实时日志推送
+- [x] 资源限制（带宽限制）
+- [x] 性能监控和指标上报
 - [ ] TLS 支持
 - [ ] 任务优先级队列
 - [ ] 资源限制（CPU、内存）
 - [ ] 插件系统
-- [ ] 性能监控和指标上报
 
 ## 参考
 

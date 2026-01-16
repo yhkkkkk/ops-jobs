@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"ops-job-agent/internal/constants"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,17 +12,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// ConnectionConfig 连接配置
+// ConnectionConfig 连接配置（仅支持 Agent-Server WS 模式）
 type ConnectionConfig struct {
-	Mode               string `mapstructure:"mode"`              // agent-server
-	ControlPlaneURL    string `mapstructure:"control_plane_url"` // 保留兼容性
-	AgentServerURL     string `mapstructure:"agent_server_url"`  // Agent-Server 地址（agent-server 模式）
-	AgentServerBackup  string `mapstructure:"agent_server_backup_url"`
+	AgentServerURL     string `mapstructure:"agent_server_url"`        // Agent-Server 地址
+	AgentServerBackup  string `mapstructure:"agent_server_backup_url"` // 可选备用 WS 地址
 	WSBackoffInitialMs int    `mapstructure:"ws_backoff_initial_ms"`
 	WSBackoffMaxMs     int    `mapstructure:"ws_backoff_max_ms"`
 	WSMaxRetries       int    `mapstructure:"ws_max_retries"`
-	WSOutboxMaxSize    int    `mapstructure:"ws_outbox_max_size"` // ws 断线本地缓冲上限（消息条数）
-	HTTPAddr           string `mapstructure:"http_addr"`
+	WSOutboxMaxSize    int    `mapstructure:"ws_outbox_max_size"` // WS 断线本地缓冲上限（消息条数）
 }
 
 // IdentificationConfig 身份标识配置
@@ -46,23 +44,13 @@ type LoggingConfig struct {
 // TaskConfig 任务配置
 type TaskConfig struct {
 	HeartbeatInterval   int `mapstructure:"heartbeat_interval"`     // 心跳间隔（秒）
-	TaskPollInterval    int `mapstructure:"task_poll_interval"`     // 保留兼容性
 	MaxConcurrentTasks  int `mapstructure:"max_concurrent_tasks"`   // 最大并发任务数
 	MaxExecutionTimeSec int `mapstructure:"max_execution_time_sec"` // 全局最大任务执行时间（秒）
 }
 
-// ResourceLimitConfig 资源限制配置
+// ResourceLimitConfig 资源限制配置（当前仅带宽，单位 MB/s）
 type ResourceLimitConfig struct {
-	BandwidthLimit int     `mapstructure:"bandwidth_limit"` // 带宽限制（KB/s），0表示不限制
-	CPULimit       float64 `mapstructure:"cpu_limit"`       // cpu 使用率限制（百分比），0表示不限制
-	MemoryLimit    int     `mapstructure:"memory_limit"`    // 内存限制（MB），0表示不限制
-}
-
-// TLSConfig TLS配置
-type TLSConfig struct {
-	EnableTLS   bool   `mapstructure:"enable_tls"`
-	TLSCertFile string `mapstructure:"tls_cert_file"`
-	TLSKeyFile  string `mapstructure:"tls_key_file"`
+	BandwidthLimit int `mapstructure:"bandwidth_limit"` // 带宽限制（MB/s），0表示不限制
 }
 
 // Config 保存 agent 配置
@@ -72,7 +60,6 @@ type Config struct {
 	Logging        LoggingConfig        `mapstructure:"logging"`
 	Task           TaskConfig           `mapstructure:"task"`
 	ResourceLimit  ResourceLimitConfig  `mapstructure:"resource_limit"`
-	TLS            TLSConfig            `mapstructure:"tls"`
 
 	// Redis配置（分用途）
 	Redis RedisConfig `mapstructure:"redis"`
@@ -116,13 +103,10 @@ func initViper() error {
 	// 设置默认值
 	setDefaults(v)
 
-	// 设置环境变量前缀
+	// 设置环境变量前缀（使用层级键，如 AGENT_CONNECTION_AGENT_SERVER_URL）
 	v.SetEnvPrefix("AGENT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-
-	// 绑定环境变量
-	bindEnvVars(v)
 
 	// 尝试从配置文件加载
 	configFile := v.GetString("config_file")
@@ -170,13 +154,6 @@ func reloadFromViper(v *viper.Viper) error {
 		return fmt.Errorf("unmarshal config failed: %w", err)
 	}
 
-	cfg.Connection.Mode = strings.ToLower(strings.TrimSpace(cfg.Connection.Mode))
-	if cfg.Connection.Mode == "" {
-		cfg.Connection.Mode = "agent-server"
-	}
-	if cfg.Connection.Mode != "agent-server" {
-		return fmt.Errorf("invalid mode %q, only agent-server mode is supported", cfg.Connection.Mode)
-	}
 	if cfg.Connection.AgentServerURL == "" {
 		return fmt.Errorf("agent_server_url is required")
 	}
@@ -244,15 +221,12 @@ func Subscribe(fn func(*Config)) {
 // setDefaults 设置默认值
 func setDefaults(v *viper.Viper) {
 	// Connection 默认值
-	v.SetDefault("connection.mode", "agent-server") // 默认 Agent-Server 模式
-	v.SetDefault("connection.control_plane_url", "http://localhost:8000")
 	v.SetDefault("connection.agent_server_url", "ws://localhost:8080")
 	v.SetDefault("connection.agent_server_backup_url", "")
 	v.SetDefault("connection.ws_backoff_initial_ms", 1000)
 	v.SetDefault("connection.ws_backoff_max_ms", 30000)
 	v.SetDefault("connection.ws_max_retries", 6)
 	v.SetDefault("connection.ws_outbox_max_size", 2000)
-	v.SetDefault("connection.http_addr", ":8080")
 
 	// Identification 默认值
 	v.SetDefault("identification.agent_name", getHostname())
@@ -269,19 +243,11 @@ func setDefaults(v *viper.Viper) {
 
 	// Task 默认值
 	v.SetDefault("task.heartbeat_interval", 10) // 10秒
-	v.SetDefault("task.task_poll_interval", 5)  // 5秒
 	v.SetDefault("task.max_concurrent_tasks", 5)
 	v.SetDefault("task.max_execution_time_sec", 7200) // 默认2小时
 
 	// ResourceLimit 默认值
 	v.SetDefault("resource_limit.bandwidth_limit", 0) // 0表示不限制
-	v.SetDefault("resource_limit.cpu_limit", 0.0)     // 0表示不限制
-	v.SetDefault("resource_limit.memory_limit", 0)    // 0表示不限制
-
-	// TLS 默认值
-	v.SetDefault("tls.enable_tls", false)
-	v.SetDefault("tls.tls_cert_file", "")
-	v.SetDefault("tls.tls_key_file", "")
 
 	// Redis默认值（用途拆分）
 	v.SetDefault("redis.asynq.enabled", false)
@@ -292,112 +258,6 @@ func setDefaults(v *viper.Viper) {
 	// Asynq默认值
 	v.SetDefault("asynq.enabled", false)
 	v.SetDefault("asynq.concurrency", 5)
-}
-
-// bindEnvVars 绑定环境变量
-func bindEnvVars(v *viper.Viper) {
-	// Connection 环境变量
-	if val := os.Getenv("CONTROL_PLANE_URL"); val != "" {
-		v.Set("connection.control_plane_url", val)
-	}
-	if val := os.Getenv("AGENT_MODE"); val != "" {
-		v.Set("connection.mode", val)
-	}
-	if val := os.Getenv("AGENT_SERVER_URL"); val != "" {
-		v.Set("connection.agent_server_url", val)
-	}
-	if val := os.Getenv("AGENT_SERVER_BACKUP_URL"); val != "" {
-		v.Set("connection.agent_server_backup_url", val)
-	}
-	if val := os.Getenv("AGENT_WS_BACKOFF_INITIAL_MS"); val != "" {
-		v.Set("connection.ws_backoff_initial_ms", val)
-	}
-	if val := os.Getenv("AGENT_WS_BACKOFF_MAX_MS"); val != "" {
-		v.Set("connection.ws_backoff_max_ms", val)
-	}
-	if val := os.Getenv("AGENT_WS_MAX_RETRIES"); val != "" {
-		v.Set("connection.ws_max_retries", val)
-	}
-	if val := os.Getenv("AGENT_WS_OUTBOX_MAX_SIZE"); val != "" {
-		v.Set("connection.ws_outbox_max_size", val)
-	}
-	if val := os.Getenv("AGENT_HTTP_ADDR"); val != "" {
-		v.Set("connection.http_addr", val)
-	}
-
-	// Identification 环境变量
-	if val := os.Getenv("AGENT_NAME"); val != "" {
-		v.Set("identification.agent_name", val)
-	}
-	if val := os.Getenv("AGENT_TOKEN"); val != "" {
-		v.Set("identification.agent_token", val)
-	}
-	if val := os.Getenv("AGENT_LABELS"); val != "" {
-		v.Set("labels", val) // 保持兼容性，稍后处理
-	}
-	if val := os.Getenv("AGENT_HOST_ID"); val != "" {
-		v.Set("identification.host_id", val)
-	}
-
-	// Logging 环境变量
-	if val := os.Getenv("AGENT_LOG_DIR"); val != "" {
-		v.Set("logging.log_dir", val)
-	}
-	if val := os.Getenv("AGENT_LOG_LEVEL"); val != "" {
-		v.Set("logging.log_level", val)
-	}
-	if val := os.Getenv("AGENT_LOG_MAX_SIZE"); val != "" {
-		v.Set("logging.log_max_size", val)
-	}
-	if val := os.Getenv("AGENT_LOG_MAX_FILES"); val != "" {
-		v.Set("logging.log_max_files", val)
-	}
-	if val := os.Getenv("AGENT_LOG_MAX_AGE"); val != "" {
-		v.Set("logging.log_max_age", val)
-	}
-	if val := os.Getenv("AGENT_LOG_BATCH_SIZE"); val != "" {
-		v.Set("logging.log_batch_size", val)
-	}
-	if val := os.Getenv("AGENT_LOG_FLUSH_INTERVAL"); val != "" {
-		v.Set("logging.log_flush_interval", val)
-	}
-
-	// Task 环境变量
-	if val := os.Getenv("AGENT_HEARTBEAT_INTERVAL"); val != "" {
-		v.Set("task.heartbeat_interval", val)
-	}
-	if val := os.Getenv("AGENT_TASK_POLL_INTERVAL"); val != "" {
-		v.Set("task.task_poll_interval", val)
-	}
-	if val := os.Getenv("AGENT_MAX_CONCURRENT_TASKS"); val != "" {
-		v.Set("task.max_concurrent_tasks", val)
-	}
-
-	// ResourceLimit 环境变量
-	if val := os.Getenv("AGENT_BANDWIDTH_LIMIT"); val != "" {
-		v.Set("resource_limit.bandwidth_limit", val)
-	}
-	if val := os.Getenv("AGENT_CPU_LIMIT"); val != "" {
-		v.Set("resource_limit.cpu_limit", val)
-	}
-	if val := os.Getenv("AGENT_MEMORY_LIMIT"); val != "" {
-		v.Set("resource_limit.memory_limit", val)
-	}
-
-	// TLS 环境变量
-	if val := os.Getenv("AGENT_ENABLE_TLS"); val != "" {
-		v.Set("tls.enable_tls", val == "true")
-	}
-	if val := os.Getenv("AGENT_TLS_CERT_FILE"); val != "" {
-		v.Set("tls.tls_cert_file", val)
-	}
-	if val := os.Getenv("AGENT_TLS_KEY_FILE"); val != "" {
-		v.Set("tls.tls_key_file", val)
-	}
-
-	if val := os.Getenv("AGENT_CONFIG_FILE"); val != "" {
-		v.Set("config_file", val)
-	}
 }
 
 // setConfigDefaults 设置配置默认值
@@ -415,13 +275,13 @@ func setConfigDefaults(cfg *Config) {
 		cfg.Logging.LogMaxAge = 7
 	}
 	if cfg.Task.HeartbeatInterval <= 0 {
-		cfg.Task.HeartbeatInterval = 30
-	}
-	if cfg.Task.TaskPollInterval <= 0 {
-		cfg.Task.TaskPollInterval = 10
+		cfg.Task.HeartbeatInterval = constants.DefaultHeartbeatIntervalSec
 	}
 	if cfg.Task.MaxConcurrentTasks <= 0 {
-		cfg.Task.MaxConcurrentTasks = 5
+		cfg.Task.MaxConcurrentTasks = constants.DefaultMaxConcurrentTasks
+	}
+	if cfg.Task.MaxExecutionTimeSec <= 0 {
+		cfg.Task.MaxExecutionTimeSec = 7200
 	}
 	if cfg.Logging.LogBatchSize <= 0 {
 		cfg.Logging.LogBatchSize = 10

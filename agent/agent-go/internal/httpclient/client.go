@@ -10,7 +10,7 @@ import (
 	"ops-job-agent/internal/api"
 )
 
-// Client 与控制面交互的最小http客户端
+// Client 面向 Agent-Server 的最小 HTTP 客户端（仅用于注册获取 ws_url）
 type Client struct {
 	baseURL string
 	token   string
@@ -68,16 +68,4 @@ func (c *Client) Register(ctx context.Context, info api.AgentInfo) (*api.AgentIn
 		return nil, err
 	}
 	return &resp, nil
-}
-
-// Heartbeat 上报心跳（可根据后端接口调整请求体）
-func (c *Client) Heartbeat(ctx context.Context, agentID string, payload api.HeartbeatPayload) error {
-	path := fmt.Sprintf("/api/agents/%s/heartbeat/", agentID)
-	return c.doJSON(ctx, resty.MethodPost, path, payload, nil)
-}
-
-// ReportResult 上报任务执行结果
-func (c *Client) ReportResult(ctx context.Context, agentID string, result api.TaskResult) error {
-	path := fmt.Sprintf("/api/agents/%s/tasks/%s/report/", agentID, result.TaskID)
-	return c.doJSON(ctx, resty.MethodPost, path, result, nil)
 }

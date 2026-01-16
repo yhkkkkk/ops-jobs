@@ -13,17 +13,11 @@
 # 若找不到，则回退到：~/.ops-job-agent/config.yaml
 
 ###########################
-# 基础连接配置
+# 基础连接配置（仅 agent-server WS 模式）
 ###########################
 
 connection:
-  # 连接模式：direct（直连控制面）或 agent-server（通过 Agent-Server）
-  mode: "agent-server"
-
-  # direct 模式下，控制面 HTTP 地址（例如 Django 服务）
-  control_plane_url: "http://localhost:8000"
-
-  # agent-server 模式下，Agent-Server WebSocket 地址
+  # Agent-Server WebSocket 地址
   agent_server_url: "wss://agent-server.example.com/ws"
 
   # 备用 Agent-Server 地址（可选，用于主备/多可用区）
@@ -35,9 +29,6 @@ connection:
   ws_max_retries: 6
   # WebSocket 断线本地缓冲队列上限（条数，防止日志/结果丢失）
   ws_outbox_max_size: 1000
-
-  # HTTP 监听地址（直连模式下的本地 HTTP 接口）
-  http_addr: ":8080"
 
 ###########################
 # 鉴权与标识
@@ -71,23 +62,23 @@ logging:
   log_max_files: 5       # 保留的历史日志文件个数
   log_max_age: 7         # 日志保留天数
 
-  # 日志批量上报（仅 agent-server 模式，WS outbox 冲刷）
-  log_batch_size: 50           # 每批日志条数
-  log_flush_interval: 2000     # 日志刷写间隔（毫秒）
+  # Outbox 冲刷配置：用于 WS 断线重连后批量发送日志/结果
+  log_batch_size: 200          # outbox 每批冲刷条数（<=0 回退默认 200）
+  log_flush_interval: 200      # outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷）
 
 ###########################
-# 任务配置
+# 任务配置（可选）
 ###########################
 
 task:
   # 心跳间隔（秒）
   heartbeat_interval: 10
 
-  # 保留兼容性
-  task_poll_interval: 5
-
   # 最大并发任务数
   max_concurrent_tasks: 5
+
+  # 全局最大任务执行时间（秒）
+  max_execution_time_sec: 7200
 
 ###########################
 # 可选：Redis / Asynq 配置
@@ -104,25 +95,9 @@ asynq:
   concurrency: 5
 
 ###########################
-# 资源限制配置
+# 资源限制配置（可选，当前仅带宽）
 ###########################
 
 resource_limit:
-  # 带宽限制（KB/s，0表示不限制；文件传输使用）
+  # 带宽限制（MB/s，0表示不限制；任务不带带宽时套用该默认值）
   bandwidth_limit: 0
-  # CPU 使用率限制（百分比，0表示不限制）
-  cpu_limit: 0.0
-  # 内存限制（MB，0表示不限制）
-  memory_limit: 0
-
-###########################
-# TLS 配置
-###########################
-
-tls:
-  # 是否启用 TLS
-  enable_tls: false
-  # TLS 证书文件路径
-  tls_cert_file: ""
-  # TLS 密钥文件路径
-  tls_key_file: ""
