@@ -167,7 +167,7 @@
               <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
               <icon-star v-else class="favorite-icon" />
             </a-button>
-            <a-link @click="handleView(record)" class="template-link">{{ record.name }}</a-link>
+            <a-link @click="handleDetail(record)" class="template-link">{{ record.name }}</a-link>
           </div>
         </template>
 
@@ -218,7 +218,7 @@
               v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
               type="text" 
               size="small" 
-              @click="handleView(record)"
+              @click="handleDetail(record)"
             >
               <template #icon>
                 <icon-eye />
@@ -274,80 +274,6 @@
         </template>
       </a-table>
     </a-card>
-
-    <!-- 预览弹窗 -->
-    <a-modal
-      v-model:visible="previewVisible"
-      title="脚本预览"
-      :width="800"
-      :footer="false"
-    >
-      <div v-if="currentTemplate">
-        <a-descriptions :column="2" bordered class="mb-4">
-          <a-descriptions-item label="模板名称">
-            {{ currentTemplate.name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="脚本类型">
-            <a-tag :color="getScriptTypeColor(currentTemplate.script_type)">
-              {{ getScriptTypeText(currentTemplate.script_type) }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="分类">
-            {{ getCategoryText(currentTemplate.category) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="版本">
-            {{ currentTemplate.version || '1.0.0' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag :color="currentTemplate.is_active ? 'green' : 'red'">
-              {{ currentTemplate.is_active ? '上线' : '下线' }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="可见性">
-            <a-tag :color="currentTemplate.is_public ? 'blue' : 'gray'">
-              {{ currentTemplate.is_public ? '公开' : '私有' }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="创建者">
-            {{ currentTemplate.created_by_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="标签">
-            <a-space v-if="currentTemplate.tags_json && Object.keys(currentTemplate.tags_json).length > 0">
-              <a-tag v-for="(value, key) in currentTemplate.tags_json" :key="key" size="small">
-                {{ `${key}=${value}` }}
-              </a-tag>
-            </a-space>
-            <a-space v-else-if="currentTemplate.tag_list && currentTemplate.tag_list.length > 0">
-              <a-tag
-                v-for="tag in currentTemplate.tag_list"
-                :key="typeof tag === 'object' ? `${tag.key || ''}-${tag.value || ''}` : String(tag)"
-                size="small"
-              >
-                {{ formatTag(tag) }}
-              </a-tag>
-            </a-space>
-            <span v-else>-</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="描述" :span="2">
-            {{ currentTemplate.description || '暂无描述' }}
-          </a-descriptions-item>
-        </a-descriptions>
-
-        <div class="mb-4">
-          <div class="preview-header">
-            <h4>脚本内容</h4>
-          </div>
-          <simple-monaco-editor
-            :model-value="currentTemplate.script_content || currentTemplate.content"
-            :language="currentTemplate.script_type"
-            :height="400"
-            :readonly="true"
-          />
-        </div>
-      </div>
-    </a-modal>
-
-    <!-- 版本管理相关 UI 已迁移到独立页面 /script-templates/:id/versions -->
   </div>
 </template>
 
@@ -355,18 +281,17 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { scriptTemplateApi, favoriteApi } from '@/api/ops'
+import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
-import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import dayjs from 'dayjs'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useFavoritesStore } from '@/stores/favorites'
 
 const router = useRouter()
 const loading = ref(false)
 const templates = ref<ScriptTemplate[]>([])
-const previewVisible = ref(false)
-const currentTemplate = ref<ScriptTemplate | null>(null)
 const permissionsStore = usePermissionsStore()
+const favoritesStore = useFavoritesStore()
 
 // 搜索表单
 const searchForm = reactive({
@@ -387,53 +312,13 @@ const availableUsers = ref<Array<{id: number, username: string, name: string}>>(
 // 创建者搜索过滤结果
 const filteredCreators = ref<Array<{id: number, username: string, name: string}>>([])
 
-// 收藏相关
-const favorites = reactive<Record<number, boolean>>({})
-
-// 加载收藏状态
-const loadFavoriteStatus = async () => {
-  try {
-    // 批量检查当前页面的收藏状态
-    const templateIds = templates.value.map(t => t.id)
-    if (templateIds.length === 0) return
-
-    const requests = templateIds.map(id =>
-      favoriteApi.check({
-        favorite_type: 'script_template',
-        object_id: id
-      }).catch(() => ({ data: { content: { is_favorited: false } } }))
-    )
-
-    const responses = await Promise.allSettled(requests)
-    const favoriteStatus: Record<number, boolean> = {}
-
-    responses.forEach((result, index) => {
-      const templateId = templateIds[index]
-      if (result.status === 'fulfilled') {
-        favoriteStatus[templateId] = result.value.is_favorited || false
-      } else {
-        favoriteStatus[templateId] = false
-      }
-    })
-
-    Object.assign(favorites, favoriteStatus)
-  } catch (e) {
-    console.error('加载收藏状态失败:', e)
-  }
-}
-
-const isFavorite = (id: number) => favorites[id] || false
+// 收藏相关方法
+const isFavorite = (id: number) => favoritesStore.isFavorite('script_template', id)
 
 const toggleFavorite = async (id: number) => {
   try {
-    const response = await favoriteApi.toggle({
-      favorite_type: 'script_template',
-      object_id: id,
-      category: 'personal'
-    })
-
-    favorites[id] = response.is_favorited
-    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+    const isFavorited = await favoritesStore.toggleFavorite('script_template', id, 'personal')
+    Message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
   } catch (e) {
     console.error('切换收藏状态失败:', e)
     Message.error('操作失败')
@@ -604,7 +489,7 @@ const fetchTemplates = async () => {
 
     // 前端过滤收藏
     if (searchForm.favorites_only) {
-      resultTemplates = resultTemplates.filter(t => favorites[t.id])
+      resultTemplates = resultTemplates.filter(t => favoritesStore.isFavorite('script_template', t.id))
     }
 
     templates.value = resultTemplates
@@ -618,7 +503,7 @@ const fetchTemplates = async () => {
     fetchAvailableUsers()
 
     // 异步加载收藏状态
-    loadFavoriteStatus()
+    await favoritesStore.batchCheckFavorites('script_template', resultTemplates.map(t => t.id))
   } catch (error) {
     console.error('获取模板列表失败:', error)
     Message.error('获取模板列表失败')
@@ -669,36 +554,9 @@ const handleCreate = () => {
   router.push('/script-templates/create')
 }
 
-// 查看模板
-const handleView = async (record: ScriptTemplate) => {
-  console.log('查看模板，record数据:', record)
-  console.log('record标签数据 tags_json:', record.tags_json)
-  console.log('record标签数据 tag_list:', record.tag_list)
-
-  // 如果列表数据中已经有完整的脚本内容，直接使用
-  if (record.script_content || record.content) {
-    console.log('使用列表数据，包含脚本内容')
-    currentTemplate.value = record
-    previewVisible.value = true
-    return
-  }
-
-  try {
-    // 调用详情API获取完整的模板数据
-    console.log('调用详情API，模板ID:', record.id)
-    const templateDetail = await scriptTemplateApi.getTemplate(record.id!)
-    console.log('获取到的模板详情:', templateDetail)
-    console.log('详情标签数据 tags_json:', templateDetail.tags_json)
-    console.log('详情标签数据 tag_list:', templateDetail.tag_list)
-    currentTemplate.value = templateDetail
-    previewVisible.value = true
-  } catch (error) {
-    console.error('获取模板详情失败:', error)
-    console.log('使用列表数据作为后备:', record)
-    currentTemplate.value = record
-    previewVisible.value = true
-    Message.warning('获取模板详情失败，显示基本信息')
-  }
+// 查看详情页面
+const handleDetail = (record: ScriptTemplate) => {
+  router.push(`/script-templates/detail/${record.id}`)
 }
 
 // 复制模板

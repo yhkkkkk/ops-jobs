@@ -8,8 +8,8 @@ from . import views
 app_name = 'script_templates'
 
 router = DefaultRouter()
-router.register(r'', views.ScriptTemplateViewSet, basename='script-template')
 router.register(r'favorites', views.UserFavoriteViewSet, basename='userfavorite')
+router.register(r'', views.ScriptTemplateViewSet, basename='script-template')
 
 urlpatterns = [
     path('', include(router.urls)),

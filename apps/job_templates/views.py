@@ -74,7 +74,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         """创建作业模板（包含步骤）"""
         serializer = JobTemplateCreateSerializer(data=request.data)
         if not serializer.is_valid():
-            return SycResponse.validation_error(errors=serializer.errors)
+            pretty = self._format_validation_errors(serializer.errors, request.data)
+            return SycResponse.validation_error(errors=pretty)
 
         data = serializer.validated_data
 
@@ -84,7 +85,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             return SycResponse.error(message=f"模板名称 '{name}' 已存在，请使用其他名称", code=400)
 
         with transaction.atomic():
-            # 处理标签：将键值对数组转换为JSON格式
+            # 处理标签：将键值对数组转换为json格式
             tags_list = data.get('tags', [])
             tags_json = {}
 
@@ -178,6 +179,69 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             message="获取作业模板详情成功"
         )
 
+    def _format_validation_errors(self, errors, request_data=None):
+        """
+        将 DRF 的序列化错误格式化为更友好的结构，尤其处理 steps 的嵌套错误，
+        会尝试将每个步骤的 index 和 step_type 包含在错误信息中，方便前端定位。
+        """
+        pretty = {}
+
+        # 处理 steps 列表错误（按索引）
+        if isinstance(errors, dict) and 'steps' in errors:
+            steps_err = errors.get('steps')
+            pretty_steps = []
+            steps_input = (request_data or {}).get('steps') or []
+
+            if isinstance(steps_err, list):
+                for idx, item in enumerate(steps_err):
+                    # 获取对应输入中的 step_type（如果有）
+                    step_type = None
+                    try:
+                        step_input = steps_input[idx] if idx < len(steps_input) else {}
+                        step_type = step_input.get('step_type')
+                    except Exception:
+                        step_type = None
+
+                    # 如果 item 是字典，格式化字段级错误
+                    if isinstance(item, dict):
+                        field_messages = []
+                        for field, val in item.items():
+                            # val 可能是列表或字符串
+                            if isinstance(val, list):
+                                msgs = []
+                                for v in val:
+                                    msgs.append(str(v))
+                                field_messages.append(f"{field}: {'; '.join(msgs)}")
+                            else:
+                                field_messages.append(f"{field}: {str(val)}")
+
+                        prefix = f"步骤 {idx+1}"
+                        if step_type:
+                            prefix += f" (type={step_type})"
+                        pretty_steps.append(f"{prefix}: " + "; ".join(field_messages))
+                    else:
+                        # 其它情况（字符串等），直接记录
+                        prefix = f"步骤 {idx+1}"
+                        if step_type:
+                            prefix += f" (type={step_type})"
+                        pretty_steps.append(f"{prefix}: {str(item)}")
+            else:
+                # 非列表的 steps 错误，直接转为字符串
+                pretty_steps.append(str(steps_err))
+
+            pretty['steps'] = pretty_steps
+
+        # 处理非 steps 的其他字段错误，保持原样或转为字符串
+        if isinstance(errors, dict):
+            for k, v in errors.items():
+                if k == 'steps':
+                    continue
+                pretty[k] = v
+        else:
+            pretty = errors
+
+        return pretty
+
     def list(self, request, *args, **kwargs):
         """获取作业模板列表"""
         queryset = self.filter_queryset(self.get_queryset())
@@ -202,7 +266,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         if 'steps' in request.data:
             update_serializer = JobTemplateUpdateSerializer(instance, data=request.data)
             if not update_serializer.is_valid():
-                return SycResponse.validation_error(errors=update_serializer.errors)
+                pretty = self._format_validation_errors(update_serializer.errors, request.data)
+                return SycResponse.validation_error(errors=pretty)
 
             validated_data = update_serializer.validated_data
 

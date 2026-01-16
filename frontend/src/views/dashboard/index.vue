@@ -79,12 +79,11 @@
             <div v-if="myFavorites.length === 0" class="text-gray-400">你还没有收藏任何项目</div>
             <a-list v-else bordered>
               <a-list-item v-for="item in myFavorites" :key="item.type + '-' + item.id">
-                <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
-                  <a @click="() => router.push(item.url)">{{ item.name }}</a>
-                  <a-button size="mini" type="text" @click="togglePin(item)">
-                    <icon-star-fill v-if="isPinned(item)" />
-                    <icon-star v-else />
-                  </a-button>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%">
+                  <a @click="() => router.push(item.url)" style="flex: 1">{{ item.name }}</a>
+                  <a-tag size="small" :color="getFavoriteTypeColor(item.type)">
+                    {{ item.typeDisplay }}
+                  </a-tag>
                 </div>
               </a-list-item>
             </a-list>
@@ -145,16 +144,10 @@ import {
   IconComputer,
   IconCheck,
   IconClose,
-  IconLoading,
-  IconArrowUp,
-  IconArrowDown,
-  IconPlus,
-  IconPlayCircle,
-  IconDesktop,
-  IconCode
+  IconLoading
 } from '@arco-design/web-vue/es/icon'
 import { dashboardApi } from '@/api/dashboard'
-import { favoriteApi, jobTemplateApi } from '@/api/ops'
+import { favoriteApi } from '@/api/ops'
 import { Message } from '@arco-design/web-vue'
 
 // 路由
@@ -196,39 +189,37 @@ const loadingFavorites = ref(false)
 const fetchFavorites = async () => {
   loadingFavorites.value = true
   try {
-    // 先获取作业模板类型的收藏（限制少量）
-    const favResp = await favoriteApi.getFavorites({ favorite_type: 'job_template', page_size: 5 })
-    const favItems = favResp?.results || favResp || []
-    const entries = []
+    // 获取所有类型的收藏（限制少量）
+    const response = await favoriteApi.getFavorites({ page_size: 10 })
+    const favItems = response.data?.results || response.data || response.results || response || []
 
-    // 为每个 favorite 取 object_id 并拉取模板名称（并发）
-    const limited = favItems.slice(0, 5)
-    const requests = limited.map(f => jobTemplateApi.getTemplate(f.object_id).catch(() => null))
-    const results = await Promise.allSettled(requests)
-    results.forEach((r, idx) => {
-      const fav = limited[idx]
-      if (r.status === 'fulfilled' && r.value) {
-        entries.push({
-          id: fav.object_id,
-          name: r.value.name || `模板 #${fav.object_id}`,
-          type: 'job_template',
-          url: `/job-templates/detail/${fav.object_id}`
-        })
-      } else {
-        entries.push({
-          id: fav.object_id,
-          name: `模板 #${fav.object_id}`,
-          type: 'job_template',
-          url: `/job-templates/detail/${fav.object_id}`
-        })
-      }
-    })
-
-    myFavorites.value = entries
+    // 直接使用API返回的数据，包含名称和类型
+    myFavorites.value = favItems.slice(0, 10).map(item => ({
+      id: item.object_id,
+      name: item.object_name || `${item.favorite_type_display} #${item.object_id}`,
+      type: item.favorite_type,
+      typeDisplay: item.favorite_type_display,
+      url: getFavoriteUrl(item.favorite_type, item.object_id)
+    }))
   } catch (e) {
     console.error('加载收藏失败:', e)
+    myFavorites.value = []
   } finally {
     loadingFavorites.value = false
+  }
+}
+
+// 根据收藏类型生成URL
+const getFavoriteUrl = (favoriteType: string, objectId: number): string => {
+  switch (favoriteType) {
+    case 'job_template':
+      return `/job-templates/detail/${objectId}`
+    case 'script_template':
+      return `/script-templates/detail/${objectId}`
+    case 'execution_plan':
+      return `/execution-plans/detail/${objectId}`
+    default:
+      return `/${favoriteType}s/detail/${objectId}`
   }
 }
 
@@ -236,7 +227,8 @@ const fetchFavorites = async () => {
 const fetchStats = async () => {
   loadingStats.value = true
   try {
-    const content = await dashboardApi.getOverview()
+    const response = await dashboardApi.getOverview()
+    const content = response.data || response
 
     // 直接赋值，确保响应式更新
     const newTemplates = content.resources?.job_templates?.total || 0
@@ -265,7 +257,8 @@ const fetchStats = async () => {
 const fetchRecentExecutions = async () => {
   loadingExecutions.value = true
   try {
-    const content = await dashboardApi.getRecentActivity()
+    const response = await dashboardApi.getRecentActivity()
+    const content = response.data || response
 
     // content can be different shapes: array, { activities: [...] }, { results: [...] }
     let activities: any[] = []
@@ -320,7 +313,8 @@ const fetchRecentExecutions = async () => {
 const fetchExecutionPlans = async () => {
   loadingPlans.value = true
   try {
-    const plans = await dashboardApi.getExecutionPlans()
+    const response = await dashboardApi.getExecutionPlans()
+    const plans = response.data || response
     executionPlans.value = plans || []
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
@@ -403,6 +397,16 @@ const formatDateTime = (t: string | number | undefined) => {
   } catch {
     return String(t)
   }
+}
+
+// 获取收藏类型标签颜色
+const getFavoriteTypeColor = (type: string) => {
+  const colorMap = {
+    'job_template': 'blue',
+    'script_template': 'green',
+    'execution_plan': 'orange'
+  }
+  return colorMap[type] || 'gray'
 }
 
 // 生命周期

@@ -5,6 +5,7 @@ from django.db import transaction
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import ScriptTemplate, ScriptTemplateVersion, UserFavorite
+from apps.job_templates.models import JobTemplate, ExecutionPlan
 
 
 class ScriptTemplateSerializer(serializers.ModelSerializer):
@@ -115,15 +116,32 @@ class UserFavoriteSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     favorite_type_display = serializers.CharField(source='get_favorite_type_display', read_only=True)
     category_display = serializers.CharField(source='get_category_display', read_only=True)
+    object_name = serializers.SerializerMethodField()
 
     class Meta:
         model = UserFavorite
         fields = [
             'id', 'user', 'user_name', 'favorite_type', 'favorite_type_display',
-            'object_id', 'category', 'category_display', 'note',
+            'object_id', 'object_name', 'category', 'category_display', 'note',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'user', 'user_name', 'created_at', 'updated_at']
+
+    def get_object_name(self, obj):
+        """根据收藏类型获取对象名称"""
+        try:
+            if obj.favorite_type == 'job_template':
+                template = JobTemplate.objects.get(id=obj.object_id)
+                return template.name
+            elif obj.favorite_type == 'script_template':
+                template = ScriptTemplate.objects.get(id=obj.object_id)
+                return template.name
+            elif obj.favorite_type == 'execution_plan':
+                plan = ExecutionPlan.objects.get(id=obj.object_id)
+                return plan.name
+        except:
+            return f"{obj.get_favorite_type_display()} #{obj.object_id}"
+        return f"{obj.get_favorite_type_display()} #{obj.object_id}"
 
 
 class UserFavoriteCreateSerializer(serializers.ModelSerializer):

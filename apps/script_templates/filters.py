@@ -3,7 +3,7 @@
 """
 import django_filters
 from django.db import models
-from .models import ScriptTemplate
+from .models import ScriptTemplate, UserFavorite
 
 
 class ScriptTemplateFilter(django_filters.FilterSet):
@@ -88,3 +88,23 @@ class ScriptTemplateFilter(django_filters.FilterSet):
                 q |= Q(tags_json__has_key=tag) | Q(tags_json__icontains=tag)
 
         return queryset.filter(q)
+
+
+class UserFavoriteFilter(django_filters.FilterSet):
+    """用户收藏过滤器"""
+
+    # 按收藏类型过滤
+    favorite_type = django_filters.ChoiceFilter(
+        choices=UserFavorite.FAVORITE_TYPE_CHOICES,
+        label='收藏类型'
+    )
+
+    # 按分类过滤
+    category = django_filters.ChoiceFilter(
+        choices=UserFavorite.CATEGORY_CHOICES,
+        label='分类'
+    )
+
+    class Meta:
+        model = UserFavorite
+        fields = ['favorite_type', 'category']

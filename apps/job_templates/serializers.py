@@ -146,11 +146,13 @@ class JobStepCreateSerializer(serializers.Serializer):
     # 文件传输相关字段（仅 artifact/server 源）
     remote_path = serializers.CharField(required=False, allow_blank=True, help_text="远程路径")
     overwrite_policy = serializers.CharField(required=False, allow_blank=True, help_text="覆盖策略")
+    # file_sources 对应文件传输步骤，仅在 step_type == 'file_transfer' 时必需
     file_sources = serializers.ListField(
         child=serializers.DictField(),
-        required=True,
-        allow_empty=False,
-        help_text="文件来源数组，示例: {'type':'server','source_server_host':'1.2.3.4','source_server_path':'/data/a.tar.gz','remote_path':'/tmp/a.tar.gz','account_id':1} 或 {'type':'artifact','download_url':'...','remote_path':'/tmp/a.tar.gz'}"
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text="文件来源数组（仅 file_transfer 步骤需要），示例: {'type':'server','source_server_host':'1.2.3.4','source_server_path':'/data/a.tar.gz','remote_path':'/tmp/a.tar.gz','account_id':1} 或 {'type':'artifact','download_url':'...','remote_path':'/tmp/a.tar.gz'}"
     )
 
     # 目标选择：主机ID + 分组ID
@@ -177,7 +179,7 @@ class JobStepCreateSerializer(serializers.Serializer):
             if not data.get('script_type'):
                 raise serializers.ValidationError({'script_type': '脚本步骤必须指定脚本类型'})
         elif step_type == 'file_transfer':
-            # 强制使用 file_sources（不再兼容旧字段）
+            # 强制使用 file_sources
             fs = data.get('file_sources') or []
             if not isinstance(fs, list) or len(fs) == 0:
                 raise serializers.ValidationError({'file_sources': '文件传输步骤必须包含非空的 file_sources'})

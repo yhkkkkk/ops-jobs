@@ -98,6 +98,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/script-templates/detail/:id',
+        name: 'ScriptTemplateDetail',
+        component: () => import('@/views/script-templates/detail.vue'),
+        meta: {
+          title: '脚本模板详情',
+          hideInMenu: true,
+        },
+      },
+      {
         path: '/script-templates/:id/versions',
         name: 'ScriptTemplateVersions',
         component: () => import('@/views/script-templates/versions.vue'),

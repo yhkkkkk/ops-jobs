@@ -19,7 +19,7 @@ from .serializers import (
     FavoriteToggleSerializer
 )
 from .services import ScriptTemplateService
-from .filters import ScriptTemplateFilter
+from .filters import ScriptTemplateFilter, UserFavoriteFilter
 
 
 class ScriptTemplateViewSet(viewsets.ModelViewSet):
@@ -267,6 +267,8 @@ class UserFavoriteViewSet(viewsets.ModelViewSet):
     serializer_class = UserFavoriteSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = UserFavoriteFilter
 
     def get_queryset(self):
         """只返回当前用户的收藏"""

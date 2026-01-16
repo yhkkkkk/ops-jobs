@@ -444,7 +444,7 @@ const handleSave = async () => {
         }
       }
 
-      return {
+      const stepObj: any = {
         name: step.name,
         description: step.description,
         step_type: step.step_type,
@@ -456,8 +456,6 @@ const handleSave = async () => {
         script_type: step.script_type,
         script_content: step.script_content,
         account_id: step.account_id,
-        // 文件传输相关（仅使用新版 file_sources）
-        file_sources: step.file_sources || [],
         max_target_matches: step.max_target_matches || 100,
         overwrite_policy: step.overwrite_policy,
         // 关键：提供 target_host_ids 以通过后端校验
@@ -465,6 +463,13 @@ const handleSave = async () => {
         // 分组ID列表，用于更新 target_groups
         target_group_ids: targetGroupIds,
       }
+
+      // 仅在文件传输步骤时附加 file_sources，避免向后端提交空数组导致混淆错误
+      if (step.step_type === 'file_transfer') {
+        stepObj.file_sources = step.file_sources || []
+      }
+
+      return stepObj
     })
 
     const data: any = {
@@ -595,6 +600,8 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         type: 'primary',
         icon: IconEye,
         handler: () => {
+            // 先关闭弹窗再导航，避免弹窗在目标页面残留
+            showSuccessModal.value = false
           router.replace(`/job-templates/${template.id}/edit`)
         }
       },
@@ -604,6 +611,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         type: 'outline',
         icon: IconPlus,
         handler: () => {
+            showSuccessModal.value = false
           router.push(`/execution-plans/create?template_id=${template.id}`)
         }
       },
@@ -613,6 +621,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         type: 'text',
         icon: IconList,
         handler: () => {
+            showSuccessModal.value = false
           router.push('/job-templates')
         }
       }

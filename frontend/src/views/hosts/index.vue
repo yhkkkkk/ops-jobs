@@ -2145,8 +2145,6 @@ const submitBatchEdit = async () => {
   }
 }
 
-// 删除重复的handleBatchTest函数，使用上面已定义的版本
-
 const handleBatchDelete = async () => {
   try {
     // 调用批量删除API

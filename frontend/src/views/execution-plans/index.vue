@@ -313,11 +313,13 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { executionPlanApi, jobTemplateApi, favoriteApi } from '@/api/ops'
+import { executionPlanApi, jobTemplateApi } from '@/api/ops'
 import type { ExecutionPlan, JobTemplate } from '@/types'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useFavoritesStore } from '@/stores/favorites'
 
 const permissionsStore = usePermissionsStore()
+const favoritesStore = useFavoritesStore()
 
 const router = useRouter()
 const route = useRoute()
@@ -347,53 +349,13 @@ const searchForm = reactive({
   created_by: undefined as number | undefined
 })
 
-// 收藏相关
-const favorites = reactive<Record<number, boolean>>({})
-
-// 加载收藏状态
-const loadFavoriteStatus = async () => {
-  try {
-    // 批量检查当前页面的收藏状态
-    const planIds = plans.value.map(p => p.id)
-    if (planIds.length === 0) return
-
-    const requests = planIds.map(id =>
-      favoriteApi.check({
-        favorite_type: 'execution_plan',
-        object_id: id
-      }).catch(() => ({ data: { content: { is_favorited: false } } }))
-    )
-
-    const responses = await Promise.allSettled(requests)
-    const favoriteStatus: Record<number, boolean> = {}
-
-    responses.forEach((result, index) => {
-      const planId = planIds[index]
-      if (result.status === 'fulfilled') {
-        favoriteStatus[planId] = result.value.is_favorited || false
-      } else {
-        favoriteStatus[planId] = false
-      }
-    })
-
-    Object.assign(favorites, favoriteStatus)
-  } catch (e) {
-    console.error('加载收藏状态失败:', e)
-  }
-}
-
-const isFavorite = (id: number) => favorites[id] || false
+// 收藏相关方法
+const isFavorite = (id: number) => favoritesStore.isFavorite('execution_plan', id)
 
 const toggleFavorite = async (id: number) => {
   try {
-    const response = await favoriteApi.toggle({
-      favorite_type: 'execution_plan',
-      object_id: id,
-      category: 'personal'
-    })
-
-    favorites[id] = response.is_favorited
-    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+    const isFavorited = await favoritesStore.toggleFavorite('execution_plan', id, 'personal')
+    Message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
   } catch (e) {
     console.error('切换收藏状态失败:', e)
     Message.error('操作失败')
@@ -497,14 +459,14 @@ const fetchPlans = async () => {
 
     // 前端过滤收藏
     if (searchForm.favorites_only) {
-      resultPlans = resultPlans.filter(p => favorites[p.id])
+      resultPlans = resultPlans.filter(p => favoritesStore.isFavorite('execution_plan', p.id))
     }
 
     plans.value = resultPlans
     pagination.total = searchForm.favorites_only ? resultPlans.length : (response.total || 0)
 
     // 异步加载收藏状态
-    loadFavoriteStatus()
+    await favoritesStore.batchCheckFavorites('execution_plan', resultPlans.map(p => p.id))
 
     // 拉取可用用户列表
     fetchAvailableUsers()

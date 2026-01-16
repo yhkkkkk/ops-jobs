@@ -5,11 +5,11 @@ import type {
   JobTemplate,
   ExecutionPlan,
   ExecutionRecord,
-  ScheduledTask,
   PaginatedResponse,
   BatchTestResult,
   HostGroup,
-  HostImportResult
+  HostImportResult,
+  ScheduledJob
 } from '@/types'
 
 // 主机管理API
@@ -352,22 +352,22 @@ export const executionRecordApi = {
 // 定时任务API
 export const scheduledTaskApi = {
   // 获取定时任务列表
-  getTasks(params?: any): Promise<PaginatedResponse<ScheduledTask>> {
+  getTasks(params?: any): Promise<PaginatedResponse<ScheduledJob>> {
     return http.get('/scheduled-tasks/', { params })
   },
 
   // 获取定时任务详情
-  getTask(id: number): Promise<ScheduledTask> {
+  getTask(id: number): Promise<ScheduledJob> {
     return http.get(`/scheduled-tasks/${id}/`)
   },
 
   // 创建定时任务
-  createTask(data: Partial<ScheduledTask>): Promise<ScheduledTask> {
+  createTask(data: Partial<ScheduledJob>): Promise<ScheduledJob> {
     return http.post('/scheduled-tasks/', data)
   },
 
   // 更新定时任务
-  updateTask(id: number, data: Partial<ScheduledTask>): Promise<ScheduledTask> {
+  updateTask(id: number, data: Partial<ScheduledJob>): Promise<ScheduledJob> {
     return http.put(`/scheduled-tasks/${id}/`, data)
   },
 
@@ -499,7 +499,9 @@ export const favoriteApi = {
   // 获取收藏列表
   getFavorites: (params?: {
     category?: string,
-    favorite_type?: string
+    favorite_type?: string,
+    page_size?: number,
+    page?: number
   }) => http.get('/script-templates/favorites/', { params }),
 
   // 按分类获取收藏

@@ -307,12 +307,14 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { jobTemplateApi, favoriteApi } from '@/api/ops'
+import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useFavoritesStore } from '@/stores/favorites'
 
 const permissionsStore = usePermissionsStore()
+const favoritesStore = useFavoritesStore()
 
 const router = useRouter()
 
@@ -334,53 +336,13 @@ const searchForm = reactive({
   created_by: undefined as number | undefined
 })
 
-// 收藏相关
-const favorites = ref<Record<number, boolean>>({})
-
-// 加载收藏状态
-const loadFavoriteStatus = async () => {
-  try {
-    // 批量检查当前页面的收藏状态
-    const templateIds = templates.value.map(t => t.id)
-    if (templateIds.length === 0) return
-
-    const requests = templateIds.map(id =>
-      favoriteApi.check({
-        favorite_type: 'job_template',
-        object_id: id
-      }).catch(() => ({ data: { content: { is_favorited: false } } }))
-    )
-
-    const responses = await Promise.allSettled(requests)
-    const favoriteStatus: Record<number, boolean> = {}
-
-    responses.forEach((result, index) => {
-      const templateId = templateIds[index]
-      if (result.status === 'fulfilled') {
-        favoriteStatus[templateId] = result.value.is_favorited || false
-      } else {
-        favoriteStatus[templateId] = false
-      }
-    })
-
-    favorites.value = favoriteStatus
-  } catch (e) {
-    console.error('加载收藏状态失败:', e)
-  }
-}
-
-const isFavorite = (id: number) => favorites.value[id] || false
+// 收藏相关方法
+const isFavorite = (id: number) => favoritesStore.isFavorite('job_template', id)
 
 const toggleFavorite = async (id: number) => {
   try {
-    const response = await favoriteApi.toggle({
-      favorite_type: 'job_template',
-      object_id: id,
-      category: 'personal'
-    })
-
-    favorites.value[id] = response.is_favorited
-    Message.success(response.is_favorited ? '已添加到收藏' : '已取消收藏')
+    const isFavorited = await favoritesStore.toggleFavorite('job_template', id, 'personal')
+    Message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
   } catch (e) {
     console.error('切换收藏状态失败:', e)
     Message.error('操作失败')
@@ -543,7 +505,7 @@ const fetchTemplates = async () => {
 
     // 前端过滤收藏
     if (searchForm.favorites_only) {
-      resultTemplates = resultTemplates.filter(t => favorites.value[t.id])
+      resultTemplates = resultTemplates.filter(t => favoritesStore.isFavorite('job_template', t.id))
     }
 
     templates.value = resultTemplates
@@ -554,6 +516,9 @@ const fetchTemplates = async () => {
 
     // 拉取可用用户列表
     fetchAvailableUsers()
+
+    // 异步加载收藏状态
+    await favoritesStore.batchCheckFavorites('job_template', resultTemplates.map(t => t.id))
   } catch (error) {
     console.error('获取作业模板列表失败:', error)
     Message.error('获取作业模板列表失败')
@@ -772,7 +737,6 @@ const canDeleteTemplate = (templateId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
-  loadFavoriteStatus()
   fetchTemplates()
 })
 </script>

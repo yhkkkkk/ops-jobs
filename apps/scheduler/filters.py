@@ -35,7 +35,13 @@ class ScheduledJobFilter(django_filters.FilterSet):
         queryset=ExecutionPlan.objects.all(),
         label='执行方案'
     )
-    
+
+    # 按创建者过滤
+    created_by = django_filters.NumberFilter(
+        field_name='created_by',
+        label='创建者ID'
+    )
+
     class Meta:
         model = ScheduledJob
-        fields = ['name', 'plan_name', 'is_active', 'execution_plan']
+        fields = ['name', 'plan_name', 'is_active', 'execution_plan', 'created_by']
