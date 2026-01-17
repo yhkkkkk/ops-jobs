@@ -44,11 +44,6 @@ identification:
   # 控制面主机ID（安装时由控制面自动设置，用于建立映射关系）
   host_id: 123
 
-  # Agent 标签（用于分组/筛选），key-value 形式
-  agent_labels:
-    env: "dev"
-    region: "cn-shanghai"
-
 ###########################
 # 日志配置
 ###########################

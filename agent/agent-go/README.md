@@ -94,9 +94,6 @@ export AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE=1000
 
 export AGENT_IDENTIFICATION_AGENT_TOKEN=your-token-here
 export AGENT_IDENTIFICATION_AGENT_NAME=my-agent
-# 标签支持逗号分隔的顶层 AGENT_LABELS（备用）或层级名：
-export AGENT_IDENTIFICATION_AGENT_LABELS=env=prod,region=us-east-1
-# 或 export AGENT_LABELS=env=prod,region=us-east-1
 # 可选任务配置（使用层级名覆盖默认值）
 export AGENT_TASK_HEARTBEAT_INTERVAL=10
 export AGENT_TASK_MAX_CONCURRENT_TASKS=5
@@ -123,9 +120,6 @@ ws_max_retries: 6
 ws_outbox_max_size: 1000
 agent_token: "your-token-here"
 agent_name: "my-agent"
-agent_labels:
-  env: "prod"
-  region: "us-east-1"
 log_dir: "/var/log/ops-job-agent"
 log_max_size: 10        # MB
 log_max_files: 5
@@ -159,7 +153,6 @@ logging:
 | `AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE`                 | `ws_outbox_max_size`      | `2000`                         | WS 断线本地缓冲上限（条）                        |
 | `AGENT_IDENTIFICATION_AGENT_TOKEN`                    | `agent_token`             | -                                | Agent 认证 Token                                 |
 | `AGENT_IDENTIFICATION_AGENT_NAME`                     | `agent_name`              | 主机名                           | Agent 名称                                       |
-| `AGENT_IDENTIFICATION_AGENT_LABELS` 或 `AGENT_LABELS` | `agent_labels`            | -                                | Agent 标签（格式：key1=value1,key2=value2）      |
 | `AGENT_LOGGING_LOG_DIR`                               | `log_dir`                 | `/tmp/ops-job-agent/logs`      | 日志目录                                         |
 | `AGENT_LOGGING_LOG_MAX_SIZE`                          | `log_max_size`            | `10`                           | 日志文件最大大小（MB）                           |
 | `AGENT_LOGGING_LOG_MAX_FILES`                         | `log_max_files`           | `5`                            | 最大保留日志文件数                               |
@@ -256,7 +249,6 @@ Agent 会定期收集并上报以下系统信息：
 - [x] 性能监控和指标上报
 - [ ] TLS 支持
 - [ ] 任务优先级队列
-- [ ] 资源限制（CPU、内存）
 - [ ] 插件系统
 
 ## 参考

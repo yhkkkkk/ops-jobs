@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 渲染配置脚本（control-plane 使用）
-- 优先使用 PyYAML 合并 base config 与覆盖字段（若可用）
-- 否则使用 Jinja2 渲染模板（如果 base 文件包含模板占位）
+- 优先使用 ruamel.yaml 合并 base config 与覆盖字段（保留注释）
+- 回退使用 PyYAML 合并 base config 与覆盖字段（若可用，会丢失注释）
 - 最后回退为内置简单 YAML emitter（仅生成覆盖字段）
 
 输出渲染后的 YAML 到 stdout
@@ -185,34 +185,53 @@ def render_config_yaml(
         overrides["agent"] = agent_config
 
     base_path = base_config_path
-    # Try PyYAML first for structured merge
+
+    # Try ruamel.yaml first (preserves comments and formatting)
+    ruamel_yaml = None
     try:
-        import yaml
+        from ruamel.yaml import YAML
+        ruamel_yaml = YAML()
+        ruamel_yaml.preserve_quotes = True
+        ruamel_yaml.default_flow_style = False
     except Exception:
-        yaml = None
+        ruamel_yaml = None
+
+    # Fallback to PyYAML (loses comments)
+    pyyaml = None
+    try:
+        import yaml as pyyaml_module
+        pyyaml = pyyaml_module
+    except Exception:
+        pyyaml = None
 
     if base_path and os.path.exists(base_path):
         with open(base_path, "r", encoding="utf-8") as f:
             base_text = f.read()
-        # If YAML lib available, merge structures
-        if yaml:
+
+        # Try ruamel.yaml first (preserves comments)
+        if ruamel_yaml:
             try:
-                loaded = yaml.safe_load(base_text) or {}
+                from io import StringIO
+                loaded = ruamel_yaml.load(base_text)
                 if not isinstance(loaded, dict):
                     loaded = {}
                 deep_update(loaded, overrides)
-                return yaml.safe_dump(loaded, allow_unicode=False, default_flow_style=False, sort_keys=False)
-            except Exception:
-                # fallback to template/text rendering
-                pass
-        # If base contains Jinja2 markers, render it as template
-        if "{{" in base_text or "{%" in base_text:
+                output = StringIO()
+                ruamel_yaml.dump(loaded, output)
+                return output.getvalue()
+            except Exception as e:
+                # Log warning but continue to fallback
+                import sys
+                print(f"Warning: ruamel.yaml failed ({e}), falling back to PyYAML", file=sys.stderr)
+
+        # Fallback to PyYAML (loses comments)
+        if pyyaml:
             try:
-                from jinja2 import Template
-                tpl = Template(base_text)
-                ctx = overrides.copy()
-                ctx["install_type"] = install_type
-                return tpl.render(**ctx)
+                loaded = pyyaml.safe_load(base_text) or {}
+                if not isinstance(loaded, dict):
+                    loaded = {}
+                deep_update(loaded, overrides)
+                return pyyaml.safe_dump(loaded, allow_unicode=False, default_flow_style=False, sort_keys=False)
             except Exception:
                 pass
 

@@ -24,10 +24,9 @@ type ConnectionConfig struct {
 
 // IdentificationConfig 身份标识配置
 type IdentificationConfig struct {
-	AgentName   string            `mapstructure:"agent_name"`
-	AgentLabels map[string]string `mapstructure:"agent_labels"`
-	AgentToken  string            `mapstructure:"agent_token"`
-	HostID      int               `mapstructure:"host_id"` // 控制面主机ID，用于建立映射关系
+	AgentName  string `mapstructure:"agent_name"`
+	AgentToken string `mapstructure:"agent_token"`
+	HostID     int    `mapstructure:"host_id"` // 控制面主机ID，用于建立映射关系
 }
 
 // LoggingConfig 日志配置
@@ -158,13 +157,6 @@ func reloadFromViper(v *viper.Viper) error {
 		return fmt.Errorf("agent_server_url is required")
 	}
 
-	// 处理标签字符串（如果从环境变量读取）
-	if len(cfg.Identification.AgentLabels) == 0 {
-		if labelsStr := v.GetString("labels"); labelsStr != "" {
-			cfg.Identification.AgentLabels = parseLabels(labelsStr)
-		}
-	}
-
 	// 设置默认值（如果未配置）
 	setConfigDefaults(&cfg)
 
@@ -289,24 +281,6 @@ func setConfigDefaults(cfg *Config) {
 	if cfg.Logging.LogFlushInterval <= 0 {
 		cfg.Logging.LogFlushInterval = 200
 	}
-	if cfg.Identification.AgentLabels == nil {
-		cfg.Identification.AgentLabels = make(map[string]string)
-	}
-}
-
-// parseLabels 解析标签字符串（格式：key1=value1,key2=value2）
-func parseLabels(s string) map[string]string {
-	labels := make(map[string]string)
-	if s == "" {
-		return labels
-	}
-	for _, pair := range strings.Split(s, ",") {
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) == 2 {
-			labels[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-		}
-	}
-	return labels
 }
 
 func getHostname() string {

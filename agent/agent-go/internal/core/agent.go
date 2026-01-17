@@ -838,7 +838,6 @@ func (a *Agent) SubmitTask(task *TaskSpec) {
 func (a *Agent) register() error {
 	info := AgentInfo{
 		Name:   a.cfg.Identification.AgentName,
-		Labels: a.cfg.Identification.AgentLabels,
 		System: &a.system,
 		HostID: a.cfg.Identification.HostID,
 	}
