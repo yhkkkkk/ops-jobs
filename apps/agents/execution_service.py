@@ -268,13 +268,13 @@ class AgentExecutionService:
         agent_server_url: str = None,
     ) -> Dict[str, Any]:
         """
-        推送任务到Agent（通过Agent-Server或直接推送）
-        
+        推送任务到Agent（通过Agent-Server WebSocket模式）
+
         Args:
             agent: Agent对象
             task_spec: 任务规范
-            agent_server_url: Agent-Server地址（如果使用Agent-Server模式）
-        
+            agent_server_url: Agent-Server地址（可选，优先级最高）
+
         Returns:
             Dict: 推送结果
         """
@@ -291,96 +291,51 @@ class AgentExecutionService:
             else:
                 server_url = getattr(settings, 'AGENT_SERVER_URL', None)
 
-            if server_url:
-                # === Agent-Server 模式：调用 Agent-Server 的 /api/agents/{id}/tasks ===
-                if server_url.startswith('ws://') or server_url.startswith('wss://'):
-                    server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-            
-                # 移除路径部分，只保留基础URL
-                if '://' in server_url:
-                    scheme_end = server_url.find('://') + 3
-                    slash_idx = server_url.find('/', scheme_end)
-                    if slash_idx != -1:
-                        server_url = server_url[:slash_idx]
-
-                api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
-            
-                # 构造带 HMAC 签名的请求
-                from utils.agent_server_client import AgentServerClient
-
-                client = AgentServerClient.from_settings()
-                # 根据 Agent 环境设置 X-Scope，支持多租户/多环境的 Agent-Server 集群
-                scope = AgentExecutionService._get_agent_server_scope(agent)
-                headers = {"X-Scope": scope} if scope else {}
-                response = client.post(api_url, json=task_spec, headers=headers)
-
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(f"任务已通过 Agent-Server 推送到Agent: {task_spec['id']}, Agent: {agent.host_id}")
-                    return {
-                        'success': True,
-                        'task_id': task_spec['id'],
-                        'agent_id': agent.host_id,
-                        'status': result.get('status', 'dispatched')
-                    }
-                else:
-                    error_msg = response.text or f"HTTP {response.status_code}"
-                    logger.error(f"通过 Agent-Server 推送任务到Agent失败: {error_msg}")
-                    return {
-                        'success': False,
-                        'error': f'推送任务失败: {error_msg}'
-                    }
-
-            # === 直连模式：控制面主动 POST 到 Agent 本地 HTTP 服务 ===
-            host = agent.host  # OneToOne 关联
-            if not host or not host.ip_address:
+            if not server_url:
+                # Agent-Server URL 未配置，无法推送任务
+                logger.error(f"Agent-Server URL 未配置，无法推送任务到 Agent {agent.host_id}")
                 return {
                     'success': False,
-                    'error': '直连模式下需要主机 IP 地址'
+                    'error': 'Agent-Server URL 未配置，请在 Agent 配置或全局设置中指定 AGENT_SERVER_URL'
                 }
 
-            direct_port = getattr(settings, 'AGENT_DIRECT_PORT', 8080)
-            # 如果 endpoint 已经是 http(s):// 开头，可用作直连基础地址
-            base_url = None
-            if agent.endpoint and (agent.endpoint.startswith('http://') or agent.endpoint.startswith('https://')):
-                base_url = agent.endpoint.rstrip('/')
-            else:
-                base_url = f"http://{host.ip_address}:{direct_port}"
+            # === Agent-Server 模式：调用 Agent-Server 的 /api/agents/{id}/tasks ===
+            if server_url.startswith('ws://') or server_url.startswith('wss://'):
+                server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
 
-            api_url = f"{base_url}/api/tasks"
-            headers = {
-                "Content-Type": "application/json",
-            }
-            direct_secret = getattr(settings, "AGENT_DIRECT_SHARED_SECRET", "") or ""
-            if direct_secret:
-                headers["Authorization"] = f"Bearer {direct_secret}"
+            # 移除路径部分，只保留基础URL
+            if '://' in server_url:
+                scheme_end = server_url.find('://') + 3
+                slash_idx = server_url.find('/', scheme_end)
+                if slash_idx != -1:
+                    server_url = server_url[:slash_idx]
 
-            response = requests.post(
-                api_url,
-                json=task_spec,
-                headers=headers,
-                timeout=10,
-            )
+            api_url = f"{server_url}/api/agents/{agent.host_id}/tasks"
+
+            # 构造带 HMAC 签名的请求
+            from utils.agent_server_client import AgentServerClient
+
+            client = AgentServerClient.from_settings()
+            # 根据 Agent 环境设置 X-Scope，支持多租户/多环境的 Agent-Server 集群
+            scope = AgentExecutionService._get_agent_server_scope(agent)
+            headers = {"X-Scope": scope} if scope else {}
+            response = client.post(api_url, json=task_spec, headers=headers)
 
             if response.status_code == 200:
                 result = response.json()
-                logger.info(
-                    f"任务已通过直连模式推送到Agent: {task_spec['id']}, Agent: {agent.host_id}, URL={api_url}"
-                )
+                logger.info(f"任务已通过 Agent-Server 推送到Agent: {task_spec['id']}, Agent: {agent.host_id}")
                 return {
-                    "success": True,
-                    "task_id": task_spec["id"],
-                    "agent_id": agent.host_id,
-                    "status": result.get("status", "accepted"),
+                    'success': True,
+                    'task_id': task_spec['id'],
+                    'agent_id': agent.host_id,
+                    'status': result.get('status', 'dispatched')
                 }
             else:
                 error_msg = response.text or f"HTTP {response.status_code}"
-                logger.error(
-                    f"直连模式推送任务到Agent失败: {error_msg}, URL={api_url}"
-                )
+                logger.error(f"通过 Agent-Server 推送任务到Agent失败: {error_msg}")
                 return {
-                    "success": False,
-                    "error": f"直连模式推送任务失败: {error_msg}",
+                    'success': False,
+                    'error': f'推送任务失败: {error_msg}'
                 }
 
         except Exception as e:
