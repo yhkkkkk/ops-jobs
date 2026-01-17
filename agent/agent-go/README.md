@@ -7,7 +7,6 @@
 ### 核心功能
 
 - ✅ Agent 注册和心跳机制
-- ✅ 任务拉取和执行
 - ✅ 脚本执行（支持 shell/python/powershell）
 - ✅ 文件传输
 - ✅ 任务取消机制
@@ -77,7 +76,7 @@ go mod tidy
 ### 编译
 
 ```bash
-go build -o ops-job-agent ./cmd/agent
+go build -o .\bin\agent .\cmd\agent\main.go
 ```
 
 ### 配置

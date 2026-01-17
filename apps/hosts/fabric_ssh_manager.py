@@ -50,7 +50,8 @@ class FileTransferProgressMonitor:
         self.file_size = file_size
         self.local_path = local_path
         self.remote_path = remote_path
-        self.bandwidth_limit = bandwidth_limit * 1024 if bandwidth_limit > 0 else 0  # 转换为字节/秒
+        # 带宽限制（MB/s -> bytes/s），与 Agent 侧保持一致
+        self.bandwidth_limit = bandwidth_limit * 1024 * 1024 if bandwidth_limit > 0 else 0
 
         # 进度跟踪
         self.transferred = 0
@@ -66,7 +67,7 @@ class FileTransferProgressMonitor:
         self.last_throttle_time = self.start_time
 
         # 推送开始日志
-        limit_text = f"，限速: {bandwidth_limit} KB/s" if bandwidth_limit > 0 else ""
+        limit_text = f"，限速: {bandwidth_limit} MB/s" if bandwidth_limit > 0 else ""
         self._push_progress_log(f"开始上传文件{limit_text}", 0, 0)
 
     def progress_callback(self, transferred: int, total: int):
@@ -100,7 +101,7 @@ class FileTransferProgressMonitor:
             eta_seconds = remaining_bytes / avg_speed if avg_speed > 0 else 0
 
             # 推送进度日志
-            limit_info = f" (限速: {self.bandwidth_limit // 1024} KB/s)" if self.bandwidth_limit > 0 else ""
+            limit_info = f" (限速: {self.bandwidth_limit // (1024 * 1024)} MB/s)" if self.bandwidth_limit > 0 else ""
             self._push_progress_log(
                 f"上传进度: {progress_percent:.1f}% ({self._format_bytes(transferred)}/{self._format_bytes(total)}){limit_info}",
                 progress_percent,
