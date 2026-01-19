@@ -233,6 +233,9 @@ interface UninstallRecord {
   uninstalled_by: number
   uninstalled_by_name: string
   uninstall_task_id: string
+  task_total_hosts?: number
+  task_success_count?: number
+  task_failed_count?: number
 }
 
 // 响应式数据
