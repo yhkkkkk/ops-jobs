@@ -1,12 +1,29 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <h2>{{ isEdit ? '编辑定时任务' : '创建定时任务' }}</h2>
-      <div class="page-actions">
-        <a-button @click="handleCancel">取消</a-button>
-        <a-button type="primary" :loading="saving" @click="handleSave">
-          {{ isEdit ? '更新' : '创建' }}
-        </a-button>
+      <div class="header-content">
+        <div class="header-left">
+          <a-button type="text" @click="handleCancel">
+            <template #icon>
+              <icon-arrow-left />
+            </template>
+            返回
+          </a-button>
+          <div class="header-info">
+            <h2>{{ isEdit ? '编辑定时任务' : '创建定时任务' }}</h2>
+            <p class="header-desc">
+              {{ isEdit ? '调整触发规则与执行方案' : '配置周期规则并选择执行方案' }}
+            </p>
+          </div>
+        </div>
+        <div class="header-right">
+          <a-space>
+            <a-button @click="handleCancel">取消</a-button>
+            <a-button type="primary" :loading="saving" @click="handleSave">
+              {{ isEdit ? '更新' : '创建' }}
+            </a-button>
+          </a-space>
+        </div>
       </div>
     </div>
 
@@ -203,6 +220,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import {
+  IconArrowLeft,
   IconInfoCircle,
   IconExclamationCircle,
   IconClockCircle,
@@ -509,21 +527,39 @@ onMounted(() => {
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: white;
+  border-radius: 6px;
   margin-bottom: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-.page-header h2 {
-  margin: 0;
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.header-info h2 {
+  margin: 0 0 4px 0;
   font-size: 20px;
   font-weight: 600;
 }
 
-.page-actions {
-  display: flex;
-  gap: 12px;
+.header-desc {
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: 14px;
+}
+
+.header-right {
+  flex-shrink: 0;
 }
 
 .cron-description {
@@ -668,4 +704,3 @@ onMounted(() => {
   border-radius: 3px;
 }
 </style>
-

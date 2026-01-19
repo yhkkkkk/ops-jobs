@@ -101,10 +101,7 @@ class Host(models.Model):
     ]
 
     DEVICE_TYPE_CHOICES = [
-        ('vm', '虚拟机'),
-        ('container', '容器'),
         ('physical', '物理机'),
-        ('k8s_node', 'K8s节点'),
     ]
 
 

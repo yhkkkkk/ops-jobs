@@ -191,7 +191,7 @@
       >
         <template #extra>
           <a-button type="primary" @click="handleBack">
-            返回列表
+            返回
           </a-button>
         </template>
       </a-result>

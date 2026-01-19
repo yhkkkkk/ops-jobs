@@ -8,7 +8,7 @@
             <template #icon>
               <icon-arrow-left />
             </template>
-            返回列表
+            返回
           </a-button>
           <div class="header-info">
             <h2>{{ isEdit ? '编辑执行方案' : '创建执行方案' }}</h2>

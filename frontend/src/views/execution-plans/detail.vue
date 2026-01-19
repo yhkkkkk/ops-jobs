@@ -8,7 +8,7 @@
             <template #icon>
               <icon-arrow-left />
             </template>
-            返回列表
+            返回
           </a-button>
           <div class="header-info">
             <h2>{{ plan?.name || '执行方案详情' }}</h2>
@@ -367,7 +367,7 @@
       >
         <template #extra>
           <a-button type="primary" @click="handleBack">
-            返回列表
+            返回
           </a-button>
         </template>
       </a-result>

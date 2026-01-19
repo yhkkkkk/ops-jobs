@@ -160,12 +160,12 @@ class RealtimeLogService:
             }
 
             # 推送到redis stream
-            self._xadd(stream_key, message)
+            msg_id = self._xadd(stream_key, message)
 
             # 设置过期时间（24小时）
             self._expire(stream_key, 86400)
 
-            logger.debug(f"推送状态到 {stream_key}: {message}")
+            logger.debug(f"推送状态到 {stream_key}: {message}，msg_id={msg_id}")
 
         except Exception as e:
             logger.error(f"推送状态失败: {task_id} - {e}")

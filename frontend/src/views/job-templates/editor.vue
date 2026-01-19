@@ -2,29 +2,38 @@
   <div class="job-template-editor">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-left">
-        <a-button type="text" @click="handleBack">
-          <template #icon>
-            <icon-arrow-left />
-          </template>
-          返回
-        </a-button>
-        <h2>{{ isEdit ? '编辑作业模板' : '新建作业模板' }}</h2>
+      <div class="header-content">
+        <div class="header-left">
+          <a-button type="text" @click="handleBack">
+            <template #icon>
+              <icon-arrow-left />
+            </template>
+            返回
+          </a-button>
+          <div class="header-info">
+            <h2>{{ isEdit ? '编辑作业模板' : '新建作业模板' }}</h2>
+            <p class="header-desc">
+              {{ isEdit ? '调整模板步骤与变量配置' : '创建包含步骤与全局变量的作业模板' }}
+            </p>
+          </div>
+        </div>
+        <div class="header-right">
+          <a-space>
+            <a-button :type="isEdit ? undefined : 'primary'" @click="handleSave" :loading="saving">
+              <template #icon>
+                <icon-save />
+              </template>
+              保存
+            </a-button>
+            <a-button v-if="isEdit" type="primary" @click="handleDebugExecute">
+              <template #icon>
+                <icon-play-arrow />
+              </template>
+              调试执行
+            </a-button>
+          </a-space>
+        </div>
       </div>
-      <a-space>
-        <a-button @click="handleSave" :loading="saving">
-          <template #icon>
-            <icon-save />
-          </template>
-          保存
-        </a-button>
-        <a-button v-if="isEdit" type="primary" @click="handleDebugExecute">
-          <template #icon>
-            <icon-play-arrow />
-          </template>
-          调试执行
-        </a-button>
-      </a-space>
     </div>
 
     <!-- 基本信息 -->
@@ -1068,22 +1077,39 @@ onMounted(() => {
 }
 
 .page-header {
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.header-content {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
 }
 
 .header-left {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .header-left h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+}
+
+.header-desc {
+  margin: 4px 0 0 0;
+  color: var(--color-text-3);
+  font-size: 14px;
+}
+
+.header-right {
+  flex-shrink: 0;
 }
 
 .mb-4 {

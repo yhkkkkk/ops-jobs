@@ -1,32 +1,37 @@
 <template>
   <div class="script-template-editor">
     <div class="page-header">
-      <a-breadcrumb>
-        <a-breadcrumb-item @click="goBack">脚本模板</a-breadcrumb-item>
-        <a-breadcrumb-item>{{ getBreadcrumbTitle() }}</a-breadcrumb-item>
-      </a-breadcrumb>
-
-      <div class="header-actions">
-        <a-space>
-          <a-button @click="goBack">
+      <div class="header-content">
+        <div class="header-left">
+          <a-button type="text" @click="goBack">
             <template #icon>
               <icon-arrow-left />
             </template>
             返回
           </a-button>
-          <a-button @click="handlePreview">
-            <template #icon>
-              <icon-eye />
-            </template>
-            预览
-          </a-button>
-          <a-button type="primary" @click="handleSave" :loading="saving">
-            <template #icon>
-              <icon-save />
-            </template>
-            保存
-          </a-button>
-        </a-space>
+          <div class="header-info">
+            <h2>{{ headerTitle }}</h2>
+            <p class="header-desc">
+              {{ headerDesc }}
+            </p>
+          </div>
+        </div>
+        <div class="header-right">
+          <a-space>
+            <a-button @click="handlePreview">
+              <template #icon>
+                <icon-eye />
+              </template>
+              预览
+            </a-button>
+            <a-button type="primary" @click="handleSave" :loading="saving">
+              <template #icon>
+                <icon-save />
+              </template>
+              保存
+            </a-button>
+          </a-space>
+        </div>
       </div>
     </div>
 
@@ -136,6 +141,16 @@ const isEdit = computed(() => {
   if (route.params.id === 'new') return false
   // 其他情况视为编辑
   return !!route.params.id && route.params.id !== 'new'
+})
+
+const headerTitle = computed(() => {
+  if (route.query.action === 'copy') return '复制脚本模板'
+  return isEdit.value ? '编辑脚本模板' : '新建脚本模板'
+})
+
+const headerDesc = computed(() => {
+  if (route.query.action === 'copy') return '基于现有模板复制并调整脚本与元数据'
+  return isEdit.value ? '调整脚本内容、元数据和标签' : '创建可复用的脚本模板'
 })
 
 
@@ -292,14 +307,6 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
   }
 }
 
-// 获取面包屑标题
-const getBreadcrumbTitle = () => {
-  if (route.query.action === 'copy') {
-    return '复制模板'
-  }
-  return isEdit.value ? '编辑模板' : '新建模板'
-}
-
 // 返回列表
 const goBack = () => {
   if (!canLeave.value) {
@@ -406,21 +413,42 @@ const getCategoryText = (category: string) => {
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: white;
+  border-radius: 6px;
   margin-bottom: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-.header-actions {
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.header-info h2 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.header-desc {
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: 14px;
+}
+
+.header-right {
   flex-shrink: 0;
 }
 
 .mb-4 {
   margin-bottom: 16px;
-}
-
-:deep(.arco-breadcrumb-item) {
-  cursor: pointer;
 }
 </style>

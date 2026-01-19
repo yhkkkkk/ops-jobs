@@ -27,7 +27,8 @@ class HostFilter(django_filters.FilterSet):
     # 云厂商过滤器
     cloud_provider = django_filters.ChoiceFilter(
         choices=Host.CLOUD_PROVIDER_CHOICES,
-        label='云厂商'
+        label='云厂商',
+        method='filter_cloud_provider'
     )
 
     # 设备类型过滤器
@@ -155,6 +156,21 @@ class HostFilter(django_filters.FilterSet):
 
         # 过滤属于这些分组的主机，使用 distinct 避免重复
         return queryset.filter(groups__in=group_ids).distinct()
+
+    def filter_cloud_provider(self, queryset, name, value):
+        """
+        云厂商过滤：
+        - 选中具体厂商：按等号匹配
+        - 选中 “other”：表示非常见厂商，排除内置列表，保留为空/自定义值
+        """
+        if not value:
+            return queryset
+
+        if value == 'other':
+            common_providers = [p for p, _ in Host.CLOUD_PROVIDER_CHOICES if p != 'other']
+            return queryset.exclude(cloud_provider__in=common_providers)
+
+        return queryset.filter(cloud_provider=value)
 
     def filter_tags(self, queryset, name, value):
         """支持多值（逗号/空格分隔），兼容 key=value 与单词匹配"""
