@@ -189,7 +189,7 @@ class HostFilter(django_filters.FilterSet):
         if not parts:
             return queryset
 
-        # 支持 key=value 精确匹配（使用 JSON contains），同时保留模糊关键词匹配
+        # 支持 key=value 精确匹配（使用 json contains），同时保留模糊关键词匹配
         kv_parts = []
         keywords = []
         for part in parts:

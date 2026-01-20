@@ -271,7 +271,6 @@ export interface JobStep {
   max_target_matches?: number
   file_sources?: any[]
   // 文件传输相关字段
-  local_path?: string
   remote_path?: string
   overwrite_policy?: string
 }

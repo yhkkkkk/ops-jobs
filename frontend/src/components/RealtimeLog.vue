@@ -261,6 +261,23 @@
                               size="small"
                               :show-text="true"
                             />
+                            <div
+                              v-if="hostLog.progress.fileSources && hostLog.progress.fileSources.length > 0"
+                              class="file-sources"
+                            >
+                              <div
+                                v-for="(src, idx) in hostLog.progress.fileSources"
+                                :key="idx"
+                                class="file-source-item"
+                              >
+                                <a-tag size="small" :color="src.type === 'server' ? 'blue' : 'arcoblue'">
+                                  {{ getFileSourceType(src.type) }}
+                                </a-tag>
+                                <span class="file-source-path">{{ getFileSourcePath(src) }}</span>
+                                <icon-right style="font-size: 12px; margin: 0 6px;" />
+                                <span class="file-dest-path">{{ src.remote_path || hostLog.progress.remotePath || '-' }}</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -662,6 +679,8 @@ const updateStepLogs = (stepName: string, stepOrder: number, hostName: string, l
   // 对于快速执行，统一使用一个步骤ID
   const stepId = stepName === '快速执行' ? 'quick_execute' : `step_${stepOrder}_${stepName}`
   const hostKey = logData.host_id || hostName
+  const fileSources = logData.file_sources || logData.step_file_sources || []
+  const remotePath = logData.remote_path || ''
 
   // 初始化步骤日志
   if (!stepLogs.value[stepId]) {
@@ -708,8 +727,8 @@ const updateStepLogs = (stepName: string, stepOrder: number, hostName: string, l
       eta: logData.eta_seconds || 0,
       fileSize: logData.file_size || 0,
       transferred: logData.transferred || 0,
-      localPath: logData.local_path || '',
-      remotePath: logData.remote_path || ''
+      remotePath,
+      fileSources
     }
   }
 
@@ -735,7 +754,9 @@ const updateStepLogs = (stepName: string, stepOrder: number, hostName: string, l
     host.progress = {
       percent: logData.progress_percent,
       speed: logData.transfer_speed || 0,
-      eta: logData.eta_seconds || 0
+      eta: logData.eta_seconds || 0,
+      remotePath,
+      fileSources
     }
   }
 
@@ -800,6 +821,32 @@ const formatBytes = (bytes: number) => {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+const getFileSourceType = (type?: string) => {
+  if (type === 'server') return '源服务器'
+  if (type === 'artifact') return '制品库'
+  return type || '未知来源'
+}
+
+const getFileSourcePath = (src: any) => {
+  if (!src) return '-'
+  if (src.type === 'server') {
+    const host = src.source_server_host || src.server || src.host || ''
+    const path = src.source_server_path || src.source_path || src.path || ''
+    if (host && path) return `${host}:${path}`
+    if (path) return path
+    return host || '-'
+  }
+
+  const name = src.filename || src.name
+  const storagePath = src.storage_path
+  const url = src.download_url
+  if (name && storagePath) return `${name} (${storagePath})`
+  if (name) return name
+  if (storagePath) return storagePath
+  if (url) return url
+  return '-'
 }
 
 // 选择步骤（点击步骤时切换选中状态）
@@ -1618,6 +1665,27 @@ onUnmounted(() => {
 
 .progress-stats {
   color: #666;
+  font-family: monospace;
+}
+
+.file-sources {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.file-source-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #555;
+}
+
+.file-source-path,
+.file-dest-path {
   font-family: monospace;
 }
 
