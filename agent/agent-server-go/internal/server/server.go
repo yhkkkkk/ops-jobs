@@ -383,6 +383,26 @@ func (s *Server) handleRegister(c *gin.Context) {
 		return
 	}
 
+	// 通知控制面 Agent 已上线（通过状态流）
+	if s.statusStream != nil {
+		statusFields := map[string]interface{}{
+			"agent_id":   agentID,
+			"agent_name": req.Name,
+			"host_id":    req.HostID,
+			"status":     constants.StatusActive,
+			"event":      "registered",
+			"labels":     req.Labels,
+		}
+		if req.System != nil {
+			if systemJSON, err := sonic.Marshal(req.System); err == nil {
+				statusFields["system"] = string(systemJSON)
+			}
+		}
+		if err := s.statusStream.PushStatus(c.Request.Context(), statusFields); err != nil {
+			logger.GetLogger().WithError(err).WithField("agent_id", agentID).Warn("push registration status to stream failed")
+		}
+	}
+
 	wsURL := fmt.Sprintf("ws://%s:%d/ws/agent/%s?token=%s",
 		s.cfg.Server.Host, s.cfg.Server.Port, agentID, conn.Token)
 

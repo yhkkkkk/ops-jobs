@@ -94,10 +94,10 @@
 
 - **Agent-Server 支持**: 统一的 Agent-Server 模式，支持跨云跨网络部署，任务/日志/结果走单一 WebSocket 通道
 - **控制面集成**: Django 侧提供 Agent 安装/卸载、生命周期管理、版本管理和批量操作，支持基于安装脚本的 `pending → online → offline/disabled` 状态机
-- ****Agent-Server 网关****: 维护与 Agent 的 WebSocket 连接，基于 Asynq 队列分发任务，并通过 **Redis Streams 将日志/结果/状态回传控制面**；日志/结果消息携带 `message_id`，服务端幂等去重并回 `ack`
+- ****Agent-Server 网关****: 维护与 Agent 的 WebSocket 连接，通过 **Redis Streams 将日志/结果/状态回传控制面**；日志/结果消息携带 `message_id`，服务端幂等去重并回 `ack`；离线任务使用 PendingTaskStore 持久化
 - **幂等与取消**: 控制面提供任务取消 API；Agent 侧维护“最近完成任务”缓存避免重复执行，Agent-Server 优先通过 WS 下发取消指令，失败时回退删除队列任务
 - **多语言执行器**: Agent 内置 Shell / Python / PowerShell / JS 等多语言执行器，支持并发与基础重试
-- **任务分发**: 控制面主动推送任务到 Agent-Server，Agent-Server 通过 WebSocket 实时推送给 Agent（Agent 在线时）或入队到 Asynq 队列（Agent 离线时）
+- **任务分发**: 控制面主动推送任务到 Agent-Server，Agent-Server 通过 WebSocket 实时推送给 Agent（Agent 在线时）或持久化到 PendingTaskStore（Agent 离线时）
 - **资源监控**: 实时收集和上报 Agent 系统资源使用情况（CPU、内存、磁盘、网络）
 - **性能指标**: 内置性能监控和指标收集（任务统计、执行时间、网络传输等）
 - **统一错误码**: 完善的错误码体系，便于问题定位和错误处理
@@ -110,7 +110,7 @@
 - **框架**: Django 5.0.1 + Django REST Framework 3.14+
 - **数据库**: SQLite (开发) / PostgreSQL (生产)
 - **缓存**: Redis 6.4+
-- **任务调度与队列**: APScheduler + Redis（控制面定时任务与后台任务） / Asynq（Agent-Server 任务队列）
+- **任务调度与队列**: APScheduler + Redis（控制面定时任务与后台任务） / PendingTaskStore（Agent-Server 离线任务持久化）
 - **认证**: JWT + Session + Guardian
 - **API 文档**: drf-spectacular (OpenAPI 3.0)
 - **权限**: django-guardian 3.0+
@@ -132,7 +132,7 @@
 - **语言**: Go 1.24+
 - **Web 框架**: Gin 1.10+ (HTTP API服务)
 - **WebSocket**: Gorilla WebSocket 1.5+ (Agent连接管理)
-- **任务队列**: Asynq (任务分发和重试)
+- **任务持久化**: PendingTaskStore Redis（离线任务存储）
 - **配置管理**: Viper 1.21+ (配置文件和环境变量)
 - **日志系统**: Logrus + Lumberjack (结构化日志)
 - **认证**: HMAC签名 (可选的安全认证)
@@ -155,7 +155,7 @@
 - **实时通信**: SSE + Redis Stream 实时日志推送
 - **健康检查**: django-health-check 3.20+ 系统监控
 - **日志系统**: 结构化日志记录和轮转
-- **任务队列**: Redis + APScheduler 后台任务调度，Agent-Server 侧使用 Asynq 进行任务排队与重试
+- **任务队列**: Redis + APScheduler 后台任务调度，Agent-Server 侧使用 PendingTaskStore 进行离线任务持久化
 - **缓存系统**: Redis 6.4+ 多数据库缓存
 - **权限系统**: django-guardian 3.0+ 对象级权限
 - **API 文档**: drf-spectacular OpenAPI 3.0 文档
@@ -785,83 +785,191 @@ GET /api/executor/execution-records/{id}/
 GET /api/dashboard/stats/
 ```
 
-## 🤖 Agent 使用指南
+## 🤖 Agent / Agent-Server 架构指南
+
+### 系统架构总览
+
+```mermaid
+graph TB
+    subgraph "Control Plane 控制面 Django"
+        CP[控制面 API]
+        SSE[SSE 实时推送]
+        RedisCP[Redis Client]
+    end
+
+    subgraph "Agent-Server Go"
+        AS[Agent-Server :8080]
+        WSM[WebSocket Manager]
+        Dispatcher[任务分发器]
+        PendingStore[PendingTaskStore Redis]
+        LogWriter[日志流写入]
+        ResultWriter[结果流写入]
+        StatusWriter[状态流写入]
+        AckStore[ACK 存储 Redis]
+    end
+
+    subgraph "Agent Go"
+        Agent[Agent]
+        WSClient[WebSocket Client]
+        Outbox[FileOutbox 本地文件]
+        Executor[任务执行器]
+        Heartbeat[心跳循环]
+    end
+
+    subgraph "Redis Streams"
+        Logs[agent_logs]
+        Results[agent_results]
+        Status[agent_status]
+        Ack[agent-ack:*]
+    end
+
+    %% 连接关系
+    CP -->|HTTP POST 任务| AS
+    AS -->|WebSocket| Agent
+    Agent -->|WebSocket| AS
+    AS -->|XADD| Logs
+    AS -->|XADD| Results
+    AS -->|XADD| Status
+    AS -->|HSET| Ack
+    Logs -->|XREAD| RedisCP
+    Results -->|XREAD| RedisCP
+    Status -->|XREAD| RedisCP
+    RedisCP -->|SSE| SSE
+    Agent -->|Persist| Outbox
+```
+
+### Agent 注册流程
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant AS as Agent-Server
+    participant R as Redis
+    participant CP as Control Plane
+
+    Note over A,CP: Agent-Server 模式注册流程
+
+    A->>AS: POST /api/agents/register<br/>{name, token, system, labels}
+    AS->>AS: 生成 agent_id
+    AS->>AS: 保存到 Manager<br/>agents[agent_id]
+    AS->>R: XADD agent_status<br/>{event: registered, status: online}
+    AS->>A: 200 OK<br/>{id, ws_url, status: active}
+    A->>AS: WS 连接 ws://.../ws/agent/{id}?token={token}
+    AS->>AS: 更新 Conn.LastHeartbeat
+
+    Note over CP: consume_streams.py 消费状态流
+    R->>CP: 消费 agent_status 更新 Agent 状态
+```
+
+### 任务分发流程
+
+```mermaid
+sequenceDiagram
+    participant CP as Control Plane
+    participant AS as Agent-Server
+    participant A as Agent
+    participant R as Redis
+
+    CP->>AS: POST /api/agents/:id/tasks/<br/>{task_spec}
+    AS->>AS: 验证 Agent 在线状态
+
+    alt Agent 在线
+        AS->>A: WebSocket: type=task<br/>{message_id, task}
+        A->>AS: WS: type=ack {message_id}
+        AS->>R: HSET agent-ack:{message_id}
+        A->>AS: WS: type=log {message_id, content}
+        A->>AS: WS: type=result {message_id, exit_code, log}
+    else Agent 离线
+        AS->>R: LPUSH pending_tasks:{agent_id}
+    end
+
+    A->>AS: 心跳 WS: type=heartbeat
+    AS->>R: XADD agent_status {status: online}
+```
+
+### 消息可靠性机制
+
+```mermaid
+flowchart TB
+    subgraph "Agent 发送端"
+        Msg[生成消息]
+        ID[分配 message_id]
+        Outbox[FileOutbox 持久化]
+        WS[WebSocket 发送]
+        Ack[等待 ACK]
+    end
+
+    subgraph "Agent-Server 接收端"
+        Receive[接收消息]
+        Dedup[幂等检查 Redis]
+        Process[处理消息]
+        Reply[回复 ACK]
+        Stream[写入 Redis Stream]
+    end
+
+    Msg --> ID
+    ID --> Outbox
+    Outbox --> WS
+    WS --> Receive
+    Receive --> Dedup
+    Dedup -->|已存在| Skip[丢弃]
+    Dedup -->|新消息| Process
+    Process --> Reply
+    Reply --> Stream
+```
+
+### 数据流汇总
+
+| 数据类型  | 源     | 目标   | 传输方式           | 用途              |
+| --------- | ------ | ------ | ------------------ | ----------------- |
+| 任务下发  | 控制面 | Agent  | HTTP → WS         | 执行脚本/文件传输 |
+| 任务结果  | Agent  | 控制面 | WS → Redis Stream | 更新执行状态      |
+| 执行日志  | Agent  | 控制面 | WS → Redis Stream | 实时日志 SSE      |
+| 心跳/状态 | Agent  | 控制面 | WS → Redis Stream | 在线状态监控      |
+| 任务取消  | 控制面 | Agent  | HTTP → WS         | 中断执行          |
+
+### Redis Stream 配置
+
+| Stream Key        | 用途          | 消费者                  |
+| ----------------- | ------------- | ----------------------- |
+| `agent_logs`    | 执行日志      | consume_streams.py, SSE |
+| `agent_results` | 执行结果+进度 | consume_streams.py, SSE |
+| `agent_status`  | 在线状态变更  | consume_streams.py      |
+| `agent-ack:*`   | ACK 存储      | Agent-Server 去重       |
+
+### 组件职责
+
+| 组件                       | 职责                                                   |
+| -------------------------- | ------------------------------------------------------ |
+| **Agent**            | 任务执行、日志上报、心跳、本地消息持久化（FileOutbox） |
+| **Agent-Server**     | Agent 连接管理、任务分发、消息聚合、Redis Stream 写入  |
+| **PendingTaskStore** | 离线任务持久化，Agent 重连后补发                       |
+| **FileOutbox**       | Agent 断线时本地消息持久化，重连后自动补发             |
+| **ACK Store**        | 消息去重，避免重复处理                                 |
+| **SSE**              | 向前端推送日志和进度更新                               |
 
 ### Agent 连接模式
 
-#### Agent-Server 模式
+仅支持 **Agent-Server 模式**：
 
-统一的 Agent 管理模式，支持跨云跨网络部署。
-
-**配置示例** (`agent/agent-go/configs/config.yaml`):
-
-```yaml
-mode: "agent-server"
-agent_server_url: "ws://agent-server.example.com:8080"
-agent_token: "your-token"
-agent_name: "agent-01"
-http_addr: ":8080"
-heartbeat_interval: 10
 ```
-
-**特点**:
-
-- Agent 通过 WebSocket 连接到 Agent-Server
-- Agent-Server 从控制面拉取任务并推送给 Agent（实时）
-- Agent-Server 批量聚合日志并推送到控制面
-- 支持跨云、跨网络部署
-- 减少控制面连接压力
-
-### Agent-Server 部署
-
-**配置示例** (`agent/agent-server-go/configs/config.yaml`):
-
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-
-control_plane:
-  url: "http://localhost:8000"
-  token: "your-token"
-  timeout: 30s
-  task_poll_interval: 5s
-  forward_heartbeat: true
-
-agent:
-  max_connections: 1000
-  heartbeat_timeout: 60s
-  cleanup_interval: 30s
-
-logging:
-  level: "info"
-  file: "logs/agent-server.log"
-```
-
-### Agent 功能特性
-
-- **脚本执行**: 支持 Shell、Python、PowerShell 等脚本执行
-- **文件传输**: 支持文件上传和下载，支持带宽限制
-- **实时日志**: 实时日志推送和查看
-- **系统监控**: 自动收集和上报系统资源使用情况
-- **性能指标**: 内置性能监控和指标收集
-- **错误处理**: 统一的错误码体系
-- **资源限制**: 支持带宽、CPU、内存限制
-- **并发控制**: 可配置的最大并发任务数
-
-### Agent 本地 HTTP 服务
-
-Agent 提供本地 HTTP 服务，可用于健康检查、指标查询等：
-
-```bash
-# 健康检查
-curl http://localhost:8080/health
-
-# 查询性能指标
-curl http://localhost:8080/metrics
-
-# 查询系统信息
-curl http://localhost:8080/system
+┌─────────────────────────────────────────────────────────────────┐
+│                    Agent-Server 模式                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   Agent (内网)          Agent-Server (DMZ)        控制面         │
+│       │                      │                      │           │
+│       │  WebSocket (ws://)   │                      │           │
+│       └─────────────────────►│                      │           │
+│                              │  HTTP (POST tasks)   │           │
+│                              │◄─────────────────────┘           │
+│                              │                      │           │
+│                              │  Redis Streams      │           │
+│                              └─────────────────────►│           │
+│                                                      │           │
+└─────────────────────────────────────────────────────────────────┘
+│ 特点: 跨云、跨网络，单一 WS 通道，无 HTTP 回退                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔧 故障排查
@@ -882,7 +990,6 @@ tail -f logs/ssh.log
 ```
 
 **2. 前端构建失败**
-**2. 前端构建失败**
 
 ```bash
 # 检查依赖
@@ -896,7 +1003,7 @@ npm run type-check
 rm -rf node_modules/.cache
 ```
 
-**4. 权限问题**
+**3. 权限问题**
 
 ```bash
 # 检查 Guardian 配置
@@ -906,7 +1013,7 @@ python manage.py shell -c "from guardian.shortcuts import get_perms; print(get_p
 tail -f logs/permissions.log
 ```
 
-**5. 实时日志问题**
+**4. 实时日志问题**
 
 ```bash
 # 检查Redis Stream
@@ -919,7 +1026,7 @@ curl -N -H "Accept: text/event-stream" http://localhost:8000/api/realtime/sse/co
 python manage.py shell -c "from utils.realtime_logs import realtime_log_service; print(realtime_log_service.redis_client.ping())"
 ```
 
-**6. Agent 连接问题**
+**5. Agent 连接问题**
 
 ```bash
 # 检查 Agent 状态
@@ -938,7 +1045,7 @@ curl http://localhost:8080/health
 curl http://agent-server:8080/health
 ```
 
-**7. Agent-Server 问题**
+**6. Agent-Server 问题**
 
 ```bash
 # 检查 Agent-Server 状态

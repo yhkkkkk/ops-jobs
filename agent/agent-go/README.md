@@ -59,6 +59,8 @@ graph TD
 ```
 
 #### 代码结构
+
+```plaintext
 agent-go/
 ├── cmd/agent/          # 主程序入口
 ├── internal/
@@ -167,27 +169,27 @@ logging:
 
 ## 配置说明
 
-| 环境变量（层级名）                                      | 配置文件字段                | 默认值                           | 说明                                             |
-| ------------------------------------------------------- | --------------------------- | -------------------------------- | ------------------------------------------------ |
-| `AGENT_CONNECTION_AGENT_SERVER_URL`                   | `agent_server_url`        | `ws://localhost:8080`          | Agent-Server WebSocket 入口（唯一传输通道）      |
-| `AGENT_CONNECTION_AGENT_SERVER_BACKUP_URL`            | `agent_server_backup_url` | ``                               | 备用 Agent-Server WS 入口                        |
-| `AGENT_CONNECTION_WS_BACKOFF_INITIAL_MS`              | `ws_backoff_initial_ms`   | `1000`                         | WS 重连初始退避（毫秒）                          |
-| `AGENT_CONNECTION_WS_BACKOFF_MAX_MS`                  | `ws_backoff_max_ms`       | `30000`                        | WS 重连最大退避（毫秒）                          |
-| `AGENT_CONNECTION_WS_MAX_RETRIES`                     | `ws_max_retries`          | `6`                            | WS 重试次数                                      |
-| `AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE`                 | `ws_outbox_max_size`      | `2000`                         | WS 断线本地缓冲上限（条）                        |
-| `AGENT_IDENTIFICATION_AGENT_TOKEN`                    | `agent_token`             | -                                | Agent 认证 Token                                 |
-| `AGENT_IDENTIFICATION_AGENT_NAME`                     | `agent_name`              | 主机名                           | Agent 名称                                       |
-| `AGENT_LOGGING_LOG_DIR`                               | `log_dir`                 | `/tmp/ops-job-agent/logs`      | 日志目录                                         |
-| `AGENT_LOGGING_LOG_MAX_SIZE`                          | `log_max_size`            | `10`                           | 日志文件最大大小（MB）                           |
-| `AGENT_LOGGING_LOG_MAX_FILES`                         | `log_max_files`           | `5`                            | 最大保留日志文件数                               |
-| `AGENT_LOGGING_LOG_MAX_AGE`                           | `log_max_age`             | `7`                            | 日志保留天数                                     |
-| `AGENT_TASK_HEARTBEAT_INTERVAL`                       | `task.heartbeat_interval` | `10`                           | 心跳间隔（秒，WS）                               |
-| `AGENT_TASK_MAX_CONCURRENT_TASKS`                     | `task.max_concurrent_tasks` | `5`                          | 最大并发任务数                                   |
-| `AGENT_TASK_MAX_EXECUTION_TIME_SEC`                   | `task.max_execution_time_sec` | `7200`                      | 全局最大任务执行时间（秒）                       |
-| `AGENT_LOGGING_LOG_BATCH_SIZE`                        | `logging.log_batch_size`     | `200`                          | Outbox 每批冲刷条数（<=0 回退默认 200）          |
-| `AGENT_LOGGING_LOG_FLUSH_INTERVAL`                    | `logging.log_flush_interval` | `200`                          | Outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷）      |
-| `AGENT_RESOURCE_LIMIT_BANDWIDTH_LIMIT`                | `resource_limit.bandwidth_limit` | `0`                   | 带宽限制（MB/s，0 表示不限制）                   |
-| `AGENT_CONFIG_FILE`                                   | -                           | `~/.ops-job-agent/config.yaml` | 配置文件路径                                     |
+| 环境变量（层级名）                           | 配置文件字段                       | 默认值                           | 说明                                        |
+| -------------------------------------------- | ---------------------------------- | -------------------------------- | ------------------------------------------- |
+| `AGENT_CONNECTION_AGENT_SERVER_URL`        | `agent_server_url`               | `ws://localhost:8080`          | Agent-Server WebSocket 入口（唯一传输通道） |
+| `AGENT_CONNECTION_AGENT_SERVER_BACKUP_URL` | `agent_server_backup_url`        | ``                               | 备用 Agent-Server WS 入口                   |
+| `AGENT_CONNECTION_WS_BACKOFF_INITIAL_MS`   | `ws_backoff_initial_ms`          | `1000`                         | WS 重连初始退避（毫秒）                     |
+| `AGENT_CONNECTION_WS_BACKOFF_MAX_MS`       | `ws_backoff_max_ms`              | `30000`                        | WS 重连最大退避（毫秒）                     |
+| `AGENT_CONNECTION_WS_MAX_RETRIES`          | `ws_max_retries`                 | `6`                            | WS 重试次数                                 |
+| `AGENT_CONNECTION_WS_OUTBOX_MAX_SIZE`      | `ws_outbox_max_size`             | `2000`                         | WS 断线本地缓冲上限（条）                   |
+| `AGENT_IDENTIFICATION_AGENT_TOKEN`         | `agent_token`                    | -                                | Agent 认证 Token                            |
+| `AGENT_IDENTIFICATION_AGENT_NAME`          | `agent_name`                     | 主机名                           | Agent 名称                                  |
+| `AGENT_LOGGING_LOG_DIR`                    | `log_dir`                        | `/tmp/ops-job-agent/logs`      | 日志目录                                    |
+| `AGENT_LOGGING_LOG_MAX_SIZE`               | `log_max_size`                   | `10`                           | 日志文件最大大小（MB）                      |
+| `AGENT_LOGGING_LOG_MAX_FILES`              | `log_max_files`                  | `5`                            | 最大保留日志文件数                          |
+| `AGENT_LOGGING_LOG_MAX_AGE`                | `log_max_age`                    | `7`                            | 日志保留天数                                |
+| `AGENT_TASK_HEARTBEAT_INTERVAL`            | `task.heartbeat_interval`        | `10`                           | 心跳间隔（秒，WS）                          |
+| `AGENT_TASK_MAX_CONCURRENT_TASKS`          | `task.max_concurrent_tasks`      | `5`                            | 最大并发任务数                              |
+| `AGENT_TASK_MAX_EXECUTION_TIME_SEC`        | `task.max_execution_time_sec`    | `7200`                         | 全局最大任务执行时间（秒）                  |
+| `AGENT_LOGGING_LOG_BATCH_SIZE`             | `logging.log_batch_size`         | `200`                          | Outbox 每批冲刷条数（<=0 回退默认 200）     |
+| `AGENT_LOGGING_LOG_FLUSH_INTERVAL`         | `logging.log_flush_interval`     | `200`                          | Outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷） |
+| `AGENT_RESOURCE_LIMIT_BANDWIDTH_LIMIT`     | `resource_limit.bandwidth_limit` | `0`                            | 带宽限制（MB/s，0 表示不限制）              |
+| `AGENT_CONFIG_FILE`                        | -                                  | `~/.ops-job-agent/config.yaml` | 配置文件路径                                |
 
 **注意**: 环境变量优先级高于配置文件。
 
@@ -268,10 +270,10 @@ Agent 会定期收集并上报以下系统信息：
 
 ## 开发计划
 
-- [x] WebSocket 实时日志推送
-- [x] 资源限制（带宽限制）
-- [x] 性能监控和指标上报
-- [x] 无状态架构改造 (FileOutbox, 移除 Redis/Asynq)
+- [X] WebSocket 实时日志推送
+- [X] 资源限制（带宽限制）
+- [X] 性能监控和指标上报
+- [X] 无状态架构改造 (FileOutbox, 移除 Redis/Asynq)
 - [ ] TLS 支持
 - [ ] 插件系统
 
