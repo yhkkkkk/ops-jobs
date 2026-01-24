@@ -480,10 +480,6 @@ EXECUTION_LOGS_DIR=/path/to/logs/executions
 # 前端配置
 VITE_API_BASE_URL=http://localhost:8000/api
 
-# Celery 配置
-CELERY_BROKER_URL=redis://localhost:6379/2
-CELERY_RESULT_BACKEND=redis://localhost:6379/2
-
 # 云同步配置
 CLOUD_ALIYUN_ACCESS_KEY=your-access-key
 CLOUD_ALIYUN_SECRET_KEY=your-secret-key
@@ -506,23 +502,25 @@ AGENT_SERVER_CONTROL_PLANE_URL=http://localhost:8000
 AGENT_SERVER_CONTROL_PLANE_TOKEN=your-token
 AGENT_SERVER_MAX_CONNECTIONS=1000
 AGENT_SERVER_HEARTBEAT_TIMEOUT=60
-AGENT_SERVER_TASK_POLL_INTERVAL=5
 ```
 
 ### 功能开关
 
 ```python
-# 验证码开关
+# 验证码开关（与双因子认证互斥）
 CAPTCHA_ENABLED = True
 
-# 缓存开关
-CACHE_ENABLED = True
+# 双因子认证/OTP 开关（与验证码互斥）
+TWO_FACTOR_ENABLED = False
+
+# 登录限制开关（防止暴力破解）
+AXES_ENABLED = True
+
+# LDAP 认证开关
+LDAP_ENABLED = False
 
 # 调试模式
 DEBUG = False
-
-# 权限系统开关
-GUARDIAN_ENABLED = True
 ```
 
 ## 📝 开发指南
@@ -689,11 +687,10 @@ uv run python manage.py clearsessions
 
 ### 开发运维
 
-- **CI/CD 集成**: 与持续集成流水线集成
 - **环境管理**: 开发、测试、生产环境的统一管理
 - **数据库运维**: 数据库备份、恢复等操作
 - **日志收集**: 批量日志收集和分析
-- **代码部署**: 支持多种脚本语言的自动化部署
+- **脚本自动化**: 支持多种脚本语言的自动化任务
 
 ### 安全运维
 
@@ -1066,7 +1063,6 @@ curl http://localhost:8000/health
 - 系统资源使用率 (CPU、内存、磁盘)
 - 数据库连接数和查询性能
 - Redis 内存使用和命中率
-- Celery 任务队列长度和执行时间
 - HTTP 请求响应时间和错误率
 - 前端页面加载性能
 - SSE 连接数和实时日志推送性能

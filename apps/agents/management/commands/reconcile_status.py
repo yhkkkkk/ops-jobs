@@ -1,6 +1,6 @@
 """
 状态同步定时任务 - 检测和修复任务状态不一致
-可通过 crontab 或 celery beat 定时执行
+可通过 crontab 或 APScheduler 定时执行
 """
 import logging
 
