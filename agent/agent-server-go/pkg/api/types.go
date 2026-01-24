@@ -41,7 +41,6 @@ type TaskSpec struct {
 	TimeoutSec   int               `json:"timeout_sec,omitempty"`
 	WorkDir      string            `json:"work_dir,omitempty"`
 	FileTransfer *FileTransferSpec `json:"file_transfer,omitempty"`
-	FilePreview  *FilePreviewSpec  `json:"file_preview,omitempty"`
 	// ExecutionRecord 关联信息（用于重试和状态跟踪）
 	ExecutionID  string `json:"execution_id,omitempty"`   // ExecutionRecord的execution_id
 	StepID       string `json:"step_id,omitempty"`        // ExecutionStep的ID（如果是工作流）
@@ -61,37 +60,18 @@ type FileTransferSpec struct {
 	AuthHeaders    map[string]string `json:"auth_headers,omitempty"`    // 认证头
 }
 
-// FilePreviewSpec 文件预览规范
-type FilePreviewSpec struct {
-	RemotePath string `json:"remote_path"`         // 远程文件路径
-	Mode       string `json:"mode,omitempty"`      // head/tail/range
-	Offset     int64  `json:"offset,omitempty"`    // 偏移（range）
-	MaxBytes   int64  `json:"max_bytes,omitempty"` // 最大读取字节
-	Encoding   string `json:"encoding,omitempty"`  // 期望编码，默认 utf-8
-}
-
 // TaskResult 任务执行结果
 type TaskResult struct {
-	TaskID            string             `json:"task_id"`
-	Status            string             `json:"status"` // pending/running/success/failed/cancelled
-	ExitCode          int                `json:"exit_code"`
-	Log               string             `json:"log,omitempty"`
-	LogSize           int64              `json:"log_size,omitempty"`
-	LogPointer        string             `json:"log_pointer,omitempty"`
-	StartedAt         int64              `json:"started_at,omitempty"`
-	FinishedAt        int64              `json:"finished_at,omitempty"`
-	ErrorMsg          string             `json:"error_msg,omitempty"`
-	ErrorCode         int                `json:"error_code,omitempty"`
-	FilePreviewResult *FilePreviewResult `json:"file_preview_result,omitempty"`
-}
-
-// FilePreviewResult 文件预览结果
-type FilePreviewResult struct {
-	Content     string `json:"content,omitempty"`
-	Encoding    string `json:"encoding,omitempty"`
-	Size        int64  `json:"size,omitempty"`
-	IsTruncated bool   `json:"is_truncated,omitempty"`
-	Channel     string `json:"channel,omitempty"`
+	TaskID     string `json:"task_id"`
+	Status     string `json:"status"` // pending/running/success/failed/cancelled
+	ExitCode   int    `json:"exit_code"`
+	Log        string `json:"log,omitempty"`
+	LogSize    int64  `json:"log_size,omitempty"`
+	LogPointer string `json:"log_pointer,omitempty"`
+	StartedAt  int64  `json:"started_at,omitempty"`
+	FinishedAt int64  `json:"finished_at,omitempty"`
+	ErrorMsg   string `json:"error_msg,omitempty"`
+	ErrorCode  int    `json:"error_code,omitempty"`
 }
 
 // RegisterRequest Agent注册请求
@@ -118,9 +98,9 @@ type WebSocketMessage struct {
 	MessageID string                 `json:"message_id,omitempty"`
 	AckID     string                 `json:"ack_id,omitempty"`
 	Task      *TaskSpec              `json:"task,omitempty"`
-	Tasks     []*TaskSpec            `json:"tasks,omitempty"`     // 批量任务
+	Tasks     []*TaskSpec            `json:"tasks,omitempty"` // 批量任务
 	TaskID    string                 `json:"task_id,omitempty"`
-	TaskIDs   []string               `json:"task_ids,omitempty"`  // 批量任务ID
+	TaskIDs   []string               `json:"task_ids,omitempty"` // 批量任务ID
 	Result    *TaskResult            `json:"result,omitempty"`
 	Logs      []LogEntry             `json:"logs,omitempty"`
 	Payload   map[string]interface{} `json:"payload,omitempty"`

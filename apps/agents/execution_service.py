@@ -174,7 +174,6 @@ class AgentExecutionService:
         retry_count: int = 0,
         parent_task_id: str = None,
         run_as: str = None,  # 执行用户（用户名）
-        file_preview: Dict[str, Any] = None,
         file_transfer: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """
@@ -220,8 +219,6 @@ class AgentExecutionService:
         # 如果指定了执行用户，添加到task_spec
         if run_as:
             task_spec["run_as"] = run_as
-        if file_preview:
-            task_spec["file_preview"] = file_preview
         if file_transfer:
             task_spec["file_transfer"] = file_transfer
         return task_spec
@@ -605,119 +602,6 @@ class AgentExecutionService:
 
         except Exception as e:
             logger.error(f"通过Agent执行文件传输异常: {str(e)}", exc_info=True)
-            return {
-                'success': False,
-                'error': f'执行异常: {str(e)}'
-            }
-
-    @staticmethod
-    def execute_file_preview_via_agent(
-        execution_record: ExecutionRecord,
-        remote_path: str,
-        target_hosts: List[Host],
-        timeout: int = 60,
-        mode: str = "head",
-        offset: int = 0,
-        max_bytes: int = 131072,  # 默认128KB
-        encoding: str = "utf-8",
-        agent_server_url: str = None,
-        account_id: int = None,
-    ) -> Dict[str, Any]:
-        """
-        通过Agent执行文件预览
-        """
-        try:
-            results = []
-            success_count = 0
-            failed_count = 0
-
-            for host in target_hosts:
-                if not hasattr(host, 'agent') or not host.agent:
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'success': False,
-                        'error': '主机没有Agent'
-                    })
-                    failed_count += 1
-                    continue
-
-                agent = host.agent
-                if agent.status != 'online':
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'success': False,
-                        'error': f'Agent状态为 {agent.status}'
-                    })
-                    failed_count += 1
-                    continue
-
-                task_id = f"{execution_record.execution_id}_preview_{host.id}_{uuid.uuid4().hex[:8]}"
-
-                run_as = None
-                if account_id:
-                    try:
-                        from apps.hosts.models import ServerAccount
-                        account = ServerAccount.objects.get(id=account_id)
-                        run_as = account.username
-                    except ServerAccount.DoesNotExist:
-                        logger.warning(f"执行账号不存在: account_id={account_id}，将使用Agent默认用户")
-                    except Exception as e:
-                        logger.warning(f"获取执行账号失败: account_id={account_id}, 错误: {str(e)}，将使用Agent默认用户")
-
-                file_preview_spec = {
-                    'remote_path': remote_path,
-                    'mode': mode or 'head',
-                    'offset': offset or 0,
-                    'max_bytes': max_bytes or 0,
-                    'encoding': encoding or 'utf-8',
-                }
-
-                task_spec = AgentExecutionService.create_task_spec(
-                    task_id=task_id,
-                    name=f"{execution_record.name} - {host.name} (file_preview)",
-                    task_type="file_preview",
-                    timeout_sec=timeout,
-                    execution_id=str(execution_record.execution_id),
-                    host_id=host.id,
-                    run_as=run_as,
-                    file_preview=file_preview_spec,
-                )
-
-                push_result = AgentExecutionService.push_task_to_agent(
-                    agent=agent,
-                    task_spec=task_spec,
-                    agent_server_url=agent_server_url,
-                )
-
-                if push_result.get('success'):
-                    success_count += 1
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'task_id': task_id,
-                        'success': True,
-                    })
-                else:
-                    failed_count += 1
-                    results.append({
-                        'host_id': host.id,
-                        'host_name': host.name,
-                        'task_id': task_id,
-                        'success': False,
-                        'error': push_result.get('error', '推送任务失败')
-                    })
-
-            return {
-                'success': success_count > 0,
-                'success_count': success_count,
-                'failed_count': failed_count,
-                'results': results
-            }
-
-        except Exception as e:
-            logger.error(f"通过Agent执行文件预览异常: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'error': f'执行异常: {str(e)}'

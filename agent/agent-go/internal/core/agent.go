@@ -43,7 +43,7 @@ type HeartbeatStats struct {
 // Agent 是 Agent 进程的核心对象，负责注册、心跳、拉任务等
 type Agent struct {
 	cfg            *config.Config
-	wsClient       *wsclient.Client      // WebSocket 客户端（agent-server 模式）
+	wsClient       *wsclient.Client // WebSocket 客户端（agent-server 模式）
 	info           *AgentInfo
 	system         SystemInfo
 	ctx            context.Context
@@ -53,16 +53,15 @@ type Agent struct {
 	executor       *executor.Executor
 	scriptExecutor *executor.ScriptExecutor
 	fileExecutor   *executor.FileTransferExecutor
-	previewExecutor *executor.FilePreviewExecutor
 	maxTaskTime    time.Duration                    // 全局最大任务执行时间
 	taskSemaphore  semaphore.Semaphore              // 控制并发任务数
 	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
 	tasksLock      sync.RWMutex                     // 任务映射锁
 	wsURL          string
-	outbox         *wsclient.FileOutbox            // 本地文件持久化的 Outbox
+	outbox         *wsclient.FileOutbox // 本地文件持久化的 Outbox
 	// completedTasks 用于幂等控制的最近已完成任务集合（LRU）
-	completedTasks  map[string]time.Time
-	completedLock   sync.Mutex
+	completedTasks map[string]time.Time
+	completedLock  sync.Mutex
 	// runningTaskLocks 用于防止同一任务同时执行的锁集合
 	runningTaskLocks map[string]*sync.Mutex
 	runningLocksLock sync.RWMutex
@@ -82,7 +81,6 @@ func NewAgent(cfg *config.Config) *Agent {
 	exec := executor.NewExecutor(cfg.Logging.LogDir)
 	scriptExec := executor.NewScriptExecutor(exec, "")
 	fileExec := executor.NewFileTransferExecutor(exec)
-	previewExec := executor.NewFilePreviewExecutor(exec)
 
 	// 创建任务信号量（控制并发数）
 	maxConcurrent := cfg.Task.MaxConcurrentTasks
@@ -123,7 +121,6 @@ func NewAgent(cfg *config.Config) *Agent {
 		executor:         exec,
 		scriptExecutor:   scriptExec,
 		fileExecutor:     fileExec,
-		previewExecutor:  previewExec,
 		taskSemaphore:    taskSemaphore,
 		runningTasks:     make(map[string]*executor.RunningTask),
 		completedTasks:   make(map[string]time.Time),
@@ -667,8 +664,6 @@ func (a *Agent) executeTaskByType(task *TaskSpec, logCallback func(string)) (*ap
 			task.FileTransfer.BandwidthLimit = a.cfg.ResourceLimit.BandwidthLimit
 		}
 		result, err = a.fileExecutor.ExecuteTransfer(taskCtx, task, logCallback)
-	case constants.TaskTypeFilePreview:
-		result, err = a.previewExecutor.ExecutePreview(taskCtx, task, logCallback)
 	case constants.TaskTypeScript:
 		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
 	default:

@@ -25,8 +25,6 @@ type TaskSpec struct {
 	RunAs      string            `json:"run_as,omitempty"`      // 执行用户（用户名）
 	// 文件传输相关（artifact 上传：Agent 从 download_url 拉取并写入 remote_path）
 	FileTransfer *FileTransferSpec `json:"file_transfer,omitempty"`
-	// 文件预览（读取远程主机上的文件片段）
-	FilePreview *FilePreviewSpec `json:"file_preview,omitempty"`
 }
 
 // FileTransferSpec 文件传输规范（artifact-only，下载 URL -> 远程路径）
@@ -37,15 +35,6 @@ type FileTransferSpec struct {
 	Checksum       string            `json:"checksum,omitempty"`        // sha256 校验（可选）
 	Size           int64             `json:"size,omitempty"`            // 文件大小（字节，可选）
 	AuthHeaders    map[string]string `json:"auth_headers,omitempty"`    // 可选认证头
-}
-
-// FilePreviewSpec 文件预览规范（仅读取小段内容）
-type FilePreviewSpec struct {
-	RemotePath string `json:"remote_path"`           // 要预览的远程文件路径
-	Mode       string `json:"mode,omitempty"`        // head/tail/range，默认 head
-	Offset     int64  `json:"offset,omitempty"`      // 起始偏移（用于 range）
-	MaxBytes   int64  `json:"max_bytes,omitempty"`   // 最大读取字节数，默认由控制面限制
-	Encoding   string `json:"encoding,omitempty"`    // 期望编码，默认 utf-8，失败回退 base64
 }
 
 // TaskResult 上报给控制面的执行结果
@@ -62,17 +51,6 @@ type TaskResult struct {
 	ErrorCode  int    `json:"error_code,omitempty"` // 错误码（统一错误码体系）
 	// 实时日志上报
 	IsIncremental bool `json:"is_incremental,omitempty"` // 是否为增量日志
-	// 文件预览结果（仅当任务类型为 file_preview 时使用）
-	FilePreviewResult *FilePreviewResult `json:"file_preview_result,omitempty"`
-}
-
-// FilePreviewResult 文件预览返回
-type FilePreviewResult struct {
-	Content     string `json:"content,omitempty"`       // 文本内容或 base64（当 encoding=base64 时）
-	Encoding    string `json:"encoding,omitempty"`      // utf-8/base64
-	Size        int64  `json:"size,omitempty"`          // 文件总大小（如可获取）
-	IsTruncated bool   `json:"is_truncated,omitempty"`  // 是否截断
-	Channel     string `json:"channel,omitempty"`       // 日志/结果通道标记，如 agent_preview
 }
 
 // SystemInfo 描述 agent 所在主机的关键信息

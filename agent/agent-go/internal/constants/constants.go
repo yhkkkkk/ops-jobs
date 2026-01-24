@@ -4,7 +4,6 @@ const (
 	// Task types
 	TaskTypeScript       = "script"
 	TaskTypeFileTransfer = "file_transfer"
-	TaskTypeFilePreview  = "file_preview"
 
 	// Task statuses
 	StatusPending   = "pending"
@@ -50,8 +49,6 @@ const (
 	// File transfer
 	DownloadRetryCount      = 3
 	DefaultDownloadTimeoutS = 300
-	// File preview
-	DefaultMaxPreviewBytes = 128 * 1024
 
 	// Patterns
 	TaskLogFilePattern = "task_%s_%d.log"

@@ -67,13 +67,6 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 		}
 	}
 
-	if result.FilePreviewResult != nil {
-		values["preview_content"] = result.FilePreviewResult.Content
-		values["preview_encoding"] = result.FilePreviewResult.Encoding
-		values["preview_is_truncated"] = result.FilePreviewResult.IsTruncated
-		values["preview_size"] = result.FilePreviewResult.Size
-		values["preview_channel"] = result.FilePreviewResult.Channel
-	}
 	return w.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: w.key,
 		Values: values,
