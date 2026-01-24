@@ -125,61 +125,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(agent)
         return SycResponse.success(content=serializer.data, message="获取agent详情成功")
 
-    @action(detail=False, methods=["get"], url_path="me")
-    def me(self, request):
-        """
-        通过 token 获取当前 agent 信息（用于 agent 首次启动时获取自己的 ID）
-        """
-        # 从 Authorization header 读取 token
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        if not auth_header.startswith('Bearer '):
-            return SycResponse.error(message="缺少 Authorization Bearer token", code=401)
-        token = auth_header.replace('Bearer ', '').strip()
-
-        if not token:
-            return SycResponse.error(message="token 不能为空", code=400)
-
-        # 通过 token 查找 Agent
-        from .models import AgentToken
-        import hashlib
-
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-
-        # 查找有效的 token
-        agent_token = AgentToken.objects.filter(
-            token_hash=token_hash,
-            revoked_at__isnull=True
-        ).first()
-
-        if not agent_token:
-            return SycResponse.error(message="token 无效或已吊销", code=403)
-
-        # 检查 token 是否过期
-        if agent_token.expired_at and agent_token.expired_at <= timezone.now():
-            return SycResponse.error(message="token 已过期", code=403)
-
-        agent = agent_token.agent
-
-        # 更新 Agent 状态为 online（如果之前是 pending）
-        if agent.status == 'pending':
-            agent.status = 'online'
-            agent.save(update_fields=['status', 'updated_at'])
-            try:
-                set_agent_status_cache(agent.id, 'online')
-            except Exception:
-                pass
-
-        serializer = AgentDetailSerializer(agent)
-        return SycResponse.success(
-            content={
-                'id': str(agent.host_id),  # Agent ID 就是 host_id
-                'name': agent.host.name,
-                'status': agent.status,
-                **serializer.data
-            },
-            message="获取agent信息成功"
-        )
-
     @action(detail=True, methods=["post"], url_path="issue_token")
     def issue_token(self, request, pk=None):
         agent = self.get_object()

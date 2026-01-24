@@ -46,13 +46,6 @@ redis:
   password: ""
   db: 0
 
-asynq:
-  enabled: true           # 启用Asynq用于Agent离线时的任务排队
-  concurrency: 10         # 异步任务处理并发数
-  retry_max: 3           # 任务失败最大重试次数
-  retry_delay: "1s"      # 重试间隔
-  task_timeout: "5m"     # 单个任务超时时间
-
 auth:
   shared_secret: ""    # 可选，控制面调用时用于 HMAC 校验
   clock_skew: "300s"   # 允许的时间偏移

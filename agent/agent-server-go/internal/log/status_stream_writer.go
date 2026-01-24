@@ -2,9 +2,10 @@ package log
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"ops-job-agent-server/internal/config"
 
@@ -17,16 +18,12 @@ type StatusStreamWriter struct {
 	key    string
 }
 
-func NewStatusStreamWriter(cfg *config.Config) (*StatusStreamWriter, error) {
+func NewStatusStreamWriter(rdb *redis.Client, cfg *config.Config) (*StatusStreamWriter, error) {
 	if !cfg.StatusStream.Enabled {
 		return nil, nil
 	}
-	if !cfg.Redis.Enabled {
-		return nil, fmt.Errorf("status stream enabled but redis disabled")
-	}
-	rdb, err := NewRedisClient(cfg)
-	if err != nil {
-		return nil, err
+	if rdb == nil {
+		return nil, fmt.Errorf("status stream enabled but redis client not provided")
 	}
 	return &StatusStreamWriter{client: rdb, key: cfg.StatusStream.Key}, nil
 }
@@ -49,7 +46,7 @@ func (w *StatusStreamWriter) PushStatus(ctx context.Context, fields map[string]i
 		switch val := v.(type) {
 		case map[string]interface{}:
 			// 将嵌套的 map 序列化为 JSON 字符串
-			if jsonBytes, err := json.Marshal(val); err == nil {
+			if jsonBytes, err := sonic.Marshal(val); err == nil {
 				flatFields[k] = string(jsonBytes)
 			}
 		default:

@@ -406,7 +406,6 @@ const clearAuthErrorMessage = (message: string) => {
 const showUniqueAuthMessage = async (message: string) => {
   if (!authErrorMessages.has(message)) {
     authErrorMessages.add(message)
-    const { Message } = await import('@arco-design/web-vue')
     Message.warning(message)
     clearAuthErrorMessage(message)
   }

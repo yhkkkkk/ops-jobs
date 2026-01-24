@@ -20,7 +20,6 @@ import (
 	"ops-job-agent/internal/logger"
 	"ops-job-agent/internal/metrics"
 	"ops-job-agent/internal/system"
-	"ops-job-agent/internal/taskqueue"
 	wsclient "ops-job-agent/internal/websocket"
 )
 
@@ -43,28 +42,27 @@ type HeartbeatStats struct {
 
 // Agent 是 Agent 进程的核心对象，负责注册、心跳、拉任务等
 type Agent struct {
-	cfg             *config.Config
-	wsClient        *wsclient.Client     // WebSocket 客户端（agent-server 模式）
-	taskQueue       *taskqueue.TaskQueue // asynq任务队列（可选）
-	info            *AgentInfo
-	system          SystemInfo
-	ctx             context.Context
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
-	started         bool
-	executor        *executor.Executor
-	scriptExecutor  *executor.ScriptExecutor
-	fileExecutor    *executor.FileTransferExecutor
+	cfg            *config.Config
+	wsClient       *wsclient.Client      // WebSocket 客户端（agent-server 模式）
+	info           *AgentInfo
+	system         SystemInfo
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	started        bool
+	executor       *executor.Executor
+	scriptExecutor *executor.ScriptExecutor
+	fileExecutor   *executor.FileTransferExecutor
 	previewExecutor *executor.FilePreviewExecutor
-	maxTaskTime     time.Duration                    // 全局最大任务执行时间
-	taskSemaphore   semaphore.Semaphore              // 控制并发任务数
-	runningTasks    map[string]*executor.RunningTask // 正在运行的任务映射
-	tasksLock       sync.RWMutex                     // 任务映射锁
-	wsURL           string
-	wsOutbox        *wsclient.Outbox
+	maxTaskTime    time.Duration                    // 全局最大任务执行时间
+	taskSemaphore  semaphore.Semaphore              // 控制并发任务数
+	runningTasks   map[string]*executor.RunningTask // 正在运行的任务映射
+	tasksLock      sync.RWMutex                     // 任务映射锁
+	wsURL          string
+	outbox         *wsclient.FileOutbox            // 本地文件持久化的 Outbox
 	// completedTasks 用于幂等控制的最近已完成任务集合（LRU）
-	completedTasks map[string]time.Time
-	completedLock  sync.Mutex
+	completedTasks  map[string]time.Time
+	completedLock   sync.Mutex
 	// runningTaskLocks 用于防止同一任务同时执行的锁集合
 	runningTaskLocks map[string]*sync.Mutex
 	runningLocksLock sync.RWMutex
@@ -93,18 +91,6 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	taskSemaphore := semaphore.New(maxConcurrent)
 
-	// 创建asynq任务队列
-	var taskQueue *taskqueue.TaskQueue
-	if cfg.Asynq.Enabled && cfg.Redis.Asynq.Enabled {
-		var err error
-		taskQueue, err = taskqueue.NewTaskQueue(cfg)
-		if err != nil {
-			logger.GetLogger().WithError(err).Warn("create task queue failed, continuing without asynq")
-		} else {
-			logger.GetLogger().Info("asynq task queue initialized for agent")
-		}
-	}
-
 	// 设置全局最大任务执行时间
 	maxTaskTime := 2 * time.Hour // 默认2小时
 	if cfg.Task.MaxExecutionTimeSec > 0 {
@@ -118,11 +104,20 @@ func NewAgent(cfg *config.Config) *Agent {
 		outboxBatch = constants.OutboxFlushBatchSize
 	}
 
+	// 确定 outbox 文件存储目录
+	outboxDir := ""
+	logDir := cfg.Logging.LogDir
+	if logDir != "" {
+		outboxDir = logDir
+	} else {
+		// 使用默认目录
+		outboxDir = "."
+	}
+
 	agent := &Agent{
 		cfg:              cfg,
-		taskQueue:        taskQueue,
 		system:           collectSystemInfo(),
-		wsOutbox:         wsclient.NewOutbox(cfg.Connection.WSOutboxMaxSize),
+		outbox:           wsclient.NewFileOutbox("placeholder", outboxDir, cfg.Connection.WSOutboxMaxSize), // Will be recreated after registration
 		ctx:              ctx,
 		cancel:           cancel,
 		executor:         exec,
@@ -167,28 +162,6 @@ func (a *Agent) Start() error {
 		return err
 	}
 
-	// 启动asynq任务队列服务器
-	if a.taskQueue != nil {
-		// 注册任务处理器
-		a.taskQueue.RegisterHandler(func(ctx context.Context, task *api.TaskSpec) error {
-			// 从队列中取出任务后，直接执行
-			go a.executeTask(task)
-			return nil
-		})
-
-		// 启动asynq服务器
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			if err := a.taskQueue.Start(); err != nil {
-				logger.GetLogger().WithError(err).Error("asynq server error")
-			}
-		}()
-
-		// Agent上线时，处理待处理任务
-		go a.processPendingTasksFromQueue()
-	}
-
 	// 启动心跳循环
 	a.wg.Add(1)
 	go a.heartbeatLoop()
@@ -211,7 +184,7 @@ func (a *Agent) Start() error {
 				case <-a.ctx.Done():
 					return
 				case <-ticker.C:
-					a.flushWSOutbox()
+					a.flushOutbox()
 				}
 			}
 		}()
@@ -233,9 +206,9 @@ func (a *Agent) Stop() {
 		// 现阶段断开失败无需强制处理
 		a.wsClient.Disconnect()
 	}
-	// 停止asynq任务队列
-	if a.taskQueue != nil {
-		a.taskQueue.Stop()
+	// 关闭 Outbox
+	if a.outbox != nil {
+		a.outbox.Close()
 	}
 	a.wg.Wait()
 }
@@ -618,8 +591,8 @@ func (a *Agent) createLogCallback(taskID string) func(string) {
 		if a.wsClient != nil && a.wsClient.IsConnected() {
 			if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
 				logger.GetLogger().WithError(err).Error("send log via websocket failed")
-				if a.wsOutbox != nil {
-					a.wsOutbox.Enqueue(wsclient.Message{
+				if a.outbox != nil {
+					a.outbox.Enqueue(wsclient.Message{
 						Type:      constants.MessageTypeLog,
 						Timestamp: time.Now().UnixMilli(),
 						TaskID:    taskID,
@@ -629,8 +602,8 @@ func (a *Agent) createLogCallback(taskID string) func(string) {
 			}
 			return
 		}
-		if a.wsOutbox != nil {
-			a.wsOutbox.Enqueue(wsclient.Message{
+		if a.outbox != nil {
+			a.outbox.Enqueue(wsclient.Message{
 				Type:      constants.MessageTypeLog,
 				Timestamp: time.Now().UnixMilli(),
 				TaskID:    taskID,
@@ -734,8 +707,8 @@ func (a *Agent) reportTaskResult(result *api.TaskResult) {
 	if a.wsClient != nil && a.wsClient.IsConnected() {
 		if err := a.wsClient.SendTaskResult(result); err != nil {
 			logger.GetLogger().WithError(err).WithField("task_id", result.TaskID).Error("report result via websocket failed")
-			if a.wsOutbox != nil {
-				a.wsOutbox.Enqueue(wsclient.Message{
+			if a.outbox != nil {
+				a.outbox.Enqueue(wsclient.Message{
 					Type:      constants.MessageTypeTaskResult,
 					Timestamp: time.Now().UnixMilli(),
 					TaskID:    result.TaskID,
@@ -751,8 +724,8 @@ func (a *Agent) reportTaskResult(result *api.TaskResult) {
 		return
 	}
 	// 断线期间先落到 outbox，等待重连后补传
-	if a.wsOutbox != nil {
-		a.wsOutbox.Enqueue(wsclient.Message{
+	if a.outbox != nil {
+		a.outbox.Enqueue(wsclient.Message{
 			Type:      constants.MessageTypeTaskResult,
 			Timestamp: time.Now().UnixMilli(),
 			TaskID:    result.TaskID,
@@ -866,6 +839,22 @@ func (a *Agent) register() error {
 		"host_id":    a.cfg.Identification.HostID,
 		"mode":       "agent-server",
 	}).Info("agent registered to agent-server")
+
+	// 重新创建 Outbox，使用真实的 agentID 进行持久化
+	if a.outbox != nil {
+		a.outbox.Close() // 关闭旧的 Outbox
+	}
+	// 确定 outbox 文件存储目录
+	outboxDir := ""
+	logDir := a.cfg.Logging.LogDir
+	if logDir != "" {
+		outboxDir = logDir
+	} else {
+		// 使用默认目录
+		outboxDir = "."
+	}
+	a.outbox = wsclient.NewFileOutbox(a.info.ID, outboxDir, a.cfg.Connection.WSOutboxMaxSize)
+
 	return nil
 }
 
@@ -948,40 +937,6 @@ func (a *Agent) trackTaskStatus(taskID string, stopCh chan struct{}) {
 	}
 }
 
-// processPendingTasksFromQueue 从asynq队列拉取待处理任务并执行
-// 在Agent上线时调用，处理离线期间积累的任务
-func (a *Agent) processPendingTasksFromQueue() {
-	if a.taskQueue == nil || a.info == nil {
-		return
-	}
-
-	// 等待Agent注册完成
-	time.Sleep(2 * time.Second)
-
-	// 从队列中拉取待处理任务（最多100个）
-	tasks, err := a.taskQueue.ListPendingTasks(a.info.ID, 100)
-	if err != nil {
-		logger.GetLogger().WithError(err).Error("list pending tasks from queue failed")
-		return
-	}
-
-	if len(tasks) == 0 {
-		return
-	}
-
-	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id":   a.info.ID,
-		"task_count": len(tasks),
-	}).Info("processing pending tasks from asynq queue")
-
-	// 执行每个任务
-	for _, task := range tasks {
-		go a.executeTask(task)
-		// 避免同时启动太多任务，稍微延迟
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 func collectSystemInfo() SystemInfo {
 	// 使用 system 包收集更详细的系统信息
 	return system.CollectSystemInfo()
@@ -1051,7 +1006,7 @@ func (a *Agent) connectWithBackoff() error {
 				}).Warn("websocket connect failed")
 				return err
 			}
-			a.flushWSOutbox()
+			a.flushOutbox()
 			return nil
 		},
 		retry.Attempts(uint(attempts)),
@@ -1063,8 +1018,8 @@ func (a *Agent) connectWithBackoff() error {
 	)
 }
 
-func (a *Agent) flushWSOutbox() {
-	if a.wsClient == nil || !a.wsClient.IsConnected() || a.wsOutbox == nil {
+func (a *Agent) flushOutbox() {
+	if a.wsClient == nil || !a.wsClient.IsConnected() || a.outbox == nil {
 		return
 	}
 
@@ -1074,7 +1029,7 @@ func (a *Agent) flushWSOutbox() {
 		batchSize = constants.OutboxFlushBatchSize
 	}
 	for {
-		batch := a.wsOutbox.Drain(batchSize)
+		batch := a.outbox.Drain(batchSize)
 		if len(batch) == 0 {
 			return
 		}
@@ -1082,7 +1037,7 @@ func (a *Agent) flushWSOutbox() {
 			msg := batch[i]
 			if err := a.wsClient.SendReliable(&msg); err != nil {
 				// 发送失败：回滚到 outbox（保持顺序）
-				a.wsOutbox.Enqueue(msg)
+				a.outbox.Enqueue(msg)
 				return
 			}
 		}

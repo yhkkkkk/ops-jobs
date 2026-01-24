@@ -22,18 +22,14 @@ type StreamWriter struct {
 	cap  int
 }
 
-// NewStreamWriter 创建流写入器，复用 redis 配置。
-// 若配置开启日志流但 Redis 未启用/初始化失败，则返回错误阻止启动。
-func NewStreamWriter(cfg *config.Config) (*StreamWriter, error) {
+// NewStreamWriter 创建流写入器，使用注入的Redis客户端。
+// 若配置开启日志流但 Redis客户端为空，则返回错误阻止启动。
+func NewStreamWriter(rdb *redis.Client, cfg *config.Config) (*StreamWriter, error) {
 	if !cfg.LogStream.Enabled {
 		return nil, nil
 	}
-	if !cfg.Redis.Enabled {
-		return nil, fmt.Errorf("log stream enabled but redis disabled")
-	}
-	rdb, err := NewRedisClient(cfg)
-	if err != nil {
-		return nil, err
+	if rdb == nil {
+		return nil, fmt.Errorf("log stream enabled but redis client not provided")
 	}
 	const defaultCap = 1000
 	return &StreamWriter{

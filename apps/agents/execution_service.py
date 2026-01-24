@@ -1078,14 +1078,16 @@ class AgentExecutionService:
     def handle_task_result(
         task_id: str,
         result: Dict[str, Any],
+        progress: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         处理Agent任务执行结果
-        
+
         Args:
             task_id: 任务ID
             result: 任务结果
-        
+            progress: 进度信息（可选，从 agent_results stream 聚合计算得出）
+
         Returns:
             Dict: 处理结果
         """
@@ -1131,6 +1133,20 @@ class AgentExecutionService:
 
                 results_meta['logs_meta'] = meta_logs
                 execution_record.execution_results = results_meta
+
+            # 处理进度信息（从 agent_results stream 聚合计算）
+            if progress:
+                exec_results = execution_record.execution_results or {}
+                exec_results['progress'] = {
+                    'progress': progress.get('progress'),
+                    'total_hosts': progress.get('total_hosts'),
+                    'success_hosts': progress.get('success_hosts'),
+                    'failed_hosts': progress.get('failed_hosts'),
+                    'running_hosts': progress.get('running_hosts'),
+                    'pending_hosts': progress.get('pending_hosts'),
+                    'updated_at': datetime.now(tz=timezone.utc).isoformat(),
+                }
+                execution_record.execution_results = exec_results
 
             # 使用传入的时间戳（Unix 秒），如果不存在则使用当前时间
             finished_at_ts = result.get('finished_at')

@@ -84,20 +84,7 @@ class Command(BaseCommand):
             )
 
         status_stream = options["status_stream"]
-        if status_stream:
-            configs.append(
-                StreamConfig(
-                    stream_key=status_stream,
-                    group=options["status_group"],
-                    consumer_name=consumer_name,
-                    handler=self.handle_status,
-                    dead_letter_key=f"{status_stream}:dlq",
-                    count=count,
-                    block_ms=block_ms,
-                    reclaim_idle_ms=reclaim_idle_ms,
-                    reclaim_count=reclaim_count,
-                )
-            )
+        # status_stream 不再独立消费，进度信息从 agent_results 中聚合计算
 
         agent_status_stream = options["agent_status_stream"]
         if agent_status_stream:
@@ -139,16 +126,17 @@ class Command(BaseCommand):
     @staticmethod
     def handle_log(msg_id: str, fields: dict) -> bool:
         try:
-            execution_id = fields.get("execution_id") or fields.get("task_id")
+            # 使用 execution_id 作为主要标识符
+            execution_id = fields.get("execution_id")
             if not execution_id:
-                logger.warning("log message missing execution_id/task_id", extra={"id": msg_id})
+                logger.warning("log message missing execution_id", extra={"id": msg_id})
                 return True  # 不阻塞
 
             normalized = {
                 "id": msg_id,
                 "timestamp": fields.get("timestamp") or time.time(),
                 "execution_id": execution_id,
-                "task_id": fields.get("task_id"),
+                "task_id": fields.get("task_id"),  # 可选，用于复杂工作流
                 "host_id": fields.get("host_id"),
                 "host_name": fields.get("host_name"),
                 "host_ip": fields.get("host_ip"),
@@ -168,12 +156,18 @@ class Command(BaseCommand):
 
     @staticmethod
     def handle_result(msg_id: str, fields: dict) -> bool:
+        """
+        处理 agent_results stream 中的任务结果消息。
+        提取结果基础字段和进度字段，并更新任务状态。
+        """
         try:
-            task_id = fields.get("task_id") or fields.get("execution_id")
-            if not task_id:
-                logger.warning("结果消息缺少 task_id", extra={"id": msg_id})
+            # 使用 execution_id 作为主要标识符
+            execution_id = fields.get("execution_id")
+            if not execution_id:
+                logger.warning("result message missing execution_id", extra={"id": msg_id})
                 return True  # 不阻塞
 
+            # 提取结果基础字段
             result_payload = {
                 "status": fields.get("status"),
                 "exit_code": _maybe_int(fields.get("exit_code")),
@@ -184,41 +178,31 @@ class Command(BaseCommand):
                 "started_at": _maybe_int(fields.get("started_at")),
                 "finished_at": _maybe_int(fields.get("finished_at")),
             }
+
+            # 提取进度字段（从 agent_results stream 中的聚合计算结果）
+            progress_payload = {
+                "execution_id": execution_id,
+                "progress": _maybe_int(fields.get("progress")),
+                "total_hosts": _maybe_int(fields.get("total_hosts")),
+                "success_hosts": _maybe_int(fields.get("success_hosts")),
+                "failed_hosts": _maybe_int(fields.get("failed_hosts")),
+                "running_hosts": _maybe_int(fields.get("running_hosts")),
+                "pending_hosts": _maybe_int(fields.get("pending_hosts")),
+            }
+
             # 先将redis日志缓存批量刷入db
-            _flush_log_store(task_id=str(task_id))
-            resp = AgentExecutionService.handle_task_result(task_id=str(task_id), result=result_payload)
+            _flush_log_store(execution_id=str(execution_id))
+
+            # 调用处理服务，传入结果和进度
+            resp = AgentExecutionService.handle_task_result(
+                execution_id=str(execution_id),
+                result=result_payload,
+                progress=progress_payload
+            )
+
             return bool(resp.get("success"))
         except Exception as exc:
             logger.exception("处理结果消息失败", extra={"id": msg_id, "error": str(exc)})
-            return False
-
-    @staticmethod
-    def handle_status(msg_id: str, fields: dict) -> bool:
-        try:
-            execution_id = fields.get("execution_id") or fields.get("task_id")
-            if not execution_id:
-                return True  # 不阻塞
-
-            status_stream_prefix = getattr(settings, "STATUS_STREAM_PREFIX", "job_status:")
-            stream_key = f"{status_stream_prefix}{execution_id}"
-            status_payload = {
-                "timestamp": fields.get("timestamp") or time.time(),
-                "status": fields.get("status"),
-                "progress": _maybe_int(fields.get("progress")),
-                "current_step": fields.get("current_step"),
-                "total_hosts": _maybe_int(fields.get("total_hosts") or fields.get("total")),
-                "success_hosts": _maybe_int(fields.get("success_hosts") or fields.get("success_count")),
-                "failed_hosts": _maybe_int(fields.get("failed_hosts") or fields.get("failed_count")),
-                "running_hosts": _maybe_int(fields.get("running_hosts")),
-                "completed": _maybe_int(fields.get("completed")),
-                "message": fields.get("message"),
-            }
-            rc = _redis_client()
-            rc.xadd(stream_key, status_payload)
-            rc.expire(stream_key, getattr(settings, "STATUS_STREAM_TTL", 86400))
-            return True
-        except Exception as exc:
-            logger.exception("处理状态消息失败", extra={"id": msg_id, "error": str(exc)})
             return False
 
     @staticmethod

@@ -33,7 +33,32 @@
 
 ### 架构设计
 
+#### 无状态架构 (Stateless Architecture)
+
+Agent 采用**无状态设计**，不再依赖 Redis 或其他外部消息队列：
+
+- **Outbox 模式**: 使用本地文件 (`FileOutbox`) 持久化待发送的消息。
+- **WebSocket 通信**: 所有的任务下发、日志上报、状态变更都通过 WebSocket 通道进行。
+- **Agent-Server 负责持久化**: 任务队列和 ACK 管理由 Agent-Server 负责，Agent 专注于任务执行。
+- **断线恢复**: 如果 WebSocket 连接断开，消息会先保存在本地文件 (Outbox) 中，重连后自动补发。
+
+```mermaid
+graph TD
+    CP[Control Plane] -->|Push Task| AS[Agent-Server]
+    AS -->|WebSocket Task| A[Agent]
+    A -->|WebSocket Logs/Result| AS
+    AS -->|Redis Streams| CP
+
+    subgraph Agent
+        A -->|Persist to File| Outbox[FileOutbox]
+    end
+
+    subgraph Agent-Server
+        AS -->|Persist to Redis| Pending[PendingTaskStore]
+    end
 ```
+
+#### 代码结构
 agent-go/
 ├── cmd/agent/          # 主程序入口
 ├── internal/
@@ -246,8 +271,8 @@ Agent 会定期收集并上报以下系统信息：
 - [x] WebSocket 实时日志推送
 - [x] 资源限制（带宽限制）
 - [x] 性能监控和指标上报
+- [x] 无状态架构改造 (FileOutbox, 移除 Redis/Asynq)
 - [ ] TLS 支持
-- [ ] 任务优先级队列
 - [ ] 插件系统
 
 ## 参考

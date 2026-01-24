@@ -951,7 +951,7 @@ tail -f agent/agent-server-go/logs/agent-server.log
 curl http://localhost:8080/api/agents
 
 # 检查控制面连接
-curl -H "Authorization: Bearer your-token" http://localhost:8000/api/agents/register/
+curl http://localhost:8000/health
 ```
 
 ### 监控指标

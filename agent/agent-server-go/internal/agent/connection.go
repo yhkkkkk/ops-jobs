@@ -4,9 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"ops-job-agent-server/internal/websocket"
 	"ops-job-agent-server/pkg/api"
 
-	"github.com/gorilla/websocket"
+	gorillaWs "github.com/gorilla/websocket"
 )
 
 // Connection Agent 连接封装
@@ -14,7 +15,7 @@ type Connection struct {
 	ID            string
 	Name          string
 	Token         string
-	Conn          *websocket.Conn
+	Conn          *gorillaWs.Conn
 	Status        string // active/inactive
 	LastHeartbeat time.Time
 	Labels        map[string]string
@@ -25,13 +26,12 @@ type Connection struct {
 	HostID        int    // 控制面主机ID，用于建立映射关系
 	runningTasks  map[string]*api.TaskSpec
 	mu            sync.RWMutex
-	ackStore      map[string]time.Time
-	ackMu         sync.Mutex
+	ackStore      *websocket.AckStore // 持久化去重存储
 	closed        bool
 }
 
 // NewConnection 创建新的 Agent 连接
-func NewConnection(id, name, token string, conn *websocket.Conn) *Connection {
+func NewConnection(id, name, token string, conn *gorillaWs.Conn) *Connection {
 	return &Connection{
 		ID:        id,
 		Name:      name,
@@ -43,7 +43,6 @@ func NewConnection(id, name, token string, conn *websocket.Conn) *Connection {
 		Labels:    make(map[string]string),
 		// runningTasks tracks tasks that were dispatched to this agent; guarded by mu.
 		runningTasks: make(map[string]*api.TaskSpec),
-		ackStore:     make(map[string]time.Time),
 	}
 }
 
@@ -52,40 +51,9 @@ func (c *Connection) SeenMessage(id string, ttl time.Duration, max int) bool {
 	if id == "" {
 		return false
 	}
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
-	}
-	if max <= 0 {
-		max = 5000
-	}
-	now := time.Now()
-	c.ackMu.Lock()
-	defer c.ackMu.Unlock()
-	if t, ok := c.ackStore[id]; ok {
-		if now.Sub(t) < ttl {
-			return true
-		}
-		delete(c.ackStore, id)
-	}
-	if len(c.ackStore) >= max {
-		for k, t := range c.ackStore {
-			if now.Sub(t) > ttl {
-				delete(c.ackStore, k)
-			}
-			if len(c.ackStore) < max {
-				break
-			}
-		}
-		// 简单裁剪
-		for len(c.ackStore) > max {
-			for k := range c.ackStore {
-				delete(c.ackStore, k)
-				break
-			}
-		}
-	}
-	c.ackStore[id] = now
-	return false
+
+	// 使用持久化 AckStore
+	return c.ackStore.Seen(id)
 }
 
 // UpdateHeartbeat 更新心跳时间

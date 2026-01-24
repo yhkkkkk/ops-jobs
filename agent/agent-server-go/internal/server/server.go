@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/bytedance/sonic"
+	"github.com/tidwall/gjson"
+
 	"ops-job-agent-server/internal/agent"
 	"ops-job-agent-server/internal/auth"
 	"ops-job-agent-server/internal/config"
@@ -21,12 +22,15 @@ import (
 	logstream "ops-job-agent-server/internal/log"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/internal/metrics"
+	redisPkg "ops-job-agent-server/internal/redis"
 	"ops-job-agent-server/internal/task"
 	"ops-job-agent-server/pkg/api"
 
+	"github.com/avast/retry-go/v4"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/hibiken/asynq"
 	"github.com/spf13/cast"
 )
 
@@ -49,77 +53,104 @@ var (
 
 // Server Agent-Server 服务器
 type Server struct {
-	cfg            *config.Config
-	engine         *gin.Engine
-	httpServer     *http.Server
-	agentManager   *agent.Manager
-	cpClient       *controlplane.Client
-	taskDispatcher *task.Dispatcher
-	taskQueue      *task.TaskQueue
-	logStream      *logstream.StreamWriter
-	resultStream   *logstream.ResultStreamWriter
-	statusStream   *logstream.StatusStreamWriter
+	cfg              *config.Config
+	engine           *gin.Engine
+	httpServer       *http.Server
+	agentManager     *agent.Manager
+	cpClient         *controlplane.Client
+	taskDispatcher   *task.Dispatcher
+	pendingTaskStore *task.PendingTaskStore // 待处理任务持久化存储
+	logStream        *logstream.StreamWriter
+	resultStream     *logstream.ResultStreamWriter
+	statusStream     *logstream.StatusStreamWriter
 }
 
 // New 创建服务器
 func New(cfg *config.Config) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.Use(gin.Logger())
+
+	// 创建Redis连接池管理器
+	var redisClient *redis.Client
+	if cfg.Redis.Enabled {
+		poolMgr := redisPkg.NewPoolManager(&cfg.Redis)
+		client, err := poolMgr.GetClient()
+		if err != nil {
+			logger.GetLogger().WithError(err).Warn("Failed to create Redis connection pool, AckStore will be disabled")
+		} else {
+			redisClient = client
+		}
+	}
 
 	// 创建 Agent 管理器
 	agentMgr := agent.NewManager(
 		cfg.Agent.MaxConnections,
 		cfg.Agent.HeartbeatTimeout,
+		cfg,
+		redisClient,
 	)
 
 	// 创建控制面客户端
 	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Scope, cfg.ControlPlane.Timeout)
 
-	// 创建任务队列
-	var taskQueue *task.TaskQueue
-	asynqEnabled := cfg.Asynq.Enabled && cfg.Redis.Enabled
-	if asynqEnabled {
-		var err error
-		taskQueue, err = task.NewTaskQueue(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, cfg.Asynq)
-		if err != nil {
-			return nil, fmt.Errorf("create task queue: %w", err)
-		}
-		logger.GetLogger().Info("asynq task queue initialized")
-	}
+	// 创建 PendingTaskStore（用于无状态架构的任务持久化）
+	pendingTaskStore := task.NewPendingTaskStore(redisClient)
 
-	// 创建任务分发器（
-	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, taskQueue, asynqEnabled)
+	// 创建任务分发器
+	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, pendingTaskStore)
 
 	// 创建日志流写入器
-	logStream, err := logstream.NewStreamWriter(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create log stream writer: %w", err)
+	var logStream *logstream.StreamWriter
+	if cfg.LogStream.Enabled {
+		if redisClient == nil {
+			return nil, fmt.Errorf("log stream enabled but redis client not available")
+		}
+		var err error
+		logStream, err = logstream.NewStreamWriter(redisClient, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create log stream writer: %w", err)
+		}
 	}
 
 	// 创建结果流写入器
-	resultStream, err := logstream.NewResultStreamWriter(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create result stream writer: %w", err)
+	var resultStream *logstream.ResultStreamWriter
+	if cfg.ResultStream.Enabled {
+		if redisClient == nil {
+			return nil, fmt.Errorf("result stream enabled but redis client not available")
+		}
+		var err error
+		resultStream, err = logstream.NewResultStreamWriter(redisClient, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create result stream writer: %w", err)
+		}
 	}
 
 	// 创建状态流写入器
-	statusStream, err := logstream.NewStatusStreamWriter(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create status stream writer: %w", err)
+	var statusStream *logstream.StatusStreamWriter
+	if cfg.StatusStream.Enabled {
+		if redisClient == nil {
+			return nil, fmt.Errorf("status stream enabled but redis client not available")
+		}
+		var err error
+		statusStream, err = logstream.NewStatusStreamWriter(redisClient, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create status stream writer: %w", err)
+		}
 	}
 
 	s := &Server{
-		cfg:            cfg,
-		engine:         engine,
-		agentManager:   agentMgr,
-		cpClient:       cpClient,
-		taskDispatcher: taskDispatcher,
-		taskQueue:      taskQueue,
-		logStream:      logStream,
-		resultStream:   resultStream,
-		statusStream:   statusStream,
+		cfg:              cfg,
+		engine:           engine,
+		agentManager:     agentMgr,
+		cpClient:         cpClient,
+		taskDispatcher:   taskDispatcher,
+		pendingTaskStore: pendingTaskStore,
+		logStream:        logStream,
+		resultStream:     resultStream,
+		statusStream:     statusStream,
 	}
 
 	s.setupRoutes()
@@ -168,17 +199,9 @@ func (s *Server) setupControlPlaneIngressRoutes() {
 		api.POST("/agents/:id/control", s.handleAgentControl)
 		// 升级指定 Agent
 		api.POST("/agents/:id/upgrade", s.handleAgentUpgrade)
-		// 任务队列统计信息
-		api.GET("/stats/queues", func(c *gin.Context) {
-			metrics.HandleQueueStats(c, s.taskQueue)
-		})
-		// 死信队列（归档任务）列表
-		api.GET("/stats/dead-letters", func(c *gin.Context) {
-			metrics.HandleDeadLetterTasks(c, s.taskQueue)
-		})
 		// 观测指标（JSON）
 		api.GET("/metrics", func(c *gin.Context) {
-			metrics.HandleOverview(c, s.agentManager, s.cfg, s.taskQueue)
+			metrics.HandleOverview(c, s.agentManager, s.cfg)
 		})
 		// Agent-Server 自我控制
 		api.POST("/self/control", s.handleSelfControl)
@@ -194,19 +217,6 @@ func (s *Server) setupWebSocketRoutes() {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	// 启动任务分发器
-	s.taskDispatcher.Start()
-
-	// 启动asynq服务器
-	if s.taskQueue != nil {
-		go func() {
-			if err := s.taskQueue.Start(); err != nil {
-				logger.GetLogger().WithError(err).Error("asynq server error")
-			}
-		}()
-		logger.GetLogger().Info("asynq server started")
-	}
-
 	// 启动清理非活跃连接的 goroutine
 	go s.cleanupLoop()
 
@@ -224,14 +234,6 @@ func (s *Server) Start() error {
 
 // Stop 停止服务器
 func (s *Server) Stop() {
-	// 停止任务分发器
-	s.taskDispatcher.Stop()
-
-	// 停止asynq服务器
-	if s.taskQueue != nil {
-		s.taskQueue.Stop()
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -290,54 +292,57 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 	// 从心跳 payload 中提取系统资源监控数据
 	// payload 格式: {"timestamp": int64, "system": SystemInfo}
 	if payload != nil {
-		if systemRaw, ok := payload["system"]; ok && systemRaw != nil {
-			// system 可能是 map[string]interface{} 或 *api.SystemInfo
-			var systemData map[string]interface{}
+		// 将payload转换为JSON字符串用于gjson解析
+		payloadJSON, err := sonic.Marshal(payload)
+		if err != nil {
+			logger.GetLogger().WithError(err).WithField("agent_id", conn.ID).Warn("failed to marshal payload for gjson parsing")
+		} else {
+			systemData := make(map[string]interface{})
 
-			switch sys := systemRaw.(type) {
-			case map[string]interface{}:
-				// 构建符合控制面期望的格式
-				systemData = make(map[string]interface{})
-
+			// 使用gjson高效提取系统信息
+			systemResult := gjson.GetBytes(payloadJSON, "system")
+			if systemResult.Exists() {
 				// CPU 使用率
-				if cpuUsage, ok := sys["cpu_usage"]; ok {
-					systemData["cpu_usage"] = cpuUsage
+				if cpuUsage := gjson.GetBytes(payloadJSON, "system.cpu_usage"); cpuUsage.Exists() {
+					systemData["cpu_usage"] = cpuUsage.Value()
 				}
 
 				// 内存信息 - 控制面期望格式: memory: {total, used, usage}
 				memoryInfo := make(map[string]interface{})
-				if memUsage, ok := sys["memory_usage"]; ok {
-					memoryInfo["usage"] = memUsage
+				if memUsage := gjson.GetBytes(payloadJSON, "system.memory_usage"); memUsage.Exists() {
+					memoryInfo["usage"] = memUsage.Value()
 				}
-				if memTotal, ok := sys["memory_total"]; ok {
-					memoryInfo["total"] = memTotal
+				if memTotal := gjson.GetBytes(payloadJSON, "system.memory_total"); memTotal.Exists() {
+					memoryInfo["total"] = memTotal.Value()
 				}
-				if memUsed, ok := sys["memory_used"]; ok {
-					memoryInfo["used"] = memUsed
+				if memUsed := gjson.GetBytes(payloadJSON, "system.memory_used"); memUsed.Exists() {
+					memoryInfo["used"] = memUsed.Value()
 				}
 				if len(memoryInfo) > 0 {
 					systemData["memory"] = memoryInfo
 				}
 
 				// 磁盘使用率
-				if diskUsage, ok := sys["disk_usage"]; ok {
-					systemData["disk"] = diskUsage
+				if diskUsage := gjson.GetBytes(payloadJSON, "system.disk_usage"); diskUsage.Exists() {
+					systemData["disk"] = diskUsage.Value()
 				}
 
 				// 负载信息 - 控制面期望格式: load_avg: {1m, 5m, 15m}
-				if loadAvg, ok := sys["load_avg"]; ok {
-					if loadArr, ok := loadAvg.([]interface{}); ok && len(loadArr) >= 3 {
+				loadAvgResult := gjson.GetBytes(payloadJSON, "system.load_avg")
+				if loadAvgResult.Exists() && loadAvgResult.IsArray() {
+					loadArr := loadAvgResult.Array()
+					if len(loadArr) >= 3 {
 						systemData["load_avg"] = map[string]interface{}{
-							"1m":  loadArr[0],
-							"5m":  loadArr[1],
-							"15m": loadArr[2],
+							"1m":  loadArr[0].Value(),
+							"5m":  loadArr[1].Value(),
+							"15m": loadArr[2].Value(),
 						}
 					}
 				}
 
 				// 系统运行时间
-				if uptime, ok := sys["uptime"]; ok {
-					systemData["uptime"] = uptime
+				if uptime := gjson.GetBytes(payloadJSON, "system.uptime"); uptime.Exists() {
+					systemData["uptime"] = uptime.Value()
 				}
 			}
 
@@ -537,24 +542,24 @@ func (s *Server) handlePushTasksBatch(c *gin.Context) {
 // handleCancelTask 处理取消任务请求
 // 支持两种情况：
 // 1. Agent 在线：通过 WebSocket 发送取消消息
-// 2. Agent 离线：从 asynq 队列中删除任务
+// 2. Agent 离线：从 pendingTaskStore 中删除任务
 func (s *Server) handleCancelTask(c *gin.Context) {
 	agentID := c.Param("id")
 	taskID := c.Param("task_id")
 
 	conn, exists := s.agentManager.Get(agentID)
 	if !exists {
-		// Agent 不存在，尝试从队列中删除任务
-		if s.taskQueue != nil {
+		// Agent 不存在，尝试从 pendingTaskStore 中删除任务
+		if s.pendingTaskStore != nil {
 			if err := s.cancelTaskFromQueue(agentID, taskID); err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "agent not found and task not found in queue"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "agent not found and task not found in pending store"})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{
 				"task_id":  taskID,
 				"agent_id": agentID,
 				"status":   constants.StatusCancelled,
-				"source":   "queue",
+				"source":   "pending_store",
 			})
 			return
 		}
@@ -569,14 +574,14 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 				"agent_id": agentID,
 				"task_id":  taskID,
 			}).Error("send cancel task message failed")
-			// WebSocket 发送失败，尝试从队列中删除
-			if s.taskQueue != nil {
+			// WebSocket 发送失败，尝试从 pendingTaskStore 中删除
+			if s.pendingTaskStore != nil {
 				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"task_id":  taskID,
 						"agent_id": agentID,
 						"status":   constants.StatusCancelled,
-						"source":   "queue",
+						"source":   "pending_store",
 					})
 					return
 				}
@@ -599,17 +604,17 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 		return
 	}
 
-	// Agent 连接不活跃，尝试从队列中删除
-	if s.taskQueue != nil {
+	// Agent 连接不活跃，尝试从 pendingTaskStore 中删除
+	if s.pendingTaskStore != nil {
 		if err := s.cancelTaskFromQueue(agentID, taskID); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active and task not found in queue"})
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent connection is not active and task not found in pending store"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"task_id":  taskID,
 			"agent_id": agentID,
 			"status":   constants.StatusCancelled,
-			"source":   "queue",
+			"source":   "pending_store",
 		})
 		return
 	}
@@ -652,14 +657,14 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 				"task_count": len(req.TaskIDs),
 			}).Error("send cancel tasks batch message failed")
 
-			// WebSocket 发送失败，逐个尝试从队列中删除
-			if s.taskQueue != nil {
+			// WebSocket 发送失败，逐个尝试从 pendingTaskStore 中删除
+			if s.pendingTaskStore != nil {
 				for _, taskID := range req.TaskIDs {
 					if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
 						results = append(results, map[string]interface{}{
 							"task_id": taskID,
 							"status":  constants.StatusCancelled,
-							"source":  "queue",
+							"source":  "pending_store",
 						})
 						successCount++
 					} else {
@@ -687,14 +692,14 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 			}
 		}
 	} else {
-		// Agent 离线，尝试从队列中逐个删除
-		if s.taskQueue != nil {
+		// Agent 离线，尝试从 pendingTaskStore 中逐个删除
+		if s.pendingTaskStore != nil {
 			for _, taskID := range req.TaskIDs {
 				if err := s.cancelTaskFromQueue(agentID, taskID); err == nil {
 					results = append(results, map[string]interface{}{
 						"task_id": taskID,
 						"status":  constants.StatusCancelled,
-						"source":  "queue",
+						"source":  "pending_store",
 					})
 					successCount++
 				} else {
@@ -728,79 +733,27 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 	})
 }
 
-// cancelTaskFromQueue 从队列中取消任务
-// 需要先查询任务找到 asynq 的 taskID，然后删除
+// cancelTaskFromQueue 从待处理任务存储中取消任务
 func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
-	if s.taskQueue == nil {
-		return fmt.Errorf("task queue not enabled")
+	if s.pendingTaskStore == nil {
+		return fmt.Errorf("pending task store not enabled")
 	}
 
-	// 查询所有队列，找到匹配的任务
-	queues := []string{task.QueueCritical, task.QueueDefault, task.QueueLong}
-	states := []string{"pending", "active", "retry", "scheduled"}
-
-	for _, queueName := range queues {
-		inspector := asynq.NewInspector(s.taskQueue.GetRedisOpt())
-		defer inspector.Close()
-
-		for _, state := range states {
-			// 查询该状态的任务
-			var taskInfos []*asynq.TaskInfo
-			var err error
-
-			switch state {
-			case "pending":
-				taskInfos, err = inspector.ListPendingTasks(queueName, asynq.PageSize(100), asynq.Page(1))
-			case "active":
-				taskInfos, err = inspector.ListActiveTasks(queueName, asynq.PageSize(100), asynq.Page(1))
-			case "retry":
-				taskInfos, err = inspector.ListRetryTasks(queueName, asynq.PageSize(100), asynq.Page(1))
-			case "scheduled":
-				taskInfos, err = inspector.ListScheduledTasks(queueName, asynq.PageSize(100), asynq.Page(1))
-			default:
-				continue
-			}
-
-			if err != nil {
-				continue
-			}
-
-			// 遍历任务，找到匹配的
-			for _, taskInfo := range taskInfos {
-				// 解析任务负载
-				var payload task.TaskPayload
-				if err := json.Unmarshal(taskInfo.Payload, &payload); err != nil {
-					continue
-				}
-
-				// 检查是否匹配 agentID 和 taskID
-				if payload.AgentID == agentID && payload.Task != nil && payload.Task.ID == taskID {
-					// 找到匹配的任务，删除它
-					if err := inspector.DeleteTask(queueName, taskInfo.ID); err != nil {
+	// 直接从 pendingTaskStore 删除任务
+	if err := s.pendingTaskStore.Delete(agentID, taskID); err != nil {
 						logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 							"agent_id": agentID,
 							"task_id":  taskID,
-							"asynq_id": taskInfo.ID,
-							"queue":    queueName,
-							"state":    state,
-						}).Error("delete task from queue failed")
-						return err
+		}).Warn("task not found in pending store")
+		return fmt.Errorf("task not found in pending store")
 					}
 
 					logger.GetLogger().WithFields(map[string]interface{}{
 						"agent_id": agentID,
 						"task_id":  taskID,
-						"asynq_id": taskInfo.ID,
-						"queue":    queueName,
-						"state":    state,
-					}).Info("task cancelled from queue")
-					return nil
-				}
-			}
-		}
-	}
+	}).Info("task cancelled from pending store")
 
-	return fmt.Errorf("task not found in any queue")
+					return nil
 }
 
 // handleWebSocket 处理 WebSocket 连接

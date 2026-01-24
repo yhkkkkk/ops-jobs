@@ -59,31 +59,6 @@ type Config struct {
 	Logging        LoggingConfig        `mapstructure:"logging"`
 	Task           TaskConfig           `mapstructure:"task"`
 	ResourceLimit  ResourceLimitConfig  `mapstructure:"resource_limit"`
-
-	// Redis配置（分用途）
-	Redis RedisConfig `mapstructure:"redis"`
-
-	// Asynq配置
-	Asynq AsynqConfig `mapstructure:"asynq"`
-}
-
-// RedisConfig 顶层 Redis 配置，按用途拆分
-type RedisConfig struct {
-	Asynq RedisBasicConfig `mapstructure:"asynq"`
-}
-
-// RedisBasicConfig 基础 Redis 连接配置
-type RedisBasicConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-}
-
-// AsynqConfig Asynq配置
-type AsynqConfig struct {
-	Enabled     bool `mapstructure:"enabled"`
-	Concurrency int  `mapstructure:"concurrency"`
 }
 
 var (
@@ -240,16 +215,6 @@ func setDefaults(v *viper.Viper) {
 
 	// ResourceLimit 默认值
 	v.SetDefault("resource_limit.bandwidth_limit", 0) // 0表示不限制
-
-	// Redis默认值（用途拆分）
-	v.SetDefault("redis.asynq.enabled", false)
-	v.SetDefault("redis.asynq.addr", "localhost:6379")
-	v.SetDefault("redis.asynq.password", "")
-	v.SetDefault("redis.asynq.db", 0)
-
-	// Asynq默认值
-	v.SetDefault("asynq.enabled", false)
-	v.SetDefault("asynq.concurrency", 5)
 }
 
 // setConfigDefaults 设置配置默认值

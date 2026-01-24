@@ -18,68 +18,42 @@ import (
 
 // Dispatcher 任务分发器
 type Dispatcher struct {
-	agentManager *agent.Manager
-	cpClient     *controlplane.Client
-	taskQueue    *TaskQueue
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
-	asynqEnabled bool
+	agentManager     *agent.Manager
+	cpClient         *controlplane.Client
+	pendingTaskStore *PendingTaskStore // 待处理任务持久化存储（唯一持久化方案）
 }
 
 // NewDispatcher 创建任务分发器（仅支持控制面主动推送，不再轮询拉取）
-func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, taskQueue *TaskQueue, asynqEnabled bool) *Dispatcher {
-	ctx, cancel := context.WithCancel(context.Background())
+// pendingTaskStore 用于任务持久化和 ACK 跟踪（无状态架构核心组件）
+func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, pendingStore *PendingTaskStore) *Dispatcher {
 	d := &Dispatcher{
-		agentManager: agentMgr,
-		cpClient:     cpClient,
-		taskQueue:    taskQueue,
-		ctx:          ctx,
-		cancel:       cancel,
-		asynqEnabled: asynqEnabled,
-	}
-
-	// 如果启用了asynq，注册任务处理器
-	if asynqEnabled && taskQueue != nil {
-		taskQueue.RegisterHandler(d.handleQueuedTask)
+		agentManager:     agentMgr,
+		cpClient:         cpClient,
+		pendingTaskStore: pendingStore,
 	}
 
 	return d
 }
 
-// Start 启动任务分发器
-func (d *Dispatcher) Start() {
-	// 轮询模式已移除，仅保留 Asynq 处理器（如启用）
-	logger.GetLogger().Info("task dispatcher started (push-only, no polling)")
-}
-
-// Stop 停止任务分发器
-func (d *Dispatcher) Stop() {
-	d.cancel()
-	d.wg.Wait()
-	logger.GetLogger().Info("task dispatcher stopped")
-}
-
 // DispatchTaskToAgent 直接分发任务到指定 Agent（用于控制面主动推送）
-// 实现混合模式：Agent在线时直接推送，离线时入队到asynq
+// 实现混合模式：Agent在线时直接推送，离线时持久化到 pendingTaskStore
 // 支持多租户隔离：检查Agent的scope是否匹配（如果配置了scope）
 func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec, requestScope string) error {
 	agentConn, exists := d.agentManager.Get(agentID)
 	if !exists {
-		// Agent不存在，如果启用了asynq，入队
-		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
-			if err != nil {
+		// Agent不存在，持久化到 pendingTaskStore（如果有）
+		if d.pendingTaskStore != nil {
+			if err := d.pendingTaskStore.SavePending(agentID, task, 3); err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
 					"task_id":  task.ID,
-				}).Error("enqueue task failed")
+				}).Error("save pending task failed")
 				return err
 			}
 			logger.GetLogger().WithFields(map[string]interface{}{
 				"agent_id": agentID,
 				"task_id":  task.ID,
-			}).Info("task enqueued (agent not found)")
+			}).Info("task saved to pending store (agent not found)")
 			return nil
 		}
 		return agent.ErrAgentNotFound
@@ -104,26 +78,35 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec, req
 
 	// 检查Agent是否在线
 	if agentConn.Status != "active" || agentConn.Conn == nil {
-		// Agent离线，如果启用了asynq，入队
-		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
-			if err != nil {
+		// Agent离线，持久化到 pendingTaskStore（如果有）
+		if d.pendingTaskStore != nil {
+			if err := d.pendingTaskStore.SavePending(agentID, task, 3); err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
 					"task_id":  task.ID,
-				}).Error("enqueue task failed")
+				}).Error("save pending task failed")
 				return err
 			}
 			logger.GetLogger().WithFields(map[string]interface{}{
 				"agent_id": agentID,
 				"task_id":  task.ID,
-			}).Info("task enqueued (agent offline)")
+			}).Info("task saved to pending store (agent offline)")
 			return nil
 		}
 		return agent.ErrConnectionClosed
 	}
 
-	// Agent在线，尝试直接推送
+	// Agent在线，先持久化到 pendingTaskStore（确保可靠性）
+	if d.pendingTaskStore != nil {
+		if err := d.pendingTaskStore.SavePending(agentID, task, 3); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"agent_id": agentID,
+				"task_id":  task.ID,
+			}).Warn("failed to save pending task, continuing with push")
+		}
+	}
+
+	// 尝试直接推送
 	select {
 	case agentConn.TaskQueue <- task:
 		agentConn.AddRunningTask(task)
@@ -133,77 +116,38 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec, req
 		}).Info("task dispatched to agent (direct push)")
 		return nil
 	default:
-		// 任务队列满，如果启用了asynq，入队
-		if d.asynqEnabled && d.taskQueue != nil {
-			_, err := d.taskQueue.EnqueueWithPolicy(agentID, task)
-			if err != nil {
+		// 任务队列满，持久化到 pendingTaskStore（如果有）
+		if d.pendingTaskStore != nil {
+			if err := d.pendingTaskStore.SavePending(agentID, task, 3); err != nil {
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
 					"task_id":  task.ID,
-				}).Error("enqueue task failed")
+				}).Error("save pending task failed")
 				return err
 			}
 			logger.GetLogger().WithFields(map[string]interface{}{
 				"agent_id": agentID,
 				"task_id":  task.ID,
-			}).Warn("task enqueued (agent queue full)")
+			}).Warn("task saved to pending store (agent queue full)")
 			return nil
 		}
 		return agent.ErrConnectionClosed
 	}
 }
 
-// handleQueuedTask 处理从队列中取出的任务
-func (d *Dispatcher) handleQueuedTask(ctx context.Context, agentID string, task *api.TaskSpec) error {
-	agentConn, exists := d.agentManager.Get(agentID)
-	if !exists {
-		// Agent不存在，任务会重试
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  task.ID,
-		}).Warn("agent not found, task will retry")
-		return agent.ErrAgentNotFound
-	}
-
-	// 检查Agent是否在线
-	if agentConn.Status != "active" || agentConn.Conn == nil {
-		// Agent离线，任务会重试
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  task.ID,
-		}).Warn("agent offline, task will retry")
-		return agent.ErrConnectionClosed
-	}
-
-	// Agent在线，尝试推送
-	select {
-	case agentConn.TaskQueue <- task:
-		agentConn.AddRunningTask(task)
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  task.ID,
-		}).Info("task dispatched from queue to agent")
-		return nil
-	default:
-		// 任务队列满，任务会重试
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id": agentID,
-			"task_id":  task.ID,
-		}).Warn("agent queue full, task will retry")
-		return agent.ErrConnectionClosed
-	}
-}
-
 // ProcessPendingTasksForAgent 处理指定Agent的待处理任务（Agent上线时调用）
+// 从 PendingTaskStore 获取任务进行补发
 func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
-	if !d.asynqEnabled || d.taskQueue == nil {
-		return nil
-	}
+	var tasks []*PendingTask
+	var err error
 
-	tasks, err := d.taskQueue.ListPendingTasks(agentID)
+	// 从 PendingTaskStore 获取
+	if d.pendingTaskStore != nil {
+		tasks, err = d.pendingTaskStore.GetAgentPendingTasks(agentID)
 	if err != nil {
-		logger.GetLogger().WithError(err).WithField("agent_id", agentID).Error("list pending tasks failed")
+			logger.GetLogger().WithError(err).WithField("agent_id", agentID).Error("get pending tasks from store failed")
 		return err
+		}
 	}
 
 	if len(tasks) == 0 {
@@ -240,7 +184,8 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	for _, task := range sortedTasks {
+	for _, pTask := range sortedTasks {
+		task := pTask.Task // 提取 TaskSpec
 		select {
 		case <-ctx.Done():
 			logger.GetLogger().WithFields(map[string]interface{}{
@@ -253,7 +198,7 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 		}
 
 		wg.Add(1)
-		go func(task *api.TaskSpec) {
+		go func(t *api.TaskSpec) {
 			defer wg.Done()
 
 			// 获取信号量，尊重上下文超时
@@ -265,30 +210,34 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 			atomic.AddInt64(&processedCount, 1)
 
 			// 检查任务是否已被处理（去重检查）
-			if d.isTaskAlreadyProcessed(agentID, task.ID) {
+			if d.isTaskAlreadyProcessed(agentID, t.ID) {
 				logger.GetLogger().WithFields(map[string]interface{}{
 					"agent_id": agentID,
-					"task_id":  task.ID,
+					"task_id":  t.ID,
 				}).Debug("skipping already processed task")
 				atomic.AddInt64(&successCount, 1)
+				// 从 pending store 中标记为 acked
+				if d.pendingTaskStore != nil {
+					d.pendingTaskStore.MarkAcked(agentID, t.ID)
+				}
 				return
 			}
 
 			// 尝试分发任务
-			if err := d.DispatchTaskToAgent(agentID, task, requestScope); err != nil {
+			if err := d.DispatchTaskToAgent(agentID, t, requestScope); err != nil {
 				atomic.AddInt64(&failedCount, 1)
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,
-					"task_id":  task.ID,
+					"task_id":  t.ID,
 				}).Warn("dispatch pending task failed")
 
 				// 记录失败任务，便于后续重试或分析
-				d.recordFailedDispatch(agentID, task.ID, err)
+				d.recordFailedDispatch(agentID, t.ID, err)
 			} else {
 				atomic.AddInt64(&successCount, 1)
 				logger.GetLogger().WithFields(map[string]interface{}{
 					"agent_id": agentID,
-					"task_id":  task.ID,
+					"task_id":  t.ID,
 				}).Debug("successfully dispatched pending task")
 			}
 		}(task)
@@ -326,19 +275,19 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 }
 
 // sortTasksByPriority 按优先级对任务进行排序
-func (d *Dispatcher) sortTasksByPriority(tasks []*api.TaskSpec) []*api.TaskSpec {
-	sorted := make([]*api.TaskSpec, len(tasks))
+func (d *Dispatcher) sortTasksByPriority(tasks []*PendingTask) []*PendingTask {
+	sorted := make([]*PendingTask, len(tasks))
 	copy(sorted, tasks)
 
 	// 简单的优先级排序：按任务类型和创建时间
 	sort.Slice(sorted, func(i, j int) bool {
 		// 关键任务优先
-		if sorted[i].Type != sorted[j].Type {
+		if sorted[i].Task.Type != sorted[j].Task.Type {
 			// 可以根据任务类型定义优先级
-			return sorted[i].Type < sorted[j].Type
+			return sorted[i].Task.Type < sorted[j].Task.Type
 		}
 		// 同类型任务按ID排序（近似时间顺序）
-		return sorted[i].ID < sorted[j].ID
+		return sorted[i].Task.ID < sorted[j].Task.ID
 	})
 
 	return sorted

@@ -19,16 +19,12 @@ type ResultStreamWriter struct {
 	key    string
 }
 
-func NewResultStreamWriter(cfg *config.Config) (*ResultStreamWriter, error) {
+func NewResultStreamWriter(rdb *redis.Client, cfg *config.Config) (*ResultStreamWriter, error) {
 	if !cfg.ResultStream.Enabled {
 		return nil, nil
 	}
-	if !cfg.Redis.Enabled {
-		return nil, fmt.Errorf("result stream enabled but redis disabled")
-	}
-	rdb, err := NewRedisClient(cfg)
-	if err != nil {
-		return nil, err
+	if rdb == nil {
+		return nil, fmt.Errorf("result stream enabled but redis client not provided")
 	}
 	return &ResultStreamWriter{client: rdb, key: cfg.ResultStream.Key}, nil
 }
@@ -42,24 +38,35 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 		logPointer = "redis:job_logs/" + result.TaskID + "@"
 	}
 
-	// 解析 task_id 提取 host_id
+	// 解析 task_id 提取 host_id 和 execution_id
 	// task_id 格式: {execution_id}_{step_id}_{host_id}_{random}
+	executionID := extractExecutionID(result.TaskID)
 	hostID := extractHostID(result.TaskID)
 
 	values := map[string]interface{}{
-		"task_id":     result.TaskID,
-		"agent_id":    agentID,
-		"host_id":     hostID, // 添加 host_id 字段供控制面使用
-		"status":      result.Status,
-		"exit_code":   result.ExitCode,
-		"error_msg":   result.ErrorMsg,
-		"error_code":  result.ErrorCode,
-		"started_at":  result.StartedAt,
-		"finished_at": result.FinishedAt,
-		"log_size":    result.LogSize,
-		"log_pointer": logPointer,
-		"received_at": time.Now().UnixMilli(),
+		"task_id":      result.TaskID,
+		"execution_id": executionID,
+		"agent_id":     agentID,
+		"host_id":      hostID,
+		"status":       result.Status,
+		"exit_code":    result.ExitCode,
+		"error_msg":    result.ErrorMsg,
+		"error_code":   result.ErrorCode,
+		"started_at":   result.StartedAt,
+		"finished_at":  result.FinishedAt,
+		"log_size":     result.LogSize,
+		"log_pointer":  logPointer,
+		"received_at":  time.Now().UnixMilli(),
 	}
+
+	// 计算并添加作业进度信息
+	if executionID > 0 {
+		progress := w.calculateProgress(ctx, executionID)
+		for k, v := range progress {
+			values[k] = v
+		}
+	}
+
 	if result.FilePreviewResult != nil {
 		values["preview_content"] = result.FilePreviewResult.Content
 		values["preview_encoding"] = result.FilePreviewResult.Encoding
@@ -75,6 +82,89 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 	}).Err()
 }
 
+// calculateProgress 计算作业执行进度
+// 从 agent_results stream 中聚合计算进度信息
+func (w *ResultStreamWriter) calculateProgress(ctx context.Context, executionID int) map[string]interface{} {
+	progress := map[string]interface{}{
+		"total_hosts":   0,
+		"success_hosts": 0,
+		"failed_hosts":  0,
+		"running_hosts": 0,
+		"pending_hosts": 0,
+		"progress":      0,
+	}
+
+	// 从 agent_results stream 中读取该 execution 的所有任务结果
+	streamKey := w.key
+	messages, err := w.client.XRange(ctx, streamKey, "-", "+").Result()
+	if err != nil {
+		return progress
+	}
+
+	// 统计该 execution 的任务状态
+	totalHosts := make(map[int]bool)
+	successHosts := make(map[int]bool)
+	failedHosts := make(map[int]bool)
+	runningHosts := make(map[int]bool)
+
+	for _, msg := range messages {
+		msgExecID, _ := strconv.Atoi(msg.Values["execution_id"].(string))
+		if msgExecID != executionID {
+			continue
+		}
+
+		hostID, _ := strconv.Atoi(msg.Values["host_id"].(string))
+		if hostID == 0 {
+			continue
+		}
+
+		status := msg.Values["status"].(string)
+		totalHosts[hostID] = true
+
+		switch status {
+		case "success":
+			successHosts[hostID] = true
+		case "failed":
+			failedHosts[hostID] = true
+		case "running":
+			runningHosts[hostID] = true
+		}
+	}
+
+	// 计算进度
+	total := len(totalHosts)
+	success := len(successHosts)
+	failed := len(failedHosts)
+	running := len(runningHosts)
+	pending := total - success - failed - running
+
+	progressPercent := 0
+	if total > 0 {
+		progressPercent = (success * 100) / total
+	}
+
+	progress["total_hosts"] = total
+	progress["success_hosts"] = success
+	progress["failed_hosts"] = failed
+	progress["running_hosts"] = running
+	progress["pending_hosts"] = pending
+	progress["progress"] = progressPercent
+
+	return progress
+}
+
+// extractExecutionID 从 task_id 中提取 execution_id
+// task_id 格式: {execution_id}_{step_id}_{host_id}_{random}
+func extractExecutionID(taskID string) int {
+	parts := strings.Split(taskID, "_")
+	if len(parts) >= 1 {
+		if execID, err := strconv.Atoi(parts[0]); err == nil {
+			return execID
+		}
+	}
+	return 0
+}
+
 // extractHostID 从 task_id 中提取 host_id
 // task_id 格式: {execution_id}_{step_id}_{host_id}_{random}
 func extractHostID(taskID string) int {
@@ -84,5 +174,5 @@ func extractHostID(taskID string) int {
 			return hostID
 		}
 	}
-	return 0 // 如果解析失败，返回 0
+	return 0
 }

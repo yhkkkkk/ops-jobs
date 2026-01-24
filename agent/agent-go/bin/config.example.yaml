@@ -11,6 +11,10 @@
 #
 # agent-go 会优先读取：<binary_dir>/config/config.yaml
 # 若找不到，则回退到：~/.ops-job-agent/config.yaml
+#
+# 【无状态架构说明】
+# Agent 不再依赖 Redis 或外部队列，所有任务通过 WebSocket 实时推送。
+# 断线期间消息会缓存到本地文件，重连后自动发送。
 
 ###########################
 # 基础连接配置（仅 agent-server WS 模式）
@@ -49,7 +53,7 @@ identification:
 ###########################
 
 logging:
-  # 日志目录（如果为空，则由 agent 内部决定默认路径）
+  # 日志目录（如果为空，则 outbox 文件使用当前目录）
   log_dir: ""
   log_level: "info"        # debug/info/warn/error
 
@@ -62,7 +66,7 @@ logging:
   log_flush_interval: 200      # outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷）
 
 ###########################
-# 任务配置（可选）
+# 任务配置
 ###########################
 
 task:
@@ -74,20 +78,6 @@ task:
 
   # 全局最大任务执行时间（秒）
   max_execution_time_sec: 7200
-
-###########################
-# 可选：Redis / Asynq 配置
-###########################
-
-redis:
-  enabled: false
-  addr: "localhost:6379"
-  password: ""
-  db: 0
-
-asynq:
-  enabled: false
-  concurrency: 5
 
 ###########################
 # 资源限制配置（可选，当前仅带宽）

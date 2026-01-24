@@ -68,28 +68,28 @@ class RealtimeLogService:
         """包装 expire 以提供重试"""
         return self.redis_client.expire(key, seconds)
     
-    def push_log(self, task_id: str, host_id: str, log_data: Dict[str, Any], stream_key: str = None):
+    def push_log(self, execution_id: str, host_id: str, log_data: Dict[str, Any], task_id: str = None, stream_key: str = None):
         """推送日志到redis stream
         Args:
-            task_id: 执行ID (execution_id)，用于标识执行记录
+            execution_id: 执行ID，用于标识执行记录
             host_id: 主机ID
             log_data: 日志数据
+            task_id: 可选，任务ID（用于复杂工作流中的任务实例标识）
             stream_key: 可选，覆盖默认日志流
         """
         log_stream = stream_key or self.log_stream_key
-        logger.info(f"push_log 开始: task_id={task_id}, host_id={host_id}, stream_key={log_stream}")
+        logger.info(f"push_log 开始: execution_id={execution_id}, task_id={task_id}, host_id={host_id}, stream_key={log_stream}")
         try:
             self._ensure_connection()
         except Exception as e:
-            logger.error(f"redis连接不可用，跳过日志推送: {task_id} - {e}")
+            logger.error(f"redis连接不可用，跳过日志推送: {execution_id} - {e}")
             return
 
         try:
             # 构建日志消息 - 统一字段名
             message = {
                 'timestamp': timezone.now().isoformat(),
-                'task_id': str(task_id),  # 保留完整task_id
-                'execution_id': str(task_id),  # 与Agent-Server保持一致
+                'execution_id': str(execution_id),  # 主要执行标识
                 'host_id': str(host_id),
                 'host_name': log_data.get('host_name', ''),
                 'host_ip': log_data.get('host_ip', ''),
@@ -101,6 +101,10 @@ class RealtimeLogService:
                 'agent_id': log_data.get('agent_id', '')
             }
 
+            # 如果提供了task_id，添加到消息中（用于复杂工作流）
+            if task_id:
+                message['task_id'] = str(task_id)
+
             # 同时写入统一日志流（agent_logs），便于consume_agent_logs处理
             unified_message = message.copy()
             unified_message['received_at'] = timezone.now().timestamp() * 1000  # 毫秒时间戳
@@ -108,27 +112,27 @@ class RealtimeLogService:
             # 仅写入统一日志流
             msg_id = self._xadd(log_stream, unified_message)
 
-            logger.info(f"push_log 成功: task_id={task_id}, stream={log_stream}, msg_id={msg_id}")
+            logger.info(f"push_log 成功: execution_id={execution_id}, stream={log_stream}, msg_id={msg_id}")
         except Exception as e:
-            logger.error(f"推送日志失败: {task_id} - {e}")
+            logger.error(f"推送日志失败: {execution_id} - {e}")
 
-    def push_log_async(self, task_id: str, host_id: str, log_data: Dict[str, Any]):
+    def push_log_async(self, execution_id: str, host_id: str, log_data: Dict[str, Any], task_id: str = None):
         """
         异步推送日志，避免阻塞主线程
         """
         import threading
 
         def push_worker():
-            self.push_log(task_id, host_id, log_data)
+            self.push_log(execution_id, host_id, log_data, task_id)
 
         # 创建守护线程
         thread = threading.Thread(target=push_worker, daemon=True)
         thread.start()
-    
-    def push_status(self, task_id: str, status_data: Dict[str, Any], stream_prefix: str = None):
+
+    def push_status(self, execution_id: str, status_data: Dict[str, Any], stream_prefix: str = None):
         """推送状态更新到redis stream
         Args:
-            task_id: 执行ID (execution_id)，用于标识执行记录
+            execution_id: 执行ID，用于标识执行记录
             status_data: 状态数据
             stream_prefix: 可选，覆盖默认状态流前缀
         """
@@ -136,11 +140,11 @@ class RealtimeLogService:
         try:
             self._ensure_connection()
         except Exception as e:
-            logger.error(f"redis连接不可用，跳过状态推送: {task_id} - {e}")
+            logger.error(f"redis连接不可用，跳过状态推送: {execution_id} - {e}")
             return
 
         try:
-            stream_key = f"{status_prefix}{task_id}"
+            stream_key = f"{status_prefix}{execution_id}"
 
             # 构建状态消息（支持作业执行和Agent安装两种格式）
             message = {
@@ -168,9 +172,9 @@ class RealtimeLogService:
             logger.debug(f"推送状态到 {stream_key}: {message}，msg_id={msg_id}")
 
         except Exception as e:
-            logger.error(f"推送状态失败: {task_id} - {e}")
-    
-    def get_logs_stream(self, task_id: str, last_id: str = '0') -> Generator[Dict[str, Any], None, None]:
+            logger.error(f"推送状态失败: {execution_id} - {e}")
+
+    def get_logs_stream(self, execution_id: str, last_id: str = '0') -> Generator[Dict[str, Any], None, None]:
         """获取日志流 - 用于SSE，直接读取统一流 agent_logs 并按 execution_id 过滤"""
         stream_key = self.log_stream_key
         consecutive_errors = 0
@@ -203,8 +207,9 @@ class RealtimeLogService:
                         for stream, msgs in messages:
                             for msg_id, fields in msgs:
                                 last_id = msg_id
-                                exec_id = fields.get("execution_id") or fields.get("task_id")
-                                if exec_id != task_id:
+                                # 使用execution_id进行过滤，不再有fallback逻辑
+                                exec_id = fields.get("execution_id")
+                                if exec_id != execution_id:
                                     continue
                                 yield {
                                     'id': msg_id,
@@ -221,10 +226,10 @@ class RealtimeLogService:
 
                 except (redis.ConnectionError, redis.TimeoutError) as e:
                     consecutive_errors += 1
-                    logger.warning(f"redis连接错误 (连续错误: {consecutive_errors}): {task_id} - {e}")
+                    logger.warning(f"redis连接错误 (连续错误: {consecutive_errors}): {execution_id} - {e}")
 
                     if consecutive_errors >= max_consecutive_errors:
-                        logger.error(f"连续redis错误过多，停止日志流: {task_id}")
+                        logger.error(f"连续redis错误过多，停止日志流: {execution_id}")
                         yield {
                             'id': last_id,
                             'type': 'error',
@@ -237,22 +242,22 @@ class RealtimeLogService:
                     time.sleep(2)
 
         except Exception as e:
-            logger.error(f"获取日志流失败: {task_id} - {e}")
+            logger.error(f"获取日志流失败: {execution_id} - {e}")
             yield {
                 'id': last_id,
                 'type': 'error',
                 'data': {'message': str(e)}
             }
-    
-    def get_status_stream(self, task_id: str, last_id: str = '0') -> Generator[Dict[str, Any], None, None]:
+
+    def get_status_stream(self, execution_id: str, last_id: str = '0') -> Generator[Dict[str, Any], None, None]:
         """获取状态流 - 用于SSE"""
-        stream_key = f"{self.status_stream_prefix}{task_id}"
-        
+        stream_key = f"{self.status_stream_prefix}{execution_id}"
+
         try:
             while True:
                 # 从redis stream读取新消息
                 messages = self.redis_client.xread({stream_key: last_id}, count=10, block=1000)
-                
+
                 if messages:
                     for stream, msgs in messages:
                         for msg_id, fields in msgs:
@@ -269,19 +274,19 @@ class RealtimeLogService:
                         'type': 'heartbeat',
                         'data': {'timestamp': timezone.now().isoformat()}
                     }
-                    
+
         except Exception as e:
-            logger.error(f"获取状态流失败: {task_id} - {e}")
+            logger.error(f"获取状态流失败: {execution_id} - {e}")
             yield {
                 'id': last_id,
                 'type': 'error',
                 'data': {'message': str(e)}
             }
     
-    def get_historical_logs(self, task_id: str, limit: int = 100, stream_key: str = None) -> list:
+    def get_historical_logs(self, execution_id: str, limit: int = 100, stream_key: str = None) -> list:
         """获取历史日志（从指定流过滤 execution_id）"""
         stream_key = stream_key or self.log_stream_key
-        logger.info(f"get_historical_logs: task_id={task_id}, stream_key={stream_key}, limit={limit}")
+        logger.info(f"get_historical_logs: execution_id={execution_id}, stream_key={stream_key}, limit={limit}")
 
         try:
             messages = self.redis_client.xrevrange(stream_key, count=limit * 10)
@@ -289,8 +294,9 @@ class RealtimeLogService:
 
             logs = []
             for msg_id, fields in messages:
-                exec_id = fields.get("execution_id") or fields.get("task_id")
-                if exec_id != task_id:
+                # 使用execution_id进行过滤，不再有fallback逻辑
+                exec_id = fields.get("execution_id")
+                if exec_id != execution_id:
                     continue
                 logs.append({
                     'id': msg_id,
@@ -312,18 +318,18 @@ class RealtimeLogService:
             return logs
 
         except Exception as e:
-            logger.error(f"获取历史日志失败: {task_id} - {e}")
+            logger.error(f"获取历史日志失败: {execution_id} - {e}")
             return []
-    
-    def cleanup_logs(self, task_id: str):
+
+    def cleanup_logs(self, execution_id: str):
         """清理日志"""
         try:
-            status_stream_key = f"{self.status_stream_prefix}{task_id}"
+            status_stream_key = f"{self.status_stream_prefix}{execution_id}"
             self.redis_client.delete(status_stream_key)
-            logger.info(f"清理状态流: {task_id}")
+            logger.info(f"清理状态流: {execution_id}")
 
         except Exception as e:
-            logger.error(f"清理日志失败: {task_id} - {e}")
+            logger.error(f"清理日志失败: {execution_id} - {e}")
 
     def _parse_redis_pointer(self, pointer: str):
         """
@@ -337,8 +343,8 @@ class RealtimeLogService:
         body = pointer[len("redis:") :]
         path, max_id = (body.split("@", 1) + [""])[:2]
         # 兼容 agent_logs/<id> 或 agent_logs:<id>
-        task_id = path.replace("agent_logs/", "").replace("agent_logs:", "")
-        return task_id, max_id or None
+        execution_id = path.replace("agent_logs/", "").replace("agent_logs:", "")
+        return execution_id, max_id or None
 
     def get_logs_by_pointer(self, pointer: str, limit: int = 500):
         """

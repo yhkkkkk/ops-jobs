@@ -64,6 +64,11 @@ func (c *Client) SendMessage(msg Message) error {
 	return c.writeMessage(msg)
 }
 
+// TaskChan 返回任务通道
+func (c *Client) TaskChan() <-chan *api.TaskSpec {
+	return c.taskChan
+}
+
 // NewClient 创建 WebSocket 客户端
 func NewClient(serverURL, token string) *Client {
 	ctx, cancel := context.WithCancel(context.Background())

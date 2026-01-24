@@ -49,9 +49,9 @@ class SSEBaseView(View):
         data = dict(log_data or {})
         missing_fields = []
 
-        # 执行/任务 ID
+        # 执行 ID - 主要标识符
         data.setdefault('execution_id', str(execution_id))
-        data.setdefault('task_id', str(execution_id))
+        # task_id 只在复杂工作流中设置，不在这里强制设置
         data['id'] = data.get('id')
 
         # 通道标记
@@ -243,11 +243,11 @@ class SSEBaseView(View):
         )()
 
     @staticmethod
-    async def get_historical_logs_async(task_id, limit=50, stream_key=None):
+    async def get_historical_logs_async(execution_id, limit=50, stream_key=None):
         """异步获取历史日志"""
         return await sync_to_async(
             realtime_log_service.get_historical_logs
-        )(task_id, limit=limit, stream_key=stream_key)
+        )(execution_id, limit=limit, stream_key=stream_key)
 
 
 # ==================== 作业执行 SSE 视图 ====================
@@ -286,7 +286,6 @@ class JobLogsSSEView(SSEBaseView):
         """获取作业日志流"""
         logger.info(f"SSE日志连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        task_id = str(execution_id)
         last_id = request.GET.get('last_id', '0')
         filter_host_id = request.GET.get('host_id')
         filter_step_id = request.GET.get('step_id')
@@ -305,7 +304,7 @@ class JobLogsSSEView(SSEBaseView):
 
                 # 发送历史日志
                 if last_id == '0':
-                    historical_logs = await self.get_historical_logs_async(task_id, limit=50)
+                    historical_logs = await self.get_historical_logs_async(execution_id, limit=50)
                     logger.info(f"发送历史日志: {len(historical_logs)} 条")
                     for log in historical_logs:
                         normalized = self.normalize_log_message(log, execution_id)
@@ -342,8 +341,9 @@ class JobLogsSSEView(SSEBaseView):
                         if messages:
                             for stream, msgs in messages:
                                 for msg_id, fields in msgs:
-                                    exec_id = fields.get('execution_id') or fields.get('task_id')
-                                    if str(exec_id) != task_id:
+                                    # 使用execution_id进行过滤，不再有fallback逻辑
+                                    exec_id = fields.get('execution_id')
+                                    if str(exec_id) != execution_id:
                                         continue
                                     last_id = msg_id
                                     normalized = self.normalize_log_message(fields, execution_id)
@@ -383,7 +383,7 @@ class JobLogsSSEView(SSEBaseView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class JobStatusSSEView(SSEBaseView):
-    """作业状态 SSE 视图"""
+    """作业状态 SSE 视图 - 从 agent_results stream 读取进度"""
 
     def check_permission(self, user, execution_id):
         """复用 JobLogsSSEView 的权限检查"""
@@ -393,7 +393,6 @@ class JobStatusSSEView(SSEBaseView):
         """获取作业状态流"""
         logger.info(f"SSE状态连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        task_id = str(execution_id)
         last_id = request.GET.get('last_id', '0')
 
         async def event_stream():
@@ -406,9 +405,9 @@ class JobStatusSSEView(SSEBaseView):
                     'execution_id': execution_id
                 }).encode('utf-8')
 
-                # 实时状态流
-                logger.info(f"开始实时状态流: task_id={task_id}")
-                status_stream_key = f"{realtime_log_service.status_stream_prefix}{task_id}"
+                # 从 agent_results stream 读取进度
+                logger.info(f"开始实时状态流: execution_id={execution_id}")
+                result_stream_key = getattr(settings, "RESULT_STREAM_KEY", "agent_results")
                 consecutive_errors = 0
 
                 while True:
@@ -424,15 +423,25 @@ class JobStatusSSEView(SSEBaseView):
                             continue
 
                         consecutive_errors = 0
-                        messages = await self.redis_xread({status_stream_key: last_id}, count=100, block=2000)
+                        messages = await self.redis_xread({result_stream_key: last_id}, count=100, block=2000)
 
                         if messages:
                             for stream, msgs in messages:
                                 for msg_id, fields in msgs:
                                     last_id = msg_id
-                                    yield self.format_sse_message({
-                                        'type': 'status', **fields
-                                    }, event_id=msg_id).encode('utf-8')
+                                    # 从 agent_results 中提取进度信息
+                                    progress_fields = {
+                                        'type': 'status',
+                                        'execution_id': execution_id,
+                                        'progress': fields.get('progress'),
+                                        'total_hosts': fields.get('total_hosts'),
+                                        'success_hosts': fields.get('success_hosts'),
+                                        'failed_hosts': fields.get('failed_hosts'),
+                                        'running_hosts': fields.get('running_hosts'),
+                                        'pending_hosts': fields.get('pending_hosts'),
+                                        'timestamp': fields.get('received_at') or fields.get('timestamp'),
+                                    }
+                                    yield self.format_sse_message(progress_fields, event_id=msg_id).encode('utf-8')
                         else:
                             yield self.format_sse_message({
                                 'type': 'heartbeat',
@@ -460,7 +469,7 @@ class JobStatusSSEView(SSEBaseView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class JobCombinedSSEView(SSEBaseView):
-    """作业日志和状态合并 SSE 视图"""
+    """作业日志和状态合并 SSE 视图 - 从 agent_logs 和 agent_results 读取"""
 
     def check_permission(self, user, execution_id):
         """复用 JobLogsSSEView 的权限检查"""
@@ -470,12 +479,11 @@ class JobCombinedSSEView(SSEBaseView):
         """获取作业日志和状态的合并流"""
         logger.info(f"SSE合并流连接: 用户={request.user.username}, 执行ID={execution_id}")
 
-        task_id = str(execution_id)
         last_id = request.GET.get('last_id', '0')
 
         async def event_stream():
             log_last_id = last_id
-            status_last_id = last_id
+            result_last_id = last_id
 
             try:
                 # 连接建立消息
@@ -488,7 +496,7 @@ class JobCombinedSSEView(SSEBaseView):
 
                 # 发送历史日志
                 if last_id == '0':
-                    historical_logs = await self.get_historical_logs_async(task_id, limit=100)
+                    historical_logs = await self.get_historical_logs_async(execution_id, limit=100)
                     logger.info(f"发送历史日志: {len(historical_logs)} 条")
                     for log in historical_logs:
                         normalized = self.normalize_log_message(log, execution_id)
@@ -498,9 +506,9 @@ class JobCombinedSSEView(SSEBaseView):
                         }, event_id=log_last_id).encode('utf-8')
 
                 # 实时合并流
-                logger.info(f"开始实时合并流: task_id={task_id}")
+                logger.info(f"开始实时合并流: execution_id={execution_id}")
                 log_stream_key = realtime_log_service.log_stream_key
-                status_stream_key = f"{realtime_log_service.status_stream_prefix}{task_id}"
+                result_stream_key = getattr(settings, "RESULT_STREAM_KEY", "agent_results")
                 consecutive_errors = 0
 
                 while True:
@@ -517,23 +525,37 @@ class JobCombinedSSEView(SSEBaseView):
 
                         consecutive_errors = 0
 
-                        # 同时监听日志流和状态流
+                        # 同时监听日志流和结果流
                         messages = await self.redis_xread({
                             log_stream_key: log_last_id,
-                            status_stream_key: status_last_id
+                            result_stream_key: result_last_id
                         }, count=200, block=2000)
 
                         if messages:
                             for stream, msgs in messages:
                                 for msg_id, fields in msgs:
-                                    if stream == status_stream_key:
-                                        status_last_id = msg_id
-                                        yield self.format_sse_message({
-                                            'type': 'status', **fields
-                                        }, event_id=msg_id).encode('utf-8')
+                                    if stream == result_stream_key:
+                                        # 从 agent_results 读取进度状态
+                                        msg_exec_id = fields.get('execution_id')
+                                        if str(msg_exec_id) != execution_id:
+                                            continue
+                                        result_last_id = msg_id
+                                        progress_fields = {
+                                            'type': 'status',
+                                            'execution_id': execution_id,
+                                            'progress': fields.get('progress'),
+                                            'total_hosts': fields.get('total_hosts'),
+                                            'success_hosts': fields.get('success_hosts'),
+                                            'failed_hosts': fields.get('failed_hosts'),
+                                            'running_hosts': fields.get('running_hosts'),
+                                            'pending_hosts': fields.get('pending_hosts'),
+                                            'timestamp': fields.get('received_at') or fields.get('timestamp'),
+                                        }
+                                        yield self.format_sse_message(progress_fields, event_id=msg_id).encode('utf-8')
                                     elif stream == log_stream_key:
-                                        exec_id = fields.get('execution_id') or fields.get('task_id')
-                                        if str(exec_id) != task_id:
+                                        # 使用execution_id进行过滤
+                                        exec_id = fields.get('execution_id')
+                                        if str(exec_id) != execution_id:
                                             continue
                                         log_last_id = msg_id
                                         normalized = self.normalize_log_message(fields, execution_id)

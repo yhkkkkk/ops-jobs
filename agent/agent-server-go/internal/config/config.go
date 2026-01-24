@@ -17,7 +17,6 @@ type Config struct {
 	ResultStream ResultStreamConfig `mapstructure:"result_stream"`
 	StatusStream StatusStreamConfig `mapstructure:"status_stream"`
 	Redis        RedisConfig        `mapstructure:"redis"`
-	Asynq        AsynqConfig        `mapstructure:"asynq"`
 	Auth         AuthConfig         `mapstructure:"auth"`
 }
 
@@ -73,19 +72,15 @@ type StatusStreamConfig struct {
 
 // RedisConfig Redis 配置
 type RedisConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-}
-
-// AsynqConfig Asynq 配置
-type AsynqConfig struct {
 	Enabled     bool          `mapstructure:"enabled"`
-	Concurrency int           `mapstructure:"concurrency"`
-	RetryMax    int           `mapstructure:"retry_max"`
-	RetryDelay  time.Duration `mapstructure:"retry_delay"`
-	TaskTimeout time.Duration `mapstructure:"task_timeout"`
+	Addr        string        `mapstructure:"addr"`
+	Password    string        `mapstructure:"password"`
+	DB          int           `mapstructure:"db"`
+	PoolSize    int           `mapstructure:"pool_size"`
+	MinIdle     int           `mapstructure:"min_idle"`
+	MaxIdle     int           `mapstructure:"max_idle"`
+	IdleTimeout time.Duration `mapstructure:"idle_timeout"`
+	WaitTimeout time.Duration `mapstructure:"wait_timeout"`
 }
 
 // AuthConfig API 鉴权配置
@@ -165,13 +160,6 @@ func setDefaults() {
 	viper.SetDefault("redis.enabled", false)
 	viper.SetDefault("redis.addr", "localhost:6379")
 	viper.SetDefault("redis.db", 0)
-
-	// Asynq 默认值
-	viper.SetDefault("asynq.enabled", true)
-	viper.SetDefault("asynq.concurrency", 10)
-	viper.SetDefault("asynq.retry_max", 3)
-	viper.SetDefault("asynq.retry_delay", "1s")
-	viper.SetDefault("asynq.task_timeout", "5m")
 
 	// Auth 默认值
 	viper.SetDefault("auth.shared_secret", "")

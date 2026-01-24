@@ -5,11 +5,14 @@ import (
 	"sync"
 	"time"
 
+	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/internal/logger"
+	"ops-job-agent-server/internal/websocket"
 	"ops-job-agent-server/pkg/api"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	gorillaWs "github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -25,15 +28,19 @@ type Manager struct {
 	mu               sync.RWMutex
 	maxConns         int
 	heartbeatTimeout time.Duration
+	config           *config.Config
+	redisClient      *redis.Client // Redis连接池客户端
 }
 
 // NewManager 创建 Agent 管理器
-func NewManager(maxConns int, heartbeatTimeout time.Duration) *Manager {
+func NewManager(maxConns int, heartbeatTimeout time.Duration, cfg *config.Config, redisClient *redis.Client) *Manager {
 	return &Manager{
 		agents:           make(map[string]*Connection),
 		agentsByToken:    make(map[string]*Connection),
 		maxConns:         maxConns,
 		heartbeatTimeout: heartbeatTimeout,
+		config:           cfg,
+		redisClient:      redisClient,
 	}
 }
 
@@ -70,6 +77,9 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 		token = uuid.New().String()
 	}
 
+	// 创建持久化 AckStore
+	ackStore := websocket.NewAckStore(m.redisClient, "agent-server") // 使用Redis客户端
+
 	// 创建新连接（注意：这里还没有 WebSocket 连接，需要后续通过 Connect 方法设置）
 	conn := &Connection{
 		ID:           agentID,
@@ -83,6 +93,7 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 		Scope:        scope,
 		HostID:       hostID,
 		runningTasks: make(map[string]*api.TaskSpec),
+		ackStore:     ackStore,
 	}
 
 	m.agents[agentID] = conn
@@ -97,7 +108,7 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 }
 
 // Connect 建立 WebSocket 连接
-func (m *Manager) Connect(agentID, token string, conn *websocket.Conn) (*Connection, error) {
+func (m *Manager) Connect(agentID, token string, conn *gorillaWs.Conn) (*Connection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -180,7 +180,8 @@ class AgentOperationSSEView(SSEBaseView):
                                         if status_value in self.terminal_statuses:
                                             finished = True
                                     elif stream == log_stream_key:
-                                        exec_id = fields.get('execution_id') or fields.get('task_id')
+                                        # Agent操作使用task_id作为主要标识符
+                                        exec_id = fields.get('task_id') or fields.get('execution_id')
                                         if str(exec_id) != str(task_id):
                                             continue
                                         log_last_id = msg_id
