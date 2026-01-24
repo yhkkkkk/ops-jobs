@@ -866,7 +866,9 @@ sequenceDiagram
     participant AS as Agent-Server
     participant A as Agent
     participant R as Redis
+    participant FE as Frontend
 
+    Note over CP,FE: 1. 任务下发阶段
     CP->>AS: POST /api/agents/:id/tasks/<br/>{task_spec}
     AS->>AS: 验证 Agent 在线状态
 
@@ -874,13 +876,29 @@ sequenceDiagram
         AS->>A: WebSocket: type=task<br/>{message_id, task}
         A->>AS: WS: type=ack {message_id}
         AS->>R: HSET agent-ack:{message_id}
-        A->>AS: WS: type=log {message_id, content}
-        A->>AS: WS: type=result {message_id, exit_code, log}
     else Agent 离线
         AS->>R: LPUSH pending_tasks:{agent_id}
     end
 
-    A->>AS: 心跳 WS: type=heartbeat
+    Note over A,AS: 2. 任务执行与结果上报阶段
+    A->>A: 执行任务 (executor)
+    A->>AS: WS: type=log {message_id, content}
+    A->>AS: WS: type=result {message_id, exit_code, log}
+
+    Note over AS,R: 3. 日志/结果写入 Redis Stream
+    AS->>R: XADD agent_logs {execution_id, task_id, message_id, content}
+    AS->>R: XADD agent_results {execution_id, task_id, exit_code, progress, ...}
+
+    Note over CP,R: 4. 控制面消费 Stream
+    R-->>CP: consume_streams 消费
+    CP->>CP: 更新 ExecutionRecord/Step 状态
+
+    Note over CP,FE: 5. SSE 实时推送
+    CP->>FE: SSE: 实时日志
+    CP->>FE: SSE: 执行进度/结果
+
+    Note over A,AS: 6. 心跳保活
+    A->>AS: WS: type=heartbeat
     AS->>R: XADD agent_status {status: online}
 ```
 
