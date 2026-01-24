@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"ops-job-agent-server/internal/agent"
-	"ops-job-agent-server/internal/controlplane"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/pkg/api"
 
@@ -19,16 +18,14 @@ import (
 // Dispatcher 任务分发器
 type Dispatcher struct {
 	agentManager     *agent.Manager
-	cpClient         *controlplane.Client
 	pendingTaskStore *PendingTaskStore // 待处理任务持久化存储（唯一持久化方案）
 }
 
 // NewDispatcher 创建任务分发器（仅支持控制面主动推送，不再轮询拉取）
 // pendingTaskStore 用于任务持久化和 ACK 跟踪（无状态架构核心组件）
-func NewDispatcher(agentMgr *agent.Manager, cpClient *controlplane.Client, pendingStore *PendingTaskStore) *Dispatcher {
+func NewDispatcher(agentMgr *agent.Manager, pendingStore *PendingTaskStore) *Dispatcher {
 	d := &Dispatcher{
 		agentManager:     agentMgr,
-		cpClient:         cpClient,
 		pendingTaskStore: pendingStore,
 	}
 
@@ -144,9 +141,9 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 	// 从 PendingTaskStore 获取
 	if d.pendingTaskStore != nil {
 		tasks, err = d.pendingTaskStore.GetAgentPendingTasks(agentID)
-	if err != nil {
+		if err != nil {
 			logger.GetLogger().WithError(err).WithField("agent_id", agentID).Error("get pending tasks from store failed")
-		return err
+			return err
 		}
 	}
 

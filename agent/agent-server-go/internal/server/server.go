@@ -18,7 +18,6 @@ import (
 	"ops-job-agent-server/internal/auth"
 	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/internal/constants"
-	"ops-job-agent-server/internal/controlplane"
 	logstream "ops-job-agent-server/internal/log"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/internal/metrics"
@@ -34,12 +33,6 @@ import (
 	"github.com/spf13/cast"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // 允许跨域，生产环境应该限制
-	},
-}
-
 const (
 	ackCacheTTL = 10 * time.Minute
 	ackCacheMax = 5000
@@ -51,13 +44,39 @@ var (
 	errLogStreamWriteFailed = errors.New("log stream write failed")
 )
 
+// createUpgrader 根据配置创建 WebSocket Upgrader
+func createUpgrader(cfg *config.Config) websocket.Upgrader {
+	checkOrigin := func(r *http.Request) bool {
+		// 如果配置了允许的来源列表，检查请求来源
+		if len(cfg.WebSocket.AllowedOrigins) > 0 {
+			origin := r.Header.Get("Origin")
+			for _, allowed := range cfg.WebSocket.AllowedOrigins {
+				if origin == allowed {
+					return true
+				}
+			}
+			return false
+		}
+		// 否则允许所有来源（开发环境）
+		return true
+	}
+
+	return websocket.Upgrader{
+		CheckOrigin:       checkOrigin,
+		HandshakeTimeout:  cfg.WebSocket.HandshakeTimeout,
+		ReadBufferSize:    cfg.WebSocket.ReadBufferSize,
+		WriteBufferSize:   cfg.WebSocket.WriteBufferSize,
+		EnableCompression: cfg.WebSocket.EnableCompression,
+	}
+}
+
 // Server Agent-Server 服务器
 type Server struct {
 	cfg              *config.Config
 	engine           *gin.Engine
 	httpServer       *http.Server
+	upgrader         websocket.Upgrader // WebSocket Upgrader
 	agentManager     *agent.Manager
-	cpClient         *controlplane.Client
 	taskDispatcher   *task.Dispatcher
 	pendingTaskStore *task.PendingTaskStore // 待处理任务持久化存储
 	logStream        *logstream.StreamWriter
@@ -72,6 +91,9 @@ func New(cfg *config.Config) (*Server, error) {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.Use(gin.Logger())
+
+	// 创建 WebSocket Upgrader
+	upgrader := createUpgrader(cfg)
 
 	// 创建Redis连接池管理器
 	var redisClient *redis.Client
@@ -93,14 +115,11 @@ func New(cfg *config.Config) (*Server, error) {
 		redisClient,
 	)
 
-	// 创建控制面客户端
-	cpClient := controlplane.NewClient(cfg.ControlPlane.URL, cfg.ControlPlane.Token, cfg.ControlPlane.Scope, cfg.ControlPlane.Timeout)
-
 	// 创建 PendingTaskStore（用于无状态架构的任务持久化）
 	pendingTaskStore := task.NewPendingTaskStore(redisClient)
 
 	// 创建任务分发器
-	taskDispatcher := task.NewDispatcher(agentMgr, cpClient, pendingTaskStore)
+	taskDispatcher := task.NewDispatcher(agentMgr, pendingTaskStore)
 
 	// 创建日志流写入器
 	var logStream *logstream.StreamWriter
@@ -143,9 +162,9 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s := &Server{
 		cfg:              cfg,
+		upgrader:         upgrader,
 		engine:           engine,
 		agentManager:     agentMgr,
-		cpClient:         cpClient,
 		taskDispatcher:   taskDispatcher,
 		pendingTaskStore: pendingTaskStore,
 		logStream:        logStream,
@@ -761,19 +780,19 @@ func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
 
 	// 直接从 pendingTaskStore 删除任务
 	if err := s.pendingTaskStore.Delete(agentID, taskID); err != nil {
-						logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-							"agent_id": agentID,
-							"task_id":  taskID,
+		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+			"agent_id": agentID,
+			"task_id":  taskID,
 		}).Warn("task not found in pending store")
 		return fmt.Errorf("task not found in pending store")
-					}
+	}
 
-					logger.GetLogger().WithFields(map[string]interface{}{
-						"agent_id": agentID,
-						"task_id":  taskID,
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"agent_id": agentID,
+		"task_id":  taskID,
 	}).Info("task cancelled from pending store")
 
-					return nil
+	return nil
 }
 
 // handleWebSocket 处理 WebSocket 连接
@@ -795,7 +814,7 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 	}
 
 	// 升级为 WebSocket
-	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	ws, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logger.GetLogger().WithError(err).Error("websocket upgrade failed")
 		return

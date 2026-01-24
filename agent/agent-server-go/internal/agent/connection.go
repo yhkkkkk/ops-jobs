@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"ops-job-agent-server/internal/constants"
 	"ops-job-agent-server/internal/websocket"
 	"ops-job-agent-server/pkg/api"
 
@@ -37,11 +38,11 @@ func NewConnection(id, name, token string, conn *gorillaWs.Conn) *Connection {
 		Name:      name,
 		Token:     token,
 		Conn:      conn,
-		Status:    "active",
+		Status:    constants.StatusActive,
 		TaskQueue: make(chan *api.TaskSpec, 100),
 		LogBuffer: make(chan *api.LogEntry, 1000),
 		Labels:    make(map[string]string),
-		// runningTasks tracks tasks that were dispatched to this agent; guarded by mu.
+		// runningTasks 跟踪已分发给此 Agent 的任务
 		runningTasks: make(map[string]*api.TaskSpec),
 	}
 }
@@ -81,7 +82,7 @@ func (c *Connection) Close() error {
 		return nil
 	}
 	c.closed = true
-	c.Status = "inactive"
+	c.Status = constants.StatusInactive
 	c.runningTasks = make(map[string]*api.TaskSpec)
 	close(c.TaskQueue)
 	close(c.LogBuffer)
@@ -97,7 +98,7 @@ func (c *Connection) SendTask(task *api.TaskSpec) error {
 	}
 
 	msg := api.WebSocketMessage{
-		Type: "task",
+		Type: constants.MessageTypeTask,
 		Task: task,
 	}
 	return c.Conn.WriteJSON(msg)
@@ -117,7 +118,7 @@ func (c *Connection) SendTasks(tasks []*api.TaskSpec) error {
 
 	// 批量发送消息
 	msg := api.WebSocketMessage{
-		Type:  "tasks_batch",
+		Type:  constants.MessageTypeTasksBatch,
 		Tasks: tasks,
 	}
 	return c.Conn.WriteJSON(msg)
@@ -132,7 +133,7 @@ func (c *Connection) SendCancelTask(taskID string) error {
 	}
 
 	msg := api.WebSocketMessage{
-		Type:   "cancel_task",
+		Type:   constants.MessageTypeCancelTask,
 		TaskID: taskID,
 	}
 	return c.Conn.WriteJSON(msg)
@@ -152,7 +153,7 @@ func (c *Connection) SendCancelTasks(taskIDs []string) error {
 
 	// 批量取消
 	msg := api.WebSocketMessage{
-		Type:    "cancel_tasks_batch",
+		Type:    constants.MessageTypeCancelTasksBatch,
 		TaskIDs: taskIDs,
 	}
 	return c.Conn.WriteJSON(msg)
@@ -165,7 +166,7 @@ func (c *Connection) GetScope() string {
 	return c.Scope
 }
 
-// SendControl 发送控制消息到 Agent
+// SendControl 发送控制消息（start/stop/restart）到 Agent
 func (c *Connection) SendControl(action, reason string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -174,7 +175,7 @@ func (c *Connection) SendControl(action, reason string) error {
 	}
 
 	msg := api.WebSocketMessage{
-		Type: "control",
+		Type: constants.MessageTypeControl,
 		Payload: map[string]interface{}{
 			"action": action,
 			"reason": reason,
@@ -192,7 +193,7 @@ func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash
 	}
 
 	msg := api.WebSocketMessage{
-		Type: "upgrade",
+		Type: constants.MessageTypeUpgrade,
 		Payload: map[string]interface{}{
 			"target_version": targetVersion,
 			"download_url":   downloadURL,
@@ -203,19 +204,19 @@ func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash
 	return c.Conn.WriteJSON(msg)
 }
 
-// AddRunningTask registers a task as running for this connection (thread-safe).
+// AddRunningTask 注册一个正在运行的任务（线程安全）
 func (c *Connection) AddRunningTask(task *api.TaskSpec) {
 	if task == nil || task.ID == "" {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// store a copy to avoid external mutation
+	// 保存副本以避免外部修改
 	taskCopy := *task
 	c.runningTasks[task.ID] = &taskCopy
 }
 
-// RemoveRunningTask removes a task from the running registry.
+// RemoveRunningTask 从运行任务注册表中移除任务
 func (c *Connection) RemoveRunningTask(taskID string) {
 	if taskID == "" {
 		return
@@ -225,7 +226,7 @@ func (c *Connection) RemoveRunningTask(taskID string) {
 	delete(c.runningTasks, taskID)
 }
 
-// IsTaskRunning reports whether the task is registered as running.
+// IsTaskRunning 检查任务是否已注册为正在运行
 func (c *Connection) IsTaskRunning(taskID string) bool {
 	if taskID == "" {
 		return false
@@ -236,7 +237,7 @@ func (c *Connection) IsTaskRunning(taskID string) bool {
 	return exists
 }
 
-// GetRunningTasks returns a copy of running tasks to avoid external mutation.
+// GetRunningTasks 返回正在运行任务的副本以避免外部修改
 func (c *Connection) GetRunningTasks() []api.TaskSpec {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -245,7 +246,7 @@ func (c *Connection) GetRunningTasks() []api.TaskSpec {
 		if t == nil {
 			continue
 		}
-		// copy value to detach from internal map
+		// 复制值以脱离内部 map
 		copyVal := *t
 		result = append(result, copyVal)
 	}

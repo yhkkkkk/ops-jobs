@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 )
 
-// HTTP header keys used for control plane authentication and scoping.
+// 控制面认证和作用域相关的 HTTP 请求头
 const (
 	HeaderScope     = "X-Scope"
 	HeaderTimestamp = "X-Timestamp"

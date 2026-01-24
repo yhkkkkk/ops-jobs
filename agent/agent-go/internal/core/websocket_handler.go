@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"time"
 
+	"ops-job-agent/internal/constants"
 	"ops-job-agent/internal/logger"
 )
 
@@ -47,11 +48,11 @@ func (a *Agent) handleWebSocketControl(payload map[string]interface{}) {
 	}).Warn("received control command")
 
 	switch action {
-	case "restart":
+	case constants.ControlActionRestart:
 		go a.performRestart(reason)
-	case "stop":
+	case constants.ControlActionStop:
 		go a.performStop(reason)
-	case "start":
+	case constants.ControlActionStart:
 		// start 通常不需要处理，因为 agent 已经在运行
 		logger.GetLogger().Info("agent is already running, ignoring start command")
 	default:

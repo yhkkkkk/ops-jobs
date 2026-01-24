@@ -10,6 +10,7 @@ import (
 // Config Agent-Server 配置
 type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
+	WebSocket    WebSocketConfig    `mapstructure:"websocket"`
 	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
 	Agent        AgentConfig        `mapstructure:"agent"`
 	Logging      LoggingConfig      `mapstructure:"logging"`
@@ -26,6 +27,15 @@ type ServerConfig struct {
 	Port         int           `mapstructure:"port"`
 	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+}
+
+// WebSocketConfig WebSocket 连接配置
+type WebSocketConfig struct {
+	HandshakeTimeout time.Duration `mapstructure:"handshake_timeout"` // WebSocket 握手超时
+	ReadBufferSize   int           `mapstructure:"read_buffer_size"`   // 读取缓冲区大小（字节）
+	WriteBufferSize  int           `mapstructure:"write_buffer_size"`  // 写入缓冲区大小（字节）
+	EnableCompression bool         `mapstructure:"enable_compression"` // 是否启用压缩
+	AllowedOrigins   []string      `mapstructure:"allowed_origins"`    // 允许的跨域来源（为空则允许所有）
 }
 
 // ControlPlaneConfig 控制面配置
@@ -127,6 +137,13 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.read_timeout", "30s")
 	viper.SetDefault("server.write_timeout", "30s")
+
+	// WebSocket 默认值
+	viper.SetDefault("websocket.handshake_timeout", "10s")
+	viper.SetDefault("websocket.read_buffer_size", 4096)
+	viper.SetDefault("websocket.write_buffer_size", 4096)
+	viper.SetDefault("websocket.enable_compression", true)
+	viper.SetDefault("websocket.allowed_origins", []string{}) // 空数组表示允许所有来源
 
 	// ControlPlane 默认值
 	viper.SetDefault("control_plane.timeout", "30s")

@@ -200,7 +200,7 @@ func TestCompleteTaskFlow(t *testing.T) {
 		TimeoutSec: 300,
 	}
 	msg := websocket.Message{
-		Type:      "task",
+		Type:      constants.MessageTypeTask,
 		MessageID: "msg-dispatch-" + taskID,
 		TaskID:    taskID,
 		Task:      task,

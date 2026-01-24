@@ -7,40 +7,21 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+
+	"github.com/go-resty/resty/v2"
 )
 
 // downloadFile 从 URL 下载文件到指定路径
 func downloadFile(ctx context.Context, url, dest string) error {
-	// 创建 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// 使用 resty 下载文件（SetOutput 直接写入文件）
+	_, err := resty.New().R().
+		SetContext(ctx).
+		SetOutput(dest).
+		Get(url)
+
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-
-	// 发送请求
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("download file: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
-	}
-
-	// 创建目标文件
-	out, err := os.Create(dest)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
-	}
-	defer out.Close()
-
-	// 复制内容
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		return fmt.Errorf("save file: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 
 	return nil

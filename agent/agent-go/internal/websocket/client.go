@@ -177,7 +177,7 @@ func (c *Client) SetOverrideURL(u string) {
 // SendHeartbeat 发送心跳
 func (c *Client) SendHeartbeat(timestamp int64, system *api.SystemInfo) error {
 	msg := Message{
-		Type:      "heartbeat",
+		Type:      constants.MessageTypeHeartbeat,
 		Timestamp: time.Now().UnixMilli(),
 		Payload: map[string]interface{}{
 			"timestamp": timestamp,
@@ -288,14 +288,14 @@ func (c *Client) writeLoop() {
 // handleMessage 处理接收到的消息
 func (c *Client) handleMessage(msg Message) {
 	switch msg.Type {
-	case "task":
+	case constants.MessageTypeTask:
 		if msg.Task == nil {
 			return
 		}
 		if c.onTask != nil {
 			c.onTask(msg.Task)
 		}
-	case "tasks_batch":
+	case constants.MessageTypeTasksBatch:
 		// 批量任务处理
 		if len(msg.Tasks) == 0 {
 			return
@@ -307,14 +307,14 @@ func (c *Client) handleMessage(msg Message) {
 				}
 			}
 		}
-	case "cancel_task":
+	case constants.MessageTypeCancelTask:
 		if msg.TaskID == "" {
 			return
 		}
 		if c.onCancel != nil {
 			c.onCancel(msg.TaskID)
 		}
-	case "cancel_tasks_batch":
+	case constants.MessageTypeCancelTasksBatch:
 		// 批量取消任务处理
 		if len(msg.TaskIDs) == 0 {
 			return
@@ -330,11 +330,11 @@ func (c *Client) handleMessage(msg Message) {
 		if msg.AckID != "" {
 			c.removePending(msg.AckID)
 		}
-	case "control":
+	case constants.MessageTypeControl:
 		if msg.Payload != nil && c.onControl != nil {
 			c.onControl(msg.Payload)
 		}
-	case "upgrade":
+	case constants.MessageTypeUpgrade:
 		if msg.Payload != nil && c.onUpgrade != nil {
 			c.onUpgrade(msg.Payload)
 		}
