@@ -114,6 +114,12 @@ class AgentInstallRecord(models.Model):
     agent_server_listen_addr = models.CharField(max_length=50, default='0.0.0.0:8080', verbose_name="Agent-Server监听地址")
     max_connections = models.IntegerField(default=1000, verbose_name="最大连接数")
     heartbeat_timeout = models.IntegerField(default=60, verbose_name="心跳超时(秒)")
+    # agent-server WebSocket 配置
+    ws_handshake_timeout = models.CharField(max_length=20, default='10s', verbose_name="WebSocket握手超时")
+    ws_read_buffer_size = models.IntegerField(default=4096, verbose_name="WebSocket读取缓冲区大小")
+    ws_write_buffer_size = models.IntegerField(default=4096, verbose_name="WebSocket写入缓冲区大小")
+    ws_enable_compression = models.BooleanField(default=True, verbose_name="WebSocket启用压缩")
+    ws_allowed_origins = models.JSONField(default=list, verbose_name="WebSocket允许的来源")
     package_id = models.IntegerField(null=True, blank=True, verbose_name="安装包ID")
     package_version = models.CharField(max_length=50, blank=True, verbose_name="安装包版本")
     control_plane_url = models.CharField(max_length=500, blank=True, default='', verbose_name="控制面URL")

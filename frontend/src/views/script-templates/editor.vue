@@ -77,10 +77,6 @@
             <a-tag v-if="previewData.is_active" color="green">上线</a-tag>
             <a-tag v-else color="red">下线</a-tag>
           </a-descriptions-item>
-          <a-descriptions-item label="可见性">
-            <a-tag v-if="previewData.is_public" color="arcoblue">公开</a-tag>
-            <a-tag v-else color="gray">私有</a-tag>
-          </a-descriptions-item>
           <a-descriptions-item label="描述" :span="2">
             {{ previewData.description || '暂无描述' }}
           </a-descriptions-item>
@@ -270,7 +266,6 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
       template_type: templateData.value?.template_type || 'user', // 模板类型，默认为用户模板
       version: data.version || templateData.value?.version || '1.0.0',
       is_active: data.is_active ?? templateData.value?.is_active ?? true,
-      is_public: data.is_public ?? templateData.value?.is_public ?? false,
     }
 
     console.log('转换后的API数据:', apiData)

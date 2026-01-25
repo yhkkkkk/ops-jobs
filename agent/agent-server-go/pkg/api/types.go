@@ -80,7 +80,6 @@ type RegisterRequest struct {
 	Token  string            `json:"token,omitempty"`
 	Labels map[string]string `json:"labels,omitempty"`
 	System *SystemInfo       `json:"system,omitempty"`
-	Scope  string            `json:"scope,omitempty"` // 多租户作用域（可选）
 	HostID int               `json:"host_id,omitempty"`
 }
 

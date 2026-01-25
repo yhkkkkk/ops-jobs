@@ -6,7 +6,6 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
 from .models import ScriptTemplate, ScriptTemplateVersion, UserFavorite
@@ -35,9 +34,7 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # 管理页面：显示所有模板（包括下线的）
-        queryset = super().get_queryset().filter(
-            Q(created_by=user) | Q(is_public=True)
-        )
+        queryset = super().get_queryset()
 
         return queryset.select_related('created_by').order_by('-created_at')
     
@@ -100,10 +97,6 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
     def get_content(self, request, pk=None):
         """获取脚本模板内容"""
         template = self.get_object()
-
-        # 检查权限
-        if not template.is_public and template.created_by != request.user:
-            return SycResponse.error(message="您没有权限访问此模板", code=403)
 
         # 检查是否启用
         if not template.is_active:
@@ -248,7 +241,6 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         
         # 只返回启用的模板
         templates = ScriptTemplate.objects.filter(
-            Q(created_by=user) | Q(is_public=True),
             is_active=True  # 只显示启用的模板
         ).select_related('created_by').order_by('-created_at')
         

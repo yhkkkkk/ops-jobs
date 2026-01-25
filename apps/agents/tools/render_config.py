@@ -86,6 +86,12 @@ def parse_args():
     p.add_argument("--agent-server-listen-addr", help="agent-server listen addr", default=None)
     p.add_argument("--max-connections", help="max connections", default=None)
     p.add_argument("--heartbeat-timeout", help="heartbeat timeout", default=None)
+    # agent-server WebSocket 配置
+    p.add_argument("--ws-handshake-timeout", help="ws handshake timeout", default=None)
+    p.add_argument("--ws-read-buffer-size", help="ws read buffer size", default=None)
+    p.add_argument("--ws-write-buffer-size", help="ws write buffer size", default=None)
+    p.add_argument("--ws-enable-compression", help="ws enable compression (true/false)", default=None)
+    p.add_argument("--ws-allowed-origins", help="ws allowed origins (comma-separated)", default=None)
     return p.parse_args()
 
 
@@ -102,6 +108,12 @@ def render_config_yaml(
     agent_server_listen_addr: str = None,
     max_connections: int = None,
     heartbeat_timeout: int = None,
+    # agent-server WebSocket 配置
+    ws_handshake_timeout: str = None,
+    ws_read_buffer_size: int = None,
+    ws_write_buffer_size: int = None,
+    ws_enable_compression: bool = None,
+    ws_allowed_origins: list = None,
     base_config_path: str = None,
 ) -> str:
     """
@@ -166,9 +178,35 @@ def render_config_yaml(
 
         overrides = {
             "server": {"host": host, "port": port},
-            "control_plane": {"url": control_plane_url, "token": agent_token},
+            "websocket": {},
             "logging": {"level": "info", "file": "logs/agent-server.log"},
         }
+
+        # 添加 WebSocket 配置（前端可覆盖）
+        if ws_handshake_timeout:
+            overrides["websocket"]["handshake_timeout"] = ws_handshake_timeout
+        else:
+            overrides["websocket"]["handshake_timeout"] = "10s"
+
+        if ws_read_buffer_size:
+            overrides["websocket"]["read_buffer_size"] = int(ws_read_buffer_size)
+        else:
+            overrides["websocket"]["read_buffer_size"] = 4096
+
+        if ws_write_buffer_size:
+            overrides["websocket"]["write_buffer_size"] = int(ws_write_buffer_size)
+        else:
+            overrides["websocket"]["write_buffer_size"] = 4096
+
+        if ws_enable_compression is not None:
+            overrides["websocket"]["enable_compression"] = bool(ws_enable_compression)
+        else:
+            overrides["websocket"]["enable_compression"] = True
+
+        if ws_allowed_origins is not None:
+            overrides["websocket"]["allowed_origins"] = list(ws_allowed_origins)
+        else:
+            overrides["websocket"]["allowed_origins"] = []
 
         # Add agent config section
         agent_config = {"cleanup_interval": "30s"}
@@ -241,6 +279,17 @@ def render_config_yaml(
 
 def main():
     args = parse_args()
+
+    # 解析 ws_enable_compression
+    ws_enable_compression = None
+    if args.ws_enable_compression is not None:
+        ws_enable_compression = args.ws_enable_compression.lower() in ('true', '1', 'yes')
+
+    # 解析 ws_allowed_origins
+    ws_allowed_origins = None
+    if args.ws_allowed_origins is not None and args.ws_allowed_origins.strip():
+        ws_allowed_origins = [o.strip() for o in args.ws_allowed_origins.split(',') if o.strip()]
+
     result = render_config_yaml(
         install_type=args.install_type,
         agent_token=args.agent_token,
@@ -254,6 +303,12 @@ def main():
         agent_server_listen_addr=args.agent_server_listen_addr,
         max_connections=int(args.max_connections) if args.max_connections else None,
         heartbeat_timeout=int(args.heartbeat_timeout) if args.heartbeat_timeout else None,
+        # agent-server WebSocket 配置
+        ws_handshake_timeout=args.ws_handshake_timeout,
+        ws_read_buffer_size=int(args.ws_read_buffer_size) if args.ws_read_buffer_size else None,
+        ws_write_buffer_size=int(args.ws_write_buffer_size) if args.ws_write_buffer_size else None,
+        ws_enable_compression=ws_enable_compression,
+        ws_allowed_origins=ws_allowed_origins,
         base_config_path=args.config,
     )
     print(result)

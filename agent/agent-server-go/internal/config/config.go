@@ -11,7 +11,6 @@ import (
 type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
 	WebSocket    WebSocketConfig    `mapstructure:"websocket"`
-	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
 	Agent        AgentConfig        `mapstructure:"agent"`
 	Logging      LoggingConfig      `mapstructure:"logging"`
 	LogStream    LogStreamConfig    `mapstructure:"log_stream"`
@@ -31,19 +30,11 @@ type ServerConfig struct {
 
 // WebSocketConfig WebSocket 连接配置
 type WebSocketConfig struct {
-	HandshakeTimeout time.Duration `mapstructure:"handshake_timeout"` // WebSocket 握手超时
-	ReadBufferSize   int           `mapstructure:"read_buffer_size"`   // 读取缓冲区大小（字节）
-	WriteBufferSize  int           `mapstructure:"write_buffer_size"`  // 写入缓冲区大小（字节）
-	EnableCompression bool         `mapstructure:"enable_compression"` // 是否启用压缩
-	AllowedOrigins   []string      `mapstructure:"allowed_origins"`    // 允许的跨域来源（为空则允许所有）
-}
-
-// ControlPlaneConfig 控制面配置
-type ControlPlaneConfig struct {
-	URL     string        `mapstructure:"url"`
-	Token   string        `mapstructure:"token"`
-	Scope   string        `mapstructure:"scope"` // 作用域/租户标识，用于隔离控制面请求
-	Timeout time.Duration `mapstructure:"timeout"`
+	HandshakeTimeout  time.Duration `mapstructure:"handshake_timeout"`  // WebSocket 握手超时
+	ReadBufferSize    int           `mapstructure:"read_buffer_size"`   // 读取缓冲区大小（字节）
+	WriteBufferSize   int           `mapstructure:"write_buffer_size"`  // 写入缓冲区大小（字节）
+	EnableCompression bool          `mapstructure:"enable_compression"` // 是否启用压缩
+	AllowedOrigins    []string      `mapstructure:"allowed_origins"`    // 允许的跨域来源（为空则允许所有）
 }
 
 // AgentConfig Agent 配置
@@ -144,10 +135,6 @@ func setDefaults() {
 	viper.SetDefault("websocket.write_buffer_size", 4096)
 	viper.SetDefault("websocket.enable_compression", true)
 	viper.SetDefault("websocket.allowed_origins", []string{}) // 空数组表示允许所有来源
-
-	// ControlPlane 默认值
-	viper.SetDefault("control_plane.timeout", "30s")
-	viper.SetDefault("control_plane.scope", "default")
 
 	// Agent 默认值
 	viper.SetDefault("agent.heartbeat_timeout", "60s")

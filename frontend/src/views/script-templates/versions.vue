@@ -23,11 +23,6 @@
             {{ template.is_active ? '上线' : '下线' }}
           </a-tag>
         </a-descriptions-item>
-        <a-descriptions-item label="可见性">
-          <a-tag :color="template.is_public ? 'blue' : 'gray'">
-            {{ template.is_public ? '公开' : '私有' }}
-          </a-tag>
-        </a-descriptions-item>
         <a-descriptions-item label="创建者">
           {{ template.created_by_name }}
         </a-descriptions-item>

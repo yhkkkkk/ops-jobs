@@ -585,6 +585,44 @@
                     </a-form-item>
                   </a-col>
                 </a-row>
+                <!-- WebSocket 配置 -->
+                <a-divider>WebSocket 配置</a-divider>
+                <a-row :gutter="12">
+                  <a-col :span="8">
+                    <a-form-item label="握手超时">
+                      <a-input
+                        v-model="installForm.ws_handshake_timeout"
+                        placeholder="例如: 10s"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="读缓冲区">
+                      <a-input-number v-model="installForm.ws_read_buffer_size" :min="1024" :max="65536" style="width: 100%" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="写缓冲区">
+                      <a-input-number v-model="installForm.ws_write_buffer_size" :min="1024" :max="65536" style="width: 100%" />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="启用压缩">
+                      <a-switch v-model="installForm.ws_enable_compression" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="允许来源(逗号分隔)">
+                      <a-input
+                        v-model="ws_allowed_origins_input"
+                        placeholder="例如: http://example.com,https://app.example.com"
+                        @blur="handleOriginsBlur"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
               </template>
               <a-row :gutter="12">
                 <a-col :span="12">
@@ -937,6 +975,12 @@ const installForm = reactive({
   agent_server_listen_addr: '0.0.0.0:8080',
   max_connections: 1000,
   heartbeat_timeout: 60,
+  // Agent-Server WebSocket 配置
+  ws_handshake_timeout: '10s',
+  ws_read_buffer_size: 4096,
+  ws_write_buffer_size: 4096,
+  ws_enable_compression: true,
+  ws_allowed_origins: [] as string[],
   // 通用配置
   ssh_timeout: 300,
   package_id: undefined as number | undefined,
@@ -973,6 +1017,21 @@ const installProgress = ref<{
   logs: []
 })
 const sseEventSource = ref<any | null>(null)
+
+// WebSocket 允许来源输入
+const ws_allowed_origins_input = ref('')
+
+// 处理来源输入框失焦
+const handleOriginsBlur = () => {
+  if (ws_allowed_origins_input.value.trim()) {
+    installForm.ws_allowed_origins = ws_allowed_origins_input.value
+      .split(',')
+      .map((o: string) => o.trim())
+      .filter((o: string) => o.length > 0)
+  } else {
+    installForm.ws_allowed_origins = []
+  }
+}
 
 // 卸载相关
 const uninstallDrawerVisible = ref(false)
@@ -1849,6 +1908,12 @@ const handleInstallAgent = () => {
   installForm.agent_server_listen_addr = '0.0.0.0:8080'
   installForm.max_connections = 1000
   installForm.heartbeat_timeout = 60
+  installForm.ws_handshake_timeout = '10s'
+  installForm.ws_read_buffer_size = 4096
+  installForm.ws_write_buffer_size = 4096
+  installForm.ws_enable_compression = true
+  installForm.ws_allowed_origins = []
+  ws_allowed_origins_input.value = ''
   installForm.ssh_timeout = 300
   installForm.package_id = undefined
   installForm.package_version = undefined
@@ -1990,6 +2055,12 @@ const handleGenerateScript = async () => {
       params.agent_server_listen_addr = installForm.agent_server_listen_addr
       params.max_connections = installForm.max_connections
       params.heartbeat_timeout = installForm.heartbeat_timeout
+      // WebSocket 配置
+      params.ws_handshake_timeout = installForm.ws_handshake_timeout
+      params.ws_read_buffer_size = installForm.ws_read_buffer_size
+      params.ws_write_buffer_size = installForm.ws_write_buffer_size
+      params.ws_enable_compression = installForm.ws_enable_compression
+      params.ws_allowed_origins = installForm.ws_allowed_origins
     }
 
     const response = await agentsApi.generateInstallScript(params)
@@ -2216,6 +2287,12 @@ const performInstall = async (allowReinstall: boolean) => {
       params.agent_server_listen_addr = installForm.agent_server_listen_addr
       params.max_connections = installForm.max_connections
       params.heartbeat_timeout = installForm.heartbeat_timeout
+      // WebSocket 配置
+      params.ws_handshake_timeout = installForm.ws_handshake_timeout
+      params.ws_read_buffer_size = installForm.ws_read_buffer_size
+      params.ws_write_buffer_size = installForm.ws_write_buffer_size
+      params.ws_enable_compression = installForm.ws_enable_compression
+      params.ws_allowed_origins = installForm.ws_allowed_origins
     }
 
     const response = await agentsApi.batchInstall(params)

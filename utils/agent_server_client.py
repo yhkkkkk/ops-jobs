@@ -9,11 +9,10 @@ from django.conf import settings
 
 class AgentServerClient:
     """
-    封装对 agent-server 的 HTTP 调用，统一附加 Scope + HMAC 签名。
+    封装对 agent-server 的 HTTP 调用，统一附加 HMAC 签名。
 
     签名规则需与 agent-server 内部的 computeHMAC 保持一致：
       - Header:
-          X-Scope:  作用域/租户（可选，默认 settings.AGENT_SERVER_SCOPE 或 "default"）
           X-Timestamp: 秒级时间戳（int）
           X-Signature: hex(hmac_sha256(secret, ts + "\n" + method + "\n" + path + "\n" + body))
     """
@@ -21,21 +20,18 @@ class AgentServerClient:
     def __init__(
         self,
         shared_secret: str,
-        scope: str = "default",
         session: Optional[requests.Session] = None,
         timeout: int = 10,
     ):
         self.shared_secret = shared_secret or ""
-        self.scope = scope or "default"
         self.session = session or requests.Session()
         self.timeout = timeout
 
     @classmethod
     def from_settings(cls) -> "AgentServerClient":
         secret = getattr(settings, "AGENT_SERVER_SHARED_SECRET", "")
-        scope = getattr(settings, "AGENT_SERVER_SCOPE", "default")
         timeout = getattr(settings, "AGENT_SERVER_TIMEOUT", 10)
-        return cls(shared_secret=secret, scope=scope, timeout=timeout)
+        return cls(shared_secret=secret, timeout=timeout)
 
     def _compute_hmac(self, method: str, url: str, ts: str, body: bytes) -> str:
         """
@@ -68,8 +64,6 @@ class AgentServerClient:
         headers.setdefault("Content-Type", "application/json")
 
         ts = str(int(time.time()))
-        # 允许调用方预先设置 X-Scope（按环境/业务多租户），否则使用默认 scope
-        headers.setdefault("X-Scope", self.scope)
         headers["X-Timestamp"] = ts
 
         if self.shared_secret:
@@ -94,8 +88,6 @@ class AgentServerClient:
         headers = headers.copy() if headers else {}
 
         ts = str(int(time.time()))
-        # 允许调用方预先设置 X-Scope（按环境/业务多租户），否则使用默认 scope
-        headers.setdefault("X-Scope", self.scope)
         headers["X-Timestamp"] = ts
 
         # GET 请求的 body 为空
@@ -104,5 +96,3 @@ class AgentServerClient:
             headers["X-Signature"] = sig
 
         return self.session.get(url, params=params, headers=headers, timeout=timeout or self.timeout)
-
-

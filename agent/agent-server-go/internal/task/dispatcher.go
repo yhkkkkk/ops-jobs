@@ -34,8 +34,7 @@ func NewDispatcher(agentMgr *agent.Manager, pendingStore *PendingTaskStore) *Dis
 
 // DispatchTaskToAgent 直接分发任务到指定 Agent（用于控制面主动推送）
 // 实现混合模式：Agent在线时直接推送，离线时持久化到 pendingTaskStore
-// 支持多租户隔离：检查Agent的scope是否匹配（如果配置了scope）
-func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec, requestScope string) error {
+func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) error {
 	agentConn, exists := d.agentManager.Get(agentID)
 	if !exists {
 		// Agent不存在，持久化到 pendingTaskStore（如果有）
@@ -54,23 +53,6 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec, req
 			return nil
 		}
 		return agent.ErrAgentNotFound
-	}
-
-	// 多租户隔离检查：如果配置了scope，确保Agent的scope与请求的scope匹配
-	if requestScope != "" {
-		// 安全读取scope
-		agentScope := agentConn.GetScope()
-
-		// 如果Agent有scope且与请求的scope不匹配，拒绝分发
-		if agentScope != "" && agentScope != requestScope {
-			logger.GetLogger().WithFields(map[string]interface{}{
-				"agent_id":      agentID,
-				"task_id":       task.ID,
-				"agent_scope":   agentScope,
-				"request_scope": requestScope,
-			}).Warn("task dispatch rejected: scope mismatch (multi-tenant isolation)")
-			return fmt.Errorf("agent scope mismatch: agent belongs to scope %s, but request scope is %s", agentScope, requestScope)
-		}
 	}
 
 	// 检查Agent是否在线
@@ -157,13 +139,11 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 	}).Info("processing pending tasks for agent")
 
 	// 获取Agent连接信息
-	agentConn, exists := d.agentManager.Get(agentID)
+	_, exists := d.agentManager.Get(agentID)
 	if !exists {
 		logger.GetLogger().WithField("agent_id", agentID).Warn("agent connection not found, skipping pending tasks")
 		return nil
 	}
-
-	requestScope := agentConn.GetScope()
 
 	// 对任务进行优先级排序（关键任务优先）
 	sortedTasks := d.sortTasksByPriority(tasks)
@@ -221,7 +201,7 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 			}
 
 			// 尝试分发任务
-			if err := d.DispatchTaskToAgent(agentID, t, requestScope); err != nil {
+			if err := d.DispatchTaskToAgent(agentID, t); err != nil {
 				atomic.AddInt64(&failedCount, 1)
 				logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 					"agent_id": agentID,

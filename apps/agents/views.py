@@ -216,7 +216,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="status")
     def status(self, request, pk=None):
-        """获取agent运行状态，只返回agent-server实时数据（经 HMAC 客户端 + X-Scope）"""
+        """获取agent运行状态，只返回agent-server实时数据（经 HMAC 客户端）"""
         agent = self.get_object()
         server_base = self._get_agent_server_base(agent, request.query_params.get("agent_server_url", ""))
 
@@ -224,13 +224,11 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             return SycResponse.error(message="未配置agent-server，无法查询实时状态")
 
         api_url = f"{server_base}/api/agents/{agent.host_id}"
-        # 使用统一的 Agent-Server HMAC 客户端，并按 Agent 设置 X-Scope
+        # 使用统一的 Agent-Server HMAC 客户端
         client = AgentServerClient.from_settings()
-        scope = AgentExecutionService._get_agent_server_scope(agent)
-        headers = {"X-Scope": scope} if scope else {}
 
         try:
-            resp = client.get(api_url, headers=headers, timeout=5)
+            resp = client.get(api_url, timeout=5)
             if resp.status_code == 200:
                 return SycResponse.success(content=resp.json(), message="获取agent状态成功")
             logger.warning("查询agent状态失败 %s %s", resp.status_code, resp.text)
@@ -241,7 +239,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="control")
     def control(self, request, pk=None):
-        """管控agent（start/stop/restart），调用agent-server控制接口（HMAC + X-Scope）"""
+        """管控agent（start/stop/restart），调用agent-server控制接口（HMAC）"""
         agent = self.get_object()
         serializer = AgentControlSerializer(data=request.data)
         if not serializer.is_valid():
@@ -260,10 +258,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
             api_url = f"{server_base}/api/agents/{agent.host_id}/control"
             client = AgentServerClient.from_settings()
-            scope = AgentExecutionService._get_agent_server_scope(agent)
-            headers = {}
-            if scope:
-                headers["X-Scope"] = scope
 
             payload = {
                 "action": action,
@@ -271,7 +265,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             }
 
             try:
-                resp = client.post(api_url, json=payload, headers=headers, timeout=5)
+                resp = client.post(api_url, json=payload, timeout=5)
                 if resp.status_code == 200:
                     AgentService.audit(request.user, f"control_agent_{action}", agent, request=request)
                     return SycResponse.success(content=resp.json(), message="管控指令已下发")
@@ -377,10 +371,6 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
                 api_url = f"{server_base}/api/agents/{agent.host_id}/upgrade"
                 client = AgentServerClient.from_settings()
-                scope = AgentExecutionService._get_agent_server_scope(agent)
-                headers = {}
-                if scope:
-                    headers["X-Scope"] = scope
 
                 payload = {
                     "target_version": package.version,
@@ -389,7 +379,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     "sha256_hash": package.sha256_hash,
                 }
 
-                resp = client.post(api_url, json=payload, headers=headers, timeout=10)
+                resp = client.post(api_url, json=payload, timeout=10)
                 if resp.status_code == 200:
                     AgentService.audit(
                         request.user,
@@ -862,6 +852,12 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 ws_max_retries=install_record.ws_max_retries,
                 package_version=package_version,
                 package_id=package_id,
+                # agent-server WebSocket 配置
+                ws_handshake_timeout=install_record.ws_handshake_timeout if hasattr(install_record, 'ws_handshake_timeout') else None,
+                ws_read_buffer_size=install_record.ws_read_buffer_size if hasattr(install_record, 'ws_read_buffer_size') else None,
+                ws_write_buffer_size=install_record.ws_write_buffer_size if hasattr(install_record, 'ws_write_buffer_size') else None,
+                ws_enable_compression=install_record.ws_enable_compression if hasattr(install_record, 'ws_enable_compression') else True,
+                ws_allowed_origins=install_record.ws_allowed_origins if hasattr(install_record, 'ws_allowed_origins') else None,
             )
         except Exception as e:
             logger.error(f"为 Agent {agent.id} 重新生成脚本失败: {str(e)}", exc_info=True)
@@ -913,7 +909,12 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         package_version = data.get('package_version')
         package_id = data.get('package_id')
         package_type = 'agent' if install_type == 'agent' else 'agent-server'
-        control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
+        # agent-server WebSocket 配置
+        ws_handshake_timeout = data.get('ws_handshake_timeout', '10s')
+        ws_read_buffer_size = data.get('ws_read_buffer_size', 4096)
+        ws_write_buffer_size = data.get('ws_write_buffer_size', 4096)
+        ws_enable_compression = data.get('ws_enable_compression', True)
+        ws_allowed_origins = data.get('ws_allowed_origins', [])
 
         # 验证参数
         if install_type == 'agent' and not agent_server_url:
@@ -1041,6 +1042,12 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         heartbeat_timeout=heartbeat_timeout,
                         package_version=package_version,
                         package_id=package_id,
+                        # agent-server WebSocket 配置
+                        ws_handshake_timeout=ws_handshake_timeout,
+                        ws_read_buffer_size=ws_read_buffer_size,
+                        ws_write_buffer_size=ws_write_buffer_size,
+                        ws_enable_compression=ws_enable_compression,
+                        ws_allowed_origins=ws_allowed_origins,
                     )
                 except Exception as e:
                     logger.error(
@@ -1244,7 +1251,13 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     ws_backoff_max_ms=ws_backoff_max_ms,
                     ws_max_retries=ws_max_retries,
                     ssh_timeout=ssh_timeout,
-                    allow_reinstall=allow_reinstall
+                    allow_reinstall=allow_reinstall,
+                    # agent-server WebSocket 配置
+                    ws_handshake_timeout=ws_handshake_timeout,
+                    ws_read_buffer_size=ws_read_buffer_size,
+                    ws_write_buffer_size=ws_write_buffer_size,
+                    ws_enable_compression=ws_enable_compression,
+                    ws_allowed_origins=ws_allowed_origins,
                 )
 
                 # 记录审日志

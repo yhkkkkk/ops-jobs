@@ -45,7 +45,7 @@ func NewManager(maxConns int, heartbeatTimeout time.Duration, cfg *config.Config
 }
 
 // Register 注册 Agent
-func (m *Manager) Register(name, token string, labels map[string]string, system *api.SystemInfo, scope string, hostID int) (*Connection, string, error) {
+func (m *Manager) Register(name, token string, labels map[string]string, system *api.SystemInfo, hostID int) (*Connection, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -65,9 +65,6 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 			conn.Name = name
 			conn.Labels = labels
 			conn.System = system
-			if scope != "" {
-				conn.Scope = scope
-			}
 			conn.UpdateHeartbeat()
 			conn.mu.Unlock()
 			return conn, conn.ID, nil
@@ -90,7 +87,6 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 		System:       system,
 		TaskQueue:    make(chan *api.TaskSpec, 100),
 		LogBuffer:    make(chan *api.LogEntry, 1000),
-		Scope:        scope,
 		HostID:       hostID,
 		runningTasks: make(map[string]*api.TaskSpec),
 		ackStore:     ackStore,

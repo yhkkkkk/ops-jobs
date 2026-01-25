@@ -195,8 +195,7 @@ func (s *Server) setupAgentIngressRoutes() {
 func (s *Server) setupControlPlaneIngressRoutes() {
 	api := s.engine.Group("/api")
 
-	// 控制面入站：先scope，再签名（可选）
-	api.Use(s.requireScope())
+	// 控制面入站：可选的 HMAC 签名校验
 	if s.cfg.Auth.RequireSignature && s.cfg.Auth.SharedSecret != "" {
 		api.Use(s.requireSignature())
 	}
@@ -385,14 +384,7 @@ func (s *Server) handleRegister(c *gin.Context) {
 		return
 	}
 
-	// 从请求中获取scope（如果控制面传递了scope信息，用于多租户隔离）
-	// 如果没有传递，使用Agent-Server配置的scope
-	scope := s.cfg.ControlPlane.Scope
-	if req.Scope != "" {
-		scope = req.Scope
-	}
-
-	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, scope, req.HostID)
+	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID)
 	if err != nil {
 		if err == agent.ErrMaxConnections {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "max connections reached"})
@@ -477,14 +469,7 @@ func (s *Server) handlePushTask(c *gin.Context) {
 		return
 	}
 
-	// 从请求头中获取scope（用于多租户隔离检查）
-	requestScope := c.GetHeader(auth.HeaderScope)
-	if requestScope == "" {
-		// 如果没有传递scope，使用Agent-Server配置的scope
-		requestScope = s.cfg.ControlPlane.Scope
-	}
-
-	if err := s.taskDispatcher.DispatchTaskToAgent(agentID, &taskSpec, requestScope); err != nil {
+	if err := s.taskDispatcher.DispatchTaskToAgent(agentID, &taskSpec); err != nil {
 		if err == agent.ErrAgentNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 			return
@@ -519,12 +504,6 @@ func (s *Server) handlePushTasksBatch(c *gin.Context) {
 		return
 	}
 
-	// 从请求头中获取scope
-	requestScope := c.GetHeader(auth.HeaderScope)
-	if requestScope == "" {
-		requestScope = s.cfg.ControlPlane.Scope
-	}
-
 	// 获取 Agent 连接
 	conn, exists := s.agentManager.Get(agentID)
 	if !exists {
@@ -532,11 +511,7 @@ func (s *Server) handlePushTasksBatch(c *gin.Context) {
 		return
 	}
 
-	// 检查 scope
-	if requestScope != "" && conn.GetScope() != requestScope {
-		c.JSON(http.StatusForbidden, gin.H{"error": "scope mismatch"})
-		return
-	}
+	// 检查 scope（已移除，此检查不再需要）
 
 	// 转换为指针数组
 	taskPtrs := make([]*api.TaskSpec, len(taskSpecs))
@@ -843,27 +818,6 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 
 	// 启动消息处理
 	s.handleWebSocketMessages(agentConn)
-}
-
-// requireScope 校验来自控制面的请求是否符合配置的 scope，用于多租户/作用域隔离
-func (s *Server) requireScope() gin.HandlerFunc {
-	expected := s.cfg.ControlPlane.Scope
-	return func(c *gin.Context) {
-		if expected == "" {
-			c.Next()
-			return
-		}
-		scope := c.GetHeader(auth.HeaderScope)
-		if scope == "" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing X-Scope"})
-			return
-		}
-		if scope != expected {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid scope"})
-			return
-		}
-		c.Next()
-	}
 }
 
 // requireSignature 校验 HMAC 时间窗签名：X-Timestamp + X-Signature

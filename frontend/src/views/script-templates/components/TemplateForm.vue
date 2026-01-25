@@ -131,13 +131,6 @@
                 </a-form-item>
               </a-col>
             </a-row>
-
-            <a-form-item label="可见性" field="is_public">
-              <a-radio-group v-model="form.is_public">
-                <a-radio :value="false">私有</a-radio>
-                <a-radio :value="true">公开</a-radio>
-              </a-radio-group>
-            </a-form-item>
           </a-card>
         </a-col>
 
@@ -217,7 +210,6 @@ const form = reactive<Partial<ScriptTemplate>>({
   content: '',
   version: '1.0.0',
   is_active: true,
-  is_public: false,
 })
 
 // 用于跟踪标签键的变化
@@ -462,7 +454,6 @@ const initForm = () => {
       content: props.template.script_content || props.template.content || '',
       version: props.template.version || '1.0.0',
       is_active: props.template.is_active !== undefined ? props.template.is_active : true,
-      is_public: props.template.is_public !== undefined ? props.template.is_public : false,
     })
 
     // 初始化tagKeys映射
@@ -482,7 +473,6 @@ const initForm = () => {
       content: '',
       version: '1.0.0',
       is_active: true,
-      is_public: false,
     })
     tagKeys.value = {}
     // 新建模板时插入默认模板

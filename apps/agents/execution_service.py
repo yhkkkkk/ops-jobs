@@ -224,41 +224,6 @@ class AgentExecutionService:
         return task_spec
 
     @staticmethod
-    def _get_agent_server_scope(agent: Agent) -> str:
-        """
-        根据 Agent 关联主机的标签选择 Agent-Server X-Scope。
-        优先级：
-          1) SystemConfig.agent.scope_by_env: {"prod": "prod-scope", ... , "default": "..."}
-          2) settings.AGENT_SERVER_SCOPE
-          3) "default"
-        """
-        from django.conf import settings
-
-        default_scope = getattr(settings, "AGENT_SERVER_SCOPE", "default") or "default"
-        scope_by_env = ConfigManager.get("agent.scope_by_env", {}) or {}
-
-        tags = []
-        try:
-            tags = list(getattr(getattr(agent, "host", None), "tags", []) or [])
-        except Exception:
-            tags = []
-        tags_lower = {str(t).strip().lower() for t in tags if str(t).strip()}
-
-        if isinstance(scope_by_env, dict):
-            for env_key, scope_val in scope_by_env.items():
-                if not isinstance(env_key, str):
-                    continue
-                if not isinstance(scope_val, str) or not scope_val.strip():
-                    continue
-                if env_key.lower() in tags_lower:
-                    return scope_val.strip()
-            default_val = scope_by_env.get("default")
-            if isinstance(default_val, str) and default_val.strip():
-                return default_val.strip()
-
-        return default_scope
-
-    @staticmethod
     def push_task_to_agent(
         agent: Agent,
         task_spec: Dict[str, Any],
@@ -313,10 +278,7 @@ class AgentExecutionService:
             from utils.agent_server_client import AgentServerClient
 
             client = AgentServerClient.from_settings()
-            # 根据 Agent 环境设置 X-Scope，支持多租户/多环境的 Agent-Server 集群
-            scope = AgentExecutionService._get_agent_server_scope(agent)
-            headers = {"X-Scope": scope} if scope else {}
-            response = client.post(api_url, json=task_spec, headers=headers)
+            response = client.post(api_url, json=task_spec)
 
             if response.status_code == 200:
                 result = response.json()
@@ -1672,15 +1634,11 @@ class AgentExecutionService:
                     api_url = f"{server_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
                     
                     try:
-                        # 使用 HMAC 客户端发起请求，并按 Agent 环境附加合适的 X-Scope
+                        # 使用 HMAC 客户端发起请求
                         from utils.agent_server_client import AgentServerClient
 
                         client = AgentServerClient.from_settings()
-                        scope = AgentExecutionService._get_agent_server_scope(agent)
-                        headers = headers_base.copy()
-                        if scope:
-                            headers["X-Scope"] = scope
-                        response = client.post(api_url, json=None, headers=headers)
+                        response = client.post(api_url, json=None, headers=headers_base)
                         
                         if response.status_code == 200:
                             cancelled_count += 1

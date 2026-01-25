@@ -28,7 +28,7 @@ class ScriptTemplateSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'script_type', 'script_type_display',
             'template_type', 'template_type_display', 'category', 'category_display',
             'script_content', 'version', 'is_active', 'tags_json', 'tag_list', 'usage_count',
-            'is_public', 'created_by', 'created_by_name', 'created_at', 'updated_at'
+            'created_by', 'created_by_name', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'usage_count', 'created_by', 'created_at', 'updated_at']
     
@@ -46,7 +46,7 @@ class ScriptTemplateCreateSerializer(serializers.ModelSerializer):
         model = ScriptTemplate
         fields = [
             'name', 'description', 'script_type', 'template_type', 'category',
-            'script_content', 'version', 'is_active', 'tags_json', 'is_public'
+            'script_content', 'version', 'is_active', 'tags_json'
         ]
     
     def validate_name(self, value):

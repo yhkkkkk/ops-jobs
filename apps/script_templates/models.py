@@ -92,7 +92,6 @@ class ScriptTemplate(models.Model):
     usage_count = models.IntegerField(default=0, verbose_name="使用次数")
 
     # 权限控制
-    is_public = models.BooleanField(default=False, verbose_name="是否公开")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
     
     # 时间信息
@@ -105,7 +104,6 @@ class ScriptTemplate(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['script_type', 'template_type']),
-            models.Index(fields=['created_by', 'is_public']),
             models.Index(fields=['is_active', 'version']),
         ]
     

@@ -114,7 +114,6 @@ Get-Website | Select-Object name,state,physicalPath
                     "is_active": True,
                     "tags_json": spec["tags"],
                     "usage_count": 0,
-                    "is_public": True,
                     "created_by": creator,
                 },
             )

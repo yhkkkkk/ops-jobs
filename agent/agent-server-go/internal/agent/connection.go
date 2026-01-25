@@ -23,7 +23,6 @@ type Connection struct {
 	System        *api.SystemInfo
 	TaskQueue     chan *api.TaskSpec
 	LogBuffer     chan *api.LogEntry
-	Scope         string // 多租户隔离：Agent所属的scope（从控制面获取或配置）
 	HostID        int    // 控制面主机ID，用于建立映射关系
 	runningTasks  map[string]*api.TaskSpec
 	mu            sync.RWMutex
@@ -157,13 +156,6 @@ func (c *Connection) SendCancelTasks(taskIDs []string) error {
 		TaskIDs: taskIDs,
 	}
 	return c.Conn.WriteJSON(msg)
-}
-
-// GetScope 返回连接的scope
-func (c *Connection) GetScope() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.Scope
 }
 
 // SendControl 发送控制消息（start/stop/restart）到 Agent

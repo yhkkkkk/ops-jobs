@@ -25,9 +25,9 @@ class PermissionActionsMixin:
 class ScriptTemplateAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = [
         'name', 'script_type', 'template_type', 'version', 'is_active',
-        'usage_count', 'is_public', 'created_by', 'created_at', 'permission_actions'
+        'usage_count', 'created_by', 'created_at', 'permission_actions'
     ]
-    list_filter = ['script_type', 'template_type', 'is_active', 'is_public', 'created_at']
+    list_filter = ['script_type', 'template_type', 'is_active', 'created_at']
     search_fields = ['name', 'description', 'tags']
     readonly_fields = ['usage_count', 'created_at', 'updated_at']
 
@@ -42,7 +42,7 @@ class ScriptTemplateAdmin(PermissionActionsMixin, GuardedModelAdmin):
             'fields': ('version', 'is_active')
         }),
         ('其他设置', {
-            'fields': ('tags_json', 'is_public')
+            'fields': ('tags_json',)
         }),
         ('统计信息', {
             'fields': ('usage_count', 'created_by', 'created_at', 'updated_at'),

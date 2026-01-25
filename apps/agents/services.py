@@ -204,7 +204,13 @@ class AgentService:
                                 ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
                                 ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
                                 max_connections: int = 1000, heartbeat_timeout: int = 60,
-                                package_version: str = None, package_id: int = None) -> Dict[str, str]:
+                                package_version: str = None, package_id: int = None,
+                                # agent-server WebSocket 配置
+                                ws_handshake_timeout: str = None,
+                                ws_read_buffer_size: int = None,
+                                ws_write_buffer_size: int = None,
+                                ws_enable_compression: bool = True,
+                                ws_allowed_origins: list = None) -> Dict[str, str]:
         """
         生成 Agent 或 Agent-Server 安装脚本
         Args:
@@ -301,6 +307,12 @@ exit 1
                 agent_server_listen_addr=agent_server_listen_addr or "",
                 max_connections=max_connections,
                 heartbeat_timeout=heartbeat_timeout,
+                # agent-server WebSocket 配置
+                ws_handshake_timeout=ws_handshake_timeout,
+                ws_read_buffer_size=ws_read_buffer_size,
+                ws_write_buffer_size=ws_write_buffer_size,
+                ws_enable_compression=ws_enable_compression,
+                ws_allowed_origins=ws_allowed_origins,
                 base_config_path=str(base_config_path),
             )
             # base64 encode for safe insertion into shell script
@@ -502,7 +514,13 @@ exit 1
                              ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
                              ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
                              max_connections: int = 1000, heartbeat_timeout: int = 60,
-                             ssh_timeout: int = 300, allow_reinstall: bool = False) -> Dict[str, Any]:
+                             ssh_timeout: int = 300, allow_reinstall: bool = False,
+                             # agent-server WebSocket 配置
+                             ws_handshake_timeout: str = None,
+                             ws_read_buffer_size: int = None,
+                             ws_write_buffer_size: int = None,
+                             ws_enable_compression: bool = True,
+                             ws_allowed_origins: list = None) -> Dict[str, Any]:
         """
         批量安装 Agent（通过 SSH）
         
@@ -618,6 +636,12 @@ exit 1
                         'control_plane_url': control_plane_url if install_type == 'agent-server' else '',
                         'installed_by': user,
                         'install_task_id': install_task_id,
+                        # agent-server WebSocket 配置
+                        'ws_handshake_timeout': ws_handshake_timeout or '10s',
+                        'ws_read_buffer_size': ws_read_buffer_size or 4096,
+                        'ws_write_buffer_size': ws_write_buffer_size or 4096,
+                        'ws_enable_compression': ws_enable_compression if ws_enable_compression is not None else True,
+                        'ws_allowed_origins': ws_allowed_origins or [],
                     }
                 )
                 if not created:
@@ -634,6 +658,12 @@ exit 1
                     install_record.control_plane_url = control_plane_url if install_type == 'agent-server' else ''
                     install_record.status = 'pending'
                     install_record.install_task_id = install_task_id
+                    # agent-server WebSocket 配置
+                    install_record.ws_handshake_timeout = ws_handshake_timeout or '10s'
+                    install_record.ws_read_buffer_size = ws_read_buffer_size or 4096
+                    install_record.ws_write_buffer_size = ws_write_buffer_size or 4096
+                    install_record.ws_enable_compression = ws_enable_compression if ws_enable_compression is not None else True
+                    install_record.ws_allowed_origins = ws_allowed_origins or []
                     install_record.save()
                 
                 # 生成安装脚本（使用 Agent Token）
@@ -651,7 +681,13 @@ exit 1
                     max_connections=max_connections,
                     heartbeat_timeout=heartbeat_timeout,
                     package_version=package_version,
-                    package_id=package_id
+                    package_id=package_id,
+                    # agent-server WebSocket 配置
+                    ws_handshake_timeout=ws_handshake_timeout,
+                    ws_read_buffer_size=ws_read_buffer_size,
+                    ws_write_buffer_size=ws_write_buffer_size,
+                    ws_enable_compression=ws_enable_compression,
+                    ws_allowed_origins=ws_allowed_origins,
                 )
                 
                 # 根据操作系统选择脚本
@@ -1506,15 +1542,13 @@ exit 1
 
             api_url = f"{server_base}/api/agents/{agent.host_id}/control"
             client = AgentServerClient.from_settings()
-            scope = AgentExecutionService._get_agent_server_scope(agent)
-            headers = {"X-Scope": scope} if scope else {}
 
             payload = {
                 "action": action,
                 "reason": f"用户 {user.username} 手动{action}"
             }
 
-            resp = client.post(api_url, json=payload, headers=headers, timeout=5)
+            resp = client.post(api_url, json=payload, timeout=5)
             if resp.status_code != 200:
                 raise ValueError(f"Agent控制失败: HTTP {resp.status_code}")
 

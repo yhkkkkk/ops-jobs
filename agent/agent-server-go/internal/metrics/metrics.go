@@ -24,11 +24,10 @@ func HandleOverview(c *gin.Context, agentMgr *agent.Manager, cfg *config.Config)
 	}
 
 	resp := gin.H{
-		"now_unix_ms":        now.UnixMilli(),
-		"agents_total":       len(agents),
-		"agents_online":      online,
-		"agents_offline":     len(agents) - online,
-		"controlplane_scope": cfg.ControlPlane.Scope,
+		"now_unix_ms":    now.UnixMilli(),
+		"agents_total":   len(agents),
+		"agents_online":  online,
+		"agents_offline": len(agents) - online,
 	}
 
 	c.JSON(http.StatusOK, resp)

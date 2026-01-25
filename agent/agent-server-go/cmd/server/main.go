@@ -37,9 +37,8 @@ var startCmd = &cobra.Command{
 		log := logger.GetLogger()
 
 		log.WithFields(map[string]interface{}{
-			"host":          cfg.Server.Host,
-			"port":          cfg.Server.Port,
-			"control_plane": cfg.ControlPlane.URL,
+			"host": cfg.Server.Host,
+			"port": cfg.Server.Port,
 		}).Info("starting agent-server")
 
 		// 创建服务器
