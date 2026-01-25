@@ -36,6 +36,7 @@ declare module 'vue' {
     FileSourcesPanel: typeof import('./components/FileSourcesPanel.vue')['default']
     HostSelector: typeof import('./components/HostSelector.vue')['default']
     IconBulb: typeof import('@arco-design/web-vue/es/icon')['IconBulb']
+    IconCheckCircle: typeof import('@arco-design/web-vue/es/icon')['IconCheckCircle']
     IconClose: typeof import('@arco-design/web-vue/es/icon')['IconClose']
     IconDown: typeof import('@arco-design/web-vue/es/icon')['IconDown']
     IconExclamationCircle: typeof import('@arco-design/web-vue/es/icon')['IconExclamationCircle']

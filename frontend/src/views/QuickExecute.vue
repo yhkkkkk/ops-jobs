@@ -88,8 +88,24 @@
                         <div class="host-name">{{ getGroupName(groupId) }}</div>
                         <div class="host-ip">分组ID: {{ groupId }}</div>
                         <div class="host-meta">
-                          <div class="host-status status-info">
-                            执行时动态获取分组内所有主机
+                          <!-- 分组内主机统计 -->
+                          <div class="group-stats">
+                            <a-tag size="small" color="blue">
+                              共 {{ getGroupHostCount(groupId) }} 台
+                            </a-tag>
+                            <a-tag size="small" color="green">
+                              在线 {{ getGroupOnlineCount(groupId) }}
+                            </a-tag>
+                            <a-tag size="small" color="red">
+                              离线 {{ getGroupOfflineCount(groupId) }}
+                            </a-tag>
+                            <a-tag 
+                              v-if="getGroupAgentOnlineCount(groupId) > 0" 
+                              size="small" 
+                              color="purple"
+                            >
+                              Agent {{ getGroupAgentOnlineCount(groupId) }}
+                            </a-tag>
                           </div>
                         </div>
                       </div>
@@ -147,6 +163,17 @@
                           </div>
                           <div class="host-status" :class="`status-${host.status}`">
                             {{ getStatusText(host.status) }}
+                          </div>
+                          <div 
+                            v-if="host.agent_info" 
+                            class="host-agent" 
+                            :class="`agent-${host.agent_info.status}`"
+                          >
+                            <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                            {{ host.agent_info.status_display }}
+                          </div>
+                          <div v-else class="host-agent agent-none">
+                            Agent未安装
                           </div>
                         </div>
                         <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
@@ -370,7 +397,7 @@
             v-model="scriptContent"
             :language="scriptType as any"
             :theme="editorTheme"
-            :height="800"
+            :height="850"
             :readonly="false"
             :auto-validate="true"
             @validation-change="handleValidationChange"
@@ -450,8 +477,24 @@
                         <div class="host-name">{{ getGroupName(groupId) }}</div>
                         <div class="host-ip">分组ID: {{ groupId }}</div>
                         <div class="host-meta">
-                          <div class="host-status status-info">
-                            执行时动态获取分组内所有主机
+                          <!-- 分组内主机统计 -->
+                          <div class="group-stats">
+                            <a-tag size="small" color="blue">
+                              共 {{ getGroupHostCount(groupId) }} 台
+                            </a-tag>
+                            <a-tag size="small" color="green">
+                              在线 {{ getGroupOnlineCount(groupId) }}
+                            </a-tag>
+                            <a-tag size="small" color="red">
+                              离线 {{ getGroupOfflineCount(groupId) }}
+                            </a-tag>
+                            <a-tag 
+                              v-if="getGroupAgentOnlineCount(groupId) > 0" 
+                              size="small" 
+                              color="purple"
+                            >
+                              Agent {{ getGroupAgentOnlineCount(groupId) }}
+                            </a-tag>
                           </div>
                         </div>
                       </div>
@@ -510,6 +553,17 @@
                           <div class="host-status" :class="`status-${host.status}`">
                             {{ getStatusText(host.status) }}
                           </div>
+                          <div 
+                            v-if="host.agent_info" 
+                            class="host-agent" 
+                            :class="`agent-${host.agent_info.status}`"
+                          >
+                            <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                            {{ host.agent_info.status_display }}
+                          </div>
+                          <div v-else class="host-agent agent-none">
+                            Agent未安装
+                          </div>
                         </div>
                         <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
                       </div>
@@ -542,28 +596,26 @@
                   <FileSourcesPanel :artifacts="fileArtifacts" @update:artifacts="(v)=>{ fileArtifacts = v }" />
                 </a-form-item>
               </a-col>
-              <a-col :span="24">
+              <a-col :span="18">
                 <a-form-item label="远程路径">
                   <a-input
                     v-model="remotePath"
                     placeholder="目标路径，例如：/opt/app/ 或 /var/www/[hostname]/app.tar.gz"
                     allow-clear
                   />
-                  <a-button
-                    type="text"
-                    size="small"
-                    @click="previewTargetPaths"
-                    :disabled="!remotePath || selectedHosts.length === 0"
-                    style="margin-top: 8px"
-                  >
-                    <template #icon>
-                      <icon-eye />
-                    </template>
-                    预览目标路径
-                  </a-button>
                 </a-form-item>
               </a-col>
             </a-row>
+
+            <a-form-item v-if="remotePath && hasVariables(remotePath)" label="变量预览">
+              <div class="path-preview">
+                <div class="path-preview-header">
+                  <icon-eye />
+                  <span>路径预览（实际执行时会替换变量）</span>
+                </div>
+                <code class="path-preview-content">{{ previewPath(remotePath) }}</code>
+              </div>
+            </a-form-item>
 
             <a-form-item label="覆盖策略">
               <a-select v-model="overwritePolicy" style="width: 200px">
@@ -862,6 +914,7 @@
 import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
+import { IconEye } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
 import { accountApi, type ServerAccount } from '@/api/account'
 import request from '@/utils/request'
@@ -1052,25 +1105,6 @@ const allTargetHosts = computed(() => {
   return result
 })
 
-// 为了兼容模板，保留这些计算属性但基于 allTargetHosts
-const groupHosts = computed(() => {
-  const groupHostIds = new Set<number>()
-
-  selectedGroups.value.forEach(groupId => {
-    hosts.value.forEach(host => {
-      if (host.groups_info && host.groups_info.some(g => g.id === groupId)) {
-        groupHostIds.add(host.id)
-      }
-    })
-  })
-
-  return allTargetHosts.value.filter(host => groupHostIds.has(host.id) && !selectedHosts.value.includes(host.id))
-})
-
-const directHosts = computed(() => {
-  return allTargetHosts.value.filter(host => selectedHosts.value.includes(host.id))
-})
-
 // 文件传输表单验证：要求至少有一个来源（artifact或服务器条目）
 const isTransferFormValid = computed(() => {
   return fileArtifacts.value && fileArtifacts.value.length > 0
@@ -1114,6 +1148,41 @@ const getHostGroupNames = (hostId: number) => {
 const getGroupName = (groupId: number) => {
   const group = hostGroups.value.find(g => g.id === groupId)
   return group?.name || `分组 ${groupId}`
+}
+
+// 获取分组内主机数量
+const getGroupHostCount = (groupId: number) => {
+  return hosts.value.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId)
+  ).length
+}
+
+// 获取分组内在线主机数量
+const getGroupOnlineCount = (groupId: number) => {
+  return hosts.value.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.status === 'online'
+  ).length
+}
+
+// 获取分组内离线主机数量
+const getGroupOfflineCount = (groupId: number) => {
+  return hosts.value.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.status === 'offline'
+  ).length
+}
+
+// 获取分组内Agent在线主机数量
+const getGroupAgentOnlineCount = (groupId: number) => {
+  return hosts.value.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.agent_info && host.agent_info.status === 'online'
+  ).length
 }
 
 const removeGroup = (groupId: number) => {
@@ -1238,8 +1307,6 @@ const previewPath = (path: string) => {
 
   return result
 }
-
-// 主机选择操作已移至 HostSelector 组件
 
 // 位置参数操作
 const addPositionalArg = () => {
@@ -1442,65 +1509,6 @@ const handleFileRemove = (fileItem: any) => {
   fileList.value = remainingFiles
   // 移除对应 artifact metadata（不删除后端文件）
   fileArtifacts.value = fileArtifacts.value.filter(a => a.uid !== fileItem.uid && a.name !== fileItem.name)
-}
-
-// 预览目标路径
-const previewTargetPaths = async () => {
-  if (!remotePath.value || selectedHosts.value.length === 0) {
-    Message.warning('请先填写远程路径并选择目标主机')
-    return
-  }
-
-  try {
-    const response = await request.post('/quick/preview_transfer_targets/', {
-      target_host_ids: selectedHosts.value,
-      remote_path: remotePath.value,
-      max_matches: maxTargetMatches.value
-    })
-
-    if (response.data.code === 200) {
-      const matches = response.data.content.matches
-      let message = '目标路径预览结果：\n'
-      let totalMatches = 0
-
-      for (const [hostId, result] of Object.entries(matches) as [string, any][]) {
-        const host = hosts.value.find(h => h.id === Number(hostId))
-        const hostName = host ? host.name : `主机${hostId}`
-
-        if ((result as any).error) {
-          message += `• ${hostName}: ${(result as any).error}\n`
-        } else {
-          const matchCount = (result as any).matches.length
-          totalMatches += matchCount
-          message += `• ${hostName}: 匹配到 ${matchCount} 个路径\n`
-          if (matchCount > 0 && matchCount <= 10) {
-            (result as any).matches.forEach((path: string) => {
-              message += `  - ${path}\n`
-            })
-          } else if (matchCount > 10) {
-            message += `  - ${(result as any).matches.slice(0, 5).join('\n  - ')}\n  - ... 还有 ${matchCount - 5} 个路径\n`
-          }
-        }
-      }
-
-      Modal.info({
-        title: '目标路径预览',
-        content: h('pre', {
-          style: {
-            maxHeight: '400px',
-            overflowY: 'auto',
-            whiteSpace: 'pre-wrap',
-            fontSize: '12px'
-          }
-        }, message) as any,
-        width: 600
-      })
-    } else {
-      Message.error(response.data.message || '预览失败')
-    }
-  } catch (error: any) {
-    Message.error(error.response?.data?.message || '预览失败')
-  }
 }
 
 const handleFileTransfer = async () => {
@@ -2429,6 +2437,37 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+/* 路径变量预览样式 */
+.path-preview {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background-color: var(--color-fill-1);
+  border: 1px solid var(--color-primary-light-2);
+  border-radius: 6px;
+}
+
+.path-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.path-preview-content {
+  display: block;
+  font-family: 'Courier New', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-text-1);
+  background-color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-2);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
 .path-select-btn {
   width: 100%;
 }
@@ -2647,4 +2686,75 @@ onUnmounted(() => {
 
 /* 执行历史样式 */
 /* 执行历史样式（已移除功能，保留占位便于后续需要时复用） */
+
+/* 分组统计样式 */
+.group-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Agent状态样式 */
+.host-agent {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+
+.agent-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-dot-online {
+  background-color: #52c41a;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
+}
+
+.agent-dot-offline {
+  background-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+}
+
+.agent-dot-pending {
+  background-color: #ff9800;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.2);
+}
+
+.agent-dot-disabled {
+  background-color: #d9d9d9;
+  box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
+}
+
+.agent-online {
+  background-color: var(--color-success-light-1);
+  color: var(--color-success);
+}
+
+.agent-offline {
+  background-color: var(--color-danger-light-1);
+  color: var(--color-danger);
+}
+
+.agent-pending {
+  background-color: var(--color-warning-light-1);
+  color: var(--color-warning);
+}
+
+.agent-disabled {
+  background-color: var(--color-fill-3);
+  color: var(--color-text-3);
+}
+
+.agent-none {
+  background-color: var(--color-fill-2);
+  color: var(--color-text-3);
+  font-size: 10px;
+}
 </style>

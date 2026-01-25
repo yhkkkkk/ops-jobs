@@ -192,20 +192,16 @@
             <a-form-item label="远程路径" required>
               <a-input
                 v-model="remotePath"
-                placeholder="请输入远程文件路径"
+                placeholder="请输入远程文件路径，支持 [date]、[hostname] 等变量"
               />
-              <a-button
-                type="text"
-                size="small"
-                @click="previewTargetPaths"
-                :disabled="!remotePath || allTargetHosts.length === 0"
-                style="margin-top: 8px"
-              >
-                <template #icon>
+              <!-- 路径变量预览 -->
+              <div v-if="remotePath && hasVariables(remotePath)" class="path-preview">
+                <div class="path-preview-header">
                   <icon-eye />
-                </template>
-                预览目标路径
-              </a-button>
+                  <span>变量预览</span>
+                </div>
+                <div class="path-preview-content">{{ previewPath(remotePath) }}</div>
+              </div>
             </a-form-item>
           </a-col>
         </a-row>
@@ -308,6 +304,17 @@
                         <div class="host-status" :class="`status-${host.status}`">
                           {{ getStatusText(host.status) }}
                         </div>
+                        <div 
+                          v-if="host.agent_info" 
+                          class="host-agent" 
+                          :class="`agent-${host.agent_info.status}`"
+                        >
+                          <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                          {{ host.agent_info.status_display }}
+                        </div>
+                        <div v-else class="host-agent agent-none">
+                          Agent未安装
+                        </div>
                       </div>
                       <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
                     </div>
@@ -347,6 +354,17 @@
                         </div>
                         <div class="host-status" :class="`status-${host.status}`">
                           {{ getStatusText(host.status) }}
+                        </div>
+                        <div 
+                          v-if="host.agent_info" 
+                          class="host-agent" 
+                          :class="`agent-${host.agent_info.status}`"
+                        >
+                          <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                          {{ host.agent_info.status_display }}
+                        </div>
+                        <div v-else class="host-agent agent-none">
+                          Agent未安装
                         </div>
                       </div>
                     </div>
@@ -1017,6 +1035,45 @@ const handleBulkParametersChange = () => {
   // 这里暂时不自动同步，避免混乱
 }
 
+// 检查路径是否包含变量
+const hasVariables = (path: string) => {
+  return path && path.includes('[')
+}
+
+// 路径变量预览功能
+const previewPath = (path: string) => {
+  if (!path) return ''
+
+  const now = new Date()
+  const variables = {
+    '[date]': now.toISOString().split('T')[0],
+    '[time]': now.toTimeString().split(' ')[0].replace(/:/g, '-'),
+    '[datetime]': `${now.toISOString().split('T')[0]}_${now.toTimeString().split(' ')[0].replace(/:/g, '-')}`,
+    '[timestamp]': Math.floor(now.getTime() / 1000).toString(),
+    '[year]': now.getFullYear().toString(),
+    '[month]': (now.getMonth() + 1).toString().padStart(2, '0'),
+    '[day]': now.getDate().toString().padStart(2, '0'),
+    '[hostname]': 'example-host',
+  }
+
+  let result = path
+
+  // 处理日期偏移 [date-1], [date+7]
+  const offsetPattern = /\[date([+-]\d+)\]/g
+  result = result.replace(offsetPattern, (match, offset) => {
+    const targetDate = new Date(now)
+    targetDate.setDate(targetDate.getDate() + parseInt(offset))
+    return targetDate.toISOString().split('T')[0]
+  })
+
+  // 替换基础变量
+  for (const [variable, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(variable.replace(/[[\]]/g, '\\$&'), 'g'), value)
+  }
+
+  return result
+}
+
 // 文件大小格式化函数
 const formatStepFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -1390,67 +1447,6 @@ const copyOfflineIPs = async () => {
     Message.error('复制失败，请检查浏览器权限或手动复制')
   }
 }
-
-// 预览目标路径
-const previewTargetPaths = async () => {
-  if (!remotePath.value || allTargetHosts.value.length === 0) {
-    Message.warning('请先填写远程路径并选择目标主机')
-    return
-  }
-
-  try {
-    const response = await request.post('/quick/preview_transfer_targets/', {
-      target_host_ids: allTargetHosts.value.map(h => h.id),
-      remote_path: remotePath.value,
-      max_matches: maxTargetMatches.value
-    })
-
-    if (response.data.code === 200) {
-      const matches = response.data.content.matches
-      let message = '目标路径预览结果：\n'
-      let totalMatches = 0
-
-      for (const [hostId, result] of Object.entries(matches) as [string, any][]) {
-        const host = allTargetHosts.value.find(h => h.id === Number(hostId))
-        const hostName = host ? host.name : `主机${hostId}`
-
-        if ((result as any).error) {
-          message += `• ${hostName}: ${(result as any).error}\n`
-        } else {
-          const matchCount = (result as any).matches.length
-          totalMatches += matchCount
-          message += `• ${hostName}: 匹配到 ${matchCount} 个路径\n`
-          if (matchCount > 0 && matchCount <= 10) {
-            (result as any).matches.forEach((path: string) => {
-              message += `  - ${path}\n`
-            })
-          } else if (matchCount > 10) {
-            message += `  - ${(result as any).matches.slice(0, 5).join('\n  - ')}\n  - ... 还有 ${matchCount - 5} 个路径\n`
-          }
-        }
-      }
-
-      Modal.info({
-        title: '目标路径预览',
-        content: h('pre', {
-          style: {
-            maxHeight: '400px',
-            overflowY: 'auto',
-            whiteSpace: 'pre-wrap',
-            fontSize: '12px'
-          }
-        }, message) as any,
-        width: 600
-      })
-    } else {
-      Message.error(response.data.message || '预览失败')
-    }
-  } catch (error: any) {
-    Message.error(error.response?.data?.message || '预览失败')
-  }
-}
-
-// 工具函数已移至公共组件
 
 // 生命周期
 onMounted(() => {
@@ -1946,5 +1942,100 @@ onMounted(() => {
   background: var(--color-bg-1);
   border: none;
   padding: 4px;
+}
+
+/* 路径变量预览样式 */
+.path-preview {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background-color: var(--color-fill-1);
+  border: 1px solid var(--color-primary-light-2);
+  border-radius: 6px;
+}
+
+.path-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.path-preview-content {
+  display: block;
+  font-family: 'Courier New', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-text-1);
+  background-color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-2);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+/* Agent状态样式 */
+.host-agent {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+
+.agent-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-dot-online {
+  background-color: #52c41a;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
+}
+
+.agent-dot-offline {
+  background-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+}
+
+.agent-dot-pending {
+  background-color: #ff9800;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.2);
+}
+
+.agent-dot-disabled {
+  background-color: #d9d9d9;
+  box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
+}
+
+.agent-online {
+  background-color: var(--color-success-light-1);
+  color: var(--color-success);
+}
+
+.agent-offline {
+  background-color: var(--color-danger-light-1);
+  color: var(--color-danger);
+}
+
+.agent-pending {
+  background-color: var(--color-warning-light-1);
+  color: var(--color-warning);
+}
+
+.agent-disabled {
+  background-color: var(--color-fill-3);
+  color: var(--color-text-3);
+}
+
+.agent-none {
+  background-color: var(--color-fill-2);
+  color: var(--color-text-3);
+  font-size: 10px;
 }
 </style>

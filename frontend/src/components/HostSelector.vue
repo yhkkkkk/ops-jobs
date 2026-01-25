@@ -9,7 +9,7 @@
     class="host-selector-modal"
   >
     <div class="host-selector">
-      <!-- Tab切换：静态选择 / 动态选择 -->
+      <!-- Tab切换：静态选择 / 动态选择 / 主机解析 -->
       <a-tabs v-model:active-key="selectionMode" class="selection-mode-tabs">
         <a-tab-pane key="static" title="静态选择">
           <!-- 静态选择内容：左右分栏 -->
@@ -258,6 +258,10 @@
                         <span class="stat-label">在线</span>
                       </div>
                       <div class="stat-item">
+                        <span class="stat-number">{{ slotProps.agent_online_count || 0 }}</span>
+                        <span class="stat-label">Agent</span>
+                      </div>
+                      <div class="stat-item">
                         <span class="stat-number">{{ slotProps.host_count || 0 }}</span>
                         <span class="stat-label">总数</span>
                       </div>
@@ -265,6 +269,211 @@
                   </div>
                 </template>
               </a-tree>
+            </div>
+            
+            <!-- 已选分组的详情 -->
+            <div v-if="dynamicSelectedGroupIds.length > 0" class="selected-groups-detail">
+              <div class="detail-header">
+                <h4>已选分组详情</h4>
+              </div>
+              <div class="detail-content">
+                <div 
+                  v-for="groupId in dynamicSelectedGroupIds" 
+                  :key="`detail-${groupId}`"
+                  class="group-detail-card"
+                >
+                  <div class="group-detail-header">
+                    <span class="group-name">{{ getGroupName(groupId) }}</span>
+                    <a-button 
+                      type="text" 
+                      size="tiny" 
+                      status="danger"
+                      @click="removeDynamicGroup(groupId)"
+                    >
+                      <template #icon><icon-close /></template>
+                    </a-button>
+                  </div>
+                  <div class="group-stats-row">
+                    <div class="stat-badge">
+                      <span class="stat-value">{{ getGroupHostCount(groupId) }}</span>
+                      <span class="stat-label">主机</span>
+                    </div>
+                    <div class="stat-badge">
+                      <span class="stat-value" style="color: #52c41a">{{ getGroupOnlineCount(groupId) }}</span>
+                      <span class="stat-label">在线</span>
+                    </div>
+                    <div class="stat-badge">
+                      <span class="stat-value" style="color: #1890ff">{{ getGroupAgentOnlineCount(groupId) }}</span>
+                      <span class="stat-label">Agent在线</span>
+                    </div>
+                    <div class="stat-badge">
+                      <span class="stat-value" style="color: #ff4d4f">{{ getGroupOfflineCount(groupId) }}</span>
+                      <span class="stat-label">离线</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </a-tab-pane>
+        
+        <a-tab-pane key="resolve" title="主机解析">
+          <!-- 主机解析：通过输入IP/主机名列表解析并选择主机 -->
+          <div class="resolve-panel">
+            <!-- 解析输入区域 -->
+            <div class="resolve-input-section">
+              <div class="section-header">
+                <h4>输入IP或主机名</h4>
+                <a-space>
+                  <a-button type="primary" @click="handleParseHosts" :loading="parsingHosts" size="small">
+                    <template #icon><icon-search /></template>
+                    解析并加载
+                  </a-button>
+                  <a-button @click="clearResolveInput" size="small">清空</a-button>
+                </a-space>
+              </div>
+              
+              <a-textarea
+                v-model="resolveInputText"
+                placeholder="支持多种格式：&#10;• 每行一个IP或主机名&#10;• 逗号分隔：192.168.1.1, 192.168.1.2&#10;• 空格分隔：192.168.1.1 192.168.1.2&#10;• 混合格式均可识别"
+                :auto-size="{ minRows: 4, maxRows: 8 }"
+                allow-clear
+                style="width: 100%; font-family: 'Courier New', monospace;"
+              />
+              
+              <!-- 解析统计 -->
+              <div v-if="resolvedHosts.length > 0" class="resolve-stats">
+                <a-tag color="blue">共 {{ resolvedInputCount }} 个输入</a-tag>
+                <a-tag color="green">有效 {{ validResolvedCount }} 个</a-tag>
+                <a-tag v-if="invalidResolvedCount > 0" color="red">未找到 {{ invalidResolvedCount }} 个</a-tag>
+                <a-tag v-if="validSelectedHostCount > 0" color="purple">
+                  已选 {{ validSelectedHostCount }} 台
+                </a-tag>
+              </div>
+            </div>
+
+            <!-- 解析结果表格 -->
+            <div v-if="resolvedHosts.length > 0" class="resolve-result-section">
+              <div class="section-header">
+                <h4>解析结果 - 选择要加载的主机</h4>
+                <a-space>
+                  <a-button size="small" @click="selectAllResolvedHosts">
+                    <template #icon><icon-check-square /></template>
+                    全选
+                  </a-button>
+                  <a-button size="small" @click="selectNoneResolvedHosts">取消全选</a-button>
+                  <a-button size="small" @click="selectValidResolvedHosts">仅选有效</a-button>
+                </a-space>
+              </div>
+              
+              <a-table
+                :data="resolvedHosts"
+                :pagination="{ pageSize: 10, showSizeChanger: true, showQuickJumper: true }"
+                v-model:selectedKeys="resolvedSelectedHostIds"
+                :row-selection="{ type: 'checkbox' }"
+                row-key="key"
+                size="small"
+                class="resolved-hosts-table"
+              >
+                <template #columns>
+                  <a-table-column title="输入值" data-index="input" width="140">
+                    <template #cell="{ record }">
+                      <code>{{ record.input }}</code>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="匹配主机" data-index="host" width="180">
+                    <template #cell="{ record }">
+                      <template v-if="record.host">
+                        <div class="host-name-cell">
+                          <div class="host-name">{{ record.host.name }}</div>
+                          <div class="host-ip">{{ record.host.ip_address }}:{{ record.host.port }}</div>
+                        </div>
+                      </template>
+                      <span v-else class="text-gray-400">-</span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="状态" data-index="status" width="80">
+                    <template #cell="{ record }">
+                      <a-tag v-if="record.status === 'valid'" size="small" color="green">
+                        <template #icon><icon-check-circle /></template>
+                        有效
+                      </a-tag>
+                      <a-tag v-else-if="record.status === 'invalid'" size="small" color="red">
+                        <template #icon><icon-close-circle /></template>
+                        无效
+                      </a-tag>
+                      <a-tag v-else size="small" color="orange">
+                        <template #icon><icon-exclamation-circle /></template>
+                        未找到
+                      </a-tag>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="Agent" data-index="agent" width="90">
+                    <template #cell="{ record }">
+                      <template v-if="record.host && record.host.agent_info">
+                        <a-tag 
+                          size="small" 
+                          :color="getAgentStatusColor(record.host.agent_info.status)"
+                        >
+                          {{ record.host.agent_info.status_display }}
+                        </a-tag>
+                      </template>
+                      <span v-else class="text-gray-400">-</span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="OS" data-index="os" width="70">
+                    <template #cell="{ record }">
+                      <template v-if="record.host">
+                        <a-tag size="small" :color="record.host.os_type === 'linux' ? 'green' : 'blue'">
+                          {{ record.host.os_type || '?' }}
+                        </a-tag>
+                      </template>
+                      <span v-else>-</span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="是否已加载" data-index="loaded" width="100">
+                    <template #cell="{ record }">
+                      <template v-if="record.host">
+                        <a-tag 
+                          size="small" 
+                          :color="selectedHostIds.includes(record.host.id) ? 'green' : 'gray'"
+                        >
+                          <template #icon>
+                            <icon-check-circle v-if="selectedHostIds.includes(record.host.id)" />
+                            <icon-close-circle v-else />
+                          </template>
+                          {{ selectedHostIds.includes(record.host.id) ? '已加载' : '未加载' }}
+                        </a-tag>
+                      </template>
+                      <span v-else>-</span>
+                    </template>
+                  </a-table-column>
+                </template>
+              </a-table>
+              
+              <!-- 加载按钮 -->
+              <div v-if="validSelectedHostCount > 0" class="resolve-confirm-bar">
+                <div class="confirm-info">
+                  已选择 <a-tag color="blue">{{ validSelectedHostCount }}</a-tag> 台有效主机
+                </div>
+                <a-button type="primary" @click="confirmAndLoadResolvedHosts">
+                  <template #icon><icon-check /></template>
+                  加载到目标列表
+                </a-button>
+              </div>
+            </div>
+
+            <!-- 使用说明 -->
+            <div v-if="resolvedHosts.length === 0" class="resolve-help">
+              <a-alert type="info" :closable="false">
+                <template #title>主机解析说明</template>
+                <template #default>
+                  <div>• 输入IP或主机名列表，系统会自动解析并匹配数据库中的主机</div>
+                  <div>• 支持多种输入格式，每行一个、逗号分隔、空格分隔均可</div>
+                  <div>• 解析后可以查看每个输入的匹配结果和Agent状态</div>
+                  <div>• 选择主机后点击「加载到目标列表」即可将主机添加到目标列表</div>
+                </template>
+              </a-alert>
             </div>
           </div>
         </a-tab-pane>
@@ -274,27 +483,41 @@
       <div class="selection-summary">
         <div class="summary-info">
           <template v-if="selectionMode === 'static'">
-          <div class="summary-item">
-            <span>已选择分组:</span>
-            <span class="summary-count">{{ selectedGroupIds.length }}</span>
-          </div>
-          <div class="summary-item" v-if="totalGroupHosts > 0">
-            <span>分组内主机:</span>
-            <span class="summary-count">{{ totalGroupHosts }}</span>
-          </div>
-          <div class="summary-item">
-            <span>已选择主机:</span>
-            <span class="summary-count">{{ selectedHostIds.length }}</span>
-          </div>
-          </template>
-          <template v-else>
             <div class="summary-item">
-              <span>已选择分组:</span>
+              <span>已选分组:</span>
+              <span class="summary-count">{{ selectedGroupIds.length }}</span>
+            </div>
+            <div class="summary-item" v-if="totalGroupHosts > 0">
+              <span>分组主机:</span>
+              <span class="summary-count">{{ totalGroupHosts }}</span>
+            </div>
+            <div class="summary-item">
+              <span>已选主机:</span>
+              <span class="summary-count">{{ selectedHostIds.length }}</span>
+            </div>
+          </template>
+          <template v-else-if="selectionMode === 'dynamic'">
+            <div class="summary-item">
+              <span>已选分组:</span>
               <span class="summary-count">{{ dynamicSelectedGroupIds.length }}</span>
             </div>
             <div class="summary-item">
-              <span>说明:</span>
-              <span class="summary-count" style="font-size: 11px; color: #666;">执行时动态获取分组内所有主机</span>
+              <span>分组主机总数:</span>
+              <span class="summary-count">{{ totalDynamicGroupHosts }}</span>
+            </div>
+            <div class="summary-item">
+              <span>Agent在线:</span>
+              <span class="summary-count" style="color: #52c41a">{{ totalDynamicAgentOnline }}</span>
+            </div>
+          </template>
+          <template v-else-if="selectionMode === 'resolve'">
+            <div class="summary-item">
+              <span>已解析:</span>
+              <span class="summary-count">{{ resolvedInputCount }}</span>
+            </div>
+            <div class="summary-item">
+              <span>有效:</span>
+              <span class="summary-count" style="color: #52c41a">{{ validSelectedHostCount }}</span>
             </div>
           </template>
         </div>
@@ -312,9 +535,9 @@
         <a-button
           type="primary"
           @click="handleConfirm"
-          :disabled="(selectionMode === 'static' && selectedGroupIds.length === 0 && selectedHostIds.length === 0) || (selectionMode === 'dynamic' && dynamicSelectedGroupIds.length === 0)"
+          :disabled="(selectionMode === 'static' && selectedGroupIds.length === 0 && selectedHostIds.length === 0) || (selectionMode === 'dynamic' && dynamicSelectedGroupIds.length === 0) || (selectionMode === 'resolve' && validSelectedHostCount === 0)"
         >
-          确定 ({{ totalSelectedCount }})
+          确定 ({{ selectionMode === 'resolve' ? validSelectedHostCount : totalSelectedCount }})
         </a-button>
       </a-space>
     </template>
@@ -323,12 +546,17 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { Message } from '@arco-design/web-vue'
 import {
   IconSearch,
   IconCheckSquare,
   IconWifi,
   IconCloud,
-  IconCloseCircle
+  IconCloseCircle,
+  IconCheckCircle,
+  IconExclamationCircle,
+  IconCheck,
+  IconClose
 } from '@arco-design/web-vue/es/icon'
 
 // Props
@@ -358,7 +586,7 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['update:visible', 'confirm'])
 
-// 选择模式：static（静态选择）或 dynamic（动态选择）
+// 选择模式：static（静态选择）或 dynamic（动态选择）或 resolve（主机解析）
 const selectionMode = ref('static')
 
 // 响应式数据
@@ -371,6 +599,12 @@ const dynamicGroupSearchText = ref('') // 动态选择的分组搜索文本
 const groupSearchText = ref('')
 const hostSearchText = ref('')
 const displayHostSearchText = ref('')
+
+// 主机解析相关
+const resolveInputText = ref('') // 主机解析输入
+const resolvedHosts = ref([]) // 解析结果列表
+const resolvedSelectedHostIds = ref([]) // 解析结果中选择的主机ID
+const parsingHosts = ref(false) // 解析加载状态
 
 
 // 格式化IP地址显示 - 多行显示策略
@@ -483,7 +717,7 @@ watch(() => selectionMode.value, (newMode) => {
   if (newMode === 'dynamic') {
     // 切换到动态选择时，将静态选择的分组同步到动态选择
     dynamicSelectedGroupIds.value = [...selectedGroupIds.value]
-  } else {
+  } else if (newMode === 'static') {
     // 切换到静态选择时，将动态选择的分组同步到静态选择
     selectedGroupIds.value = [...dynamicSelectedGroupIds.value]
   }
@@ -578,11 +812,20 @@ const treeData = computed(() => {
     groups.forEach(group => {
       // 检查是否是当前层级的节点
       if (group.parent === parentId) {
+        // 计算该分组内的agent在线主机数量
+        const agentOnlineCount = props.hosts
+          .filter(host => 
+            host && host.groups_info && Array.isArray(host.groups_info) && 
+            host.groups_info.some(g => g && g.id === group.id) &&
+            host.agent_info && host.agent_info.status === 'online'
+          ).length
+        
         const node = {
           key: group.id,
           title: group.name || `分组${group.id}`,
           description: group.description || '',
           online_count: group.online_count || 0,
+          agent_online_count: agentOnlineCount,
           host_count: group.host_count || 0,
           children: buildTree(groups, group.id) // 递归构建子节点
         }
@@ -592,7 +835,7 @@ const treeData = computed(() => {
     
     return tree
   }
-
+    
   const result = buildTree(filteredGroups)
   
   console.log('HostSelector - treeData result:', result)
@@ -656,10 +899,55 @@ const totalGroupHosts = computed(() => {
   }, 0)
 })
 
+// 动态选择的分组主机统计
+const totalDynamicGroupHosts = computed(() => {
+  if (!Array.isArray(props.hosts) || !Array.isArray(dynamicSelectedGroupIds.value)) {
+    return 0
+  }
+  
+  const hostIds = new Set()
+  dynamicSelectedGroupIds.value.forEach(groupId => {
+    props.hosts.forEach(host => {
+      if (host && host.groups_info && Array.isArray(host.groups_info) && 
+          host.groups_info.some(g => g && g.id === groupId)) {
+        hostIds.add(host.id)
+      }
+    })
+  })
+  return hostIds.size
+})
+
+const totalDynamicAgentOnline = computed(() => {
+  if (!Array.isArray(props.hosts) || !Array.isArray(dynamicSelectedGroupIds.value)) {
+    return 0
+  }
+  
+  const hostIds = new Set()
+  dynamicSelectedGroupIds.value.forEach(groupId => {
+    props.hosts.forEach(host => {
+      if (host && host.groups_info && Array.isArray(host.groups_info) && 
+          host.groups_info.some(g => g && g.id === groupId)) {
+        hostIds.add(host.id)
+      }
+    })
+  })
+  
+  return props.hosts.filter(host => 
+    hostIds.has(host.id) && 
+    host.agent_info && 
+    host.agent_info.status === 'online'
+  ).length
+})
+
 const totalSelectedCount = computed(() => {
   if (selectionMode.value === 'dynamic') {
-    // 动态选择：只返回分组数量，不计算主机数量（因为执行时动态获取）
-    return dynamicSelectedGroupIds.value.length
+    // 动态选择：返回分组内主机总数
+    return totalDynamicGroupHosts.value
+  }
+  
+  if (selectionMode.value === 'resolve') {
+    // 主机解析：返回有效选中主机数量
+    return validSelectedHostCount.value
   }
   
   // 静态选择：计算去重后的实际选择数量
@@ -711,6 +999,74 @@ const dynamicTreeData = computed(() => {
   
   return filterTree(baseTreeData)
 })
+
+// 主机解析相关的计算属性
+const resolvedInputCount = computed(() => resolvedHosts.value.length)
+
+const validResolvedCount = computed(() => {
+  return resolvedHosts.value.filter(h => h.status === 'valid').length
+})
+
+const invalidResolvedCount = computed(() => {
+  return resolvedHosts.value.filter(h => h.status === 'not_found').length
+})
+
+// 有效选中主机数量（只统计有对应有效主机的选中项）
+const validSelectedHostCount = computed(() => {
+  return resolvedSelectedHostIds.value.filter(key => {
+    const host = resolvedHosts.value.find(h => h.key === key)
+    return host && host.host
+  }).length
+})
+
+// 获取分组名称
+const getGroupName = (groupId) => {
+  const group = props.groups.find(g => g && g.id === groupId)
+  return group?.name || `分组 ${groupId}`
+}
+
+// 获取分组内主机数量
+const getGroupHostCount = (groupId) => {
+  return props.hosts.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId)
+  ).length
+}
+
+// 获取分组内在线主机数量
+const getGroupOnlineCount = (groupId) => {
+  return props.hosts.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.status === 'online'
+  ).length
+}
+
+// 获取分组内Agent在线主机数量
+const getGroupAgentOnlineCount = (groupId) => {
+  return props.hosts.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.agent_info && host.agent_info.status === 'online'
+  ).length
+}
+
+// 获取分组内离线主机数量
+const getGroupOfflineCount = (groupId) => {
+  return props.hosts.filter(host => 
+    host && host.groups_info && Array.isArray(host.groups_info) && 
+    host.groups_info.some(g => g && g.id === groupId) &&
+    host.status === 'offline'
+  ).length
+}
+
+// 移除动态选择的分组
+const removeDynamicGroup = (groupId) => {
+  const index = dynamicSelectedGroupIds.value.indexOf(groupId)
+  if (index > -1) {
+    dynamicSelectedGroupIds.value.splice(index, 1)
+  }
+}
 
 // 树状结构事件处理
 const handleTreeExpand = (expandedKeysList, node) => {
@@ -890,6 +1246,112 @@ const handleDynamicNodeTitleClick = (nodeData) => {
   }
 }
 
+// 主机解析相关方法
+const handleParseHosts = async () => {
+  if (!resolveInputText.value.trim()) {
+    return
+  }
+
+  parsingHosts.value = true
+  
+  try {
+    // 解析输入文本，支持多种分隔符
+    const inputs = resolveInputText.value
+      .split(/[,，\s\n\r]+/)
+      .map(ip => ip.trim())
+      .filter(ip => ip.length > 0)
+    
+    // 去重
+    const uniqueInputs = [...new Set(inputs)]
+    
+    // 解析每个输入
+    const results = []
+    for (const input of uniqueInputs) {
+      // 在主机列表中查找匹配的主机
+      const matchedHost = props.hosts.find(host => {
+        if (!host) return false
+        return (
+          host.ip_address?.toLowerCase() === input.toLowerCase() ||
+          host.public_ip?.toLowerCase() === input.toLowerCase() ||
+          host.internal_ip?.toLowerCase() === input.toLowerCase() ||
+          host.name?.toLowerCase() === input.toLowerCase() ||
+          host.hostname?.toLowerCase() === input.toLowerCase()
+        )
+      })
+      
+      if (matchedHost) {
+        results.push({
+          key: input,
+          input: input,
+          host: matchedHost,
+          status: 'valid'
+        })
+      } else {
+        results.push({
+          key: input,
+          input: input,
+          host: null,
+          status: 'not_found'
+        })
+      }
+    }
+    
+    resolvedHosts.value = results
+    // 默认全选有效主机
+    resolvedSelectedHostIds.value = results
+      .filter(h => h.status === 'valid')
+      .map(h => h.key)
+      
+  } catch (error) {
+    console.error('解析主机失败:', error)
+  } finally {
+    parsingHosts.value = false
+  }
+}
+
+const clearResolveInput = () => {
+  resolveInputText.value = ''
+  resolvedHosts.value = []
+  resolvedSelectedHostIds.value = []
+}
+
+const selectAllResolvedHosts = () => {
+  resolvedSelectedHostIds.value = resolvedHosts.value.map(h => h.key)
+}
+
+const selectNoneResolvedHosts = () => {
+  resolvedSelectedHostIds.value = []
+}
+
+const selectValidResolvedHosts = () => {
+  resolvedSelectedHostIds.value = resolvedHosts.value
+    .filter(h => h.status === 'valid')
+    .map(h => h.key)
+}
+
+const confirmAndLoadResolvedHosts = () => {
+  // 将解析结果中选中的有效主机添加到静态选择列表
+  const hostsToAdd = resolvedHosts.value
+    .filter(h => resolvedSelectedHostIds.value.includes(h.key) && h.host)
+    
+  hostsToAdd.forEach(h => {
+    if (!selectedHostIds.value.includes(h.host.id)) {
+      selectedHostIds.value.push(h.host.id)
+    }
+  })
+  
+  // 切换到静态选择模式
+  selectionMode.value = 'static'
+  
+  // 清理解析结果
+  clearResolveInput()
+  
+  // 显示成功提示
+  if (hostsToAdd.length > 0) {
+    Message.success(`已加载 ${hostsToAdd.length} 台主机到目标列表`)
+  }
+}
+
 // 确认选择
 const handleConfirm = () => {
   if (selectionMode.value === 'static') {
@@ -898,6 +1360,16 @@ const handleConfirm = () => {
       selection_type: 'static',
       selectedHosts: selectedHostIds.value,
       selectedGroups: selectedGroupIds.value
+    })
+  } else if (selectionMode.value === 'resolve') {
+    // 主机解析：传递解析选择的主机
+    const resolvedHostIds = resolvedHosts.value
+      .filter(h => resolvedSelectedHostIds.value.includes(h.key) && h.host)
+      .map(h => h.host.id)
+    emit('confirm', {
+      selection_type: 'static',
+      selectedHosts: resolvedHostIds,
+      selectedGroups: []
     })
   } else {
     // 动态选择：只传递分组ID，后端执行时动态获取分组内的所有主机
@@ -1445,5 +1917,245 @@ onMounted(() => {
 
 .dynamic-selection-help :deep(.arco-alert) {
   font-size: 12px;
+}
+
+/* 搜索和操作栏 */
+.search-and-action-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.group-search-input {
+  flex: 1;
+}
+
+/* 内联主机解析面板样式 */
+.resolve-panel-inline {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: var(--color-fill-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+}
+
+.resolve-panel-inline .resolve-input-section {
+  margin-bottom: 12px;
+}
+
+.resolve-panel-inline .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.resolve-panel-inline .section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.resolve-panel-inline .resolve-stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.resolve-panel-inline .resolve-result-section {
+  margin-bottom: 12px;
+}
+
+.resolve-panel-inline .resolve-result-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.resolve-panel-inline .resolve-result-section .section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.resolve-panel-inline .resolved-hosts-table {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.resolve-panel-inline .resolve-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 0;
+  border-top: 1px solid var(--color-border-2);
+  margin-top: 8px;
+}
+
+.resolve-panel-inline .resolve-help {
+  padding: 8px;
+}
+
+.resolve-panel-inline .resolve-help :deep(.arco-alert) {
+  font-size: 12px;
+}
+
+/* 已选分组详情样式 */
+.selected-groups-detail {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: var(--color-fill-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+}
+
+.detail-header {
+  margin-bottom: 12px;
+}
+
+.detail-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-detail-card {
+  padding: 12px;
+  background-color: #fff;
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+
+.group-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.group-detail-header .group-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #262626;
+}
+
+.group-stats-row {
+  display: flex;
+  gap: 16px;
+}
+
+.stat-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-badge .stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.stat-badge .stat-label {
+  font-size: 11px;
+  color: #666;
+}
+
+/* 主机解析面板样式 */
+.resolve-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.resolve-input-section {
+  margin-bottom: 16px;
+}
+
+.resolve-input-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.resolve-input-section .section-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.resolve-stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.resolve-result-section {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.resolve-result-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.resolve-result-section .section-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.resolved-hosts-table {
+  flex: 1;
+  overflow: hidden;
+}
+
+.resolve-confirm-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background-color: var(--color-primary-light-1);
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.confirm-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-1);
+}
+
+.resolve-help {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resolve-help :deep(.arco-alert) {
+  max-width: 600px;
 }
 </style>
