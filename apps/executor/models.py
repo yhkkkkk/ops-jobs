@@ -102,9 +102,10 @@ class ExecutionRecord(models.Model):
 
     @property
     def max_retries(self):
-        """获取最大重试次数，优先使用系统配置"""
-        from apps.system_config.models import ConfigManager
-        return ConfigManager.get('task.retry_attempts', 3)
+        """获取最大重试次数"""
+        # 保留重试功能，默认不重试
+        # 如需全局控制，可在 Agent 安装时配置
+        return 0
 
     @property
     def duration(self):

@@ -40,13 +40,13 @@ type FileTransferSpec struct {
 // TaskResult 上报给控制面的执行结果
 type TaskResult struct {
 	TaskID     string `json:"task_id"`
-	Status     string `json:"status"`             // pending/running/success/failed/cancelled
-	ExitCode   int    `json:"exit_code"`          // 进程退出码
-	Log        string `json:"log"`                // 执行日志（可以是增量或完整）
-	LogSize    int64  `json:"log_size,omitempty"` // 日志大小（字节）
+	Status     string `json:"status"`                // pending/running/success/failed/cancelled
+	ExitCode   int    `json:"exit_code"`             // 进程退出码
+	Log        string `json:"log"`                   // 执行日志（可以是增量或完整）
+	LogSize    int64  `json:"log_size,omitempty"`    // 日志大小（字节）
 	LogPointer string `json:"log_pointer,omitempty"` // 日志指针（例如 Redis Stream 最后ID或归档路径）
-	StartedAt  int64  `json:"started_at"`         // unix 秒
-	FinishedAt int64  `json:"finished_at"`        // unix 秒
+	StartedAt  int64  `json:"started_at"`            // unix 秒
+	FinishedAt int64  `json:"finished_at"`           // unix 秒
 	ErrorMsg   string `json:"error_msg,omitempty"`
 	ErrorCode  int    `json:"error_code,omitempty"` // 错误码（统一错误码体系）
 	// 实时日志上报

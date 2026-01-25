@@ -12,44 +12,39 @@
               layout="vertical"
               class="config-form"
             >
-            <a-form-item label="最大并发任务数" field="max_concurrent_jobs">
+            <a-form-item label="单个任务最大并发主机数" field="fabric_max_concurrent_hosts">
               <a-input-number
-                v-model="taskConfig.max_concurrent_jobs"
+                v-model="taskConfig.fabric_max_concurrent_hosts"
                 :min="1"
                 :max="100"
-                placeholder="请输入最大并发任务数"
+                placeholder="请输入并发主机数"
               />
-              <div class="form-help">系统同时执行的最大任务数量</div>
+              <div class="form-help">单个任务执行时同时连接的最大主机数量（适用于并行执行模式）</div>
             </a-form-item>
 
-            <a-form-item label="任务超时时间（秒）" field="job_timeout">
+            <a-form-item label="SSH连接超时时间（秒）" field="fabric_connection_timeout">
               <a-input-number
-                v-model="taskConfig.job_timeout"
-                :min="60"
-                :max="86400"
-                placeholder="请输入任务超时时间"
+                v-model="taskConfig.fabric_connection_timeout"
+                :min="5"
+                :max="300"
+                placeholder="请输入连接超时时间"
               />
-              <div class="form-help">单个任务的最大执行时间，超时将被强制终止</div>
+              <div class="form-help">SSH连接建立的最大等待时间</div>
             </a-form-item>
 
-            <a-form-item label="重试次数" field="retry_attempts">
+            <a-form-item label="命令执行超时时间（秒）" field="fabric_command_timeout">
               <a-input-number
-                v-model="taskConfig.retry_attempts"
-                :min="0"
-                :max="10"
-                placeholder="请输入重试次数"
+                v-model="taskConfig.fabric_command_timeout"
+                :min="30"
+                :max="3600"
+                placeholder="请输入命令执行超时时间"
               />
-              <div class="form-help">任务失败后的自动重试次数</div>
+              <div class="form-help">单个命令执行的最大等待时间</div>
             </a-form-item>
 
-            <a-form-item label="日志保留天数" field="cleanup_days">
-              <a-input-number
-                v-model="taskConfig.cleanup_days"
-                :min="1"
-                :max="365"
-                placeholder="请输入日志保留天数"
-              />
-              <div class="form-help">任务执行日志的保留时间</div>
+            <a-form-item label="启用SSH连接池" field="fabric_enable_connection_pool">
+              <a-switch v-model="taskConfig.fabric_enable_connection_pool" />
+              <div class="form-help">启用SSH连接池可减少连接开销，提升执行效率</div>
             </a-form-item>
 
             <a-form-item>
@@ -71,47 +66,134 @@
               layout="vertical"
               class="config-form"
             >
-            <a-form-item label="邮件通知" field="email_enabled">
-              <a-switch v-model="notificationConfig.email_enabled" />
-              <div class="form-help">是否启用邮件通知功能</div>
-            </a-form-item>
+            <!-- 钉钉配置 -->
+            <a-card title="钉钉" size="small" class="notification-card">
+              <a-form-item label="启用钉钉通知" field="dingtalk_enabled">
+                <a-switch v-model="notificationConfig.dingtalk_enabled" />
+                <div class="form-help">是否启用钉钉机器人通知</div>
+              </a-form-item>
 
-            <a-form-item label="Webhook通知" field="webhook_enabled">
-              <a-switch v-model="notificationConfig.webhook_enabled" />
-              <div class="form-help">是否启用Webhook通知功能</div>
-            </a-form-item>
+              <a-form-item label="Webhook地址" field="dingtalk_webhook">
+                <a-input
+                  v-model="notificationConfig.dingtalk_webhook"
+                  placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx"
+                />
+                <div class="form-help">钉钉机器人Webhook地址</div>
+              </a-form-item>
 
-            <a-form-item label="通知级别" field="levels">
-              <a-checkbox-group v-model="notificationConfig.levels">
-                <a-checkbox value="info">信息</a-checkbox>
-                <a-checkbox value="warning">警告</a-checkbox>
-                <a-checkbox value="error">错误</a-checkbox>
-                <a-checkbox value="critical">严重</a-checkbox>
-              </a-checkbox-group>
-              <div class="form-help">选择需要发送通知的事件级别</div>
-            </a-form-item>
+              <a-form-item label="关键词" field="dingtalk_keyword">
+                <a-input
+                  v-model="notificationConfig.dingtalk_keyword"
+                  placeholder="请输入钉钉机器人设置的关键词"
+                />
+                <div class="form-help">钉钉机器人安全设置的关键词（可选）</div>
+              </a-form-item>
+            </a-card>
 
-            <a-form-item label="默认邮件接收人" field="email_recipients">
-              <a-select
-                v-model="notificationConfig.email_recipients"
-                multiple
-                allow-create
-                allow-clear
-                placeholder="请输入邮箱地址"
-              >
-                <a-option
-                  v-for="email in notificationConfig.email_recipients"
-                  :key="email"
-                  :value="email"
-                >
-                  {{ email }}
-                </a-option>
-              </a-select>
-              <div class="form-help">默认的通知邮件接收人列表</div>
-            </a-form-item>
+            <!-- 飞书配置 -->
+            <a-card title="飞书" size="small" class="notification-card">
+              <a-form-item label="启用飞书通知" field="feishu_enabled">
+                <a-switch v-model="notificationConfig.feishu_enabled" />
+                <div class="form-help">是否启用飞书机器人通知</div>
+              </a-form-item>
+
+              <a-form-item label="Webhook地址" field="feishu_webhook">
+                <a-input
+                  v-model="notificationConfig.feishu_webhook"
+                  placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+                />
+                <div class="form-help">飞书机器人Webhook地址</div>
+              </a-form-item>
+
+              <a-form-item label="关键词" field="feishu_keyword">
+                <a-input
+                  v-model="notificationConfig.feishu_keyword"
+                  placeholder="请输入飞书机器人设置的关键词"
+                />
+                <div class="form-help">飞书机器人安全设置的关键词（可选）</div>
+              </a-form-item>
+            </a-card>
+
+            <!-- 企业微信配置 -->
+            <a-card title="企业微信" size="small" class="notification-card">
+              <a-form-item label="启用企业微信通知" field="wechatwork_enabled">
+                <a-switch v-model="notificationConfig.wechatwork_enabled" />
+                <div class="form-help">是否启用企业微信机器人通知</div>
+              </a-form-item>
+
+              <a-form-item label="Webhook地址" field="wechatwork_webhook">
+                <a-input
+                  v-model="notificationConfig.wechatwork_webhook"
+                  placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+                />
+                <div class="form-help">企业微信机器人Webhook地址</div>
+              </a-form-item>
+
+              <a-form-item label="关键词" field="wechatwork_keyword">
+                <a-input
+                  v-model="notificationConfig.wechatwork_keyword"
+                  placeholder="请输入企业微信机器人设置的关键词"
+                />
+                <div class="form-help">企业微信机器人安全设置的关键词（可选）</div>
+              </a-form-item>
+            </a-card>
+
+            <!-- 通知级别 -->
+            <a-card title="通知级别" size="small" class="notification-card">
+              <a-form-item label="通知级别" field="levels">
+                <a-checkbox-group v-model="notificationConfig.levels">
+                  <a-checkbox value="info">信息</a-checkbox>
+                  <a-checkbox value="warning">警告</a-checkbox>
+                  <a-checkbox value="error">错误</a-checkbox>
+                  <a-checkbox value="critical">严重</a-checkbox>
+                </a-checkbox-group>
+                <div class="form-help">选择需要发送通知的事件级别</div>
+              </a-form-item>
+            </a-card>
 
             <a-form-item>
               <a-button type="primary" @click="handleSaveNotificationConfig" :loading="notificationLoading">
+                保存配置
+              </a-button>
+            </a-form-item>
+          </a-form>
+          </div>
+        </a-tab-pane>
+
+        <!-- Agent配置 -->
+        <a-tab-pane key="agent" title="Agent配置">
+          <div class="tab-content">
+            <a-form
+              ref="agentFormRef"
+              :model="agentConfig"
+              :rules="agentRules"
+              layout="vertical"
+              class="config-form"
+            >
+            <a-form-item label="默认离线判定阈值（秒）" field="offline_threshold_seconds">
+              <a-input-number
+                v-model="agentConfig.offline_threshold_seconds"
+                :min="60"
+                :max="3600"
+                placeholder="请输入离线判定阈值"
+              />
+              <div class="form-help">Agent超过此时间未心跳则认为离线，默认600秒（10分钟）</div>
+            </a-form-item>
+
+            <a-form-item label="按环境配置离线阈值" field="offline_threshold_by_env">
+              <a-textarea
+                v-model="offlineThresholdEnvText"
+                :rows="4"
+                placeholder="请输入JSON格式，如: {&quot;prod&quot;: 300, &quot;test&quot;: 900}"
+              />
+              <div class="form-help">
+                按环境覆盖默认阈值，格式为JSON对象。环境名称作为key，阈值秒数作为value
+                <br />例如：prod环境300秒离线，test环境900秒离线
+              </div>
+            </a-form-item>
+
+            <a-form-item>
+              <a-button type="primary" @click="handleSaveAgentConfig" :loading="agentLoading">
                 保存配置
               </a-button>
             </a-form-item>
@@ -147,6 +229,7 @@
                   <a-option value="">全部</a-option>
                   <a-option value="task">任务执行配置</a-option>
                   <a-option value="notification">通知配置</a-option>
+                  <a-option value="agent">Agent配置</a-option>
                   <a-option value="cloud">云厂商配置</a-option>
                   <a-option value="security">安全配置</a-option>
                   <a-option value="system">系统配置</a-option>
@@ -257,13 +340,15 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 // @ts-ignore - IDE path alias resolution in this environment
-import { systemConfigApi, type SystemConfig, type TaskConfig, type NotificationConfig } from '@/api/system'
+import { systemConfigApi, type SystemConfig, type TaskConfig, type NotificationConfig, type AgentConfig } from '@/api/system'
 
 // 响应式数据
 const activeTab = ref('task')
 const tableLoading = ref(false)
 const taskLoading = ref(false)
 const notificationLoading = ref(false)
+const agentLoading = ref(false)
+const agentFormRef = ref()
 const configs = ref<SystemConfig[]>([])
 const searchText = ref('')
 const categoryFilter = ref('')
@@ -280,18 +365,30 @@ const pagination = reactive({
 
 // 任务配置
 const taskConfig = ref<TaskConfig>({
-  max_concurrent_jobs: 10,
-  job_timeout: 3600,
-  retry_attempts: 3,
-  cleanup_days: 30
+  fabric_max_concurrent_hosts: 20,
+  fabric_connection_timeout: 30,
+  fabric_command_timeout: 300,
+  fabric_enable_connection_pool: true
 })
 
 // 通知配置
 const notificationConfig = ref<NotificationConfig>({
-  email_enabled: true,
-  webhook_enabled: false,
-  levels: ['error', 'warning'],
-  email_recipients: []
+  dingtalk_enabled: false,
+  dingtalk_webhook: '',
+  dingtalk_keyword: '',
+  feishu_enabled: false,
+  feishu_webhook: '',
+  feishu_keyword: '',
+  wechatwork_enabled: false,
+  wechatwork_webhook: '',
+  wechatwork_keyword: '',
+  levels: ['error', 'warning']
+})
+
+// Agent配置
+const agentConfig = ref<AgentConfig>({
+  offline_threshold_seconds: 600,
+  offline_threshold_by_env: {}
 })
 
 // 编辑对话框
@@ -307,14 +404,17 @@ const editForm = reactive({
 
 // 表单验证规则
 const taskRules = {
-  max_concurrent_jobs: [{ required: true, message: '请输入最大并发任务数' }],
-  job_timeout: [{ required: true, message: '请输入任务超时时间' }],
-  retry_attempts: [{ required: true, message: '请输入重试次数' }],
-  cleanup_days: [{ required: true, message: '请输入日志保留天数' }]
 }
 
 const notificationRules = {
-  levels: [{ required: true, message: '请选择通知级别' }]
+  levels: [{ required: true, message: '请选择通知级别' }],
+  dingtalk_webhook: [{ type: 'url', message: '请输入有效的钉钉Webhook地址' }],
+  feishu_webhook: [{ type: 'url', message: '请输入有效的飞书Webhook地址' }],
+  wechatwork_webhook: [{ type: 'url', message: '请输入有效的企业微信Webhook地址' }]
+}
+
+const agentRules = {
+  offline_threshold_seconds: [{ required: true, message: '请输入默认离线判定阈值' }]
 }
 
 const editRules = {
@@ -365,6 +465,27 @@ const columns = [
   }
 ]
 
+// Agent配置文本编辑（JSON格式）
+const offlineThresholdEnvText = computed({
+  get: () => {
+    if (!agentConfig.value.offline_threshold_by_env || Object.keys(agentConfig.value.offline_threshold_by_env).length === 0) {
+      return ''
+    }
+    return JSON.stringify(agentConfig.value.offline_threshold_by_env, null, 2)
+  },
+  set: (val: string) => {
+    if (!val.trim()) {
+      agentConfig.value.offline_threshold_by_env = {}
+      return
+    }
+    try {
+      agentConfig.value.offline_threshold_by_env = JSON.parse(val)
+    } catch (e) {
+      // JSON解析失败时不更新，保持原值
+    }
+  }
+})
+
 // 计算属性
 const filteredConfigs = computed(() => {
   return configs.value || []
@@ -413,6 +534,15 @@ const fetchNotificationConfig = async () => {
   }
 }
 
+const fetchAgentConfig = async () => {
+  try {
+    const response = await systemConfigApi.getAgentConfig()
+    agentConfig.value = response
+  } catch (error) {
+    Message.error('获取Agent配置失败')
+  }
+}
+
 const handleSaveTaskConfig = async () => {
   try {
     taskLoading.value = true
@@ -434,6 +564,18 @@ const handleSaveNotificationConfig = async () => {
     Message.error('通知配置保存失败')
   } finally {
     notificationLoading.value = false
+  }
+}
+
+const handleSaveAgentConfig = async () => {
+  try {
+    agentLoading.value = true
+    await systemConfigApi.updateAgentConfig(agentConfig.value)
+    Message.success('Agent配置保存成功')
+  } catch (error) {
+    Message.error('Agent配置保存失败')
+  } finally {
+    agentLoading.value = false
   }
 }
 
@@ -551,6 +693,7 @@ const formatDate = (dateString: string) => {
 onMounted(() => {
   fetchTaskConfig()
   fetchNotificationConfig()
+  fetchAgentConfig()
   fetchConfigs()
 })
 </script>
@@ -566,7 +709,7 @@ onMounted(() => {
 }
 
 .config-form {
-  max-width: 600px;
+  max-width: 900px;
 }
 
 .form-help {
@@ -601,5 +744,13 @@ onMounted(() => {
 
 .tab-wide {
   max-width: none;
+}
+
+.notification-card {
+  margin-bottom: 16px;
+}
+
+.notification-card:last-child {
+  margin-bottom: 0;
 }
 </style>

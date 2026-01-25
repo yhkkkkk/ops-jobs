@@ -15,6 +15,7 @@ from .serializers import (
     SystemConfigBatchUpdateSerializer,
     TaskConfigSerializer,
     NotificationConfigSerializer,
+    AgentConfigSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
@@ -153,10 +154,12 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
         
         # 转换为前端需要的格式
         task_config = {
-            'max_concurrent_jobs': configs.get('task.max_concurrent_jobs', 10),
-            'job_timeout': configs.get('task.job_timeout', 3600),
-            'retry_attempts': configs.get('task.retry_attempts', 3),
             'cleanup_days': configs.get('task.cleanup_days', 30),
+            # Fabric执行配置
+            'fabric_max_concurrent_hosts': configs.get('fabric.max_concurrent_hosts', 20),
+            'fabric_connection_timeout': configs.get('fabric.connection_timeout', 30),
+            'fabric_command_timeout': configs.get('fabric.command_timeout', 300),
+            'fabric_enable_connection_pool': configs.get('fabric.enable_connection_pool', True),
         }
         
         return SycResponse.success(content=task_config, message="获取任务配置成功")
@@ -199,10 +202,20 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
         
         # 转换为前端需要的格式
         notification_config = {
-            'email_enabled': configs.get('notification.email_enabled', True),
-            'webhook_enabled': configs.get('notification.webhook_enabled', False),
+            # 钉钉配置
+            'dingtalk_enabled': configs.get('notification.dingtalk_enabled', False),
+            'dingtalk_webhook': configs.get('notification.dingtalk_webhook', ''),
+            'dingtalk_keyword': configs.get('notification.dingtalk_keyword', ''),
+            # 飞书配置
+            'feishu_enabled': configs.get('notification.feishu_enabled', False),
+            'feishu_webhook': configs.get('notification.feishu_webhook', ''),
+            'feishu_keyword': configs.get('notification.feishu_keyword', ''),
+            # 企业微信配置
+            'wechatwork_enabled': configs.get('notification.wechatwork_enabled', False),
+            'wechatwork_webhook': configs.get('notification.wechatwork_webhook', ''),
+            'wechatwork_keyword': configs.get('notification.wechatwork_keyword', ''),
+            # 通知级别
             'levels': configs.get('notification.levels', ['error', 'warning']),
-            'email_recipients': configs.get('notification.email_recipients', []),
         }
         
         return SycResponse.success(content=notification_config, message="获取通知配置成功")
@@ -232,3 +245,62 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
                 )
         
         return SycResponse.success(content=config_data, message="通知配置更新成功")
+    
+    @extend_schema(
+        summary="获取Agent配置",
+        tags=["系统配置"],
+        responses={200: AgentConfigSerializer}
+    )
+    @action(detail=False, methods=['get'])
+    def agent_config(self, request):
+        """获取Agent配置"""
+        configs = ConfigManager.get_by_category('system')
+        
+        # 获取按环境的离线阈值
+        offline_threshold_by_env = configs.get('agent.offline_threshold_by_env', {})
+        if not isinstance(offline_threshold_by_env, dict):
+            offline_threshold_by_env = {}
+        
+        # 转换为前端需要的格式
+        agent_config = {
+            'offline_threshold_seconds': configs.get('agent.offline_threshold_seconds', 600),
+            'offline_threshold_by_env': offline_threshold_by_env,
+        }
+        
+        return SycResponse.success(content=agent_config, message="获取Agent配置成功")
+    
+    @extend_schema(
+        summary="更新Agent配置",
+        tags=["系统配置"],
+        request=AgentConfigSerializer,
+        responses={200: AgentConfigSerializer}
+    )
+    @action(detail=False, methods=['post'])
+    def update_agent_config(self, request):
+        """更新Agent配置"""
+        serializer = AgentConfigSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        config_data = serializer.validated_data
+        
+        with transaction.atomic():
+            # 更新离线判定阈值
+            ConfigManager.set(
+                key='agent.offline_threshold_seconds',
+                value=config_data['offline_threshold_seconds'],
+                category='system',
+                description='agent 离线判定阈值（秒），默认 600',
+                user=request.user
+            )
+            
+            # 更新按环境的离线阈值
+            offline_threshold_by_env = config_data.get('offline_threshold_by_env', {})
+            ConfigManager.set(
+                key='agent.offline_threshold_by_env',
+                value=offline_threshold_by_env,
+                category='system',
+                description='按环境的 agent 离线阈值映射，例如 {"prod": 300, "test": 900}',
+                user=request.user
+            )
+        
+        return SycResponse.success(content=config_data, message="Agent配置更新成功")

@@ -17,17 +17,33 @@ export interface SystemConfig {
 }
 
 export interface TaskConfig {
-  max_concurrent_jobs: number
-  job_timeout: number
-  retry_attempts: number
-  cleanup_days: number
+  // Fabric执行配置
+  fabric_max_concurrent_hosts?: number
+  fabric_connection_timeout?: number
+  fabric_command_timeout?: number
+  fabric_enable_connection_pool?: boolean
 }
 
 export interface NotificationConfig {
-  email_enabled: boolean
-  webhook_enabled: boolean
+  // 钉钉
+  dingtalk_enabled: boolean
+  dingtalk_webhook: string
+  dingtalk_keyword: string
+  // 飞书
+  feishu_enabled: boolean
+  feishu_webhook: string
+  feishu_keyword: string
+  // 企业微信
+  wechatwork_enabled: boolean
+  wechatwork_webhook: string
+  wechatwork_keyword: string
+  // 通知级别
   levels: string[]
-  email_recipients: string[]
+}
+
+export interface AgentConfig {
+  offline_threshold_seconds: number
+  offline_threshold_by_env: Record<string, number>
 }
 
 export const systemConfigApi = {
@@ -90,5 +106,15 @@ export const systemConfigApi = {
   // 更新通知配置
   updateNotificationConfig: (data: NotificationConfig) => {
     return http.post<NotificationConfig>('/system/configs/update_notification_config/', data)
+  },
+
+  // 获取Agent配置
+  getAgentConfig: () => {
+    return http.get<AgentConfig>('/system/configs/agent_config/')
+  },
+
+  // 更新Agent配置
+  updateAgentConfig: (data: AgentConfig) => {
+    return http.post<AgentConfig>('/system/configs/update_agent_config/', data)
   }
 }

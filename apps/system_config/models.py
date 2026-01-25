@@ -107,24 +107,6 @@ def init_default_configs():
     default_configs = [
         # 任务执行配置
         {
-            'key': 'task.max_concurrent_jobs',
-            'value': 10,
-            'category': 'task',
-            'description': '最大并发任务数'
-        },
-        {
-            'key': 'task.job_timeout',
-            'value': 3600,
-            'category': 'task',
-            'description': '任务超时时间（秒）'
-        },
-        {
-            'key': 'task.retry_attempts',
-            'value': 3,
-            'category': 'task',
-            'description': '任务失败重试次数'
-        },
-        {
             'key': 'task.cleanup_days',
             'value': 30,
             'category': 'task',
@@ -158,28 +140,64 @@ def init_default_configs():
         },
         
         {
-            'key': 'notification.email_enabled',
-            'value': True,
-            'category': 'notification',
-            'description': '是否启用邮件通知'
-        },
-        {
-            'key': 'notification.webhook_enabled',
+            'key': 'notification.dingtalk_enabled',
             'value': False,
             'category': 'notification',
-            'description': '是否启用Webhook通知'
+            'description': '是否启用钉钉通知'
+        },
+        {
+            'key': 'notification.dingtalk_webhook',
+            'value': '',
+            'category': 'notification',
+            'description': '钉钉机器人Webhook地址'
+        },
+        {
+            'key': 'notification.dingtalk_keyword',
+            'value': '',
+            'category': 'notification',
+            'description': '钉钉机器人关键词（可选）'
+        },
+        {
+            'key': 'notification.feishu_enabled',
+            'value': False,
+            'category': 'notification',
+            'description': '是否启用飞书通知'
+        },
+        {
+            'key': 'notification.feishu_webhook',
+            'value': '',
+            'category': 'notification',
+            'description': '飞书机器人Webhook地址'
+        },
+        {
+            'key': 'notification.feishu_keyword',
+            'value': '',
+            'category': 'notification',
+            'description': '飞书机器人关键词（可选）'
+        },
+        {
+            'key': 'notification.wechatwork_enabled',
+            'value': False,
+            'category': 'notification',
+            'description': '是否启用企业微信通知'
+        },
+        {
+            'key': 'notification.wechatwork_webhook',
+            'value': '',
+            'category': 'notification',
+            'description': '企业微信机器人Webhook地址'
+        },
+        {
+            'key': 'notification.wechatwork_keyword',
+            'value': '',
+            'category': 'notification',
+            'description': '企业微信机器人关键词（可选）'
         },
         {
             'key': 'notification.levels',
             'value': ['error', 'warning'],
             'category': 'notification',
             'description': '通知级别'
-        },
-        {
-            'key': 'notification.email_recipients',
-            'value': [],
-            'category': 'notification',
-            'description': '默认邮件接收人列表'
         },
         # agent 离线判定配置
         {

@@ -44,16 +44,7 @@ def cleanup_old_execution_logs():
 def check_system_health():
     """检查系统健康状态"""
     try:
-        from apps.executor.models import ExecutionRecord
         from apps.hosts.models import Host
-        
-        # 获取系统配置
-        max_concurrent_jobs = ConfigManager.get('task.max_concurrent_jobs', 10)
-        
-        # 检查当前运行的任务数
-        running_jobs_count = ExecutionRecord.objects.filter(
-            status__in=['pending', 'running']
-        ).count()
         
         # 检查主机状态
         total_hosts = Host.objects.count()
@@ -62,9 +53,6 @@ def check_system_health():
         # 检查系统负载
         health_status = {
             'timestamp': timezone.now().isoformat(),
-            'running_jobs_count': running_jobs_count,
-            'max_concurrent_jobs': max_concurrent_jobs,
-            'concurrent_jobs_usage': (running_jobs_count / max_concurrent_jobs) * 100 if max_concurrent_jobs > 0 else 0,
             'total_hosts': total_hosts,
             'online_hosts': online_hosts,
             'hosts_online_rate': (online_hosts / total_hosts) * 100 if total_hosts > 0 else 0,
@@ -72,10 +60,6 @@ def check_system_health():
         }
         
         # 判断系统状态
-        if running_jobs_count >= max_concurrent_jobs:
-            health_status['status'] = 'warning'
-            health_status['message'] = f'当前运行任务数({running_jobs_count})已达到最大并发限制({max_concurrent_jobs})'
-        
         if online_hosts / total_hosts < 0.8 if total_hosts > 0 else False:
             health_status['status'] = 'warning'
             health_status['message'] = f'主机在线率较低: {online_hosts}/{total_hosts}'

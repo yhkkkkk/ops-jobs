@@ -835,7 +835,7 @@ const treeData = computed(() => {
     
     return tree
   }
-    
+
   const result = buildTree(filteredGroups)
   
   console.log('HostSelector - treeData result:', result)

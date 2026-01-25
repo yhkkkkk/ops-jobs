@@ -205,6 +205,8 @@ class AgentService:
                                 ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
                                 max_connections: int = 1000, heartbeat_timeout: int = 60,
                                 package_version: str = None, package_id: int = None,
+                                # 最大并发任务数
+                                max_concurrent_tasks: int = None,
                                 # agent-server WebSocket 配置
                                 ws_handshake_timeout: str = None,
                                 ws_read_buffer_size: int = None,
@@ -307,6 +309,8 @@ exit 1
                 agent_server_listen_addr=agent_server_listen_addr or "",
                 max_connections=max_connections,
                 heartbeat_timeout=heartbeat_timeout,
+                # 最大并发任务数
+                max_concurrent_tasks=max_concurrent_tasks,
                 # agent-server WebSocket 配置
                 ws_handshake_timeout=ws_handshake_timeout,
                 ws_read_buffer_size=ws_read_buffer_size,
@@ -515,6 +519,8 @@ exit 1
                              ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
                              max_connections: int = 1000, heartbeat_timeout: int = 60,
                              ssh_timeout: int = 300, allow_reinstall: bool = False,
+                             # 最大并发任务数
+                             max_concurrent_tasks: int = None,
                              # agent-server WebSocket 配置
                              ws_handshake_timeout: str = None,
                              ws_read_buffer_size: int = None,
@@ -682,6 +688,8 @@ exit 1
                     heartbeat_timeout=heartbeat_timeout,
                     package_version=package_version,
                     package_id=package_id,
+                    # 最大并发任务数
+                    max_concurrent_tasks=max_concurrent_tasks,
                     # agent-server WebSocket 配置
                     ws_handshake_timeout=ws_handshake_timeout,
                     ws_read_buffer_size=ws_read_buffer_size,

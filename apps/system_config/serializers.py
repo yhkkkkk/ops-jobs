@@ -63,36 +63,67 @@ class SystemConfigCategorySerializer(serializers.Serializer):
 
 class TaskConfigSerializer(serializers.Serializer):
     """任务配置序列化器"""
-    
-    max_concurrent_jobs = serializers.IntegerField(
-        min_value=1, max_value=100,
-        help_text="最大并发任务数"
-    )
-    job_timeout = serializers.IntegerField(
-        min_value=60, max_value=86400,
-        help_text="任务超时时间（秒）"
-    )
-    retry_attempts = serializers.IntegerField(
-        min_value=0, max_value=10,
-        help_text="任务失败重试次数"
-    )
+
     cleanup_days = serializers.IntegerField(
         min_value=1, max_value=365,
         help_text="任务日志保留天数"
+    )
+    # Fabric执行配置
+    fabric_max_concurrent_hosts = serializers.IntegerField(
+        min_value=1, max_value=100,
+        required=False,
+        help_text="单个任务最大并发主机数"
+    )
+    fabric_connection_timeout = serializers.IntegerField(
+        min_value=5, max_value=300,
+        required=False,
+        help_text="SSH连接超时时间（秒）"
+    )
+    fabric_command_timeout = serializers.IntegerField(
+        min_value=30, max_value=3600,
+        required=False,
+        help_text="命令执行超时时间（秒）"
+    )
+    fabric_enable_connection_pool = serializers.BooleanField(
+        required=False,
+        help_text="是否启用SSH连接池"
     )
 
 
 class NotificationConfigSerializer(serializers.Serializer):
     """通知配置序列化器"""
+
+    # 钉钉配置
+    dingtalk_enabled = serializers.BooleanField(help_text="是否启用钉钉通知")
+    dingtalk_webhook = serializers.URLField(help_text="钉钉Webhook地址", required=False, allow_blank=True)
+    dingtalk_keyword = serializers.CharField(help_text="钉钉关键词", required=False, allow_blank=True)
     
-    email_enabled = serializers.BooleanField(help_text="是否启用邮件通知")
-    webhook_enabled = serializers.BooleanField(help_text="是否启用Webhook通知")
+    # 飞书配置
+    feishu_enabled = serializers.BooleanField(help_text="是否启用飞书通知")
+    feishu_webhook = serializers.URLField(help_text="飞书Webhook地址", required=False, allow_blank=True)
+    feishu_keyword = serializers.CharField(help_text="飞书关键词", required=False, allow_blank=True)
+    
+    # 企业微信配置
+    wechatwork_enabled = serializers.BooleanField(help_text="是否启用企业微信通知")
+    wechatwork_webhook = serializers.URLField(help_text="企业微信Webhook地址", required=False, allow_blank=True)
+    wechatwork_keyword = serializers.CharField(help_text="企业微信关键词", required=False, allow_blank=True)
+    
+    # 通知级别
     levels = serializers.ListField(
         child=serializers.ChoiceField(choices=['info', 'warning', 'error', 'critical']),
         help_text="通知级别"
     )
-    email_recipients = serializers.ListField(
-        child=serializers.EmailField(),
+
+
+class AgentConfigSerializer(serializers.Serializer):
+    """Agent配置序列化器"""
+
+    offline_threshold_seconds = serializers.IntegerField(
+        min_value=60, max_value=3600,
+        help_text="Agent离线判定阈值（秒）"
+    )
+    offline_threshold_by_env = serializers.DictField(
+        child=serializers.IntegerField(min_value=60, max_value=3600),
         required=False,
-        help_text="默认邮件接收人列表"
+        help_text="按环境的Agent离线阈值映射"
     )

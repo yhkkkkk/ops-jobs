@@ -92,6 +92,7 @@ def parse_args():
     p.add_argument("--ws-write-buffer-size", help="ws write buffer size", default=None)
     p.add_argument("--ws-enable-compression", help="ws enable compression (true/false)", default=None)
     p.add_argument("--ws-allowed-origins", help="ws allowed origins (comma-separated)", default=None)
+    p.add_argument("--max-concurrent-tasks", help="max concurrent tasks", default=None)
     return p.parse_args()
 
 
@@ -114,6 +115,8 @@ def render_config_yaml(
     ws_write_buffer_size: int = None,
     ws_enable_compression: bool = None,
     ws_allowed_origins: list = None,
+    # 最大并发任务数
+    max_concurrent_tasks: int = None,
     base_config_path: str = None,
 ) -> str:
     """
@@ -150,7 +153,7 @@ def render_config_yaml(
             },
             "task": {
                 "heartbeat_interval": 10,
-                "max_concurrent_tasks": 5,
+                "max_concurrent_tasks": max_concurrent_tasks if max_concurrent_tasks is not None else 5,
                 "max_execution_time_sec": 7200,
             },
             "resource_limit": {
@@ -309,6 +312,7 @@ def main():
         ws_write_buffer_size=int(args.ws_write_buffer_size) if args.ws_write_buffer_size else None,
         ws_enable_compression=ws_enable_compression,
         ws_allowed_origins=ws_allowed_origins,
+        max_concurrent_tasks=int(args.max_concurrent_tasks) if args.max_concurrent_tasks else None,
         base_config_path=args.config,
     )
     print(result)

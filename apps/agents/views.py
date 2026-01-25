@@ -852,6 +852,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 ws_max_retries=install_record.ws_max_retries,
                 package_version=package_version,
                 package_id=package_id,
+                # 最大并发任务数（从安装记录获取）
+                max_concurrent_tasks=install_record.max_concurrent_tasks if hasattr(install_record, 'max_concurrent_tasks') else None,
                 # agent-server WebSocket 配置
                 ws_handshake_timeout=install_record.ws_handshake_timeout if hasattr(install_record, 'ws_handshake_timeout') else None,
                 ws_read_buffer_size=install_record.ws_read_buffer_size if hasattr(install_record, 'ws_read_buffer_size') else None,
@@ -915,6 +917,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_write_buffer_size = data.get('ws_write_buffer_size', 4096)
         ws_enable_compression = data.get('ws_enable_compression', True)
         ws_allowed_origins = data.get('ws_allowed_origins', [])
+        max_concurrent_tasks = data.get('max_concurrent_tasks')
 
         # 验证参数
         if install_type == 'agent' and not agent_server_url:
@@ -1042,6 +1045,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         heartbeat_timeout=heartbeat_timeout,
                         package_version=package_version,
                         package_id=package_id,
+                        # 最大并发任务数
+                        max_concurrent_tasks=max_concurrent_tasks,
                         # agent-server WebSocket 配置
                         ws_handshake_timeout=ws_handshake_timeout,
                         ws_read_buffer_size=ws_read_buffer_size,
@@ -1134,6 +1139,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_max_retries = data.get('ws_max_retries', 6)
         ssh_timeout = data.get('ssh_timeout', 300)
         allow_reinstall = data.get('allow_reinstall', False)
+        max_concurrent_tasks = data.get('max_concurrent_tasks')
         control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
 
         if install_type == 'agent' and not agent_server_url:
@@ -1252,6 +1258,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     ws_max_retries=ws_max_retries,
                     ssh_timeout=ssh_timeout,
                     allow_reinstall=allow_reinstall,
+                    # 最大并发任务数
+                    max_concurrent_tasks=max_concurrent_tasks,
                     # agent-server WebSocket 配置
                     ws_handshake_timeout=ws_handshake_timeout,
                     ws_read_buffer_size=ws_read_buffer_size,

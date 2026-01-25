@@ -681,6 +681,13 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
     )
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
+    max_concurrent_tasks = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=20,
+        allow_null=True,
+        help_text="最大并发任务数（可选，1~20）"
+    )
 
     def validate(self, attrs):
         install_type = attrs.get('install_type', 'agent')

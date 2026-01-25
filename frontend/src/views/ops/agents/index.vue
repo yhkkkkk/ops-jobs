@@ -548,6 +548,16 @@
                     placeholder="例如: ws://agent-server:8080"
                   />
                 </a-form-item>
+                <a-form-item label="最大并发任务数" field="max_concurrent_tasks">
+                  <a-input-number
+                    v-model="installForm.max_concurrent_tasks"
+                    :min="1"
+                    :max="20"
+                    placeholder="留空使用默认值 (5)"
+                    style="width: 100%"
+                  />
+                  <div class="form-help">控制该 Agent 同时执行的任务数量，留空则使用默认值 5</div>
+                </a-form-item>
                 <a-row :gutter="12">
                   <a-col :span="8">
                     <a-form-item label="WS 初始退避(ms)">
@@ -971,6 +981,8 @@ const installForm = reactive({
   ws_backoff_initial_ms: 1000,
   ws_backoff_max_ms: 30000,
   ws_max_retries: 6,
+  // 最大并发任务数
+  max_concurrent_tasks: undefined as number | undefined,
   // Agent-Server 配置
   agent_server_listen_addr: '0.0.0.0:8080',
   max_connections: 1000,
