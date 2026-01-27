@@ -384,7 +384,7 @@ func (s *Server) handleRegister(c *gin.Context) {
 		return
 	}
 
-	conn, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID)
+	_, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID)
 	if err != nil {
 		if err == agent.ErrMaxConnections {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "max connections reached"})
@@ -414,8 +414,9 @@ func (s *Server) handleRegister(c *gin.Context) {
 		}
 	}
 
-	wsURL := fmt.Sprintf("ws://%s:%d/ws/agent/%s?token=%s",
-		s.cfg.Server.Host, s.cfg.Server.Port, agentID, conn.Token)
+	// 注意：token 不再放在 wsURL 中，而是通过 Sec-WebSocket-Protocol 头部传递
+	wsURL := fmt.Sprintf("ws://%s:%d/ws/agent/%s",
+		s.cfg.Server.Host, s.cfg.Server.Port, agentID)
 
 	c.JSON(http.StatusOK, api.RegisterResponse{
 		ID:     agentID,
@@ -773,7 +774,9 @@ func (s *Server) cancelTaskFromQueue(agentID, taskID string) error {
 // handleWebSocket 处理 WebSocket 连接
 func (s *Server) handleWebSocket(c *gin.Context) {
 	agentID := c.Param("id")
-	token := c.Query("token")
+
+	// 从 Sec-WebSocket-Protocol 头部获取 token（更安全，不暴露在 URL 中）
+	token := s.extractTokenFromProtocol(c.GetHeader("Sec-WebSocket-Protocol"))
 
 	// 获取 Agent 连接
 	conn, exists := s.agentManager.Get(agentID)
@@ -818,6 +821,21 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 
 	// 启动消息处理
 	s.handleWebSocketMessages(agentConn)
+}
+
+// extractTokenFromProtocol 从 Sec-WebSocket-Protocol 头部提取 token
+// 格式: "agent-token,<actual-token>"
+func (s *Server) extractTokenFromProtocol(protocol string) string {
+	if protocol == "" {
+		return ""
+	}
+	// 格式: "agent-token,<token>"
+	prefix := "agent-token,"
+	if len(protocol) > len(prefix) && protocol[:len(prefix)] == prefix {
+		return protocol[len(prefix):]
+	}
+	// 兼容旧格式：直接是 token
+	return protocol
 }
 
 // requireSignature 校验 HMAC 时间窗签名：X-Timestamp + X-Signature

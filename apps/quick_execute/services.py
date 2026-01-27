@@ -65,13 +65,11 @@ class QuickExecuteService:
                 try:
                     params['timeout'] = int(timeout)
                 except (ValueError, TypeError):
-                    # 使用系统默认值
-                    from apps.system_config.models import ConfigManager
-                    params['timeout'] = ConfigManager.get('task.job_timeout', 300)
+                    # 使用默认超时时间
+                    params['timeout'] = 300
             else:
-                # 使用系统默认值
-                from apps.system_config.models import ConfigManager
-                params['timeout'] = ConfigManager.get('task.job_timeout', 300)
+                # 使用默认超时时间
+                params['timeout'] = 300
 
         return params
 

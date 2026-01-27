@@ -851,7 +851,7 @@ sequenceDiagram
     AS->>AS: 保存到 Manager<br/>agents[agent_id]
     AS->>R: XADD agent_status<br/>{event: registered, status: online}
     AS->>A: 200 OK<br/>{id, ws_url, status: active}
-    A->>AS: WS 连接 ws://.../ws/agent/{id}?token={token}
+    Note over A,AS: A->>AS: WS 连接 ws://.../ws/agent/{id}<br/>Sec-WebSocket-Protocol: agent-token,{token}
     AS->>AS: 更新 Conn.LastHeartbeat
 
     Note over CP: consume_streams.py 消费状态流

@@ -202,7 +202,8 @@ logging:
 Agent 与 Agent-Server/控制面通过以下方式交互（仅 WS 通道）：
 
 - 注册（HTTP，仅一次）：`POST /api/agents/register/`
-- WebSocket：`ws://agent-server:8080/ws/agent/{agent_id}?token={agent_token}`
+- WebSocket：`ws://agent-server:8080/ws/agent/{agent_id}`
+  - **认证**：使用 `Sec-WebSocket-Protocol` 头部传递 token，格式：`agent-token,{agent_token}`
   - `type=task/tasks_batch`：任务下发
   - `type=cancel_task/cancel_tasks_batch`：取消任务
   - `type=heartbeat`：Agent 心跳（仅 WS）

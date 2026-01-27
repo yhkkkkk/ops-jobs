@@ -96,8 +96,20 @@ POST /api/agents/register/
 ### WebSocket 连接
 
 ```
-ws://agent-server:8080/ws/agent/{agent_id}?token={agent_token}
+ws://agent-server:8080/ws/agent/{agent_id}
 ```
+
+**认证方式**：使用 `Sec-WebSocket-Protocol` 头部传递 token，格式：`agent-token,{agent_token}`
+
+```go
+// Agent 端连接示例
+headers := http.Header{
+    "Sec-WebSocket-Protocol": []string{"agent-token," + token},
+}
+conn, _, err := dialer.Dial(wsURL, headers)
+```
+
+> **安全性说明**：token 通过 WebSocket 标准协议头部传递，不暴露在 URL 中，不会记录在服务器访问日志。
 
 ### 控制面 API
 

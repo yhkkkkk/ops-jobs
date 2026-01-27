@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -97,12 +98,17 @@ func (c *Client) Connect(agentID string) error {
 		return err
 	}
 
-	// 连接 WebSocket
+	// 连接 WebSocket，使用 Sec-WebSocket-Protocol 头部传递 token（更安全，不暴露在 URL 中）
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(wsURL, nil)
+	// 使用 Sec-WebSocket-Protocol 头部传递认证 token
+	headers := http.Header{
+		"Sec-WebSocket-Protocol": []string{"agent-token," + c.token},
+	}
+
+	conn, _, err := dialer.Dial(wsURL, headers)
 	if err != nil {
 		return fmt.Errorf("dial websocket failed: %w", err)
 	}
@@ -380,9 +386,7 @@ func (c *Client) connectionURL(agentID string) (string, error) {
 	}
 
 	u.Path = fmt.Sprintf("/ws/agent/%s", agentID)
-	q := u.Query()
-	q.Set("token", c.token)
-	u.RawQuery = q.Encode()
+	// 注意：token 不再放在 URL 中，而是通过 Sec-WebSocket-Protocol 头部传递
 	return u.String(), nil
 }
 

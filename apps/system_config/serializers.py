@@ -22,7 +22,7 @@ class SystemConfigSerializer(serializers.ModelSerializer):
     def validate_key(self, value):
         """验证配置键格式"""
         if not value or '.' not in value:
-            raise serializers.ValidationError("配置键必须包含分类前缀，如: task.max_concurrent_jobs")
+            raise serializers.ValidationError("配置键必须包含分类前缀，如: task.cleanup_days")
         return value
 
 
