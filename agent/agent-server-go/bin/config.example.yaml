@@ -30,6 +30,9 @@ logging:
 log_stream:
   enabled: true           # 将日志写入 Redis Stream（统一流，由 Python 消费者转发到前端 SSE）
   key: "agent_logs"       # 统一日志流 key（Python consume_agent_logs.py 消费此 key）
+  buffer_size: 1000       # 单个连接最大缓冲日志条数（避免内存溢出）
+  batch_size: 50          # 达到多少条时批量发送（减少 Redis 写入次数）
+  flush_interval: 2000    # 刷新间隔（毫秒），定时发送缓冲的日志
 
 result_stream:
   enabled: true           # 将任务结果写入 Redis Stream

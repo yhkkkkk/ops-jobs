@@ -904,6 +904,9 @@ func (s *Server) handleWebSocketMessages(conn *agent.Connection) {
 	// 启动任务队列处理
 	go s.handleTaskQueue(conn)
 
+	// 启动日志缓冲处理
+	go s.handleLogBuffer(conn)
+
 	for {
 		var msg api.WebSocketMessage
 		if err := conn.Conn.ReadJSON(&msg); err != nil {
@@ -967,37 +970,18 @@ func (s *Server) handleWebSocketMessages(conn *agent.Connection) {
 				s.sendAck(conn, msg.MessageID)
 				continue
 			}
+
+			// 填充 task_id 到所有日志条目
 			for i := range msg.Logs {
 				if msg.TaskID != "" {
 					msg.Logs[i].TaskID = msg.TaskID
 				}
 			}
-			if err := s.pushLogs(context.Background(), conn.ID, msg.TaskID, msg.Logs); err != nil {
-				switch {
-				case errors.Is(err, errInvalidTaskID):
-					// 非法 task_id，直接 ACK 避免重复重试
-					s.sendAck(conn, msg.MessageID)
-					continue
-				case errors.Is(err, errLogStreamUnavailable), errors.Is(err, errLogStreamWriteFailed):
-					// 日志流不可用或写入失败：记录告警并 ACK（选择丢弃以避免 pending/outbox 占满）
-					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-						"agent_id":   conn.ID,
-						"message_id": msg.MessageID,
-						"task_id":    msg.TaskID,
-						"log_count":  len(msg.Logs),
-					}).Warn("log stream unavailable, ack and drop logs to avoid retry storm")
-					s.sendAck(conn, msg.MessageID)
-					continue
-				default:
-					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-						"agent_id":   conn.ID,
-						"message_id": msg.MessageID,
-						"task_id":    msg.TaskID,
-						"log_count":  len(msg.Logs),
-					}).Warn("push logs failed, waiting for retry")
-					continue
-				}
-			}
+
+			// 写入 LogBuffer 通道（非阻塞，避免阻塞消息循环）
+			s.writeToLogBuffer(conn, msg.Logs)
+
+			// 立即 ACK，因为已写入缓冲
 			s.sendAck(conn, msg.MessageID)
 		}
 	}
@@ -1019,6 +1003,40 @@ func (s *Server) sendAck(conn *agent.Connection, messageID string) {
 	}
 }
 
+// writeToLogBuffer 将日志写入 LogBuffer 通道（非阻塞）
+func (s *Server) writeToLogBuffer(conn *agent.Connection, logs []api.LogEntry) {
+	if len(logs) == 0 {
+		return
+	}
+
+	// 获取缓冲区配置
+	bufferSize := s.cfg.LogStream.BufferSize
+	if bufferSize <= 0 {
+		bufferSize = 1000
+	}
+
+	// 非阻塞写入，避免阻塞消息循环
+	droppedCount := 0
+	for _, log := range logs {
+		select {
+		case conn.LogBuffer <- &log:
+			// 写入成功
+		default:
+			// 缓冲区满，丢弃当前日志
+			droppedCount++
+		}
+	}
+
+	if droppedCount > 0 {
+		logger.GetLogger().WithFields(map[string]interface{}{
+			"agent_id":      conn.ID,
+			"total_logs":    len(logs),
+			"dropped_count": droppedCount,
+			"buffer_size":   bufferSize,
+		}).Warn("log buffer full, some logs dropped")
+	}
+}
+
 // handleTaskQueue 处理任务队列
 func (s *Server) handleTaskQueue(conn *agent.Connection) {
 	for task := range conn.TaskQueue {
@@ -1029,12 +1047,27 @@ func (s *Server) handleTaskQueue(conn *agent.Connection) {
 }
 
 // handleLogBuffer 处理日志缓冲
+// 从 LogBuffer 通道读取日志，按 task_id 分组，批量写入 Redis Stream
 func (s *Server) handleLogBuffer(conn *agent.Connection) {
-	// 日志缓冲区大小限制，避免内存溢出
-	const MaxLogBufferSize = 1000 // 最大缓冲日志条数
-	var totalBuffered int         // 当前缓冲的总日志条数
+	// 从配置获取参数，使用默认值防止配置未设置
+	bufferSize := s.cfg.LogStream.BufferSize
+	if bufferSize <= 0 {
+		bufferSize = 1000
+	}
 
-	ticker := time.NewTicker(2 * time.Second)
+	batchSize := s.cfg.LogStream.BatchSize
+	if batchSize <= 0 {
+		batchSize = 50
+	}
+
+	flushInterval := time.Duration(s.cfg.LogStream.FlushInterval) * time.Millisecond
+	if flushInterval <= 0 {
+		flushInterval = 2 * time.Second
+	}
+
+	var totalBuffered int // 当前缓冲的总日志条数
+
+	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
 	// 按 task_id 分组日志
@@ -1055,7 +1088,7 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 			}
 
 			// 检查总缓冲大小限制
-			if totalBuffered >= MaxLogBufferSize {
+			if totalBuffered >= bufferSize {
 				logger.GetLogger().WithFields(map[string]interface{}{
 					"agent_id": conn.ID,
 					"task_id":  taskID,
@@ -1071,8 +1104,8 @@ func (s *Server) handleLogBuffer(conn *agent.Connection) {
 			taskLogs[taskID] = append(taskLogs[taskID], *logEntry)
 			totalBuffered++
 
-			// 批量发送（每个任务达到 50 条日志时）
-			if len(taskLogs[taskID]) >= 50 {
+			// 批量发送（每个任务达到 batchSize 条日志时）
+			if len(taskLogs[taskID]) >= batchSize {
 				if err := s.pushLogs(context.Background(), conn.ID, taskID, taskLogs[taskID]); err != nil {
 					logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 						"agent_id": conn.ID,

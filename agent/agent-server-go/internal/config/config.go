@@ -55,8 +55,11 @@ type LoggingConfig struct {
 
 // LogStreamConfig Redis Stream 写日志配置
 type LogStreamConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Key     string `mapstructure:"key"` // 统一日志流的 Redis Stream key
+	Enabled       bool   `mapstructure:"enabled"`
+	Key           string `mapstructure:"key"`            // 统一日志流的 Redis Stream key
+	BufferSize    int    `mapstructure:"buffer_size"`    // 单个连接最大缓冲日志条数
+	BatchSize     int    `mapstructure:"batch_size"`     // 达到多少条时批量发送
+	FlushInterval int    `mapstructure:"flush_interval"` // 刷新间隔（毫秒）
 }
 
 // ResultStreamConfig Redis Stream 写任务结果配置
@@ -151,6 +154,9 @@ func setDefaults() {
 	// Log Stream 默认值（统一日志流写入）
 	viper.SetDefault("log_stream.enabled", true)
 	viper.SetDefault("log_stream.key", "agent_logs")
+	viper.SetDefault("log_stream.buffer_size", 1000)    // 单个连接最大缓冲日志条数
+	viper.SetDefault("log_stream.batch_size", 50)       // 达到多少条时批量发送
+	viper.SetDefault("log_stream.flush_interval", 2000) // 刷新间隔（毫秒）
 
 	// Result Stream 默认值
 	viper.SetDefault("result_stream.enabled", true)
