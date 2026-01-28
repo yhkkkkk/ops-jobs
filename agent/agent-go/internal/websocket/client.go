@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	defaultRetryInterval = 3 * time.Second
-	maxRetryInterval     = 30 * time.Second
-	defaultPendingTTL    = 10 * time.Minute
-	defaultPendingMax    = 5000
-	maxRetryAttempts     = 8
+	defaultRetryInterval     = 3 * time.Second
+	maxRetryInterval         = 30 * time.Second
+	defaultPendingTTL        = 10 * time.Minute
+	defaultPendingMax        = 5000
+	maxRetryAttempts         = 8
+	defaultReconnectInterval = 5 * time.Second // 默认重连间隔
 )
 
 type pendingMessage struct {
@@ -53,6 +54,11 @@ type Client struct {
 	maxRetryInterval time.Duration
 	pendingTTL       time.Duration
 	pendingMax       int
+	// 重连状态
+	reconnectMu       sync.Mutex
+	reconnectAgentID  string
+	reconnectInterval time.Duration
+	reconnecting      bool
 	// 回调函数
 	onTask    func(*api.TaskSpec)
 	onCancel  func(string)
@@ -74,18 +80,19 @@ func (c *Client) TaskChan() <-chan *api.TaskSpec {
 func NewClient(serverURL, token string) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &Client{
-		url:              serverURL,
-		token:            token,
-		ctx:              ctx,
-		cancel:           cancel,
-		taskChan:         make(chan *api.TaskSpec, 100),
-		resultChan:       make(chan *api.TaskResult, 100),
-		logChan:          make(chan []api.LogEntry, 100),
-		pending:          make(map[string]*pendingMessage),
-		retryInterval:    defaultRetryInterval,
-		maxRetryInterval: maxRetryInterval,
-		pendingTTL:       defaultPendingTTL,
-		pendingMax:       defaultPendingMax,
+		url:               serverURL,
+		token:             token,
+		ctx:               ctx,
+		cancel:            cancel,
+		taskChan:          make(chan *api.TaskSpec, 100),
+		resultChan:        make(chan *api.TaskResult, 100),
+		logChan:           make(chan []api.LogEntry, 100),
+		pending:           make(map[string]*pendingMessage),
+		retryInterval:     defaultRetryInterval,
+		maxRetryInterval:  maxRetryInterval,
+		pendingTTL:        defaultPendingTTL,
+		pendingMax:        defaultPendingMax,
+		reconnectInterval: defaultReconnectInterval,
 	}
 	go client.retryPendingLoop()
 	return client
@@ -132,6 +139,11 @@ func (c *Client) Connect(agentID string) error {
 
 // Disconnect 断开连接
 func (c *Client) Disconnect() error {
+	// 先停止重连循环
+	c.reconnectMu.Lock()
+	c.reconnecting = false
+	c.reconnectMu.Unlock()
+
 	c.cancel()
 
 	c.connMu.Lock()
@@ -151,6 +163,62 @@ func (c *Client) IsConnected() bool {
 	c.connMu.RLock()
 	defer c.connMu.RUnlock()
 	return c.connected && c.conn != nil
+}
+
+// StartReconnectLoop 启动独立的重连循环（断线后自动尝试重连）
+func (c *Client) StartReconnectLoop(agentID string) {
+	c.reconnectMu.Lock()
+	if c.reconnecting {
+		c.reconnectMu.Unlock()
+		return
+	}
+	c.reconnecting = true
+	c.reconnectAgentID = agentID
+	c.reconnectMu.Unlock()
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+
+		ticker := time.NewTicker(c.reconnectInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-c.ctx.Done():
+				logger.GetLogger().Info("reconnect loop stopped due to context cancelled")
+				return
+			case <-ticker.C:
+				c.reconnectMu.Lock()
+				if !c.reconnecting {
+					c.reconnectMu.Unlock()
+					return
+				}
+				agentID := c.reconnectAgentID
+				c.reconnectMu.Unlock()
+
+				if c.IsConnected() {
+					continue
+				}
+
+				logger.GetLogger().Warn("websocket disconnected, attempting to reconnect...")
+
+				// 尝试重连
+				if err := c.Connect(agentID); err != nil {
+					logger.GetLogger().WithError(err).Warn("reconnect failed, will retry")
+				} else {
+					logger.GetLogger().Info("reconnected successfully")
+				}
+			}
+		}
+	}()
+}
+
+// StopReconnectLoop 停止重连循环
+func (c *Client) StopReconnectLoop() {
+	c.reconnectMu.Lock()
+	c.reconnecting = false
+	c.reconnectMu.Unlock()
 }
 
 // SetOnTask 设置任务接收回调

@@ -168,6 +168,11 @@ func (a *Agent) Start() error {
 		return err
 	}
 
+	// 启动独立的 WebSocket 重连循环（断线后自动尝试重连）
+	if a.wsClient != nil && a.info != nil {
+		a.wsClient.StartReconnectLoop(a.info.ID)
+	}
+
 	// 定期冲刷 WS outbox（若配置了刷写间隔）
 	flushInterval := time.Duration(a.cfg.Logging.LogFlushInterval) * time.Millisecond
 	if flushInterval > 0 {
@@ -196,6 +201,11 @@ func (a *Agent) Start() error {
 
 // Stop 优雅关闭
 func (a *Agent) Stop() {
+	// 先停止重连循环
+	if a.wsClient != nil {
+		a.wsClient.StopReconnectLoop()
+	}
+
 	a.cancel()
 	// HTTP Server 会在 ctx 取消后优雅退出
 	// 断开 WebSocket 连接（agent-server 模式）

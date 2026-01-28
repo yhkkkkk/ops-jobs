@@ -261,8 +261,9 @@ func (s *Server) Stop() {
 }
 
 // cleanupLoop 定期清理非活跃连接
+// 提高频率到 10 秒，以便更快发现断开的连接
 func (s *Server) cleanupLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -982,7 +983,7 @@ func (s *Server) handleWebSocketMessages(conn *agent.Connection) {
 			s.writeToLogBuffer(conn, msg.Logs)
 
 			// 立即 ACK，因为已写入缓冲
-			s.sendAck(conn, msg.MessageID)
+					s.sendAck(conn, msg.MessageID)
 		}
 	}
 }

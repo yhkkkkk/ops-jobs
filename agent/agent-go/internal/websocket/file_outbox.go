@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -153,7 +152,7 @@ func (o *FileOutbox) writeToFileAsync(msg Message) {
 		fileMsg.Payload = string(payload)
 
 		// 写入文件
-		data, err := json.Marshal(fileMsg)
+		data, err := sonic.Marshal(fileMsg)
 		if err != nil {
 			logger.GetLogger().WithError(err).WithField("message_id", msg.MessageID).Error("Failed to marshal file message")
 			return
@@ -166,7 +165,7 @@ func (o *FileOutbox) writeToFileAsync(msg Message) {
 		}
 		defer file.Close()
 
-		// 每行一个 JSON 对象
+		// 每行一个json对象
 		data = append(data, '\n')
 
 		if _, err := file.Write(data); err != nil {
@@ -281,7 +280,7 @@ func (o *FileOutbox) recoverFromFile() {
 		}
 
 		var fileMsg fileMessage
-		if err := json.Unmarshal(line, &fileMsg); err != nil {
+		if err := sonic.Unmarshal(line, &fileMsg); err != nil {
 			logger.GetLogger().WithError(err).Warn("Skipped corrupted line in outbox file")
 			skippedCount++
 			continue
@@ -357,7 +356,7 @@ func (o *FileOutbox) flushToFileLocked() {
 		}
 		fileMsg.Payload = string(payload)
 
-		data, err := json.Marshal(fileMsg)
+		data, err := sonic.Marshal(fileMsg)
 		if err != nil {
 			continue
 		}
