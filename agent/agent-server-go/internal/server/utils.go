@@ -12,7 +12,7 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-// downloadFile 从 URL 下载文件到指定路径
+// downloadFile 从url下载文件到指定路径
 func downloadFile(ctx context.Context, url, dest string) error {
 	// 使用 resty 下载文件（SetOutput 直接写入文件）
 	_, err := resty.New().R().
@@ -33,7 +33,9 @@ func verifySHA256(filePath, expectedHash string) error {
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
@@ -54,7 +56,9 @@ func verifyMD5(filePath, expectedHash string) error {
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	hash := md5.New()
 	if _, err := io.Copy(hash, file); err != nil {

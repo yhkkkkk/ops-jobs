@@ -19,11 +19,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	ackCacheTTL = 10 * time.Minute
-	ackCacheMax = 5000
-)
-
 // createUpgrader 根据配置创建 WebSocket Upgrader
 func createUpgrader(cfg *config.Config) websocket.Upgrader {
 	checkOrigin := func(r *http.Request) bool {
@@ -75,7 +70,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// 创建 WebSocket Upgrader
 	upgrader := createUpgrader(cfg)
 
-	// 创建Redis连接池管理器
+	// 创建redis连接池管理器
 	var redisClient *redis.Client
 	if cfg.Redis.Enabled {
 		poolMgr := redisPkg.NewPoolManager(&cfg.Redis)
@@ -168,7 +163,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	// 启动清理非活跃连接的 goroutine
+	// 启动清理非活跃连接的goroutine
 	go s.cleanupLoop()
 
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)

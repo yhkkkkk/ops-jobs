@@ -11,27 +11,27 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// PoolManager Redis连接池管理器
+// PoolManager redis连接池管理器
 type PoolManager struct {
 	client *redis.Client
 	config *config.RedisConfig
 }
 
-// NewPoolManager 创建Redis连接池管理器
+// NewPoolManager 创建redis连接池管理器
 func NewPoolManager(cfg *config.RedisConfig) *PoolManager {
 	return &PoolManager{
 		config: cfg,
 	}
 }
 
-// GetClient 获取Redis客户端，如果未初始化则创建
+// GetClient 获取redis客户端，如果未初始化则创建
 func (pm *PoolManager) GetClient() (*redis.Client, error) {
 	if pm.client != nil {
 		return pm.client, nil
 	}
 
 	if !pm.config.Enabled {
-		return nil, fmt.Errorf("Redis is not enabled")
+		return nil, fmt.Errorf("redis is not enabled")
 	}
 
 	// 设置默认值
@@ -56,7 +56,7 @@ func (pm *PoolManager) GetClient() (*redis.Client, error) {
 		waitTimeout = 3 * time.Second
 	}
 
-	// 创建Redis客户端，使用连接池配置
+	// 创建redis客户端，使用连接池配置
 	client := redis.NewClient(&redis.Options{
 		Addr:            pm.config.Addr,
 		Password:        pm.config.Password,
@@ -86,26 +86,26 @@ func (pm *PoolManager) GetClient() (*redis.Client, error) {
 		"pool_size":  poolSize,
 		"min_idle":   minIdle,
 		"max_idle":   maxIdle,
-	}).Info("Redis connection pool initialized successfully")
+	}).Info("redis connection pool initialized successfully")
 
 	return pm.client, nil
 }
 
-// Close 关闭Redis连接池
+// Close 关闭redis连接池
 func (pm *PoolManager) Close() error {
 	if pm.client != nil {
 		err := pm.client.Close()
 		pm.client = nil
 		if err != nil {
-			logger.GetLogger().WithError(err).Error("Failed to close Redis connection pool")
+			logger.GetLogger().WithError(err).Error("failed to close Redis connection pool")
 			return err
 		}
-		logger.GetLogger().Info("Redis connection pool closed successfully")
+		logger.GetLogger().Info("redis connection pool closed successfully")
 	}
 	return nil
 }
 
-// IsEnabled 检查Redis是否启用
+// IsEnabled 检查redis是否启用
 func (pm *PoolManager) IsEnabled() bool {
 	return pm.config.Enabled
 }

@@ -436,7 +436,7 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 	// 从心跳 payload 中提取系统资源监控数据
 	// payload 格式: {"timestamp": int64, "system": SystemInfo}
 	if payload != nil {
-		// 将payload转换为JSON字符串用于gjson解析
+		// 将payload转换为json字符串用于gjson解析
 		payloadJSON, err := sonic.Marshal(payload)
 		if err != nil {
 			logger.GetLogger().WithError(err).WithField("agent_id", conn.ID).Warn("failed to marshal payload for gjson parsing")
@@ -502,7 +502,6 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 }
 
 // cleanupLoop 定期清理非活跃连接
-// 提高频率到 10 秒，以便更快发现断开的连接
 func (s *Server) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
