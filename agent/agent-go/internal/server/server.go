@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ops-job-agent/internal/api"
+	"ops-job-agent/internal/constants"
 	"ops-job-agent/internal/executor"
 	"ops-job-agent/internal/logger"
 	"ops-job-agent/internal/metrics"
@@ -90,7 +91,7 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		auth := c.GetHeader("Authorization")
+		auth := c.GetHeader(constants.HeaderAuthorization)
 		if auth == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization"})
 			return

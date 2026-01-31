@@ -20,6 +20,7 @@ type ConnectionConfig struct {
 	WSBackoffMaxMs     int    `mapstructure:"ws_backoff_max_ms"`
 	WSMaxRetries       int    `mapstructure:"ws_max_retries"`
 	WSOutboxMaxSize    int    `mapstructure:"ws_outbox_max_size"` // WS 断线本地缓冲上限（消息条数）
+	WSEnableCompression bool   `mapstructure:"ws_enable_compression"` // 是否启用 WebSocket 压缩
 }
 
 // IdentificationConfig 身份标识配置
@@ -194,6 +195,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("connection.ws_backoff_max_ms", 30000)
 	v.SetDefault("connection.ws_max_retries", 6)
 	v.SetDefault("connection.ws_outbox_max_size", 2000)
+	v.SetDefault("connection.ws_enable_compression", false)
 
 	// Identification 默认值
 	v.SetDefault("identification.agent_name", getHostname())

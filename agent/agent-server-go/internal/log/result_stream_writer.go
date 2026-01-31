@@ -3,9 +3,10 @@ package log
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/cast"
 
 	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/pkg/api"
@@ -101,12 +102,12 @@ func (w *ResultStreamWriter) calculateProgress(ctx context.Context, executionID 
 	runningHosts := make(map[int]bool)
 
 	for _, msg := range messages {
-		msgExecID, _ := strconv.Atoi(msg.Values["execution_id"].(string))
+		msgExecID, _ := cast.ToIntE(msg.Values["execution_id"])
 		if msgExecID != executionID {
 			continue
 		}
 
-		hostID, _ := strconv.Atoi(msg.Values["host_id"].(string))
+		hostID, _ := cast.ToIntE(msg.Values["host_id"])
 		if hostID == 0 {
 			continue
 		}
@@ -151,7 +152,7 @@ func (w *ResultStreamWriter) calculateProgress(ctx context.Context, executionID 
 func extractExecutionID(taskID string) int {
 	parts := strings.Split(taskID, "_")
 	if len(parts) >= 1 {
-		if execID, err := strconv.Atoi(parts[0]); err == nil {
+		if execID, err := cast.ToIntE(parts[0]); err == nil {
 			return execID
 		}
 	}
@@ -163,7 +164,7 @@ func extractExecutionID(taskID string) int {
 func extractHostID(taskID string) int {
 	parts := strings.Split(taskID, "_")
 	if len(parts) >= 3 {
-		if hostID, err := strconv.Atoi(parts[2]); err == nil {
+		if hostID, err := cast.ToIntE(parts[2]); err == nil {
 			return hostID
 		}
 	}

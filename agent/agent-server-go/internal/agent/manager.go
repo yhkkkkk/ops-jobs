@@ -1,11 +1,12 @@
 package agent
 
 import (
-	"errors"
+	serrors "ops-job-agent-server/internal/errors"
 	"sync"
 	"time"
 
 	"ops-job-agent-server/internal/config"
+	"ops-job-agent-server/internal/constants"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/internal/websocket"
 	"ops-job-agent-server/pkg/api"
@@ -13,12 +14,6 @@ import (
 	"github.com/google/uuid"
 	gorillaWs "github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
-)
-
-var (
-	ErrAgentNotFound    = errors.New("agent not found")
-	ErrConnectionClosed = errors.New("connection closed")
-	ErrMaxConnections   = errors.New("max connections reached")
 )
 
 // Manager Agent 连接管理器
@@ -29,7 +24,7 @@ type Manager struct {
 	maxConns         int
 	heartbeatTimeout time.Duration
 	config           *config.Config
-	redisClient      *redis.Client // Redis连接池客户端
+	redisClient      *redis.Client // redis连接池客户端
 }
 
 // NewManager 创建 Agent 管理器
@@ -51,7 +46,7 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 
 	// 检查连接数限制
 	if len(m.agents) >= m.maxConns {
-		return nil, "", ErrMaxConnections
+		return nil, "", serrors.ErrMaxConnectionsReached
 	}
 
 	// 生成 Agent ID
@@ -110,18 +105,19 @@ func (m *Manager) Connect(agentID, token string, conn *gorillaWs.Conn) (*Connect
 
 	agent, exists := m.agents[agentID]
 	if !exists {
-		return nil, ErrAgentNotFound
+		return nil, serrors.ErrAgentNotFound
 	}
 
 	// 验证 token
 	if agent.Token != token {
-		return nil, errors.New("invalid token")
+		return nil, serrors.ErrInvalidToken
 	}
 
 	// 设置 WebSocket 连接
 	agent.mu.Lock()
 	agent.Conn = conn
-	agent.UpdateHeartbeat()
+	agent.LastHeartbeat = time.Now()
+	agent.Status = constants.StatusActive
 	agent.mu.Unlock()
 
 	logger.GetLogger().WithFields(map[string]interface{}{
@@ -154,11 +150,11 @@ func (m *Manager) Remove(agentID string) error {
 
 	agent, exists := m.agents[agentID]
 	if !exists {
-		return ErrAgentNotFound
+		return serrors.ErrAgentNotFound
 	}
 
 	// 关闭连接
-	agent.Close()
+	_ = agent.Close()
 
 	// 从映射中移除
 	delete(m.agents, agentID)
@@ -193,7 +189,7 @@ func (m *Manager) CleanupInactive() {
 			logger.GetLogger().WithFields(map[string]interface{}{
 				"agent_id": agentID,
 			}).Warn("removing inactive agent")
-			agent.Close()
+			_ = agent.Close()
 			delete(m.agents, agentID)
 			delete(m.agentsByToken, agent.Token)
 		}

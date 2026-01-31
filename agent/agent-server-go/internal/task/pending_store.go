@@ -35,10 +35,10 @@ type PendingTask struct {
 // PendingTaskStore 待处理任务存储
 // 用于在 Agent-Server 端持久化待处理任务，支持任务恢复和 ACK 确认
 type PendingTaskStore struct {
-	redis      *redis.Client
-	mu         sync.RWMutex
-	pending    map[string]*PendingTask // 内存缓存，加速查询
-	localTTL   time.Duration
+	redis    *redis.Client
+	mu       sync.RWMutex
+	pending  map[string]*PendingTask // 内存缓存，加速查询
+	localTTL time.Duration
 }
 
 // NewPendingTaskStore 创建 PendingTaskStore
@@ -150,6 +150,9 @@ func (s *PendingTaskStore) GetPending(agentID, taskID string) (*PendingTask, err
 
 // MarkAcked 标记任务已确认
 func (s *PendingTaskStore) MarkAcked(agentID, taskID string) error {
+	if err := s.setAck(agentID, taskID, true); err != nil {
+		return err
+	}
 	return s.Delete(agentID, taskID)
 }
 
@@ -184,6 +187,23 @@ func (s *PendingTaskStore) Delete(agentID, taskID string) error {
 	return nil
 }
 
+// HasAcked 检查任务是否已确认（持久化）
+func (s *PendingTaskStore) HasAcked(agentID, taskID string) (bool, error) {
+	if agentID == "" || taskID == "" {
+		return false, fmt.Errorf("invalid agent or task id")
+	}
+
+	if s.redis == nil {
+		return false, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	key := s.taskAckKey(agentID)
+	exists, err := s.redis.SIsMember(ctx, key, taskID).Result()
+	return exists, err
+}
+
 // IncrementRetry 重试次数加 1
 func (s *PendingTaskStore) IncrementRetry(agentID, taskID string) error {
 	key := s.pendingKey(agentID, taskID)
@@ -207,10 +227,10 @@ func (s *PendingTaskStore) IncrementRetry(agentID, taskID string) error {
 	// 检查是否超过最大重试次数
 	if pending.RetryCount >= pending.MaxRetries {
 		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id":      agentID,
-			"task_id":       taskID,
-			"retry_count":   pending.RetryCount,
-			"max_retries":   pending.MaxRetries,
+			"agent_id":    agentID,
+			"task_id":     taskID,
+			"retry_count": pending.RetryCount,
+			"max_retries": pending.MaxRetries,
 		}).Warn("task exceeded max retries, will be marked as failed")
 		return s.MarkAcked(agentID, taskID) // 超时不再重试
 	}
@@ -225,7 +245,7 @@ func (s *PendingTaskStore) IncrementRetry(agentID, taskID string) error {
 	defer cancel()
 
 	if s.redis != nil {
-		if err := s.redis.Set(ctx, key, data, defaultTaskTimeout).Err(); err != nil {
+		if err = s.redis.Set(ctx, key, data, defaultTaskTimeout).Err(); err != nil {
 			return fmt.Errorf("update pending task in redis failed: %w", err)
 		}
 	}
@@ -323,6 +343,11 @@ func (s *PendingTaskStore) agentTasksKey(agentID string) string {
 	return fmt.Sprintf("%s%s", agentTasksKeyPrefix, agentID)
 }
 
+// taskAckKey 生成 Agent ack 集合 key
+func (s *PendingTaskStore) taskAckKey(agentID string) string {
+	return fmt.Sprintf("%s%s", taskACKKeyPrefix, agentID)
+}
+
 // Close 关闭存储
 func (s *PendingTaskStore) Close() {
 	s.mu.Lock()
@@ -330,3 +355,29 @@ func (s *PendingTaskStore) Close() {
 	s.mu.Unlock()
 }
 
+// setAck 标记 ack 状态到 redis + 内存
+func (s *PendingTaskStore) setAck(agentID, taskID string, acked bool) error {
+	if agentID == "" || taskID == "" {
+		return fmt.Errorf("invalid agent or task id")
+	}
+	if s.redis == nil {
+		// 无 Redis 环境下，仅日志记录
+		return nil
+	}
+	if s.redis != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		key := s.taskAckKey(agentID)
+		var err error
+		if acked {
+			err = s.redis.SAdd(ctx, key, taskID).Err()
+		} else {
+			err = s.redis.SRem(ctx, key, taskID).Err()
+		}
+		if err != nil {
+			return err
+		}
+		s.redis.Expire(ctx, key, defaultTaskTimeout*2)
+	}
+	return nil
+}

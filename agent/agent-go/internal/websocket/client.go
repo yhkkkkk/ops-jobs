@@ -13,6 +13,7 @@ import (
 
 	"ops-job-agent/internal/api"
 	"ops-job-agent/internal/constants"
+	serrors "ops-job-agent/internal/errors"
 	"ops-job-agent/internal/logger"
 )
 
@@ -24,6 +25,22 @@ const (
 	maxRetryAttempts         = 8
 	defaultReconnectInterval = 5 * time.Second // 默认重连间隔
 )
+
+// ErrAuthOrNotFound 暴露给 websocket 包调用者，用于鉴权/不存在错误判断
+var ErrAuthOrNotFound = serrors.ErrAuthOrNotFound
+
+type connEvent string
+
+const (
+	connEventConnected    connEvent = "connected"
+	connEventDisconnected connEvent = "disconnected"
+	connEventEnqueued     connEvent = "enqueued"
+)
+
+type connEventMessage struct {
+	kind   connEvent
+	reason string
+}
 
 type pendingMessage struct {
 	msg       Message
@@ -59,6 +76,11 @@ type Client struct {
 	reconnectAgentID  string
 	reconnectInterval time.Duration
 	reconnecting      bool
+	reconnectMax      int
+	// 连接事件
+	events chan connEventMessage
+	// 压缩开关
+	enableCompression bool
 	// 回调函数
 	onTask    func(*api.TaskSpec)
 	onCancel  func(string)
@@ -77,7 +99,7 @@ func (c *Client) TaskChan() <-chan *api.TaskSpec {
 }
 
 // NewClient 创建 WebSocket 客户端
-func NewClient(serverURL, token string) *Client {
+func NewClient(serverURL, token string, enableCompression bool) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &Client{
 		url:               serverURL,
@@ -93,8 +115,11 @@ func NewClient(serverURL, token string) *Client {
 		pendingTTL:        defaultPendingTTL,
 		pendingMax:        defaultPendingMax,
 		reconnectInterval: defaultReconnectInterval,
+		events:            make(chan connEventMessage, 8),
+		enableCompression: enableCompression,
 	}
 	go client.retryPendingLoop()
+	go client.eventLoop()
 	return client
 }
 
@@ -108,15 +133,22 @@ func (c *Client) Connect(agentID string) error {
 	// 连接 WebSocket，使用 Sec-WebSocket-Protocol 头部传递 token（更安全，不暴露在 URL 中）
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		EnableCompression: c.enableCompression,
 	}
 
 	// 使用 Sec-WebSocket-Protocol 头部传递认证 token
 	headers := http.Header{
-		"Sec-WebSocket-Protocol": []string{"agent-token," + c.token},
+		constants.HeaderSecWebSocketProtocol: []string{"agent-token," + c.token},
 	}
 
-	conn, _, err := dialer.Dial(wsURL, headers)
+	conn, resp, err := dialer.Dial(wsURL, headers)
 	if err != nil {
+		if resp != nil {
+			switch resp.StatusCode {
+			case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+				return ErrAuthOrNotFound
+			}
+		}
 		return fmt.Errorf("dial websocket failed: %w", err)
 	}
 
@@ -133,6 +165,7 @@ func (c *Client) Connect(agentID string) error {
 	c.wg.Add(2)
 	go c.readLoop()
 	go c.writeLoop()
+	c.emitEvent(connEventConnected, "connected")
 
 	return nil
 }
@@ -183,6 +216,7 @@ func (c *Client) StartReconnectLoop(agentID string) {
 		ticker := time.NewTicker(c.reconnectInterval)
 		defer ticker.Stop()
 
+		attempts := 0
 		for {
 			select {
 			case <-c.ctx.Done():
@@ -195,18 +229,35 @@ func (c *Client) StartReconnectLoop(agentID string) {
 					return
 				}
 				agentID := c.reconnectAgentID
+				maxAttempts := c.reconnectMax
 				c.reconnectMu.Unlock()
 
 				if c.IsConnected() {
+					attempts = 0
 					continue
+				}
+
+				if maxAttempts > 0 && attempts >= maxAttempts {
+					logger.GetLogger().WithFields(map[string]interface{}{
+						"attempts": attempts,
+					}).Warn("reconnect stopped after max attempts")
+					c.StopReconnectLoop()
+					return
 				}
 
 				logger.GetLogger().Warn("websocket disconnected, attempting to reconnect...")
 
 				// 尝试重连
 				if err := c.Connect(agentID); err != nil {
+					attempts++
+					if err == ErrAuthOrNotFound {
+						logger.GetLogger().WithError(err).Warn("reconnect stopped due to auth error")
+						c.StopReconnectLoop()
+						return
+					}
 					logger.GetLogger().WithError(err).Warn("reconnect failed, will retry")
 				} else {
+					attempts = 0
 					logger.GetLogger().Info("reconnected successfully")
 				}
 			}
@@ -218,6 +269,13 @@ func (c *Client) StartReconnectLoop(agentID string) {
 func (c *Client) StopReconnectLoop() {
 	c.reconnectMu.Lock()
 	c.reconnecting = false
+	c.reconnectMu.Unlock()
+}
+
+// SetReconnectMaxAttempts 设置重连最大尝试次数（<=0 表示无限）
+func (c *Client) SetReconnectMaxAttempts(attempts int) {
+	c.reconnectMu.Lock()
+	c.reconnectMax = attempts
 	c.reconnectMu.Unlock()
 }
 
@@ -324,6 +382,7 @@ func (c *Client) readLoop() {
 				c.connMu.Lock()
 				c.connected = false
 				c.connMu.Unlock()
+				c.emitEvent(connEventDisconnected, "read error")
 				return
 			}
 
@@ -493,6 +552,7 @@ func (c *Client) addPending(msg Message) {
 		nextRetry: now.Add(c.retryInterval),
 		lastSent:  now,
 	}
+	c.emitEvent(connEventEnqueued, "pending enqueued")
 }
 
 func (c *Client) removePending(id string) {
@@ -610,5 +670,27 @@ func (c *Client) evictOldestLocked(now time.Time) {
 		logger.GetLogger().WithFields(map[string]interface{}{
 			"message_id": oldestID,
 		}).Warn("evict pending websocket message to respect capacity")
+	}
+}
+
+func (c *Client) emitEvent(kind connEvent, reason string) {
+	select {
+	case c.events <- connEventMessage{kind: kind, reason: reason}:
+	default:
+	}
+}
+
+func (c *Client) eventLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case ev := <-c.events:
+			switch ev.kind {
+			case connEventConnected, connEventEnqueued:
+				c.retryPendingOnce()
+			default:
+			}
+		}
 	}
 }

@@ -43,7 +43,7 @@ var startCmd = &cobra.Command{
 			return err
 		}
 
-		// wait for signal
+		// 等待信号
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 		<-ch

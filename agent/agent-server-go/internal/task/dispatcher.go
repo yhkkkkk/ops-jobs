@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	serrors "ops-job-agent-server/internal/errors"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -52,7 +53,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 			}).Info("task saved to pending store (agent not found)")
 			return nil
 		}
-		return agent.ErrAgentNotFound
+		return serrors.ErrAgentNotFound
 	}
 
 	// 检查Agent是否在线
@@ -72,7 +73,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 			}).Info("task saved to pending store (agent offline)")
 			return nil
 		}
-		return agent.ErrConnectionClosed
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	// Agent在线，先持久化到 pendingTaskStore（确保可靠性）
@@ -110,7 +111,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 			}).Warn("task saved to pending store (agent queue full)")
 			return nil
 		}
-		return agent.ErrConnectionClosed
+		return serrors.ErrAgentConnectionClosed
 	}
 }
 
@@ -200,6 +201,19 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 				return
 			}
 
+			// 持久化 ack 检查
+			if d.pendingTaskStore != nil {
+				if acked, _ := d.pendingTaskStore.HasAcked(agentID, t.ID); acked {
+					logger.GetLogger().WithFields(map[string]interface{}{
+						"agent_id": agentID,
+						"task_id":  t.ID,
+					}).Debug("skipping pending task already acked (persistent)")
+					atomic.AddInt64(&successCount, 1)
+					d.pendingTaskStore.MarkAcked(agentID, t.ID)
+					return
+				}
+			}
+
 			// 尝试分发任务
 			if err := d.DispatchTaskToAgent(agentID, t); err != nil {
 				atomic.AddInt64(&failedCount, 1)
@@ -216,6 +230,9 @@ func (d *Dispatcher) ProcessPendingTasksForAgent(agentID string) error {
 					"agent_id": agentID,
 					"task_id":  t.ID,
 				}).Debug("successfully dispatched pending task")
+				if d.pendingTaskStore != nil {
+					d.pendingTaskStore.MarkAcked(agentID, t.ID)
+				}
 			}
 		}(task)
 	}

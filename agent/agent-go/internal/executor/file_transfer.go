@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"crypto/sha256"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -110,7 +111,11 @@ func (f *FileTransferExecutor) downloadFromURL(ctx context.Context, task *api.Ta
 	if err != nil {
 		return setResultFailed(result, int(errors.ErrCodeFileWriteError), fmt.Sprintf("创建临时文件失败: %v", err)), nil
 	}
-	defer tmpFile.Close()
+	defer func() {
+		if tmpFile != nil {
+			tmpFile.Close()
+		}
+	}()
 
 	// Determine bandwidthLimit bytes/s from MB/s if set
 	var written int64
@@ -118,6 +123,9 @@ func (f *FileTransferExecutor) downloadFromURL(ctx context.Context, task *api.Ta
 	bytesPerSec := int64(ft.BandwidthLimit) * 1024 * 1024
 	written, err = rateLimitedCopy(ctx, tmpFile, bodyReader, bytesPerSec)
 	if err != nil {
+		if ctx.Err() != nil || stderrors.Is(err, context.DeadlineExceeded) || stderrors.Is(err, context.Canceled) {
+			return setResultFailed(result, int(errors.ErrCodeNetworkError), fmt.Sprintf("下载超时: %v", err)), nil
+		}
 		return setResultFailed(result, int(errors.ErrCodeFileWriteError), fmt.Sprintf("写入临时文件失败: %v", err)), nil
 	}
 
@@ -136,7 +144,12 @@ func (f *FileTransferExecutor) downloadFromURL(ctx context.Context, task *api.Ta
 		}
 	}
 
-	// 临时文件移动到目标路径
+	// 关闭句柄再移动，兼容 Windows
+	if err := tmpFile.Close(); err != nil {
+		return setResultFailed(result, int(errors.ErrCodeFileWriteError), fmt.Sprintf("关闭临时文件失败: %v", err)), nil
+	}
+	tmpFile = nil
+
 	if err := os.Rename(tmpPath, remotePath); err != nil {
 		return setResultFailed(result, int(errors.ErrCodeFileWriteError), fmt.Sprintf("移动临时文件失败: %v", err)), nil
 	}

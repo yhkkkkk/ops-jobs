@@ -138,7 +138,7 @@ func NewAgent(cfg *config.Config) *Agent {
 	}
 	agent.heartbeatIntervalSec = int64(hb)
 
-	wsClient := wsclient.NewClient(cfg.Connection.AgentServerURL, cfg.Identification.AgentToken)
+	wsClient := wsclient.NewClient(cfg.Connection.AgentServerURL, cfg.Identification.AgentToken, cfg.Connection.WSEnableCompression)
 	wsClient.SetOnTask(agent.handleWebSocketTask)
 	wsClient.SetOnCancel(agent.handleWebSocketCancel)
 	wsClient.SetOnControl(agent.handleWebSocketControl)

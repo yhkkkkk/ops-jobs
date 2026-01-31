@@ -40,12 +40,12 @@ func (w *StatusStreamWriter) PushStatus(ctx context.Context, fields map[string]i
 		fields["timestamp"] = time.Now().UnixMilli()
 	}
 
-	// Redis Stream 的 XADD 不支持嵌套结构，需要将嵌套的 map 序列化为 JSON 字符串
+	// Redis Stream 的 XADD 不支持嵌套结构，需要将嵌套的 map 序列化为 json 字符串
 	flatFields := make(map[string]interface{})
 	for k, v := range fields {
 		switch val := v.(type) {
 		case map[string]interface{}:
-			// 将嵌套的 map 序列化为 JSON 字符串
+			// 将嵌套的 map 序列化为 json 字符串
 			if jsonBytes, err := sonic.Marshal(val); err == nil {
 				flatFields[k] = string(jsonBytes)
 			}

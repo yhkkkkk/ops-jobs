@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,10 +20,11 @@ import (
 
 // mockWebSocketServer 模拟 Agent-Server WebSocket 服务器
 type mockWebSocketServer struct {
-	server     *httptest.Server
-	upgrader   gorillaWs.Upgrader
-	activeConn *mockConnection
-	mu         sync.RWMutex
+	server       *httptest.Server
+	upgrader     gorillaWs.Upgrader
+	activeConn   *mockConnection
+	mu           sync.RWMutex
+	lastProtocol string
 }
 
 type mockConnection struct {
@@ -53,6 +55,10 @@ func (m *mockWebSocketServer) handleWebSocket(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		return
 	}
+
+	m.mu.Lock()
+	m.lastProtocol = r.Header.Get("Sec-WebSocket-Protocol")
+	m.mu.Unlock()
 
 	mockConn := &mockConnection{
 		conn:      conn,
@@ -111,6 +117,12 @@ func (m *mockWebSocketServer) URL() string {
 	return m.server.URL
 }
 
+func (m *mockWebSocketServer) Protocol() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastProtocol
+}
+
 func (m *mockWebSocketServer) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -147,7 +159,7 @@ func TestSimpleConnection(t *testing.T) {
 	server := newMockWebSocketServer()
 	defer server.Close()
 
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -160,6 +172,11 @@ func TestSimpleConnection(t *testing.T) {
 	// 验证连接状态
 	if !client.IsConnected() {
 		t.Error("expected client to be connected")
+	}
+
+	// 验证协议头携带 token
+	if proto := server.Protocol(); proto != "agent-token,test-token" {
+		t.Errorf("expected Sec-WebSocket-Protocol to carry token, got %q", proto)
 	}
 
 	t.Log("WebSocket connection established successfully")
@@ -225,7 +242,7 @@ func TestTaskSendAndReceive(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -282,7 +299,7 @@ func TestMultipleMessages(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -329,7 +346,7 @@ func TestReconnectWithTaskResult(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -384,7 +401,7 @@ func TestLogMessageReliability(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -429,7 +446,7 @@ func TestReconnectTaskExecutionFlow(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := websocket.NewClient(server.URL(), "test-token")
+	client := websocket.NewClient(server.URL(), "test-token", true)
 	if client == nil {
 		t.Fatal("failed to create client")
 	}
@@ -469,4 +486,77 @@ func TestReconnectTaskExecutionFlow(t *testing.T) {
 	}
 
 	t.Log("Task execution flow test passed")
+}
+
+// TestAuthFailureIsFatal 确认 401/403/404 直接返回不可恢复错误
+func TestAuthFailureIsFatal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := websocket.NewClient(strings.Replace(srv.URL, "http://", "ws://", 1), "bad-token", false)
+	err := client.Connect("agent-auth-fail")
+	if err == nil {
+		t.Fatalf("expected auth error, got nil")
+	}
+	if !errors.Is(err, websocket.ErrAuthOrNotFound) {
+		t.Fatalf("expected ErrAuthOrNotFound, got %v", err)
+	}
+}
+
+// TestCompressionNegotiation 验证压缩开关双向协商
+func TestCompressionNegotiation(t *testing.T) {
+	extCh := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		extCh <- r.Header.Get("Sec-WebSocket-Extensions")
+		up := gorillaWs.Upgrader{
+			CheckOrigin:       func(r *http.Request) bool { return true },
+			EnableCompression: true,
+		}
+		conn, err := up.Upgrade(w, r, nil)
+		if err == nil {
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := strings.Replace(srv.URL, "http://", "ws://", 1)
+
+	// 开启压缩：应携带 permessage-deflate
+	client := websocket.NewClient(wsURL, "tok", true)
+	if err := client.Connect("agent-compress"); err != nil {
+		t.Fatalf("connect with compression: %v", err)
+	}
+	ext := <-extCh
+	if !strings.Contains(ext, "permessage-deflate") {
+		t.Fatalf("expected permessage-deflate extension, got %q", ext)
+	}
+	client.Disconnect()
+
+	// 关闭压缩：不应携带扩展
+	extCh2 := make(chan string, 1)
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		extCh2 <- r.Header.Get("Sec-WebSocket-Extensions")
+		up := gorillaWs.Upgrader{
+			CheckOrigin:       func(r *http.Request) bool { return true },
+			EnableCompression: true,
+		}
+		conn, err := up.Upgrade(w, r, nil)
+		if err == nil {
+			conn.Close()
+		}
+	}))
+	defer srv2.Close()
+
+	wsURL2 := strings.Replace(srv2.URL, "http://", "ws://", 1)
+	client2 := websocket.NewClient(wsURL2, "tok", false)
+	if err := client2.Connect("agent-no-compress"); err != nil {
+		t.Fatalf("connect without compression: %v", err)
+	}
+	ext2 := <-extCh2
+	if ext2 != "" {
+		t.Fatalf("expected no compression extension when disabled, got %q", ext2)
+	}
+	client2.Disconnect()
 }

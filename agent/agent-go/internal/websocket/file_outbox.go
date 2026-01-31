@@ -22,6 +22,15 @@ const (
 
 	// OutboxFilePermission outbox 文件权限
 	OutboxFilePermission = 0600
+
+	// DefaultMaxFileSize 默认最大文件大小（10MB）
+	DefaultMaxFileSize = 10 * 1024 * 1024
+
+	// DefaultFileRetention 默认文件保留期限（7天）
+	DefaultFileRetention = 7 * 24 * time.Hour
+
+	// DefaultCleanInterval 默认清理间隔（1小时）
+	DefaultCleanInterval = time.Hour
 )
 
 // FileOutbox 是一个持久化的待发送队列，使用本地文件存储 WS 消息。
@@ -29,14 +38,17 @@ const (
 // - 内存队列：提供快速写入和读取
 // - 本地文件：提供持久化保证，确保断线重启后消息不丢失
 type FileOutbox struct {
-	mu          sync.Mutex
-	agentID     string
-	filePath    string
-	messages    []Message // 内存队列
-	maxSize     int       // 最大消息数量（内存）
-	fileEnabled bool      // 是否启用文件持久化
-	dropped     int64     // 丢弃的消息数量
-	writeCount  int64     // 写入文件次数（用于轮转判断）
+	mu              sync.Mutex
+	agentID         string
+	filePath        string
+	messages        []Message // 内存队列
+	maxSize         int       // 最大消息数量（内存）
+	fileEnabled     bool      // 是否启用文件持久化
+	dropped         int64     // 丢弃的消息数量
+	writeCount      int64     // 写入文件次数（用于轮转判断）
+	maxFileSize     int64     // 最大文件大小（字节）
+	fileRetention   time.Duration // 文件保留期限
+	cleanTicker     *time.Ticker  // 清理定时器
 }
 
 // fileMessage 是本地文件存储的消息格式
@@ -71,26 +83,31 @@ func NewFileOutbox(agentID, outboxDir string, maxSize int) *FileOutbox {
 	}
 
 	outbox := &FileOutbox{
-		agentID:     agentID,
-		filePath:    filePath,
-		messages:    make([]Message, 0, maxSize),
-		maxSize:     maxSize,
-		fileEnabled: outboxDir != "",
-		dropped:     0,
-		writeCount:  0,
+		agentID:       agentID,
+		filePath:      filePath,
+		messages:      make([]Message, 0, maxSize),
+		maxSize:       maxSize,
+		fileEnabled:   outboxDir != "",
+		dropped:       0,
+		writeCount:    0,
+		maxFileSize:   DefaultMaxFileSize,
+		fileRetention: DefaultFileRetention,
 	}
 
 	// 从文件恢复未发送的消息
 	if outbox.fileEnabled {
 		outbox.recoverFromFile()
+		// 启动定期清理任务
+		outbox.startCleanupTask()
 	}
 
 	if outbox.fileEnabled {
 		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id":  agentID,
-			"file_path": filePath,
-			"max_size":  maxSize,
-			"recovered": len(outbox.messages),
+			"agent_id":     agentID,
+			"file_path":    filePath,
+			"max_size":     maxSize,
+			"recovered":    len(outbox.messages),
+			"max_file_mb":  DefaultMaxFileSize / 1024 / 1024,
 		}).Info("FileOutbox initialized with file persistence")
 	} else {
 		logger.GetLogger().WithFields(map[string]interface{}{
@@ -100,6 +117,16 @@ func NewFileOutbox(agentID, outboxDir string, maxSize int) *FileOutbox {
 	}
 
 	return outbox
+}
+
+// startCleanupTask 启动定期清理任务
+func (o *FileOutbox) startCleanupTask() {
+	o.cleanTicker = time.NewTicker(DefaultCleanInterval)
+	go func() {
+		for range o.cleanTicker.C {
+			o.cleanOldFiles()
+		}
+	}()
 }
 
 // Enqueue 添加消息到队列
@@ -158,6 +185,21 @@ func (o *FileOutbox) writeToFileAsync(msg Message) {
 			return
 		}
 
+		// 先获取文件锁，检查是否需要轮转
+		o.mu.Lock()
+		needsRotate, err := o.checkAndRotateFile()
+		o.mu.Unlock()
+
+		if err != nil {
+			logger.GetLogger().WithError(err).WithField("file_path", o.filePath).Error("Failed to check file rotation")
+			return
+		}
+
+		if needsRotate {
+			// 文件已轮转，重新打开
+			logger.GetLogger().WithField("file_path", o.filePath).Info("Outbox file rotated due to size limit")
+		}
+
 		file, err := os.OpenFile(o.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, OutboxFilePermission)
 		if err != nil {
 			logger.GetLogger().WithError(err).WithField("file_path", o.filePath).Error("Failed to open outbox file for write")
@@ -173,8 +215,101 @@ func (o *FileOutbox) writeToFileAsync(msg Message) {
 			return
 		}
 
+		o.mu.Lock()
 		o.writeCount++
+		o.mu.Unlock()
 	}()
+}
+
+// checkAndRotateFile 检查文件大小，如果超过限制则轮转
+// caller must hold o.mu
+func (o *FileOutbox) checkAndRotateFile() (bool, error) {
+	if !o.fileEnabled || o.filePath == "" {
+		return false, nil
+	}
+
+	fileInfo, err := os.Stat(o.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	// 检查文件大小是否超过限制
+	if fileInfo.Size() >= o.maxFileSize {
+		// 生成带时间戳的历史文件名
+		timestamp := time.Now().Format("20060102_150405")
+		historyPath := fmt.Sprintf("%s.%s.old", o.filePath, timestamp)
+
+		// 重命名当前文件
+		if err := os.Rename(o.filePath, historyPath); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"from": o.filePath,
+				"to":   historyPath,
+			}).Error("Failed to rotate outbox file")
+			return false, err
+		}
+
+		logger.GetLogger().WithFields(map[string]interface{}{
+			"old_file": historyPath,
+			"size_mb":  float64(fileInfo.Size()) / 1024 / 1024,
+		}).Info("Outbox file rotated successfully")
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// cleanOldFiles 清理过期的历史文件
+func (o *FileOutbox) cleanOldFiles() {
+	if !o.fileEnabled || o.filePath == "" {
+		return
+	}
+
+	dir := filepath.Dir(o.filePath)
+	baseName := filepath.Base(o.filePath)
+	prefix := fmt.Sprintf("%s.", baseName)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logger.GetLogger().WithError(err).WithField("dir", dir).Error("Failed to read directory for cleanup")
+		return
+	}
+
+	cutoff := time.Now().Add(-o.fileRetention)
+	var deletedCount int
+	var deletedSize int64
+
+	for _, entry := range entries {
+		if !entry.IsDir() && len(entry.Name()) > len(prefix) && entry.Name()[:len(prefix)] == prefix {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			// 检查文件是否过期
+			if info.ModTime().Before(cutoff) {
+				fullPath := filepath.Join(dir, entry.Name())
+				size := info.Size()
+
+				if err := os.Remove(fullPath); err != nil {
+					logger.GetLogger().WithError(err).WithField("file", fullPath).Warn("Failed to delete old outbox file")
+					continue
+				}
+
+				deletedCount++
+				deletedSize += size
+			}
+		}
+	}
+
+	if deletedCount > 0 {
+		logger.GetLogger().WithFields(map[string]interface{}{
+			"deleted_count": deletedCount,
+			"deleted_size":  deletedSize,
+		}).Info("Cleaned up old outbox files")
+	}
 }
 
 // Drain 从队列中取出最多 max 条消息
@@ -221,9 +356,21 @@ func (o *FileOutbox) Dropped() int64 {
 	return o.dropped
 }
 
+// Stats 返回队列长度与丢弃数量（用于测试或监控）
+func (o *FileOutbox) Stats() (int, int64) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.messages), o.dropped
+}
+
 // Close 关闭 Outbox
 // 清理资源，但不清除文件（保留未发送的消息供下次恢复）
 func (o *FileOutbox) Close() {
+	// 停止清理定时器
+	if o.cleanTicker != nil {
+		o.cleanTicker.Stop()
+	}
+
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -385,6 +532,7 @@ func (o *FileOutbox) GetStats() map[string]interface{} {
 	if o.fileEnabled {
 		if fileInfo, err := os.Stat(o.filePath); err == nil {
 			stats["file_size"] = fileInfo.Size()
+			stats["file_size_mb"] = float64(fileInfo.Size()) / 1024 / 1024
 		}
 	}
 

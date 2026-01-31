@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ops-job-agent-server/internal/constants"
+	serrors "ops-job-agent-server/internal/errors"
 	"ops-job-agent-server/internal/logger"
 	"ops-job-agent-server/pkg/api"
 
@@ -26,20 +27,20 @@ func (s *Server) handleAgentControl(c *gin.Context) {
 
 	// 验证 action
 	if req.Action != constants.ActionStart && req.Action != constants.ActionStop && req.Action != constants.ActionRestart {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action, must be start/stop/restart"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrInvalidControlAction.Error()})
 		return
 	}
 
 	// 获取 Agent 连接
 	conn, exists := s.agentManager.Get(agentID)
 	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": serrors.ErrAgentNotFound.Error()})
 		return
 	}
 
 	// 检查 Agent 是否在线
 	if conn.Status != constants.StatusActive || conn.Conn == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent is not active"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": serrors.ErrAgentNotActive.Error()})
 		return
 	}
 
@@ -77,24 +78,24 @@ func (s *Server) handleAgentUpgrade(c *gin.Context) {
 
 	// 验证必填字段
 	if req.TargetVersion == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "target_version is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrTargetVersionRequired.Error()})
 		return
 	}
 	if req.DownloadURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "download_url is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrDownloadURLRequired.Error()})
 		return
 	}
 
 	// 获取 Agent 连接
 	conn, exists := s.agentManager.Get(agentID)
 	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": serrors.ErrAgentNotFound.Error()})
 		return
 	}
 
 	// 检查 Agent 是否在线
 	if conn.Status != constants.StatusActive || conn.Conn == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent is not active"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": serrors.ErrAgentNotActive.Error()})
 		return
 	}
 
@@ -131,7 +132,7 @@ func (s *Server) handleSelfControl(c *gin.Context) {
 	// 验证 action
 	if req.Action != constants.ActionRestart {
 		// Agent-Server 只支持 restart（start/stop 由进程管理器处理）
-		c.JSON(http.StatusBadRequest, gin.H{"error": "agent-server only supports restart action"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrSelfControlOnlyRestart.Error()})
 		return
 	}
 
@@ -170,11 +171,11 @@ func (s *Server) handleSelfUpgrade(c *gin.Context) {
 
 	// 验证必填字段
 	if req.TargetVersion == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "target_version is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrTargetVersionRequired.Error()})
 		return
 	}
 	if req.DownloadURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "download_url is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": serrors.ErrDownloadURLRequired.Error()})
 		return
 	}
 
@@ -209,7 +210,9 @@ func (s *Server) performSelfUpgrade(req *api.UpgradeRequest) error {
 	if err := downloadFile(ctx, req.DownloadURL, tmpFile); err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile)
+	defer func() {
+		_ = os.Remove(tmpFile)
+	}()
 
 	logger.GetLogger().Info("agent-server binary downloaded")
 
@@ -234,20 +237,20 @@ func (s *Server) performSelfUpgrade(req *api.UpgradeRequest) error {
 
 	// 4. 备份当前版本
 	backupFile := currentExe + ".bak"
-	if err := os.Rename(currentExe, backupFile); err != nil {
+	if err = os.Rename(currentExe, backupFile); err != nil {
 		return err
 	}
 	logger.GetLogger().WithField("backup", backupFile).Info("current version backed up")
 
 	// 5. 替换可执行文件
-	if err := os.Rename(tmpFile, currentExe); err != nil {
+	if err = os.Rename(tmpFile, currentExe); err != nil {
 		// 恢复备份
-		os.Rename(backupFile, currentExe)
+		_ = os.Rename(backupFile, currentExe)
 		return err
 	}
 
 	// 6. 设置执行权限
-	if err := os.Chmod(currentExe, 0755); err != nil {
+	if err = os.Chmod(currentExe, 0755); err != nil {
 		logger.GetLogger().WithError(err).Warn("failed to set executable permission")
 	}
 
@@ -255,7 +258,7 @@ func (s *Server) performSelfUpgrade(req *api.UpgradeRequest) error {
 
 	// 7. 重启进程
 	cmd := exec.Command("systemctl", "restart", "agent-server")
-	if err := cmd.Run(); err != nil {
+	if err = cmd.Run(); err != nil {
 		// 如果 systemctl 失败，直接退出（由进程管理器重启）
 		logger.GetLogger().WithError(err).Warn("systemctl restart failed, exiting process")
 		os.Exit(0)

@@ -574,6 +574,12 @@
                       <a-input-number v-model="installForm.ws_max_retries" :min="1" :max="20" style="width: 100%" />
                     </a-form-item>
                   </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="启用压缩">
+                      <a-switch v-model="installForm.ws_enable_compression" />
+                      <div class="form-help">启用压缩（需服务端也开启）</div>
+                    </a-form-item>
+                  </a-col>
                 </a-row>
               </template>
               <template v-if="installForm.install_type === 'agent-server'">
@@ -981,6 +987,7 @@ const installForm = reactive({
   ws_backoff_initial_ms: 1000,
   ws_backoff_max_ms: 30000,
   ws_max_retries: 6,
+  ws_enable_compression: false,
   // 最大并发任务数
   max_concurrent_tasks: undefined as number | undefined,
   // Agent-Server 配置
@@ -991,7 +998,6 @@ const installForm = reactive({
   ws_handshake_timeout: '10s',
   ws_read_buffer_size: 4096,
   ws_write_buffer_size: 4096,
-  ws_enable_compression: true,
   ws_allowed_origins: [] as string[],
   // 通用配置
   ssh_timeout: 300,
@@ -2063,6 +2069,7 @@ const handleGenerateScript = async () => {
       params.ws_backoff_initial_ms = installForm.ws_backoff_initial_ms
       params.ws_backoff_max_ms = installForm.ws_backoff_max_ms
       params.ws_max_retries = installForm.ws_max_retries
+      params.ws_enable_compression = installForm.ws_enable_compression
     } else if (installForm.install_type === 'agent-server') {
       params.agent_server_listen_addr = installForm.agent_server_listen_addr
       params.max_connections = installForm.max_connections

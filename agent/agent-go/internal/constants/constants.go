@@ -31,6 +31,12 @@ const (
 	ControlActionStop    = "stop"
 	ControlActionRestart = "restart"
 
+	// HTTP/WS 头部
+	HeaderAuthorization        = "Authorization"
+	HeaderSecWebSocketProtocol = "Sec-WebSocket-Protocol"
+	HeaderTimestamp            = "X-Timestamp"
+	HeaderSignature            = "X-Signature"
+
 	// 日志流类型
 	StreamStdout = "stdout"
 	StreamStderr = "stderr"

@@ -30,3 +30,24 @@ const (
 	ActionStop    = "stop"
 	ActionRestart = "restart"
 )
+
+// 兼容旧命名（用于测试与历史代码）
+const (
+	StreamStdout = LogStreamTypeStdout
+	StreamStderr = LogStreamTypeStderr
+)
+
+// 控制面认证相关的 HTTP 请求头
+const (
+	HeaderTimestamp            = "X-Timestamp"
+	HeaderSignature            = "X-Signature"
+	HeaderAuthorization        = "Authorization"
+	HeaderSecWebSocketProtocol = "Sec-WebSocket-Protocol"
+)
+
+// 兼容旧命名（用于测试与历史代码）
+const (
+	ControlActionStart   = ActionStart
+	ControlActionStop    = ActionStop
+	ControlActionRestart = ActionRestart
+)

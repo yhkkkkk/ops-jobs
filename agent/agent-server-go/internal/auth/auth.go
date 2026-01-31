@@ -6,12 +6,6 @@ import (
 	"encoding/hex"
 )
 
-// 控制面认证相关的 HTTP 请求头
-const (
-	HeaderTimestamp = "X-Timestamp"
-	HeaderSignature = "X-Signature"
-)
-
 // ComputeHMAC 构造签名摘要，保持与控制面实现一致：
 // message = timestamp + "\n" + method + "\n" + path + "\n" + body
 func ComputeHMAC(secret, method, path, ts string, body []byte) string {

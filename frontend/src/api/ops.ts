@@ -315,11 +315,6 @@ export const executionRecordApi = {
     return http.post(`/executor/execution-records/${id}/retry/`)
   },
 
-  // 基于日志指针获取历史日志（step_logs 聚合）
-  getRecordLogs(id: number, params?: { pointer?: string; limit?: number }): Promise<any> {
-    return http.get(`/executor/execution-records/${id}/logs/`, { params })
-  },
-
   // 获取重试历史
   getRetryHistory(id: number): Promise<{ content: ExecutionRecord[] }> {
     return http.get(`/executor/execution-records/${id}/retry_history/`)
@@ -337,13 +332,6 @@ export const executionRecordApi = {
   // 忽略步骤错误继续执行
   ignoreStepError(id: number, stepId: string): Promise<any> {
     return http.post(`/executor/execution-records/${id}/ignore_step_error/`, {
-      step_id: stepId
-    })
-  },
-
-  // 继续执行流程
-  continueExecution(id: number, stepId: string): Promise<any> {
-    return http.post(`/executor/execution-records/${id}/continue_execution/`, {
       step_id: stepId
     })
   },

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	serrors "ops-job-agent-server/internal/errors"
 	"sync"
 	"time"
 
@@ -23,27 +24,11 @@ type Connection struct {
 	System        *api.SystemInfo
 	TaskQueue     chan *api.TaskSpec
 	LogBuffer     chan *api.LogEntry
-	HostID        int    // 控制面主机ID，用于建立映射关系
+	HostID        int // 控制面主机ID，用于建立映射关系
 	runningTasks  map[string]*api.TaskSpec
 	mu            sync.RWMutex
 	ackStore      *websocket.AckStore // 持久化去重存储
 	closed        bool
-}
-
-// NewConnection 创建新的 Agent 连接
-func NewConnection(id, name, token string, conn *gorillaWs.Conn) *Connection {
-	return &Connection{
-		ID:        id,
-		Name:      name,
-		Token:     token,
-		Conn:      conn,
-		Status:    constants.StatusActive,
-		TaskQueue: make(chan *api.TaskSpec, 100),
-		LogBuffer: make(chan *api.LogEntry, 1000),
-		Labels:    make(map[string]string),
-		// runningTasks 跟踪已分发给此 Agent 的任务
-		runningTasks: make(map[string]*api.TaskSpec),
-	}
 }
 
 // SeenMessage 记录并检查 message_id 幂等，返回是否已见过
@@ -85,6 +70,9 @@ func (c *Connection) Close() error {
 	c.runningTasks = make(map[string]*api.TaskSpec)
 	close(c.TaskQueue)
 	close(c.LogBuffer)
+	if c.Conn == nil {
+		return nil
+	}
 	return c.Conn.Close()
 }
 
@@ -92,8 +80,8 @@ func (c *Connection) Close() error {
 func (c *Connection) SendTask(task *api.TaskSpec) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	msg := api.WebSocketMessage{
@@ -111,8 +99,8 @@ func (c *Connection) SendTasks(tasks []*api.TaskSpec) error {
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	// 批量发送消息
@@ -127,8 +115,8 @@ func (c *Connection) SendTasks(tasks []*api.TaskSpec) error {
 func (c *Connection) SendCancelTask(taskID string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	msg := api.WebSocketMessage{
@@ -146,8 +134,8 @@ func (c *Connection) SendCancelTasks(taskIDs []string) error {
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	// 批量取消
@@ -162,8 +150,8 @@ func (c *Connection) SendCancelTasks(taskIDs []string) error {
 func (c *Connection) SendControl(action, reason string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	msg := api.WebSocketMessage{
@@ -180,8 +168,8 @@ func (c *Connection) SendControl(action, reason string) error {
 func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.closed {
-		return ErrConnectionClosed
+	if c.closed || c.Conn == nil {
+		return serrors.ErrAgentConnectionClosed
 	}
 
 	msg := api.WebSocketMessage{
@@ -196,7 +184,7 @@ func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash
 	return c.Conn.WriteJSON(msg)
 }
 
-// AddRunningTask 注册一个正在运行的任务（线程安全）
+// AddRunningTask 注册一个正在运行的任务
 func (c *Connection) AddRunningTask(task *api.TaskSpec) {
 	if task == nil || task.ID == "" {
 		return
@@ -243,4 +231,16 @@ func (c *Connection) GetRunningTasks() []api.TaskSpec {
 		result = append(result, copyVal)
 	}
 	return result
+}
+
+// MarkDisconnected 标记连接断开但保留状态，供重连使用
+func (c *Connection) MarkDisconnected() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	c.Status = constants.StatusInactive
+	c.LastHeartbeat = time.Now()
+	c.Conn = nil
 }

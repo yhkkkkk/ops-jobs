@@ -10,10 +10,24 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
 	"time"
 
 	"ops-job-agent/internal/constants"
 	"ops-job-agent/internal/logger"
+)
+
+var (
+	execCommandFn  = exec.Command
+	exitFn         = os.Exit
+	sleepFn        = time.Sleep
+	downloadFileFn = downloadFile
+	verifySHA256Fn = verifySHA256
+	osExecutableFn = os.Executable
+	osRenameFn     = os.Rename
+	osChmodFn      = os.Chmod
+	osRemoveFn     = os.Remove
 )
 
 // handleWebSocketTask 处理从 WebSocket 接收的任务
@@ -78,28 +92,36 @@ func (a *Agent) handleWebSocketUpgrade(payload map[string]interface{}) {
 // performRestart 执行重启操作
 func (a *Agent) performRestart(reason string) {
 	logger.GetLogger().WithField("reason", reason).Info("restarting agent in 3 seconds")
-	time.Sleep(3 * time.Second)
+	sleepFn(3 * time.Second)
 
-	// 尝试通过 systemctl 重启（如果由 systemd 管理）
-	cmd := exec.Command("systemctl", "restart", "agent")
+	name, args, ok := controlCommandForOS(runtime.GOOS, constants.ControlActionRestart)
+	if !ok {
+		logger.GetLogger().WithField("os", runtime.GOOS).Warn("unsupported platform for restart, exiting process")
+		exitFn(0)
+		return
+	}
+	cmd := execCommandFn(name, args...)
 	if err := cmd.Run(); err != nil {
-		// 如果 systemctl 失败，尝试直接退出（由进程管理器重启）
-		logger.GetLogger().WithError(err).Warn("systemctl restart failed, exiting process")
-		os.Exit(0)
+		logger.GetLogger().WithError(err).Warn("restart command failed, exiting process")
+		exitFn(0)
 	}
 }
 
 // performStop 执行停止操作
 func (a *Agent) performStop(reason string) {
 	logger.GetLogger().WithField("reason", reason).Info("stopping agent in 3 seconds")
-	time.Sleep(3 * time.Second)
+	sleepFn(3 * time.Second)
 
-	// 尝试通过 systemctl 停止
-	cmd := exec.Command("systemctl", "stop", "agent")
+	name, args, ok := controlCommandForOS(runtime.GOOS, constants.ControlActionStop)
+	if !ok {
+		logger.GetLogger().WithField("os", runtime.GOOS).Warn("unsupported platform for stop, exiting process")
+		exitFn(0)
+		return
+	}
+	cmd := execCommandFn(name, args...)
 	if err := cmd.Run(); err != nil {
-		// 如果 systemctl 失败，直接退出
-		logger.GetLogger().WithError(err).Warn("systemctl stop failed, exiting process")
-		os.Exit(0)
+		logger.GetLogger().WithError(err).Warn("stop command failed, exiting process")
+		exitFn(0)
 	}
 }
 
@@ -110,33 +132,34 @@ func (a *Agent) performUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash s
 
 	logger.GetLogger().Info("starting agent upgrade")
 
+	if !strings.HasPrefix(downloadURL, "https://") {
+		logger.GetLogger().WithField("download_url", downloadURL).Error("upgrade download_url must be https")
+		return
+	}
+	if sha256Hash == "" {
+		logger.GetLogger().Error("upgrade requires sha256 checksum")
+		return
+	}
+
 	// 1. 下载新版本
 	tmpFile := "/tmp/agent-new"
-	if err := downloadFile(ctx, downloadURL, tmpFile); err != nil {
+	if err := downloadFileFn(ctx, downloadURL, tmpFile); err != nil {
 		logger.GetLogger().WithError(err).Error("download agent binary failed")
 		return
 	}
-	defer os.Remove(tmpFile)
+	defer osRemoveFn(tmpFile)
 
 	logger.GetLogger().Info("agent binary downloaded")
 
 	// 2. 验证校验和
-	if sha256Hash != "" {
-		if err := verifySHA256(tmpFile, sha256Hash); err != nil {
-			logger.GetLogger().WithError(err).Error("sha256 verification failed")
-			return
-		}
-		logger.GetLogger().Info("sha256 checksum verified")
-	} else if md5Hash != "" {
-		if err := verifyMD5(tmpFile, md5Hash); err != nil {
-			logger.GetLogger().WithError(err).Error("md5 verification failed")
-			return
-		}
-		logger.GetLogger().Info("md5 checksum verified")
+	if err := verifySHA256Fn(tmpFile, sha256Hash); err != nil {
+		logger.GetLogger().WithError(err).Error("sha256 verification failed")
+		return
 	}
+	logger.GetLogger().Info("sha256 checksum verified")
 
 	// 3. 获取当前可执行文件路径
-	currentExe, err := os.Executable()
+	currentExe, err := osExecutableFn()
 	if err != nil {
 		logger.GetLogger().WithError(err).Error("get executable path failed")
 		return
@@ -144,34 +167,61 @@ func (a *Agent) performUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash s
 
 	// 4. 备份当前版本
 	backupFile := currentExe + ".bak"
-	if err := os.Rename(currentExe, backupFile); err != nil {
+	if err := osRenameFn(currentExe, backupFile); err != nil {
 		logger.GetLogger().WithError(err).Error("backup current version failed")
 		return
 	}
 	logger.GetLogger().WithField("backup", backupFile).Info("current version backed up")
 
 	// 5. 替换可执行文件
-	if err := os.Rename(tmpFile, currentExe); err != nil {
+	if err := osRenameFn(tmpFile, currentExe); err != nil {
 		// 恢复备份
-		os.Rename(backupFile, currentExe)
+		osRenameFn(backupFile, currentExe)
 		logger.GetLogger().WithError(err).Error("replace executable failed")
 		return
 	}
 
 	// 6. 设置执行权限
-	if err := os.Chmod(currentExe, 0755); err != nil {
+	if err := osChmodFn(currentExe, 0755); err != nil {
 		logger.GetLogger().WithError(err).Warn("failed to set executable permission")
 	}
 
 	logger.GetLogger().Info("agent binary replaced, restarting")
 
 	// 7. 重启 agent
-	time.Sleep(1 * time.Second)
-	cmd := exec.Command("systemctl", "restart", "agent")
-	if err := cmd.Run(); err != nil {
-		logger.GetLogger().WithError(err).Warn("systemctl restart failed, exiting process")
-		os.Exit(0)
+	sleepFn(1 * time.Second)
+	name, args, ok := controlCommandForOS(runtime.GOOS, constants.ControlActionRestart)
+	if !ok {
+		logger.GetLogger().WithField("os", runtime.GOOS).Warn("unsupported platform for restart, exiting process")
+		exitFn(0)
+		return
 	}
+	cmd := execCommandFn(name, args...)
+	if err := cmd.Run(); err != nil {
+		logger.GetLogger().WithError(err).Warn("restart command failed, exiting process")
+		exitFn(0)
+	}
+}
+
+// controlCommandForOS 根据平台返回控制指令
+func controlCommandForOS(goos, action string) (string, []string, bool) {
+	switch goos {
+	case "linux":
+		switch action {
+		case constants.ControlActionRestart:
+			return "systemctl", []string{"restart", "agent"}, true
+		case constants.ControlActionStop:
+			return "systemctl", []string{"stop", "agent"}, true
+		}
+	case "windows":
+		switch action {
+		case constants.ControlActionRestart:
+			return "powershell", []string{"-Command", "Restart-Service -Name agent"}, true
+		case constants.ControlActionStop:
+			return "powershell", []string{"-Command", "Stop-Service -Name agent"}, true
+		}
+	}
+	return "", nil, false
 }
 
 // downloadFile 从 URL 下载文件到指定路径
