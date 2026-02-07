@@ -1,0 +1,54 @@
+# Agent-Server 配置文件示例
+# Agent-Server 作为控制面与Agent之间的桥梁，负责任务分发和状态收集
+# 所有与控制面的通信都通过 Redis Stream 实现，不需要直接调用控制面 HTTP API
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+websocket:
+  handshake_timeout: 10s       # WebSocket 握手超时
+  read_buffer_size: 4096       # 读取缓冲区大小（字节）
+  write_buffer_size: 4096      # 写入缓冲区大小（字节）
+  enable_compression: true     # 是否启用压缩（permessage-deflate）
+  allowed_origins: []          # 允许的跨域来源（为空则允许所有）
+
+agent:
+  heartbeat_timeout: 60s
+  max_connections: 1000
+  task_queue_size: 100
+
+logging:
+  level: "info"
+  dir: "/var/log/agent-server"
+  max_size: 100  # MB
+  max_files: 10
+  max_age: 7     # days
+
+log_stream:
+  enabled: true           # 将日志写入 Redis Stream（统一流，由 Python 消费者转发到前端 SSE）
+  key: "agent_logs"       # 统一日志流 key（Python consume_agent_logs.py 消费此 key）
+  buffer_size: 1000       # 单个连接最大缓冲日志条数（避免内存溢出）
+  batch_size: 50          # 达到多少条时批量发送（减少 Redis 写入次数）
+  flush_interval: 2000    # 刷新间隔（毫秒），定时发送缓冲的日志
+
+result_stream:
+  enabled: true           # 将任务结果写入 Redis Stream
+  key: "agent_results"    # 结果流 key（Python consume_agent_results.py 消费此 key）
+
+status_stream:
+  enabled: true           # 将 Agent 在线状态/心跳写入 Redis Stream
+  key: "agent_status"     # 状态流 key（Python consume_agent_status.py 消费此 key）
+
+redis:
+  enabled: true           # Agent-Server模式必须启用Redis，用于流式日志和状态传递
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+auth:
+  shared_secret: ""    # 可选，控制面调用时用于 HMAC 校验
+  clock_skew: "300s"   # 允许的时间偏移
+  require_signature: false

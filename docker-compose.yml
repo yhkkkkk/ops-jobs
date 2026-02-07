@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  redis:
+    image: docker.1ms.run/redis:7-alpine
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  postgres:
+    image: docker.1ms.run/postgres:16-alpine
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./logs:/app/logs
+      - ./media:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=ops_job.settings.production
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CONTROL_PLANE_URL=${CONTROL_PLANE_URL:-http://localhost:8000}  # Agent-Server从宿主机访问
+      - SECURE_SSL_REDIRECT=${SECURE_SSL_REDIRECT:-false}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
+      - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-admin}
+      - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-admin@123}
+      - INIT_ADMIN_NICKNAME=${INIT_ADMIN_NICKNAME:-管理员}
+      - INIT_ADMIN_IS_SUPER=${INIT_ADMIN_IS_SUPER:-true}
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-static
+      args:
+        CONTROL_PLANE_HOST: ${CONTROL_PLANE_HOST:-control-plane}
+        CONTROL_PLANE_HTTP_PORT: ${CONTROL_PLANE_HTTP_PORT:-8000}
+        CONTROL_PLANE_ASGI_PORT: ${CONTROL_PLANE_ASGI_PORT:-8001}
+    environment:
+      - CONTROL_PLANE_HOST=${CONTROL_PLANE_HOST:-control-plane}
+      - CONTROL_PLANE_HTTP_PORT=${CONTROL_PLANE_HTTP_PORT:-8000}
+      - CONTROL_PLANE_ASGI_PORT=${CONTROL_PLANE_ASGI_PORT:-8001}
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+  agent-go:
+    profiles: ["agents"]   # 默认不构建/运行
+    build:
+      context: ./agent/agent-go
+      dockerfile: Dockerfile
+    volumes:
+      - ./agent/agent-go/logs:/app/logs
+      - ./agent/agent-go/config:/app/config
+    environment:
+      - AGENT_CONFIG=/app/config/config.yaml
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
+  agent-server-go:
+    profiles: ["agents"]   # 默认不构建/运行 (如果要在宿主机运行，请注释此服务)
+    build:
+      context: ./agent/agent-server-go
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./agent/agent-server-go/logs:/app/logs
+      - ./agent/agent-server-go/config:/app/config
+    environment:
+      - SERVER_CONFIG=/app/config/config.yaml
+      - CONTROL_PLANE_URL=http://control-plane:8000  # Docker内部网络访问
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:

@@ -1,0 +1,88 @@
+# ops-job-agent 配置示例（config.example.yaml）
+#
+# 使用说明：
+# 1. 安装时，控制面生成的安装脚本会在二进制同级的 config 目录下
+#    写入一个真正的 config.yaml（包含每台机器独有的 agent_token 等）。
+# 2. 这个文件仅作为本地调试或自定义部署时的参考模版，正常生产环境不直接使用。
+#
+# 如果你手动部署 agent，可以：
+#   - 在二进制目录下创建 config 目录（例如：/opt/ops-job-agent/config）
+#   - 将本文件复制为 config.yaml 并根据实际环境修改字段
+#
+# agent-go 会优先读取：<binary_dir>/config/config.yaml
+# 若找不到，则回退到：~/.ops-job-agent/config.yaml
+#
+# 【无状态架构说明】
+# Agent 不再依赖 Redis 或外部队列，所有任务通过 WebSocket 实时推送。
+# 断线期间消息会缓存到本地文件，重连后自动发送。
+
+###########################
+# 基础连接配置（仅 agent-server WS 模式）
+###########################
+
+connection:
+  # Agent-Server WebSocket 地址
+  agent_server_url: "wss://agent-server.example.com/ws"
+
+  # 备用 Agent-Server 地址（可选，用于主备/多可用区）
+  agent_server_backup_url: "wss://agent-server-backup.example.com/ws"
+
+  # WebSocket 重连退避参数（毫秒）
+  ws_backoff_initial_ms: 1000
+  ws_backoff_max_ms: 30000
+  ws_max_retries: 6
+  # WebSocket 断线本地缓冲队列上限（条数，防止日志/结果丢失）
+  ws_outbox_max_size: 1000
+
+###########################
+# 鉴权与标识
+###########################
+
+identification:
+  # 控制面为该 Agent 签发的 Token（安装时由控制面写入，每台机器不同）
+  agent_token: "REPLACE_WITH_YOUR_AGENT_TOKEN"
+
+  # Agent 名称（默认使用主机名）
+  agent_name: "my-agent"
+
+  # 控制面主机ID（安装时由控制面自动设置，用于建立映射关系）
+  host_id: 123
+
+###########################
+# 日志配置
+###########################
+
+logging:
+  # 日志目录（如果为空，则 outbox 文件使用当前目录）
+  log_dir: ""
+  log_level: "info"        # debug/info/warn/error
+
+  log_max_size: 10       # 单个日志文件最大大小（MB）
+  log_max_files: 5       # 保留的历史日志文件个数
+  log_max_age: 7         # 日志保留天数
+
+  # Outbox 冲刷配置：用于 WS 断线重连后批量发送日志/结果
+  log_batch_size: 200          # outbox 每批冲刷条数（<=0 回退默认 200）
+  log_flush_interval: 200      # outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷）
+
+###########################
+# 任务配置
+###########################
+
+task:
+  # 心跳间隔（秒）
+  heartbeat_interval: 10
+
+  # 最大并发任务数
+  max_concurrent_tasks: 5
+
+  # 全局最大任务执行时间（秒）
+  max_execution_time_sec: 7200
+
+###########################
+# 资源限制配置（可选，当前仅带宽）
+###########################
+
+resource_limit:
+  # 带宽限制（MB/s，0表示不限制；任务不带带宽时套用该默认值）
+  bandwidth_limit: 0
