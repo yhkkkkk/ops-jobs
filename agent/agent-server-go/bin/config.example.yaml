@@ -38,6 +38,11 @@ result_stream:
   enabled: true           # 将任务结果写入 Redis Stream
   key: "agent_results"    # 结果流 key（Python consume_agent_results.py 消费此 key）
 
+task_stats_stream:
+  enabled: true
+  key: "agent_task_stats"
+  push_interval: 2
+
 status_stream:
   enabled: true           # 将 Agent 在线状态/心跳写入 Redis Stream
   key: "agent_status"     # 状态流 key（Python consume_agent_status.py 消费此 key）

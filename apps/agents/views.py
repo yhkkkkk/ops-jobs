@@ -1699,28 +1699,3 @@ class ArtifactUploadView(APIView):
         except Exception as exc:
             logger.exception("制品上传失败")
             return SycResponse.error(message=f"制品上传失败: {str(exc)}")
-
-    @action(detail=True, methods=["post"], url_path="reconcile_status")
-    def reconcile_status(self, request, pk=None):
-        """
-        触发Agent状态同步
-        """
-        agent = self.get_object()
-
-        # 执行状态同步
-        result = status_reconciliation_service.reconcile_agent_status(agent.id)
-
-        # 审计日志
-        AuditLogService.log(
-            user=request.user,
-            action="reconcile_agent_status",
-            resource=agent,
-            details={
-                'agent_id': agent.id,
-                'conflicts_found': result.get('conflicts_found', 0),
-                'conflicts_resolved': result.get('conflicts_resolved', 0)
-            },
-            request=request
-        )
-
-        return SycResponse.success(content=result, message="状态同步完成")
