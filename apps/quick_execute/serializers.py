@@ -98,7 +98,7 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
 
 
 class QuickFileTransferSerializer(serializers.Serializer):
-    """快速文件传输序列化器（仅支持 artifact 上传）"""
+    """快速文件传输序列化器（仅支持 local/server 输入，artifact 为中间产物）"""
 
     name = serializers.CharField(max_length=200, default="快速文件传输")
     # 统一使用 sources 描述来源；支持 local（multipart 上传）或 server（控制面主动拉取）

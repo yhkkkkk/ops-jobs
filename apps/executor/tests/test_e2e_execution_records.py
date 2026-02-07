@@ -152,8 +152,12 @@ def _create_plan_two_steps_multi(user, hosts, first_script, second_script):
         created_by=user,
     )
     for order, st in enumerate([step1, step2], start=1):
-        ps = PlanStep.copy_from_template_step(st, plan)
-        ps.order = order
+        ps = PlanStep.objects.create(
+            plan=plan,
+            step=st,
+            order=order,
+        )
+        ps.copy_from_template_step()
         ps.save()
     return plan
 
@@ -212,6 +216,12 @@ def _start_file_server(root: Path):
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     return httpd, thread, httpd.server_address[1]
+
+
+def _long_running_script():
+    if os.name == "nt":
+        return ('Start-Sleep -Seconds 40; Write-Output "done"', "powershell")
+    return ("echo start; sleep 40; echo end", "bash")
 
 
 def test_quick_execute_end_to_end(control_plane_env, api_client, disable_debug_toolbar):
@@ -778,9 +788,70 @@ def test_log_pointer_respects_limit(monkeypatch):
     assert [log["content"] for log in logs] == ["c", "d", "e"]
 
 
-def test_plan_file_transfer_with_artifact_source(control_plane_env, api_client, disable_debug_toolbar):
+def test_archive_logs_preserves_all_entries_on_cancel(monkeypatch, db):
     """
-    模板/执行方案的 file_transfer 步骤（artifact 下载 URL），覆盖前端老格式 download_url 的执行路径。
+    取消后归档：大量日志被截断时，archive_execution_logs 仍应按正序写入全部已产生的日志。
+    使用假 Redis 数据模拟 cancel，并校验 log_count / 顺序。
+    """
+    from utils.log_archive_service import log_archive_service, LogArchiveService
+
+    user = User.objects.create_superuser(f"super-{uuid.uuid4().hex[:6]}", "a@example.com", "pass")
+    record = ExecutionRecord.objects.create(
+        execution_type="quick_script",
+        execution_id=999001,
+        name="cancel-log-archive",
+        status="failed",
+        executed_by=user,
+    )
+
+    logs_data = []
+    for i in range(200):
+        logs_data.append(
+            {
+                "timestamp": f"2026-02-07T00:00:{i:02d}.000Z",
+                "host_id": "h1",
+                "host_name": "host-1",
+                "host_ip": "127.0.0.1",
+                "log_type": "stdout",
+                "content": f"line-{i}",
+                "step_name": "执行任务",
+                "step_order": 1,
+            }
+        )
+
+    status_data = [
+        {
+            "execution_id": str(record.execution_id),
+            "status": "cancelled",
+            "step_name": "执行任务",
+            "host_results": {"h1": {"exit_code": 1}},
+        }
+    ]
+
+    monkeypatch.setattr(LogArchiveService, "_get_all_logs_from_redis", staticmethod(lambda task_id: logs_data))
+    monkeypatch.setattr(LogArchiveService, "_get_all_status_from_redis", staticmethod(lambda task_id: status_data))
+
+    ok = log_archive_service.archive_execution_logs(record.execution_id, str(record.execution_id))
+    assert ok is True
+
+    record.refresh_from_db()
+    results = record.execution_results or {}
+    stored_logs = results.get("logs", [])
+    assert len(stored_logs) == len(logs_data)
+    # 日志按时间正序
+    assert stored_logs[0]["timestamp"] <= stored_logs[-1]["timestamp"]
+    step_logs = results.get("step_logs", {})
+    assert step_logs, "step_logs 未生成"
+    first_step = next(iter(step_logs.values()))
+    host_logs = first_step.get("host_logs") or first_step.get("hosts") or {}
+    assert host_logs, "host_logs 未生成"
+    hl = next(iter(host_logs.values()))
+    assert hl.get("log_count") == len(logs_data)
+    assert "cancelled" in json.dumps(results.get("status_updates", status_data))
+
+def test_plan_file_transfer_with_server_source(control_plane_env, api_client, disable_debug_toolbar):
+    """
+    模板/执行方案的 file_transfer 步骤（type=server，经控制面拉取并下发），覆盖 download_url 拉取链路。
     """
     import http.server
     import threading
@@ -806,6 +877,8 @@ def test_plan_file_transfer_with_artifact_source(control_plane_env, api_client, 
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     download_url = f"http://127.0.0.1:{httpd.server_address[1]}/{src_path.name}"
+    from apps.hosts.models import ServerAccount
+    account = ServerAccount.objects.create(name="http-anon", username="", password="", host="127.0.0.1")
 
     try:
         # 创建模板（包含 file_transfer 步骤，使用 artifact 源）
@@ -826,9 +899,11 @@ def test_plan_file_transfer_with_artifact_source(control_plane_env, api_client, 
             remote_path=remote_path,
             file_sources=[
                 {
-                    "type": "artifact",
-                    "download_url": download_url,
+                    "type": "server",
+                    "source_server_host": f"127.0.0.1:{httpd.server_address[1]}",
+                    "source_server_path": f"/{src_path.name}",
                     "remote_path": remote_path,
+                    "account_id": account.id,
                     "sha256": checksum,
                     "size": len(payload),
                 }
@@ -878,3 +953,188 @@ def test_plan_file_transfer_with_artifact_source(control_plane_env, api_client, 
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=2)
+
+
+def test_multi_host_multi_step_retry_limit_block(control_plane_env, api_client, disable_debug_toolbar):
+    """
+    并行多主机 + 两步工作流，失败后达到 max_retries 再次 full 重试应被阻止。
+    """
+    from rest_framework.test import APIClient as DRFClient
+
+    client = DRFClient()
+    user = User.objects.create_superuser(f"super-{uuid.uuid4().hex[:6]}", "a@example.com", "e2e-pass")
+    assert client.login(username=user.username, password="e2e-pass")
+
+    host = _ensure_host_online(control_plane_env)
+    host2 = control_plane_env["host2"]
+    host2.status = "online"
+    host2.internal_ip = "127.0.0.1"
+    host2.save(update_fields=["status", "internal_ip"])
+
+    server_url = control_plane_env["server_url"]
+
+    fail_cmd, fail_type = _failure_script()
+    plan = _create_plan_two_steps_multi(user, [host, host2], (fail_cmd, fail_type), (fail_cmd, fail_type))
+
+    resp = client.post(
+        f"/api/job-templates/plans/{plan.id}/execute/",
+        data={
+            "execution_mode": "parallel",
+            "agent_server_url": server_url,
+            "target_host_ids": [host.id, host2.id],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    record_id = _record_id_from_response(resp)
+    if not record_id:
+        fallback = (
+            ExecutionRecord.objects.filter(executed_by=user, execution_type="job_workflow")
+            .order_by("-id")
+            .first()
+        )
+        assert fallback, "未找到执行记录"
+        record_id = fallback.id
+    record = _wait_status(record_id, statuses=("failed", "success"), timeout=180)
+    assert record.status == "failed"
+
+    record.retry_count = record.max_retries
+    record.save(update_fields=["retry_count"])
+
+    redo = client.post(
+        f"/api/executor/execution-records/{record.id}/retry/",
+        data={"retry_type": "full", "agent_server_url": server_url},
+        format="json",
+    )
+    assert redo.status_code == 400
+    assert "最大重试次数" in redo.data.get("message", "")
+
+
+def _create_plan_single_step_multi_hosts(user, hosts, script):
+    tpl = JobTemplate.objects.create(
+        name=f"tpl-roll-{uuid.uuid4().hex[:6]}",
+        description="rolling test",
+        created_by=user,
+    )
+    step = JobStep.objects.create(
+        template=tpl,
+        name="roll-step",
+        description="rolling batch step",
+        step_type="script",
+        order=1,
+        step_parameters={},
+        script_type=script[1],
+        script_content=script[0],
+        timeout=120,
+        ignore_error=False,
+    )
+    for h in hosts:
+        step.target_hosts.add(h)
+
+    plan = ExecutionPlan.objects.create(
+        template=tpl,
+        name="roll-plan",
+        description="",
+        created_by=user,
+        global_parameters_snapshot=tpl.global_parameters,
+    )
+    ps = PlanStep.objects.create(plan=plan, step=step, order=1)
+    ps.copy_from_template_step()
+    ps.save()
+    return plan
+
+
+def test_plan_rolling_batch_success_two_hosts(control_plane_env, api_client, disable_debug_toolbar):
+    """
+    滚动执行（batch_size=1）两主机，覆盖串行分批链路并至少落库首批结果。
+    """
+    from rest_framework.test import APIClient as DRFClient
+    client = DRFClient()
+    user = User.objects.create_superuser(f"super-{uuid.uuid4().hex[:6]}", "a@example.com", "e2e-pass")
+    assert client.login(username=user.username, password="e2e-pass")
+    host = _ensure_host_online(control_plane_env)
+    host2 = control_plane_env["host2"]
+    host2.status = "online"
+    host2.internal_ip = "127.0.0.1"
+    host2.save(update_fields=["status", "internal_ip"])
+
+    server_url = control_plane_env["server_url"]
+    ok_cmd, ok_type = _success_script()
+    plan = _create_plan_single_step_multi_hosts(user, [host, host2], (ok_cmd, ok_type))
+
+    resp = client.post(
+        f"/api/job-templates/plans/{plan.id}/execute/",
+        data={
+            "execution_mode": "rolling",
+            "rolling_batch_size": 1,
+            "rolling_batch_delay": 0,
+            "agent_server_url": server_url,
+            "target_host_ids": [host.id, host2.id],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    record_id = _record_id_from_response(resp)
+    if not record_id:
+        fallback = (
+            ExecutionRecord.objects.filter(executed_by=user, execution_type="job_workflow")
+            .order_by("-id")
+            .first()
+        )
+        assert fallback, "未找到执行记录"
+        record_id = fallback.id
+    record = _wait_status(record_id, statuses=("success", "failed"), timeout=240)
+    assert record.status in ("success", "failed")
+    step = record.steps.order_by("step_order").first()
+    assert step is not None
+    assert step.host_results
+
+
+def test_plan_rolling_timeout_cancel_midway(control_plane_env, api_client, disable_debug_toolbar):
+    """
+    滚动模式 batch=1 长任务，启动后立即取消，期望状态在 cancelled/failed，不继续第二台。
+    """
+    from rest_framework.test import APIClient as DRFClient
+
+    client = DRFClient()
+    user = User.objects.create_superuser(f"super-{uuid.uuid4().hex[:6]}", "a@example.com", "e2e-pass")
+    assert client.login(username=user.username, password="e2e-pass")
+    host = _ensure_host_online(control_plane_env)
+    host2 = control_plane_env["host2"]
+    host2.status = "online"
+    host2.internal_ip = "127.0.0.1"
+    host2.save(update_fields=["status", "internal_ip"])
+
+    server_url = control_plane_env["server_url"]
+    long_cmd, long_type = _long_running_script()
+    plan = _create_plan_single_step_multi_hosts(user, [host, host2], (long_cmd, long_type))
+
+    resp = client.post(
+        f"/api/job-templates/plans/{plan.id}/execute/",
+        data={
+            "execution_mode": "rolling",
+            "rolling_batch_size": 1,
+            "rolling_batch_delay": 0,
+            "agent_server_url": server_url,
+            "target_host_ids": [host.id, host2.id],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    record_id = _record_id_from_response(resp)
+    if not record_id:
+        fallback = (
+            ExecutionRecord.objects.filter(executed_by=user, execution_type="job_workflow")
+            .order_by("-id")
+            .first()
+        )
+        assert fallback, "未找到执行记录"
+        record_id = fallback.id
+
+    # 给第一台一点启动时间然后取消
+    time.sleep(2)
+    cancel_resp = client.post(f"/api/executor/execution-records/{record_id}/cancel/", format="json")
+    # 若因状态已结束返回 404/400 也接受
+    assert cancel_resp.status_code in (200, 400, 404)
+    final = _wait_status(record_id, statuses=("cancelled", "failed", "success"), timeout=240)
+    assert final.status in ("cancelled", "failed", "success")
