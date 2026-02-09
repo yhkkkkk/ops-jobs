@@ -3,6 +3,7 @@
 """
 import django_filters
 from django.db import models
+from django.db.models.functions import Cast, Lower
 from .models import ScriptTemplate, UserFavorite
 
 
@@ -71,23 +72,27 @@ class ScriptTemplateFilter(django_filters.FilterSet):
         if not tags:
             return queryset
 
-        # 搜索包含任一标签的模板
+        # 统一转小写文本匹配，兼容 MySQL5.7/SQLite 无 JSON contains/has_key
+        annotated = queryset.annotate(tags_text=Lower(Cast('tags_json', models.TextField())))
         from django.db.models import Q
         q = Q()
         for tag in tags:
+            tag = str(tag).strip()
+            if not tag:
+                continue
             if ':' in tag or '=' in tag:
-                # 处理 "key:value" 或 "key=value" 格式
                 sep = ':' if ':' in tag else '='
                 key, val = tag.split(sep, 1)
-                key = key.strip()
-                val = val.strip()
-                # 检查指定键是否存在且值匹配
-                q |= Q(**{f'tags_json__{key}': val})
+                key = key.strip().lower()
+                val = val.strip().lower()
+                if not key or not val:
+                    continue
+                q |= (Q(tags_text__icontains=f'"{key}"') & Q(tags_text__icontains=val))
             else:
-                # 处理单个键或值
-                q |= Q(tags_json__has_key=tag) | Q(tags_json__icontains=tag)
+                kw = tag.lower()
+                q |= Q(tags_text__icontains=kw)
 
-        return queryset.filter(q)
+        return annotated.filter(q)
 
 
 class UserFavoriteFilter(django_filters.FilterSet):

@@ -2705,7 +2705,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 16px;
   flex: 1;
-  min-height: 0;
+  min-height: 900px;
 }
 
 /* 主容器：单栏或双栏布局 */
@@ -2713,12 +2713,17 @@ onMounted(() => {
   display: flex;
   flex-direction: row;
   flex: 1;
-  min-height: 600px;
   border: 1px solid #e8e8e8;
   border-radius: 8px;
   overflow: hidden;
   background-color: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.logs-card :deep(.arco-card-body) {
+  display: flex;
+  flex-direction: column;
+  min-height: 960px;
 }
 
 /* 左侧：时间线侧边栏 */

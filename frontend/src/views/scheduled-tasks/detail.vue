@@ -8,6 +8,10 @@
           <template #icon><icon-refresh /></template>
           刷新
         </a-button>
+        <a-button type="outline" @click="openHistory">
+          <template #icon><icon-history /></template>
+          历史记录
+        </a-button>
         <a-button
           v-if="task.is_active"
           type="outline"
@@ -132,8 +136,37 @@
         </a-col>
       </a-row>
 
-      <!-- 执行历史 -->
-      <a-card title="执行历史" class="detail-card" style="margin-top: 16px">
+      <!-- 执行历史 抽屉 -->
+      <a-drawer
+        v-model:visible="historyVisible"
+        title="执行历史"
+        width="70%"
+        unmount-on-close
+      >
+        <div class="history-toolbar">
+          <a-input
+            v-model="historyFilters.keyword"
+            allow-clear
+            placeholder="搜索名称 / 执行ID"
+            style="width: 240px"
+            @press-enter="handleHistorySearch"
+            @clear="handleHistorySearch"
+          />
+          <a-select
+            v-model="historyFilters.status"
+            allow-clear
+            placeholder="状态"
+            style="width: 140px"
+            @change="handleHistorySearch"
+            @clear="handleHistorySearch"
+          >
+            <a-option value="SUCCESS">成功</a-option>
+            <a-option value="FAILED">失败</a-option>
+            <a-option value="RUNNING">运行中</a-option>
+            <a-option value="CANCELLED">已取消</a-option>
+          </a-select>
+        </div>
+
         <a-table
           :columns="historyColumns"
           :data="executionHistory"
@@ -146,7 +179,8 @@
             <a-tag v-if="record.status === 'SUCCESS'" color="green">成功</a-tag>
             <a-tag v-else-if="record.status === 'FAILED'" color="red">失败</a-tag>
             <a-tag v-else-if="record.status === 'RUNNING'" color="blue">运行中</a-tag>
-            <a-tag v-else color="orange">{{ record.status }}</a-tag>
+            <a-tag v-else-if="record.status === 'CANCELLED'" color="orange">取消</a-tag>
+            <a-tag v-else color="gray">{{ record.status }}</a-tag>
           </template>
 
           <template #duration="{ record }">
@@ -164,7 +198,7 @@
             </a-button>
           </template>
         </a-table>
-      </a-card>
+      </a-drawer>
     </a-spin>
   </div>
 </template>
@@ -178,7 +212,8 @@ import {
   IconRefresh,
   IconEdit,
   IconPause,
-  IconPlayArrow
+  IconPlayArrow,
+  IconHistory
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi } from '@/api/scheduler'
 import { executionRecordApi } from '@/api/ops'
@@ -221,6 +256,7 @@ const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const loadingHistory = ref(false)
+const historyVisible = ref(false)
 const task = ref<ScheduledJob>({} as ScheduledJob)
 const executionHistory = ref<ExecutionHistoryItem[]>([])
 
@@ -233,49 +269,20 @@ const historyPagination = reactive({
   showPageSize: true,
   pageSizeOptions: ['10', '20', '50']
 })
+const historyFilters = reactive({
+  keyword: '',
+  status: undefined as string | undefined
+})
 
 // 执行历史表格列
 const historyColumns: TableColumnData[] = [
-  {
-    title: '执行ID',
-    dataIndex: 'id',
-    key: 'id',
-    width: 100
-  },
-  {
-    title: '状态',
-    dataIndex: 'status',
-    key: 'status',
-    slotName: 'status',
-    width: 100
-  },
-  {
-    title: '开始时间',
-    dataIndex: 'start_time',
-    key: 'start_time',
-    width: 150,
-    render: ({ record }: { record: ExecutionHistoryItem }) => formatDateTime(record.start_time)
-  },
-  {
-    title: '结束时间',
-    dataIndex: 'end_time',
-    key: 'end_time',
-    width: 150,
-    render: ({ record }: { record: ExecutionHistoryItem }) => formatDateTime(record.end_time)
-  },
-  {
-    title: '执行时长',
-    key: 'duration',
-    slotName: 'duration',
-    width: 100
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    slotName: 'actions',
-    width: 100,
-    fixed: 'right'
-  }
+  { title: '执行ID', dataIndex: 'execution_id', ellipsis: true, tooltip: true },
+  { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '开始时间', dataIndex: 'started_at', width: 160 },
+  { title: '结束时间', dataIndex: 'finished_at', width: 160 },
+  { title: '耗时', dataIndex: 'duration', slotName: 'duration', width: 100 },
+  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 120, fixed: 'right' }
 ]
 
 // 获取任务详情
@@ -296,11 +303,13 @@ const fetchTask = async () => {
 const fetchExecutionHistory = async () => {
   loadingHistory.value = true
   try {
-    const params = {
+    const params: any = {
       page: historyPagination.current,
       page_size: historyPagination.pageSize,
       scheduled_job_id: Number(route.params.id)  // 使用定时任务ID作为过滤条件
     }
+    if (historyFilters.keyword) params.search = historyFilters.keyword
+    if (historyFilters.status) params.status = historyFilters.status
 
     const response = await executionRecordApi.getRecords(params)
     executionHistory.value = response.results || []
@@ -320,7 +329,6 @@ const handleBack = () => {
 
 const handleRefresh = () => {
   fetchTask()
-  fetchExecutionHistory()
 }
 
 const handleEdit = () => {
@@ -388,6 +396,17 @@ const handleHistoryPageSizeChange = (pageSize: number | string) => {
   fetchExecutionHistory()
 }
 
+const openHistory = () => {
+  historyVisible.value = true
+  historyPagination.current = 1
+  fetchExecutionHistory()
+}
+
+const handleHistorySearch = () => {
+  historyPagination.current = 1
+  fetchExecutionHistory()
+}
+
 // 工具函数
 const formatDateTime = (dateTime) => {
   if (!dateTime) return '-'
@@ -418,7 +437,9 @@ const getProgressColor = (percent) => {
 // 生命周期
 onMounted(() => {
   fetchTask()
-  fetchExecutionHistory()
+  if (route.query.history === '1') {
+    openHistory()
+  }
 })
 </script>
 
@@ -480,6 +501,14 @@ onMounted(() => {
 .stat-label {
   font-size: 12px;
   color: #86909c;
+}
+
+.history-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 /* 表格样式优化 */

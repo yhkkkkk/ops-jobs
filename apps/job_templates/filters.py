@@ -3,6 +3,7 @@
 """
 import django_filters
 from django.db import models
+from django.db.models.functions import Cast, Lower
 from .models import JobTemplate, ExecutionPlan
 
 
@@ -48,51 +49,47 @@ class JobTemplateFilter(django_filters.FilterSet):
         return queryset
 
     def filter_by_tag(self, queryset, name, value):
-        """按标签过滤：搜索JSON字段中的键或值"""
+        """按标签过滤：文本包含匹配，兼容不支持 JSON contains 的数据库"""
         if not value:
             return queryset
-
-        # 搜索标签的键或值
-        from django.db.models import Q
-        return queryset.filter(
-            Q(tags_json__has_key=value) |  # 搜索键
-            Q(tags_json__icontains=value)  # 搜索值
-        )
+        txt = str(value).strip().lower()
+        annotated = queryset.annotate(tags_text=Lower(Cast('tags_json', models.TextField())))
+        return annotated.filter(tags_text__icontains=txt)
 
     def filter_by_tags(self, queryset, name, value):
-        """按多个标签过滤"""
+        """按多个标签过滤（OR），兼容 JSON 不支持 contains/has_key 的场景"""
         if not value:
             return queryset
 
-        # 如果value是字符串，尝试解析为列表
         if isinstance(value, str):
             try:
                 import json
-                tags = json.loads(value) if value.startswith('[') else [value]
-            except:
-                tags = [tag.strip() for tag in value.split(',') if tag.strip()]
+                tags = json.loads(value) if value.startswith('[') else [v.strip() for v in value.split(',') if v.strip()]
+            except Exception:
+                tags = [v.strip() for v in value.split(',') if v.strip()]
         else:
             tags = value if isinstance(value, list) else [value]
 
+        tags = [str(t).strip().lower() for t in tags if str(t).strip()]
         if not tags:
             return queryset
 
-        # 搜索包含任一标签的模板
+        annotated = queryset.annotate(tags_text=Lower(Cast('tags_json', models.TextField())))
         from django.db.models import Q
         q = Q()
         for tag in tags:
-            if ':' in tag:
-                # 处理 "key:value" 格式
-                key, val = tag.split(':', 1)
-                key = key.strip()
-                val = val.strip()
-                # 检查指定键是否存在且值匹配
-                q |= Q(**{f'tags_json__{key}': val})
+            if ':' in tag or '=' in tag:
+                sep = ':' if ':' in tag else '='
+                key, val = tag.split(sep, 1)
+                key = key.strip().lower()
+                val = val.strip().lower()
+                if not key or not val:
+                    continue
+                q |= (Q(tags_text__icontains=f'"{key}"') & Q(tags_text__icontains=val))
             else:
-                # 处理单个键或值
-                q |= Q(tags_json__has_key=tag) | Q(tags_json__icontains=tag)
+                q |= Q(tags_text__icontains=tag)
 
-        return queryset.filter(q)
+        return annotated.filter(q)
 
     class Meta:
         model = JobTemplate

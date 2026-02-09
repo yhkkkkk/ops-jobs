@@ -180,6 +180,10 @@
               </template>
               编辑
             </a-button>
+            <a-button type="text" size="small" @click="handleHistory(record)">
+              <template #icon><icon-history /></template>
+              历史
+            </a-button>
             <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
@@ -222,6 +226,64 @@
         </template>
       </a-table>
     </a-card>
+
+    <!-- 历史记录抽屉 -->
+      <a-drawer
+        v-model:visible="historyVisible"
+        :title="currentHistoryJob ? `执行历史 - ${currentHistoryJob.name}` : '执行历史'"
+        width="70%"
+        unmount-on-close
+      >
+      <div class="history-toolbar">
+        <a-input
+          v-model="historyFilters.keyword"
+          allow-clear
+          placeholder="搜索名称 / 执行ID"
+          style="width: 240px"
+          @press-enter="handleHistorySearch"
+          @clear="handleHistorySearch"
+        />
+        <a-select
+          v-model="historyFilters.status"
+          allow-clear
+          placeholder="状态"
+          style="width: 140px"
+          @change="handleHistorySearch"
+          @clear="handleHistorySearch"
+        >
+          <a-option value="SUCCESS">成功</a-option>
+          <a-option value="FAILED">失败</a-option>
+          <a-option value="RUNNING">运行中</a-option>
+          <a-option value="CANCELLED">已取消</a-option>
+        </a-select>
+      </div>
+
+      <a-table
+        :columns="historyTableColumns"
+        :data="historyRecords"
+        :loading="historyLoading"
+        :pagination="historyPagination"
+        @page-change="handleHistoryPageChange"
+        @page-size-change="handleHistoryPageSizeChange"
+      >
+        <template #status="{ record }">
+          <a-tag v-if="record.status === 'SUCCESS'" color="green">成功</a-tag>
+          <a-tag v-else-if="record.status === 'FAILED'" color="red">失败</a-tag>
+          <a-tag v-else-if="record.status === 'RUNNING'" color="blue">运行中</a-tag>
+          <a-tag v-else-if="record.status === 'CANCELLED'" color="orange">取消</a-tag>
+          <a-tag v-else color="gray">{{ record.status }}</a-tag>
+        </template>
+        <template #duration="{ record }">
+          <span v-if="record.duration">{{ formatDuration(record.duration) }}</span>
+          <span v-else style="color: #86909c">-</span>
+        </template>
+        <template #actions="{ record }">
+          <a-button type="text" size="small" @click="router.push(`/execution-records/${record.id}`)">
+            查看详情
+          </a-button>
+        </template>
+      </a-table>
+    </a-drawer>
   </div>
 </template>
 
@@ -237,10 +299,12 @@ import {
   IconDelete,
   IconPause,
   IconPlayArrow,
-  IconMore
+  IconMore,
+  IconHistory
 } from '@arco-design/web-vue/es/icon'
 import { useRouter } from 'vue-router'
 import { scheduledJobApi } from '@/api/scheduler'
+import { executionRecordApi } from '@/api/ops'
 import { usePermissionsStore } from '@/stores/permissions'
 import type { ScheduledJob } from '@/types'
 
@@ -248,6 +312,22 @@ const router = useRouter()
 const loading = ref(false)
 const tasks = ref<ScheduledJob[]>([])
 const permissionsStore = usePermissionsStore()
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyRecords = ref<any[]>([])
+const historyPagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showTotal: true,
+  showPageSize: true,
+  pageSizeOptions: ['10', '20', '50']
+})
+const historyFilters = reactive({
+  keyword: '',
+  status: undefined as string | undefined
+})
+const currentHistoryJob = ref<ScheduledJob | null>(null)
 
 // 搜索表单
 const searchForm = reactive({
@@ -346,7 +426,7 @@ const columns = [
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 250,
+    width: 320,
     fixed: 'right'
   }
 ]
@@ -467,6 +547,53 @@ const handleView = (record: ScheduledJob): void => {
   router.push(`/scheduled-tasks/detail/${record.id}`)
 }
 
+const fetchHistory = async () => {
+  if (!currentHistoryJob.value) return
+  historyLoading.value = true
+  try {
+    const params: any = {
+      page: historyPagination.current,
+      page_size: historyPagination.pageSize,
+      scheduled_job_id: currentHistoryJob.value.id
+    }
+    if (historyFilters.keyword) params.search = historyFilters.keyword
+    if (historyFilters.status) params.status = historyFilters.status
+    const res = await executionRecordApi.getRecords(params)
+    historyRecords.value = res.results || []
+    historyPagination.total = res.total || 0
+  } catch (error) {
+    console.error('获取执行历史失败:', error)
+    Message.error('获取执行历史失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const handleHistory = (record: ScheduledJob): void => {
+  currentHistoryJob.value = record
+  historyPagination.current = 1
+  historyFilters.keyword = ''
+  historyFilters.status = undefined
+  historyVisible.value = true
+  fetchHistory()
+}
+
+const handleHistoryPageChange = (page: number) => {
+  historyPagination.current = page
+  fetchHistory()
+}
+
+const handleHistoryPageSizeChange = (size: number) => {
+  historyPagination.pageSize = size
+  historyPagination.current = 1
+  fetchHistory()
+}
+
+const handleHistorySearch = () => {
+  historyPagination.current = 1
+  fetchHistory()
+}
+
 // 编辑任务
 const handleEdit = (record: ScheduledJob): void => {
   router.push(`/scheduled-tasks/${record.id}/edit`)
@@ -552,6 +679,16 @@ const getProgressColor = (percent: number): string => {
   return '#f53f3f'
 }
 
+const formatDuration = (seconds?: number): string => {
+  if (!seconds) return '-'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 const canChangeTask = (taskId: number): boolean => {
   if (permissionsStore.isSuperUser) return true
   return (
@@ -567,6 +704,16 @@ const canDeleteTask = (taskId: number): boolean => {
     permissionsStore.hasPermission('job', 'delete')
   )
 }
+
+const historyTableColumns = [
+  { title: '执行ID', dataIndex: 'execution_id', ellipsis: true, tooltip: true },
+  { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '开始时间', dataIndex: 'started_at', width: 160 },
+  { title: '结束时间', dataIndex: 'finished_at', width: 160 },
+  { title: '耗时', dataIndex: 'duration', slotName: 'duration', width: 100 },
+  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 120, fixed: 'right' }
+]
 
 // 生命周期
 onMounted(() => {
@@ -626,6 +773,14 @@ onMounted(() => {
 .disabled-option {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.history-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 /* 表格样式优化 */

@@ -184,7 +184,6 @@
             placeholder="输入/选择标签"
             allow-clear
             allow-search
-            allow-create
             :options="tagOptions"
             style="width: 240px"
             @change="handleSearch"
@@ -630,8 +629,22 @@
         </template>
 
         <template #status="{ record }">
-          <a-tag :color="record.status === 'online' ? 'green' : 'red'">
-            {{ record.status === 'online' ? '在线' : '离线' }}
+          <a-tag
+            :color="
+              record.status === 'online'
+                ? 'green'
+                : record.status === 'offline'
+                  ? 'red'
+                  : 'orange'
+            "
+          >
+            {{
+              record.status === 'online'
+                ? '在线'
+                : record.status === 'offline'
+                  ? '离线'
+                  : '未知'
+            }}
           </a-tag>
         </template>
 
@@ -1044,11 +1057,12 @@ const groupOptions = computed(() => {
   return result
 })
 
-// 基于当前列表聚合标签选项，便于筛选
-const tagOptions = computed(() => {
-  const seen = new Set<string>()
-  const options: Array<{ label: string; value: string }> = []
-  hosts.value.forEach((host) => {
+// 标签选项：全局聚合（跨页），避免只显示当前页
+const tagSet = ref<Set<string>>(new Set())
+const tagOptions = computed(() => Array.from(tagSet.value).map(t => ({ label: t, value: t })))
+
+const collectTags = (list: Host[]) => {
+  list.forEach((host) => {
     (host.tags || []).forEach((tag: any) => {
       let label = ''
       if (tag && typeof tag === 'object') {
@@ -1060,14 +1074,10 @@ const tagOptions = computed(() => {
         label = String(tag || '').trim()
         if (!label) return
       }
-      if (!seen.has(label)) {
-        seen.add(label)
-        options.push({ label, value: label })
-      }
+      tagSet.value.add(label)
     })
   })
-  return options
-})
+}
 
 // 批量操作相关
 const selectedRowKeys = ref<number[]>([])
@@ -1428,6 +1438,7 @@ const fetchHosts = async () => {
       ip_address: host.ip_address || host.internal_ip || host.public_ip || '',
       account_info: host.account_info || null,
     }))
+    collectTags(hosts.value)
     pagination.total = response.total ?? hosts.value.length
     totalHostCount.value = pagination.total
   } catch (error: any) {
@@ -1746,6 +1757,21 @@ const refreshGroups = () => {
 const refreshAll = () => {
   fetchGroups()
   fetchHosts()
+}
+
+// 预加载所有标签（取较大页容量），避免仅当前页
+const preloadAllTags = async () => {
+  try {
+    const resp = await hostApi.getHosts({ page: 1, page_size: 1000 })
+    const list = resp.results || []
+    collectTags(list.map((h: any) => ({
+      ...h,
+      ip_address: h.ip_address || h.internal_ip || h.public_ip || '',
+      account_info: h.account_info || null,
+    })))
+  } catch (err) {
+    console.warn('预加载标签失败', err)
+  }
 }
 
 const selectGroup = (groupId: number | null) => {
@@ -2174,6 +2200,7 @@ onMounted(async () => {
 
   console.log('用户已登录，开始获取数据')
   fetchHosts()
+  preloadAllTags()
   fetchGroups()
 })
 

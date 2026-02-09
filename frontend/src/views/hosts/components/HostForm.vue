@@ -66,7 +66,7 @@
         </a-select>
         <div class="form-tip">
           <icon-info-circle />
-          <span>用于SSH连接的服务器账号，请先在服务器账号管理中创建</span>
+          <span>用于ssh连接/agent执行的服务器账号，请先在服务器账号管理中创建</span>
         </div>
       </a-form-item>
 
