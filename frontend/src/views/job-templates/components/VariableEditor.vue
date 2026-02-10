@@ -182,6 +182,8 @@ const hostSelectorVisible = ref(false)
 const hosts = ref<any[]>([])
 const hostGroups = ref<any[]>([])
 const currentHostVar = ref<VariableItem | null>(null)
+// 使用 Map 追踪当前编辑的变量，key 是变量的 name，value 是变量对象
+const editingVarMap = new Map<string, VariableItem>()
 
 const displaySystemVars = computed<SystemVar[]>(() => {
   if (props.systemVars && props.systemVars.length) return props.systemVars
@@ -190,6 +192,16 @@ const displaySystemVars = computed<SystemVar[]>(() => {
 
 const syncFromModel = () => {
   if (internalUpdate) return
+  
+  // 保存当前正在编辑的变量的 hostList 数据
+  // 使用变量名称作为 key，这样即使 ID 变化也能找到对应的数据
+  const preservedHostLists = new Map<string, (string | number)[]>()
+  for (const item of variablesList) {
+    if (item.name?.trim() && item.type === 'host_list' && item.hostList?.length) {
+      preservedHostLists.set(item.name.trim(), [...item.hostList])
+    }
+  }
+  
   variablesList.splice(0, variablesList.length)
   const raw = props.modelValue || {}
   Object.entries(raw).forEach(([name, meta]) => {
@@ -199,10 +211,20 @@ const syncFromModel = () => {
       : (v.type as any) === 'host_list'
         ? 'host_list'
         : 'text'
-    const hostListVal = type === 'host_list'
-      ? (Array.isArray(v.value) ? v.value : [])
-      : undefined
-    variablesList.push({
+    
+    // 优先使用 modelValue 中的数据，其次使用保留的数据
+    let hostListVal: (string | number)[] | undefined
+    if (type === 'host_list') {
+      if (Array.isArray(v.value) && v.value.length > 0) {
+        hostListVal = v.value
+      } else if (preservedHostLists.has(name)) {
+        hostListVal = preservedHostLists.get(name)
+      } else {
+        hostListVal = []
+      }
+    }
+    
+    const newItem: VariableItem = {
       id: `${name}-${Math.random().toString(16).slice(2, 6)}`,
       name,
       value: type === 'host_list' ? '' : (v.value ?? ''),
@@ -212,7 +234,11 @@ const syncFromModel = () => {
       description: v.description || '',
       injectInto: Array.isArray(v.inject_into) && v.inject_into.length ? v.inject_into : ['script', 'step_params', 'file_sources'],
       show: false,
-    })
+    }
+    variablesList.push(newItem)
+    
+    // 更新 Map 中的引用
+    editingVarMap.set(name, newItem)
   })
 }
 
@@ -308,10 +334,13 @@ const copyHostIps = async (item: VariableItem) => {
     Message.info('暂无主机可复制')
     return
   }
-  // 将已加载主机的 ip:port 拼接，找不到的用ID占位
+  // 将已加载主机的 IP 拼接（不包含端口），找不到的用ID占位
   const ipList = ids.map(id => {
     const h = hosts.value.find((x: any) => x.id === id)
-    if (h) return `${h.ip_address}${h.port ? ':' + h.port : ''}`
+    if (h) {
+      // 只取IP部分，不包含端口
+      return h.ip_address ? h.ip_address.split(':')[0] : String(id)
+    }
     return String(id)
   })
   try {
@@ -324,17 +353,40 @@ const copyHostIps = async (item: VariableItem) => {
 
 const openHostSelector = (item: VariableItem) => {
   void ensureHostsLoaded()
+  // 确保变量名称存在
+  const varName = (item.name || '').trim()
+  if (!varName) {
+    Message.warning('请先填写变量名称')
+    return
+  }
+  // 更新 Map 中的引用
+  editingVarMap.set(varName, item)
   currentHostVar.value = item
   hostSelectorVisible.value = true
 }
 
-const handleHostSelectConfirm = (payload: { selectedHosts?: number[], selectedGroups?: number[] }) => {
+const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) => {
   if (!currentHostVar.value) {
     hostSelectorVisible.value = false
     return
   }
-  // 这里只存主机ID，和现有直接选择保持一致
-  currentHostVar.value.hostList = payload.selectedHosts || []
+  
+  // 检查变量名称是否存在
+  const varName = (currentHostVar.value.name || '').trim()
+  if (!varName) {
+    Message.warning('请先填写变量名称')
+    return
+  }
+  
+  // HostSelector emit 的是 { hosts, groups }，需要提取主机ID
+  const hosts = payload.hosts || []
+  const hostIds = hosts.map((h: any) => h.id)
+  
+  currentHostVar.value.hostList = hostIds as any
+  
+  // 同时更新 Map 中的引用，确保数据不会丢失
+  editingVarMap.set(varName, currentHostVar.value)
+  
   emitChange()
   hostSelectorVisible.value = false
 }

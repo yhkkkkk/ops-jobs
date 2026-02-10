@@ -85,10 +85,11 @@
                     size="small"
                     allow-clear
                     @input="handleHostSearchInput"
-                    @paste="handleHostSearchPaste"
+                    @clear="handleHostSearchClear"
                     @press-enter="handleHostSearch"
                     :auto-size="{ minRows: 1, maxRows: 4 }"
                     style="width: 100%"
+                    @paste.capture="handleHostSearchPaste"
                   />
                 </div>
                 <div class="action-buttons">
@@ -126,7 +127,7 @@
                       <template #cell="{ record }">
                         <div class="host-name-cell">
                           <div class="host-name">{{ record.name }}</div>
-                          <div class="host-ip">{{ record.ip_address }}:{{ record.port }}</div>
+                          <div class="host-ip">{{ record.ip_address }}</div>
                         </div>
                       </template>
                     </a-table-column>
@@ -338,7 +339,7 @@
                       <template #cell="{ record }">
                         <div class="host-name-cell">
                           <div class="host-name">{{ record.name }}</div>
-                          <div class="host-ip">{{ record.ip_address }}:{{ record.port }}</div>
+                          <div class="host-ip">{{ record.ip_address }}</div>
                         </div>
                       </template>
                     </a-table-column>
@@ -637,14 +638,24 @@ const treeData = computed(() => {
 
 const filteredHosts = computed<Host[]>(() => {
   if (!hostSearchText.value) return props.hosts as Host[] || []
+
+  // 解析搜索关键词，支持竖线、逗号、空格分隔的多IP搜索
+  const searchTerms = hostSearchText.value
+    .split(/[|,]/)  // 按竖线或逗号分割
+    .map(term => term.trim())
+    .filter(term => term.length > 0)
+
+  if (searchTerms.length === 0) return props.hosts as Host[] || []
+
   return ((props.hosts as Host[]) || []).filter((host: Host) => {
-    if (hostSearchText.value) {
-      const searchLower = hostSearchText.value.toLowerCase()
-      const nameMatch = host.name?.toLowerCase().includes(searchLower)
-      const ipMatch = host.ip_address?.includes(hostSearchText.value)
-      return nameMatch || ipMatch
-    }
-    return true
+    const hostIp = host.ip_address || ''
+    const hostName = host.name?.toLowerCase() || ''
+
+    // 只要匹配任何一个搜索词即可
+    return searchTerms.some(term => {
+      const termLower = term.toLowerCase()
+      return hostName.includes(termLower) || hostIp.includes(term)
+    })
   })
 })
 
@@ -816,18 +827,44 @@ const handleGroupSearch = () => {
 }
 
 const handleHostSearchInput = () => {
-  // 搜索逻辑在computed中处理
+  // 搜索逻辑在 computed 中处理，这里只需要同步到 hostSearchText
+  hostSearchText.value = displayHostSearchText.value.trim()
+}
+
+const handleHostSearchClear = () => {
+  // 清空搜索时同步更新 hostSearchText
+  hostSearchText.value = ''
 }
 
 const handleHostSearch = () => {
-  hostSearchText.value = displayHostSearchText.value
+  hostSearchText.value = displayHostSearchText.value.trim()
 }
 
 const handleHostSearchPaste = (event: ClipboardEvent) => {
   const text = event.clipboardData?.getData('text')
   if (text) {
-    displayHostSearchText.value = text
-    hostSearchText.value = text
+    // 处理多行IP粘贴，转换为竖线分隔格式
+    const processedText = text
+      .split(/[,，\s\n\r]+/)  // 按逗号、空格、换行符分割
+      .map(ip => ip.trim())
+      .filter(ip => ip.length > 0)
+      .join(' | ')  // 用竖线连接
+
+    // 阻止默认粘贴行为，手动设置处理后的文本
+    event.preventDefault()
+
+    // 获取当前光标位置
+    const target = event.target as HTMLTextAreaElement
+    const start = target.selectionStart
+    const end = target.selectionEnd
+    const originalValue = displayHostSearchText.value
+
+    // 在光标位置插入处理后的文本
+    const newValue = originalValue.substring(0, start) + processedText + originalValue.substring(end)
+
+    // 更新显示和搜索文本
+    displayHostSearchText.value = newValue
+    hostSearchText.value = newValue
   }
 }
 
@@ -915,27 +952,37 @@ const clearDynamicGroups = () => {
   dynamicSelectedGroupIds.value = []
 }
 
-// 复制单个IP
+// 复制单个IP（不包含端口）
 const copySingleIp = (host: any) => {
   if (host.ip_address) {
-    navigator.clipboard.writeText(host.ip_address)
-    Message.success(`已复制IP: ${host.ip_address}`)
+    // 只取IP部分，不包含端口
+    const ip = host.ip_address.split(':')[0]
+    navigator.clipboard.writeText(ip)
+    Message.success(`已复制IP: ${ip}`)
   }
 }
 
-// 复制所有选中的IP
+// 复制所有选中的IP（不包含端口）
 const copySelectedIps = () => {
   const ips: string[] = []
 
-  // 添加表格选择的主机IP
+  // 添加表格选择的主机IP（不包含端口）
   selectedHostObjects.value.forEach((h: any) => {
-    if (h.ip_address) ips.push(h.ip_address)
+    if (h.ip_address) {
+      const ip = h.ip_address.split(':')[0]
+      if (!ips.includes(ip)) {
+        ips.push(ip)
+      }
+    }
   })
 
-  // 添加解析匹配的主机IP
+  // 添加解析匹配的主机IP（不包含端口）
   resolvedMatchedHosts.value.forEach((h: any) => {
-    if (h.ip_address && !ips.includes(h.ip_address)) {
-      ips.push(h.ip_address)
+    if (h.ip_address) {
+      const ip = h.ip_address.split(':')[0]
+      if (!ips.includes(ip)) {
+        ips.push(ip)
+      }
     }
   })
 
@@ -1494,7 +1541,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 150px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
