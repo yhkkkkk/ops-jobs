@@ -89,97 +89,10 @@
 
     <!-- 全局变量 -->
     <a-card title="全局变量" class="mb-4">
-      <template #extra>
-        <a-button type="primary" @click="handleAddGlobalParameter">
-          <template #icon>
-            <icon-plus />
-          </template>
-          添加变量
-        </a-button>
-      </template>
-
-      <div v-if="Object.keys(form.global_parameters || {}).length === 0" class="empty-parameters">
-        <a-empty description="暂无全局变量，请添加全局变量">
-          <a-button type="primary" @click="handleAddGlobalParameter">
-            <template #icon>
-              <icon-plus />
-            </template>
-            添加变量
-          </a-button>
-        </a-empty>
-      </div>
-
-      <div v-else class="global-parameters-list">
-        <div
-          v-for="(_, key) in form.global_parameters"
-          :key="key"
-          class="parameter-item"
-        >
-          <div class="parameter-content">
-            <div class="parameter-row">
-              <div class="parameter-key">
-                <a-input
-                  v-model="parameterKeys[key]"
-                  placeholder="变量名"
-                  @blur="handleParameterKeyChange(key, parameterKeys[key])"
-                  @pressEnter="handleParameterKeyChange(key, parameterKeys[key])"
-                />
-              </div>
-              <div class="parameter-type">
-                <a-select
-                  :model-value="getParameterType(key)"
-                  placeholder="类型"
-                  style="width: 80px"
-                  @change="handleParameterTypeChange(key, $event)"
-                >
-                  <a-option value="text">文本</a-option>
-                  <a-option value="secret">密文</a-option>
-                </a-select>
-              </div>
-              <div class="parameter-value">
-                <a-input
-                  :model-value="getParameterValue(key)"
-                  :type="getParameterType(key) === 'secret' && !parameterVisibility[key] ? 'password' : 'text'"
-                  :placeholder="getParameterType(key) === 'secret' ? '密文变量值' : '变量值'"
-                  @input="handleParameterValueChange(key, $event)"
-                />
-                <a-button
-                  v-if="getParameterType(key) === 'secret'"
-                  type="text"
-                  size="small"
-                  @click="toggleParameterVisibility(key)"
-                  class="visibility-toggle"
-                >
-                  <template #icon>
-                    <icon-eye v-if="parameterVisibility[key]" />
-                    <icon-eye-invisible v-else />
-                  </template>
-                </a-button>
-              </div>
-              <div class="parameter-actions">
-                <a-button
-                  type="text"
-                  status="danger"
-                  @click="handleRemoveGlobalParameter(key)"
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                </a-button>
-              </div>
-            </div>
-
-            <div class="parameter-description">
-              <a-textarea
-                :model-value="getParameterDescription(key)"
-                placeholder="变量描述，用于解释用途或限制"
-                :auto-size="{ minRows: 1, maxRows: 3 }"
-                @input="handleParameterDescriptionChange(key, $event)"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <VariableEditor
+        v-model="form.global_parameters"
+        :system-vars="systemVars"
+      />
     </a-card>
 
     <!-- 作业步骤 -->
@@ -270,6 +183,7 @@
       v-model:visible="stepEditorVisible"
       :step="currentStep"
       :is-edit="isEditingStep"
+      :global-parameters="form.global_parameters || {}"
       @save="handleStepSave"
     />
 
@@ -302,6 +216,7 @@ import type { JobTemplate, JobStep } from '@/types'
 import StepEditor from './components/StepEditor.vue'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import TagEditor from '@/components/TagEditor.vue'
+import VariableEditor from './components/VariableEditor.vue'
 import SuccessModal from '@/components/SuccessModal.vue'
 import { IconEye, IconEyeInvisible, IconPlus, IconPlayArrow, IconList, IconSync, IconDelete, IconEdit, IconArrowUp, IconArrowDown } from '@arco-design/web-vue/es/icon'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
@@ -347,6 +262,19 @@ const form = reactive<Partial<JobTemplate>>({
   steps: [],
   global_parameters: {}
 })
+
+// 系统变量展示（只读）
+const systemVars = [
+  { name: 'JOB_ID', description: '执行ID' },
+  { name: 'TEMPLATE_ID', description: '模板ID' },
+  { name: 'PLAN_ID', description: '执行方案ID' },
+  { name: 'STEP_ID', description: '步骤ID' },
+  { name: 'EXECUTOR', description: '执行人用户名' },
+  { name: 'EXECUTE_AT', description: '执行时间(ISO)' },
+  { name: 'TARGET_IPS', description: '目标主机IP列表' },
+  { name: 'TARGET_COUNT', description: '目标主机数量' },
+  { name: 'BATCH_ID', description: '批次ID' },
+]
 
 // 全局变量管理
 const parameterKeys = ref<Record<string, string>>({})

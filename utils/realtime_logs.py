@@ -7,6 +7,7 @@ from typing import Any, Dict, Generator
 import redis
 from django.conf import settings
 from django.utils import timezone
+from apps.job_templates.variable_service import mask_secrets, normalize_user_vars
 from tenacity import (
     before_sleep_log,
     retry,
@@ -68,7 +69,7 @@ class RealtimeLogService:
         """包装 expire 以提供重试"""
         return self.redis_client.expire(key, seconds)
     
-    def push_log(self, execution_id: str, host_id: str, log_data: Dict[str, Any], task_id: str = None, stream_key: str = None):
+    def push_log(self, execution_id: str, host_id: str, log_data: Dict[str, Any], task_id: str = None, stream_key: str = None, variables: Dict[str, Any] = None):
         """推送日志到redis stream
         Args:
             execution_id: 执行ID，用于标识执行记录
@@ -109,6 +110,11 @@ class RealtimeLogService:
             unified_message = message.copy()
             unified_message['received_at'] = timezone.now().timestamp() * 1000  # 毫秒时间戳
 
+            if variables:
+                vars_ctx = normalize_user_vars(variables)
+                if unified_message.get('content'):
+                    unified_message['content'] = mask_secrets(unified_message['content'], vars_ctx)
+
             # 仅写入统一日志流
             msg_id = self._xadd(log_stream, unified_message)
 
@@ -129,7 +135,7 @@ class RealtimeLogService:
         thread = threading.Thread(target=push_worker, daemon=True)
         thread.start()
 
-    def push_status(self, execution_id: str, status_data: Dict[str, Any], stream_key: str = None):
+    def push_status(self, execution_id: str, status_data: Dict[str, Any], stream_key: str = None, variables: Dict[str, Any] = None):
         """推送状态更新到redis stream（单一 key）"""
         key = stream_key or self.status_stream_key
         try:
@@ -156,6 +162,11 @@ class RealtimeLogService:
                 'failed_count': status_data.get('failed_count', status_data.get('failed_hosts', 0)),
                 'message': status_data.get('message', '')
             }
+
+            if variables:
+                vars_ctx = normalize_user_vars(variables)
+                if isinstance(message['message'], str):
+                    message['message'] = mask_secrets(message['message'], vars_ctx)
 
             # 推送到redis stream
             msg_id = self._xadd(key, message)

@@ -101,7 +101,7 @@
         v-model:visible="showHostSelector"
         :hosts="hosts"
         :groups="hostGroups"
-        :selected-hosts="selectedHostIdsForSelector"
+        :selected-hosts="selectedHostIdsForSelector as any"
         @confirm="handleHostSelectorConfirm"
       />
     </div>

@@ -273,6 +273,12 @@ export interface JobStep {
   // 文件传输相关字段
   remote_path?: string
   overwrite_policy?: string
+
+  // === 目标主机配置 ===
+  // 是否使用全局变量作为目标主机来源
+  use_global_variable?: boolean
+  // 使用的全局变量名称（必须是IP列表格式的变量）
+  target_global_variable?: string
 }
 
 // 执行计划类型

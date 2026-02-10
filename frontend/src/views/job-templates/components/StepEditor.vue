@@ -1,12 +1,10 @@
 <template>
-  <a-modal
+  <a-drawer
     v-model:visible="modalVisible"
     :title="isEdit ? '编辑步骤' : '添加步骤'"
-    width="1200px"
+    width="1050px"
+    unmount-on-close
     @cancel="handleCancel"
-    @ok="handleSubmit"
-    :confirm-loading="loading"
-    :ok-button-props="{ disabled: form.step_type === 'script' && hasValidationErrors }"
   >
     <a-form :model="form" layout="vertical">
       <!-- 基本信息 -->
@@ -84,6 +82,19 @@
             :readonly="false"
           />
         </a-form-item>
+
+        <!-- 变量使用指引 -->
+        <div class="var-hint">
+          <icon-info-circle class="var-hint-icon" />
+          <div class="var-hint-body">
+            <div class="var-hint-title">变量使用指引</div>
+            <div class="var-hint-text">
+              • 全局变量：在脚本/参数/文件路径中使用 <code v-pre>{{ GLOBAL.变量名 }}</code><br />
+              • 系统变量：如 <code v-pre>{{ SYS.JOB_ID }}</code>、<code v-pre>{{ SYS.STEP_ID }}</code>、<code v-pre>{{ SYS.EXECUTOR }}</code><br />
+              • 支持任意脚本类型与文件传输路径，未填写的必填变量会在执行前校验
+            </div>
+          </div>
+        </div>
 
         <!-- 位置参数 -->
         <a-form-item label="位置参数">
@@ -189,16 +200,22 @@
         </a-row>
         <a-row :gutter="16" style="margin-top:8px;">
           <a-col :span="24">
-            <a-form-item label="远程路径" required>
-              <a-input
-                v-model="remotePath"
-                placeholder="请输入远程文件路径，支持 [date]、[hostname] 等变量"
-              />
-              <!-- 路径变量预览 -->
-              <div v-if="remotePath && hasVariables(remotePath)" class="path-preview">
-                <div class="path-preview-header">
-                  <icon-eye />
-                  <span>变量预览</span>
+        <a-form-item label="远程路径" required>
+          <a-input
+            v-model="remotePath"
+            placeholder="请输入远程文件路径，支持 [date]、[hostname] 等变量"
+          />
+          <div class="var-hint compact">
+            <icon-info-circle class="var-hint-icon" />
+            <div class="var-hint-body">
+              路径可使用变量：<code v-pre>{{ GLOBAL.xxx }}</code>、<code v-pre>{{ SYS.JOB_ID }}</code>，以及内置 <code>[date]</code>、<code>[hostname]</code> 等占位符
+            </div>
+          </div>
+          <!-- 路径变量预览 -->
+          <div v-if="remotePath && hasVariables(remotePath)" class="path-preview">
+            <div class="path-preview-header">
+              <icon-eye />
+              <span>变量预览</span>
                 </div>
                 <div class="path-preview-content">{{ previewPath(remotePath) }}</div>
               </div>
@@ -233,158 +250,223 @@
       <!-- 目标主机选择 -->
       <a-divider>目标主机</a-divider>
 
-      <a-form-item label="目标主机">
-        <template #extra>
-          <a-button type="primary" size="small" @click="showHostSelector = true">
-            <template #icon>
-              <icon-computer />
-            </template>
-            选择主机
-          </a-button>
-        </template>
-
-        <!-- 选择摘要 -->
-        <div class="host-selection-summary">
-          <div v-if="selectedGroups.length === 0 && selectedHosts.length === 0" class="empty-selection">
-            <div class="empty-icon">
-              <icon-computer />
-            </div>
-            <div class="empty-text">请选择执行主机</div>
-            <div class="empty-desc">点击上方"选择主机"按钮选择目标主机或主机分组</div>
-          </div>
-          
-          <div v-else class="selection-content">
-            <!-- 所有目标主机（包含分组展开的主机和直接选择的主机） -->
-            <div class="selection-section">
-              <div class="section-title">
-                <icon-computer />
-                目标主机 ({{ allTargetHosts.length }})
-                <div class="section-actions">
-                  <a-button type="text" size="mini" @click="copyAllIPs">
-                    复制所有IP
-                  </a-button>
-                  <a-button type="text" size="mini" @click="copyOfflineIPs">
-                    复制异常IP
-                  </a-button>
-                  <a-button type="text" size="mini" @click="clearAllSelections">
-                    <template #icon>
-                      <icon-close />
-                    </template>
-                    清空
-                  </a-button>
-                  <a-button type="text" size="mini" @click="removeOfflineHosts">
-                    <template #icon>
-                      <icon-exclamation-circle />
-                    </template>
-                    清除异常
-                  </a-button>
-                </div>
-              </div>
-
-              <!-- 分组来源的主机 -->
-              <div v-if="groupHosts.length > 0" class="host-group-section">
-                <div class="group-header">
-                  <icon-folder />
-                  来自分组 ({{ groupHosts.length }} 台)
-                </div>
-                <div class="host-list">
-                  <div
-                    v-for="host in groupHosts"
-                    :key="`group-${host.id}`"
-                    class="host-item"
-                    :class="{ 'host-offline': host.status === 'offline' }"
-                  >
-                    <div class="host-info">
-                      <div class="host-name">{{ host.name }}</div>
-                      <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
-                      <div class="host-meta">
-                        <div class="host-os" :class="`os-${host.os_type}`">
-                          {{ getOSText(host.os_type) }}
-                        </div>
-                        <div class="host-status" :class="`status-${host.status}`">
-                          {{ getStatusText(host.status) }}
-                        </div>
-                        <div 
-                          v-if="host.agent_info" 
-                          class="host-agent" 
-                          :class="`agent-${host.agent_info.status}`"
-                        >
-                          <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
-                          {{ host.agent_info.status_display }}
-                        </div>
-                        <div v-else class="host-agent agent-none">
-                          Agent未安装
-                        </div>
-                      </div>
-                      <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
-                    </div>
-                    <a-button
-                      type="text"
-                      size="mini"
-                      @click="removeHostFromGroup(host.id)"
-                      class="remove-host-btn"
-                    >
-                      <template #icon>
-                        <icon-close />
-                      </template>
-                    </a-button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 直接选择的主机 -->
-              <div v-if="directHosts.length > 0" class="host-group-section">
-                <div class="group-header">
-                  <icon-computer />
-                  直接选择 ({{ directHosts.length }} 台)
-                </div>
-                <div class="host-list">
-                  <div
-                    v-for="host in directHosts"
-                    :key="`direct-${host.id}`"
-                    class="host-item"
-                    :class="{ 'host-offline': host.status === 'offline' }"
-                  >
-                    <div class="host-info">
-                      <div class="host-name">{{ host.name }}</div>
-                      <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
-                      <div class="host-meta">
-                        <div class="host-os" :class="`os-${host.os_type}`">
-                          {{ getOSText(host.os_type) }}
-                        </div>
-                        <div class="host-status" :class="`status-${host.status}`">
-                          {{ getStatusText(host.status) }}
-                        </div>
-                        <div 
-                          v-if="host.agent_info" 
-                          class="host-agent" 
-                          :class="`agent-${host.agent_info.status}`"
-                        >
-                          <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
-                          {{ host.agent_info.status_display }}
-                        </div>
-                        <div v-else class="host-agent agent-none">
-                          Agent未安装
-                        </div>
-                      </div>
-                    </div>
-                    <a-button
-                      type="text"
-                      size="mini"
-                      @click="removeDirectHost(host.id)"
-                      class="remove-host-btn"
-                    >
-                      <template #icon>
-                        <icon-close />
-                      </template>
-                    </a-button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <!-- 使用全局变量切换 -->
+      <a-form-item>
+        <div class="target-source-selector">
+          <a-radio-group v-model="targetSource" @change="handleTargetSourceChange">
+            <a-radio value="manual">
+              <template #radio="{ checked }">
+                <a-space align="center">
+                  <icon-computer :style="{ color: checked ? '#165DFF' : '#86909C' }" />
+                  <span>手动选择</span>
+                </a-space>
+              </template>
+            </a-radio>
+            <a-radio value="global">
+              <template #radio="{ checked }">
+                <a-space align="center">
+                  <icon-apps :style="{ color: checked ? '#165DFF' : '#86909C' }" />
+                  <span>使用全局变量</span>
+                </a-space>
+              </template>
+            </a-radio>
+          </a-radio-group>
         </div>
       </a-form-item>
+
+      <!-- 手动选择模式 -->
+      <template v-if="targetSource === 'manual'">
+        <a-form-item>
+          <template #extra>
+            <a-button type="primary" size="small" @click="showHostSelector = true">
+              <template #icon>
+                <icon-computer />
+              </template>
+              选择主机
+            </a-button>
+          </template>
+
+          <!-- 选择摘要 -->
+          <div class="host-selection-summary">
+            <div v-if="selectedGroups.length === 0 && selectedHosts.length === 0" class="empty-selection">
+              <div class="empty-icon">
+                <icon-computer />
+              </div>
+              <div class="empty-text">请选择执行主机</div>
+              <div class="empty-desc">点击上方"选择主机"按钮选择目标主机或主机分组</div>
+            </div>
+
+            <div v-else class="selection-content">
+              <!-- 所有目标主机（包含分组展开的主机和直接选择的主机） -->
+              <div class="selection-section">
+                <div class="section-title">
+                  <icon-computer />
+                  目标主机 ({{ allTargetHosts.length }})
+                  <div class="section-actions">
+                    <a-button type="text" size="mini" @click="copyAllIPs">
+                      复制所有IP
+                    </a-button>
+                    <a-button type="text" size="mini" @click="copyOfflineIPs">
+                      复制异常IP
+                    </a-button>
+                    <a-button type="text" size="mini" @click="clearAllSelections">
+                      <template #icon>
+                        <icon-close />
+                      </template>
+                      清空
+                    </a-button>
+                    <a-button type="text" size="mini" @click="removeOfflineHosts">
+                      <template #icon>
+                        <icon-exclamation-circle />
+                      </template>
+                      清除异常
+                    </a-button>
+                  </div>
+                </div>
+
+                <!-- 分组来源的主机 -->
+                <div v-if="groupHosts.length > 0" class="host-group-section">
+                  <div class="group-header">
+                    <icon-folder />
+                    来自分组 ({{ groupHosts.length }} 台)
+                  </div>
+                  <div class="host-list">
+                    <div
+                      v-for="host in groupHosts"
+                      :key="`group-${host.id}`"
+                      class="host-item"
+                      :class="{ 'host-offline': host.status === 'offline' }"
+                    >
+                      <div class="host-info">
+                        <div class="host-name">{{ host.name }}</div>
+                        <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
+                        <div class="host-meta">
+                          <div class="host-os" :class="`os-${host.os_type}`">
+                            {{ getOSText(host.os_type) }}
+                          </div>
+                          <div class="host-status" :class="`status-${host.status}`">
+                            {{ getStatusText(host.status) }}
+                          </div>
+                          <div
+                            v-if="host.agent_info"
+                            class="host-agent"
+                            :class="`agent-${host.agent_info.status}`"
+                          >
+                            <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                            {{ host.agent_info.status_display }}
+                          </div>
+                          <div v-else class="host-agent agent-none">
+                            Agent未安装
+                          </div>
+                        </div>
+                        <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
+                      </div>
+                      <a-button
+                        type="text"
+                        size="mini"
+                        @click="removeHostFromGroup(host.id)"
+                        class="remove-host-btn"
+                      >
+                        <template #icon>
+                          <icon-close />
+                        </template>
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 直接选择的主机 -->
+                <div v-if="directHosts.length > 0" class="host-group-section">
+                  <div class="group-header">
+                    <icon-computer />
+                    直接选择 ({{ directHosts.length }} 台)
+                  </div>
+                  <div class="host-list">
+                    <div
+                      v-for="host in directHosts"
+                      :key="`direct-${host.id}`"
+                      class="host-item"
+                      :class="{ 'host-offline': host.status === 'offline' }"
+                    >
+                      <div class="host-info">
+                        <div class="host-name">{{ host.name }}</div>
+                        <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
+                        <div class="host-meta">
+                          <div class="host-os" :class="`os-${host.os_type}`">
+                            {{ getOSText(host.os_type) }}
+                          </div>
+                          <div class="host-status" :class="`status-${host.status}`">
+                            {{ getStatusText(host.status) }}
+                          </div>
+                          <div
+                            v-if="host.agent_info"
+                            class="host-agent"
+                            :class="`agent-${host.agent_info.status}`"
+                          >
+                            <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                            {{ host.agent_info.status_display }}
+                          </div>
+                          <div v-else class="host-agent agent-none">
+                            Agent未安装
+                          </div>
+                        </div>
+                      </div>
+                      <a-button
+                        type="text"
+                        size="mini"
+                        @click="removeDirectHost(host.id)"
+                        class="remove-host-btn"
+                      >
+                        <template #icon>
+                          <icon-close />
+                        </template>
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </a-form-item>
+      </template>
+
+      <!-- 全局变量模式 -->
+      <template v-else>
+        <a-form-item label="选择全局变量" :rules="[{ required: true, message: '请选择全局变量' }]">
+          <a-select
+            v-model="selectedGlobalVariable"
+            placeholder="请选择IP列表类型的全局变量"
+            style="width: 100%"
+          >
+            <a-option
+              v-for="variable in hostListGlobalVariables"
+              :key="variable.key"
+              :value="variable.key"
+            >
+              <a-space>
+                <span>{{ variable.key }}</span>
+                <a-tag size="small" color="blue">IP列表</a-tag>
+              </a-space>
+            </a-option>
+          </a-select>
+          <div class="form-tip">
+            <icon-info-circle />
+            选择一个全局变量来作为目标主机来源，变量值应为逗号或换行符分隔的IP列表
+          </div>
+
+          <!-- 已选变量预览 -->
+          <div v-if="selectedGlobalVariable && getGlobalVariablePreview" class="global-variable-preview">
+            <div class="preview-header">
+              <icon-eye />
+              <span>变量预览</span>
+            </div>
+            <div class="preview-content">{{ getGlobalVariablePreview }}</div>
+            <div class="preview-count">
+              共 {{ getGlobalVariableHostCount }} 个IP
+            </div>
+          </div>
+        </a-form-item>
+      </template>
 
       <!-- 主机配置提示 -->
       <div v-if="hostWarnings.length > 0" class="host-warnings">
@@ -441,7 +523,20 @@
         </a-col>
       </a-row>
     </a-form>
-  </a-modal>
+    <template #footer>
+      <a-space>
+        <a-button @click="handleCancel">取消</a-button>
+        <a-button
+          type="primary"
+          :loading="loading"
+          :disabled="form.step_type === 'script' && hasValidationErrors"
+          @click="handleSubmit"
+        >
+          保存
+        </a-button>
+      </a-space>
+    </template>
+  </a-drawer>
 
   <!-- 脚本模板选择弹窗 -->
   <a-modal
@@ -480,16 +575,20 @@
     v-model:visible="showHostSelector"
     :hosts="hosts"
     :groups="hostGroups"
-    :selected-hosts="selectedHosts"
-    :selected-groups="selectedGroups"
+    :selected-hosts="selectedHosts as any"
+    :selected-groups="selectedGroups as any"
+    :host-pagination="hostPagination"
+    :enable-host-pagination="true"
     @confirm="handleHostSelection"
+    @host-page-change="handleHostPageChange"
+    @host-page-size-change="handleHostPageSizeChange"
   />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, nextTick, h } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
-import { IconComputer, IconFolder, IconEye, IconEyeInvisible, IconDelete, IconPlus } from '@arco-design/web-vue/es/icon'
+import { IconComputer, IconFolder, IconEye, IconEyeInvisible, IconDelete, IconPlus, IconInfoCircle, IconApps, IconEye as IconEyeIcon } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi, scriptTemplateApi } from '@/api/ops'
 import request from '@/utils/request'
 import { accountApi, type ServerAccount } from '@/api/account'
@@ -505,6 +604,7 @@ interface Props {
   visible: boolean
   step?: Partial<JobStep>
   isEdit?: boolean
+  globalParameters?: Record<string, any>  // 全局变量配置
 }
 
 interface Emits {
@@ -529,6 +629,18 @@ const hosts = ref<Host[]>([])
 const hostGroups = ref<HostGroup[]>([])
 const serverAccounts = ref<ServerAccount[]>([])
 const selectedAccountId = ref<number | undefined>()
+
+// 主机分页状态
+const hostPagination = ref({
+  current: 1,
+  pageSize: 50,
+  total: 0,
+  pageSizeOptions: ['20', '50', '100', '200']
+})
+
+// 目标主机来源选择
+const targetSource = ref<'manual' | 'global'>('manual')
+const selectedGlobalVariable = ref<string>('')
 
 // HostSelector相关
 const showHostSelector = ref(false)
@@ -598,21 +710,121 @@ const modalVisible = computed({
   set: (value) => emit('update:visible', value)
 })
 
+// 获取IP列表类型的全局变量
+const hostListGlobalVariables = computed(() => {
+  const globalParams = props.globalParameters || {}
+  if (!globalParams || Object.keys(globalParams).length === 0) return []
+
+  return Object.entries(globalParams)
+    .filter(([key, value]) => {
+      // 检查是否是IP列表类型的变量
+      if (typeof value === 'object' && value !== null) {
+        return value.type === 'host_list' || value.type === 'array'
+      }
+      // 如果是字符串，尝试解析
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value)
+          return parsed.type === 'host_list' || parsed.type === 'array'
+        } catch {
+          return false
+        }
+      }
+      return false
+    })
+    .map(([key, value]) => {
+      let displayValue = ''
+      if (typeof value === 'object') {
+        displayValue = value.value || ''
+      } else if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value)
+          displayValue = parsed.value || ''
+        } catch {
+          displayValue = value
+        }
+      }
+      return {
+        key,
+        value: displayValue,
+        type: typeof value === 'object' ? value.type : 'text'
+      }
+    })
+})
+
+// 获取已选全局变量的预览
+const getGlobalVariablePreview = computed(() => {
+  if (!selectedGlobalVariable.value || !props.globalParameters) return ''
+
+  const value = props.globalParameters[selectedGlobalVariable.value]
+  if (!value) return ''
+
+  if (typeof value === 'object' && value.value) {
+    return value.value
+  }
+  if (typeof value === 'string') {
+    // 尝试解析JSON
+    try {
+      const parsed = JSON.parse(value)
+      return parsed.value || value
+    } catch {
+      return value
+    }
+  }
+  return String(value)
+})
+
+// 获取已选全局变量的IP数量
+const getGlobalVariableHostCount = computed(() => {
+  const preview = getGlobalVariablePreview.value
+  if (!preview) return 0
+
+  // 解析IP列表
+  const ips = preview
+    .split(/[,，\n\r\s]+/)
+    .map(ip => ip.trim())
+    .filter(ip => ip.length > 0)
+
+  return ips.length
+})
+
 // 主机配置警告
 const hostWarnings = computed(() => {
   const warnings = []
 
-  // 检查是否没有选择主机
-  if ((!selectedHosts.value || selectedHosts.value.length === 0) &&
+  // 检查是否没有选择主机（手动模式）
+  if (targetSource.value === 'manual') {
+    if ((!selectedHosts.value || selectedHosts.value.length === 0) &&
       (!selectedGroups.value || selectedGroups.value.length === 0)) {
-    warnings.push({
-      type: 'warning',
-      message: '未选择目标主机，执行时将无法运行此步骤'
-    })
+      warnings.push({
+        type: 'warning',
+        message: '未选择目标主机，执行时将无法运行此步骤'
+      })
+    }
+  } else if (targetSource.value === 'global') {
+    // 全局变量模式下，检查是否选择了变量
+    if (!selectedGlobalVariable.value) {
+      warnings.push({
+        type: 'warning',
+        message: '请选择全局变量作为目标主机来源'
+      })
+    }
   }
 
   return warnings
 })
+
+// 处理目标主机来源变化
+const handleTargetSourceChange = () => {
+  if (targetSource.value === 'global') {
+    // 切换到全局变量模式时，清空手动选择
+    selectedHosts.value = []
+    selectedGroups.value = []
+  } else {
+    // 切换到手动选择模式时，清空全局变量选择
+    selectedGlobalVariable.value = ''
+  }
+}
 
 // 批量参数解析
 const parsedBulkParameters = computed(() => {
@@ -749,12 +961,16 @@ const getHostGroupNames = (hostId: number) => {
   return selectedGroupNames.join(', ')
 }
 
-// 获取主机列表
+// 获取主机列表（支持分页）
 const fetchHosts = async () => {
   try {
     hostLoading.value = true
-    const response = await hostApi.getHosts({ page_size: 20 })
+    const response = await hostApi.getHosts({
+      page: hostPagination.value.current,
+      page_size: hostPagination.value.pageSize
+    })
     hosts.value = response.results || []
+    hostPagination.value.total = response.total || 0
   } catch (error) {
     console.error('获取主机列表失败:', error)
   } finally {
@@ -762,11 +978,25 @@ const fetchHosts = async () => {
   }
 }
 
+// 处理主机分页变化
+const handleHostPageChange = (page: number, pageSize: number) => {
+  hostPagination.value.current = page
+  hostPagination.value.pageSize = pageSize
+  fetchHosts()
+}
+
+// 处理主机每页数量变化
+const handleHostPageSizeChange = (pageSize: number) => {
+  hostPagination.value.pageSize = pageSize
+  hostPagination.value.current = 1
+  fetchHosts()
+}
+
 // 获取主机分组列表
 const fetchHostGroups = async () => {
   try {
     groupLoading.value = true
-    const response = await hostGroupApi.getGroups({ page_size: 20 })
+    const response = await hostGroupApi.getGroups({ page_size: 500 })
     hostGroups.value = response.results || []
   } catch (error) {
     console.error('获取主机分组失败:', error)
@@ -809,6 +1039,15 @@ watch(
           typeof group === 'object' && group ? (group as any).id : group
         )
         selectedGroups.value = form.target_groups as number[]
+      }
+
+      // 处理全局变量目标主机配置
+      if (step.use_global_variable) {
+        targetSource.value = 'global'
+        selectedGlobalVariable.value = step.target_global_variable || ''
+      } else {
+        targetSource.value = 'manual'
+        selectedGlobalVariable.value = ''
       }
 
       // 解析脚本和文件传输配置
@@ -1204,8 +1443,18 @@ const handleSubmit = async () => {
       step_parameters: validPositionalArgs,  // 位置参数数组
       timeout: form.timeout || 300,
       ignore_error: form.ignore_error || false,
-      target_hosts: selectedHosts.value || [],
-      target_groups: selectedGroups.value || []
+      // 根据目标来源设置
+      use_global_variable: targetSource.value === 'global',
+      target_global_variable: targetSource.value === 'global' ? selectedGlobalVariable.value : undefined,
+      // 手动选择模式下的目标
+      target_hosts: targetSource.value === 'manual' ? (selectedHosts.value || []) : [],
+      target_groups: targetSource.value === 'manual' ? (selectedGroups.value || []) : []
+    }
+
+    // 验证：如果使用全局变量，必须选择变量
+    if (targetSource.value === 'global' && !selectedGlobalVariable.value) {
+      Message.error('请选择全局变量作为目标主机来源')
+      return
     }
 
     // 添加脚本或文件传输的专门字段
@@ -1608,6 +1857,54 @@ onMounted(() => {
   min-height: 120px;
 }
 
+/* 目标来源选择器样式 */
+.target-source-selector {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 16px;
+  background: var(--color-fill-1);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+/* 全局变量预览样式 */
+.global-variable-preview {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--color-fill-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+}
+
+.global-variable-preview .preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.global-variable-preview .preview-content {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--color-text-1);
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-2);
+  word-break: break-all;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.global-variable-preview .preview-count {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
 .empty-selection {
   display: flex;
   flex-direction: column;
@@ -1942,6 +2239,37 @@ onMounted(() => {
   background: var(--color-bg-1);
   border: none;
   padding: 4px;
+}
+
+.var-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background: var(--color-fill-1);
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+.var-hint.compact {
+  margin-top: 8px;
+}
+.var-hint-icon {
+  color: var(--color-primary);
+  margin-top: 2px;
+}
+.var-hint-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.var-hint-body code {
+  background: var(--color-fill-3);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
 }
 
 /* 路径变量预览样式 */

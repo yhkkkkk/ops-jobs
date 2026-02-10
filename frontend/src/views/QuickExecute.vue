@@ -365,6 +365,7 @@
               <icon-info-circle />
               位置参数将按顺序传递给脚本，在脚本中可以使用 $1, $2, $3... 访问
             </div>
+
           </a-form>
         </a-card>
       </a-col>
@@ -902,8 +903,8 @@
       v-model:visible="showHostSelector"
       :hosts="hosts"
       :groups="hostGroups"
-      :selected-hosts="selectedHosts"
-      :selected-groups="selectedGroups"
+      :selected-hosts="selectedHosts as any"
+      :selected-groups="selectedGroups as any"
       @confirm="handleHostSelection"
     />
   </div>
@@ -988,6 +989,10 @@ const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metada
 // 服务器上传相关
 const sourceServerHost = ref('')
 const sourceServerPath = ref('')
+
+// 变量相关
+const missingRequiredVarNames = ref<string[]>([])
+const globalVariables = ref<Record<string, any>>({})
 
 // 模板相关
 const scriptTemplates = ref<ScriptTemplate[]>([])
@@ -1558,6 +1563,10 @@ const handleFileTransfer = async () => {
     Message.warning('请填写远程路径')
     return
   }
+  if (missingRequiredVarNames.value.length > 0) {
+    Message.error(`必填变量未填写：${missingRequiredVarNames.value.join(', ')}`)
+    return
+  }
 
   // 检查源服务器和目标服务器的agent状态
   const agentStatusWarnings = checkFileTransferAgentStatus(fileArtifacts.value, allTargetHosts.value)
@@ -1591,6 +1600,7 @@ const handleFileTransfer = async () => {
       rolling_batch_delay: rollingBatchDelay.value,
       account_id: selectedAccountId.value,
       global_variables: {
+        ...globalVariables.value,
         execute_user: selectedAccount.value?.username || '',
         account_id: selectedAccountId.value,
       },

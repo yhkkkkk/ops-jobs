@@ -5,7 +5,9 @@ import logging
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from .models import ExecutionRecord, ExecutionStep
+from apps.job_templates.variable_service import build_and_render, mask_secrets, build_builtin_vars, normalize_user_vars, validate_required
 from utils.realtime_logs import realtime_log_service
+from ..system_config.models import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,22 @@ class ExecutionRecordService:
                 object_id = related_object.pk
             
             # 创建执行记录
+            # 在创建前，若传入变量上下文与payload则进行渲染
+            exec_params = execution_parameters or {}
+
+            if kwargs.get('variable_context') and kwargs.get('payload_for_render'):
+                try:
+                    merged_vars, rendered_payload = build_and_render(
+                        kwargs['variable_context'],
+                        exec_params.get('global_parameters') or {},
+                        kwargs['payload_for_render']
+                    )
+                    exec_params['global_parameters'] = {k: v.__dict__ for k, v in merged_vars.items()}
+                    exec_params['rendered_payload'] = rendered_payload
+                except Exception as e:
+                    logger.error(f"变量渲染失败: {e}")
+                    raise
+
             execution_record = ExecutionRecord.objects.create(
                 execution_type=execution_type,
                 name=name,
@@ -37,7 +55,7 @@ class ExecutionRecordService:
                 status='pending',
                 trigger_type=trigger_type,
                 executed_by=executed_by,
-                execution_parameters=execution_parameters or {},
+                execution_parameters=exec_params,
                 client_ip=client_ip,
                 user_agent=user_agent or ''  # 确保不为 None
             )
@@ -85,7 +103,7 @@ class ExecutionRecordService:
                 'failed_hosts': failed_hosts,
                 'running_hosts': max(total_hosts - success_hosts - failed_hosts, 0),
                 'message': f'执行状态: {execution_record.get_status_display()}'
-            })
+            }, variables=(execution_record.execution_parameters or {}).get('global_parameters'))
 
             # 如果执行完成，立即归档日志（同步执行，确保日志不丢失）
             if status in ['success', 'failed', 'cancelled', 'timeout']:
@@ -131,7 +149,7 @@ class ExecutionRecordService:
                 'failed_hosts': failed,
                 'running_hosts': running,
                 'message': '主机执行统计更新'
-            })
+            }, variables=(execution_record.execution_parameters or {}).get('global_parameters'))
             
         except Exception as e:
             logger.error(f"更新主机结果失败: {execution_record.execution_id} - {e}")
