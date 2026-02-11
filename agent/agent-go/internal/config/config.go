@@ -53,6 +53,20 @@ type ResourceLimitConfig struct {
 	BandwidthLimit int `mapstructure:"bandwidth_limit"` // 带宽限制（MB/s），0表示不限制
 }
 
+// ResourceAdaptiveConfig 资源自适应配置（CPU/Load 驱动的动态限速/并发）
+type ResourceAdaptiveConfig struct {
+	Enabled           bool    `mapstructure:"enabled"`             // 是否启用
+	SampleIntervalSec int     `mapstructure:"sample_interval_sec"` // 采样间隔（秒）
+	CPUHigh           float64 `mapstructure:"cpu_high"`            // CPU 高阈值（%）
+	CPULow            float64 `mapstructure:"cpu_low"`             // CPU 低阈值（%）
+	LoadHighFactor    float64 `mapstructure:"load_high_factor"`    // Load 高阈值系数（*CPU核数）
+	LoadLowFactor     float64 `mapstructure:"load_low_factor"`     // Load 低阈值系数（*CPU核数）
+	MinFactor         float64 `mapstructure:"min_factor"`          // 动态因子最小值
+	Step              float64 `mapstructure:"step"`                // 每次调整步长
+	CooldownSec       int     `mapstructure:"cooldown_sec"`        // 调整冷却时间（秒）
+	MinBandwidthMB    int     `mapstructure:"min_bandwidth_mb"`    // 限速下限（MB/s）
+}
+
 // Config 保存 agent 配置
 type Config struct {
 	Connection     ConnectionConfig     `mapstructure:"connection"`
@@ -60,6 +74,7 @@ type Config struct {
 	Logging        LoggingConfig        `mapstructure:"logging"`
 	Task           TaskConfig           `mapstructure:"task"`
 	ResourceLimit  ResourceLimitConfig  `mapstructure:"resource_limit"`
+	ResourceAdaptive ResourceAdaptiveConfig `mapstructure:"resource_adaptive"`
 }
 
 var (
@@ -217,6 +232,18 @@ func setDefaults(v *viper.Viper) {
 
 	// ResourceLimit 默认值
 	v.SetDefault("resource_limit.bandwidth_limit", 0) // 0表示不限制
+
+	// ResourceAdaptive 默认值
+	v.SetDefault("resource_adaptive.enabled", false)
+	v.SetDefault("resource_adaptive.sample_interval_sec", 5)
+	v.SetDefault("resource_adaptive.cpu_high", 75.0)
+	v.SetDefault("resource_adaptive.cpu_low", 55.0)
+	v.SetDefault("resource_adaptive.load_high_factor", 1.2)
+	v.SetDefault("resource_adaptive.load_low_factor", 0.8)
+	v.SetDefault("resource_adaptive.min_factor", 0.3)
+	v.SetDefault("resource_adaptive.step", 0.1)
+	v.SetDefault("resource_adaptive.cooldown_sec", 15)
+	v.SetDefault("resource_adaptive.min_bandwidth_mb", 1)
 }
 
 // setConfigDefaults 设置配置默认值
@@ -247,6 +274,34 @@ func setConfigDefaults(cfg *Config) {
 	}
 	if cfg.Logging.LogFlushInterval <= 0 {
 		cfg.Logging.LogFlushInterval = 200
+	}
+	// ResourceAdaptive 默认/校验
+	if cfg.ResourceAdaptive.SampleIntervalSec <= 0 {
+		cfg.ResourceAdaptive.SampleIntervalSec = 5
+	}
+	if cfg.ResourceAdaptive.CPUHigh <= 0 {
+		cfg.ResourceAdaptive.CPUHigh = 75.0
+	}
+	if cfg.ResourceAdaptive.CPULow <= 0 || cfg.ResourceAdaptive.CPULow >= cfg.ResourceAdaptive.CPUHigh {
+		cfg.ResourceAdaptive.CPULow = 55.0
+	}
+	if cfg.ResourceAdaptive.LoadHighFactor <= 0 {
+		cfg.ResourceAdaptive.LoadHighFactor = 1.2
+	}
+	if cfg.ResourceAdaptive.LoadLowFactor <= 0 || cfg.ResourceAdaptive.LoadLowFactor >= cfg.ResourceAdaptive.LoadHighFactor {
+		cfg.ResourceAdaptive.LoadLowFactor = 0.8
+	}
+	if cfg.ResourceAdaptive.MinFactor <= 0 || cfg.ResourceAdaptive.MinFactor > 1 {
+		cfg.ResourceAdaptive.MinFactor = 0.3
+	}
+	if cfg.ResourceAdaptive.Step <= 0 || cfg.ResourceAdaptive.Step > 1 {
+		cfg.ResourceAdaptive.Step = 0.1
+	}
+	if cfg.ResourceAdaptive.CooldownSec <= 0 {
+		cfg.ResourceAdaptive.CooldownSec = 15
+	}
+	if cfg.ResourceAdaptive.MinBandwidthMB <= 0 {
+		cfg.ResourceAdaptive.MinBandwidthMB = 1
 	}
 }
 

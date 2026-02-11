@@ -155,6 +155,21 @@ task:
   heartbeat_interval: 10   # 秒
   max_concurrent_tasks: 5
   max_execution_time_sec: 7200  # 秒
+# 资源限制（带宽）
+resource_limit:
+  bandwidth_limit: 0    # MB/s，0 表示不限制
+# 资源自适应（可选）
+resource_adaptive:
+  enabled: false
+  sample_interval_sec: 5
+  cpu_high: 75
+  cpu_low: 55
+  load_high_factor: 1.2
+  load_low_factor: 0.8
+  min_factor: 0.3
+  step: 0.1
+  cooldown_sec: 15
+  min_bandwidth_mb: 1
 # Outbox（离线/重连缓存）冲刷配置
 logging:
   log_batch_size: 200          # 每批冲刷条数（<=0 回退默认 200）
@@ -189,6 +204,16 @@ logging:
 | `AGENT_LOGGING_LOG_BATCH_SIZE`             | `logging.log_batch_size`         | `200`                          | Outbox 每批冲刷条数（<=0 回退默认 200）     |
 | `AGENT_LOGGING_LOG_FLUSH_INTERVAL`         | `logging.log_flush_interval`     | `200`                          | Outbox 冲刷间隔（毫秒，<=0 不启用周期冲刷） |
 | `AGENT_RESOURCE_LIMIT_BANDWIDTH_LIMIT`     | `resource_limit.bandwidth_limit` | `0`                            | 带宽限制（MB/s，0 表示不限制）              |
+| `AGENT_RESOURCE_ADAPTIVE_ENABLED`          | `resource_adaptive.enabled`      | `false`                        | 是否启用资源自适应                          |
+| `AGENT_RESOURCE_ADAPTIVE_SAMPLE_INTERVAL_SEC` | `resource_adaptive.sample_interval_sec` | `5`                    | 采样间隔（秒）                              |
+| `AGENT_RESOURCE_ADAPTIVE_CPU_HIGH`         | `resource_adaptive.cpu_high`     | `75`                           | CPU 高阈值（%）                             |
+| `AGENT_RESOURCE_ADAPTIVE_CPU_LOW`          | `resource_adaptive.cpu_low`      | `55`                           | CPU 低阈值（%）                             |
+| `AGENT_RESOURCE_ADAPTIVE_LOAD_HIGH_FACTOR` | `resource_adaptive.load_high_factor` | `1.2`                      | Load 高阈值系数（*CPU核数）                 |
+| `AGENT_RESOURCE_ADAPTIVE_LOAD_LOW_FACTOR`  | `resource_adaptive.load_low_factor` | `0.8`                       | Load 低阈值系数（*CPU核数）                 |
+| `AGENT_RESOURCE_ADAPTIVE_MIN_FACTOR`       | `resource_adaptive.min_factor`   | `0.3`                          | 动态因子最小值                              |
+| `AGENT_RESOURCE_ADAPTIVE_STEP`             | `resource_adaptive.step`         | `0.1`                          | 动态因子调整步长                            |
+| `AGENT_RESOURCE_ADAPTIVE_COOLDOWN_SEC`     | `resource_adaptive.cooldown_sec` | `15`                           | 调整冷却时间（秒）                          |
+| `AGENT_RESOURCE_ADAPTIVE_MIN_BANDWIDTH_MB` | `resource_adaptive.min_bandwidth_mb` | `1`                        | 限速下限（MB/s）                            |
 | `AGENT_CONFIG_FILE`                        | -                                  | `~/.ops-job-agent/config.yaml` | 配置文件路径                                |
 
 **注意**: 环境变量优先级高于配置文件。

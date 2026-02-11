@@ -86,3 +86,19 @@ task:
 resource_limit:
   # 带宽限制（MB/s，0表示不限制；任务不带带宽时套用该默认值）
   bandwidth_limit: 0
+
+###########################
+# 资源自适应配置（可选，CPU/Load 驱动动态限速/并发）
+###########################
+
+resource_adaptive:
+  enabled: false               # 是否启用
+  sample_interval_sec: 5       # 采样间隔（秒）
+  cpu_high: 75                 # CPU 高阈值（%）
+  cpu_low: 55                  # CPU 低阈值（%）
+  load_high_factor: 1.2        # Load 高阈值系数（*CPU核数）
+  load_low_factor: 0.8         # Load 低阈值系数（*CPU核数）
+  min_factor: 0.3              # 动态因子最小值
+  step: 0.1                    # 每次调整步长
+  cooldown_sec: 15             # 调整冷却时间（秒）
+  min_bandwidth_mb: 1          # 限速下限（MB/s）

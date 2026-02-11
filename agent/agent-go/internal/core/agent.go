@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,10 @@ type Agent struct {
 	heartbeatLock  sync.RWMutex
 	// outboxFlushBatch 控制 WS outbox 每次冲刷的批量大小
 	outboxFlushBatch int
+	// resource adaptive
+	adaptiveCtrl *adaptiveController
+	// runningCount 当前正在执行的任务数（用于动态并发）
+	runningCount int64
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -130,6 +135,8 @@ func NewAgent(cfg *config.Config) *Agent {
 		maxTaskTime:      maxTaskTime,
 	}
 
+	agent.adaptiveCtrl = newAdaptiveController(cfg.ResourceAdaptive)
+
 	// 存储配置化的 outbox 批量大小
 	agent.outboxFlushBatch = outboxBatch
 
@@ -165,6 +172,11 @@ func (a *Agent) Start() error {
 	// 启动心跳循环
 	a.wg.Add(1)
 	go a.heartbeatLoop()
+
+	// 启动资源自适应监控
+	if a.adaptiveCtrl != nil {
+		a.adaptiveCtrl.Start(a.ctx)
+	}
 
 	// Agent-Server 模式：通过 WebSocket 与 Agent-Server 建立长链接
 	if err := a.ensureWebSocketConnection(); err != nil {
@@ -415,8 +427,15 @@ func (a *Agent) executeTask(task *TaskSpec) {
 		a.cleanupTaskLock(task.ID) // 清理锁
 	}()
 
+	// 动态并发门控（基于 CPU/Load）
+	if err := a.acquireDynamicSlot(); err != nil {
+		logger.GetLogger().WithError(err).Error("acquire dynamic slot failed")
+		return
+	}
+
 	// 获取信号量（控制并发）
 	if err := a.taskSemaphore.Acquire(a.ctx, 1); err != nil {
+		a.releaseDynamicSlot()
 		logger.GetLogger().WithError(err).Error("acquire semaphore failed")
 		return
 	}
@@ -426,6 +445,7 @@ func (a *Agent) executeTask(task *TaskSpec) {
 		if r := recover(); r != nil {
 			logger.GetLogger().WithField("task_id", task.ID).WithField("panic", r).Error("task execution panic")
 		}
+		a.releaseDynamicSlot()
 		a.taskSemaphore.Release(1)
 	}()
 
@@ -640,10 +660,7 @@ func (a *Agent) executeTaskByType(task *TaskSpec, logCallback func(string)) (*ap
 	var err error
 	switch task.Type {
 	case constants.TaskTypeFileTransfer:
-		// 如果任务未显式配置带宽限制且全局配置了带宽限制，则套用全局值（单位：MB/s）
-		if task.FileTransfer != nil && task.FileTransfer.BandwidthLimit <= 0 && a.cfg.ResourceLimit.BandwidthLimit > 0 {
-			task.FileTransfer.BandwidthLimit = a.cfg.ResourceLimit.BandwidthLimit
-		}
+		a.applyAdaptiveBandwidthLimit(task)
 		result, err = a.fileExecutor.ExecuteTransfer(taskCtx, task, logCallback)
 	case constants.TaskTypeScript:
 		result, err = a.scriptExecutor.ExecuteScript(a.ctx, task, logCallback)
@@ -708,6 +725,91 @@ func (a *Agent) reportTaskResult(result *api.TaskResult) {
 			Result:    result,
 		})
 	}
+}
+
+func (a *Agent) getAdaptiveFactor() float64 {
+	if a.adaptiveCtrl == nil {
+		return 1.0
+	}
+	f := a.adaptiveCtrl.Factor()
+	if f <= 0 || f > 1.0 {
+		return 1.0
+	}
+	return f
+}
+
+func (a *Agent) getDynamicMaxConcurrent() int {
+	maxConcurrent := a.cfg.Task.MaxConcurrentTasks
+	if maxConcurrent <= 0 {
+		maxConcurrent = constants.DefaultMaxConcurrentTasks
+	}
+	factor := a.getAdaptiveFactor()
+	if factor <= 0 || factor > 1.0 {
+		factor = 1.0
+	}
+	dyn := int(math.Floor(float64(maxConcurrent) * factor))
+	if dyn < 1 {
+		dyn = 1
+	}
+	if dyn > maxConcurrent {
+		dyn = maxConcurrent
+	}
+	return dyn
+}
+
+func (a *Agent) acquireDynamicSlot() error {
+	for {
+		select {
+		case <-a.ctx.Done():
+			return a.ctx.Err()
+		default:
+		}
+		dynMax := a.getDynamicMaxConcurrent()
+		running := atomic.LoadInt64(&a.runningCount)
+		if running >= int64(dynMax) {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if atomic.CompareAndSwapInt64(&a.runningCount, running, running+1) {
+			return nil
+		}
+	}
+}
+
+func (a *Agent) releaseDynamicSlot() {
+	atomic.AddInt64(&a.runningCount, -1)
+}
+
+func (a *Agent) applyAdaptiveBandwidthLimit(task *TaskSpec) {
+	if task == nil || task.FileTransfer == nil {
+		return
+	}
+
+	base := task.FileTransfer.BandwidthLimit
+	if base <= 0 && a.cfg.ResourceLimit.BandwidthLimit > 0 {
+		base = a.cfg.ResourceLimit.BandwidthLimit
+	}
+	if base <= 0 {
+		return
+	}
+
+	factor := a.getAdaptiveFactor()
+	if factor <= 0 || factor > 1.0 {
+		factor = 1.0
+	}
+	effective := int(math.Floor(float64(base) * factor))
+	minBW := a.cfg.ResourceAdaptive.MinBandwidthMB
+	if minBW <= 0 {
+		minBW = 1
+	}
+	if effective < minBW {
+		effective = minBW
+	}
+	if effective > base {
+		effective = base
+	}
+
+	task.FileTransfer.BandwidthLimit = effective
 }
 
 // isTaskCompleted 判断任务是否在最近已完成集合中（简易LRU）
@@ -1050,5 +1152,10 @@ func (a *Agent) onConfigChanged(newCfg *config.Config) {
 	// 动态调整日志级别
 	if newCfg.Logging.LogLevel != "" {
 		logger.SetLevel(newCfg.Logging.LogLevel)
+	}
+
+	// 动态更新资源自适应配置
+	if a.adaptiveCtrl != nil {
+		a.adaptiveCtrl.UpdateConfig(newCfg.ResourceAdaptive)
 	}
 }
