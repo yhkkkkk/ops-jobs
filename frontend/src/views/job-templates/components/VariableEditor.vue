@@ -35,6 +35,7 @@
                   <span class="host-var-count">{{ item.hostList?.length || 0 }} 台主机</span>
                   <div v-if="item.hostList?.length" class="host-var-actions">
                     <a-button type="text" size="mini" @click="copyHostIps(item)">复制IP</a-button>
+                    <a-button type="text" size="mini" @click="fillAllHosts(item)">填充全部主机</a-button>
                     <a-button type="text" size="mini" @click="clearHostList(item)">清空</a-button>
                   </div>
                 </div>
@@ -120,9 +121,13 @@
       :groups="hostGroups"
       :selected-hosts="(currentHostVar?.hostList || []) as any"
       :selected-groups="[]"
+      :host-pagination="hostPagination"
+      :enable-host-pagination="false"
       show-preview
       show-copy
       @confirm="handleHostSelectConfirm"
+      @host-page-change="handleHostPageChange"
+      @host-page-size-change="handleHostPageSizeChange"
     />
   </div>
 </template>
@@ -181,9 +186,16 @@ let internalUpdate = false
 const hostSelectorVisible = ref(false)
 const hosts = ref<any[]>([])
 const hostGroups = ref<any[]>([])
+const hostPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  pageSizeOptions: ['10']
+})
 const currentHostVar = ref<VariableItem | null>(null)
 // 使用 Map 追踪当前编辑的变量，key 是变量的 name，value 是变量对象
 const editingVarMap = new Map<string, VariableItem>()
+const allHostsLoaded = ref(false)
 
 const displaySystemVars = computed<SystemVar[]>(() => {
   if (props.systemVars && props.systemVars.length) return props.systemVars
@@ -248,15 +260,53 @@ watch(
   { immediate: true }
 )
 
-const ensureHostsLoaded = async () => {
-  if (hosts.value.length === 0) {
-    const resp = await hostApi.getHosts({ page_size: 200 })
-    hosts.value = resp.results || []
+const fetchAllHosts = async (force = false) => {
+  if (allHostsLoaded.value && !force) return
+  hostPagination.value.pageSize = 10
+  const pageSize = 500
+  const all: any[] = []
+  let page = 1
+  let total = 0
+
+  while (true) {
+    const resp = await hostApi.getHosts({ page, page_size: pageSize })
+    const results = resp.results || []
+    if (page === 1) {
+      total = resp.total || 0
+    }
+    all.push(...results)
+    if (all.length >= total || results.length === 0) {
+      break
+    }
+    page += 1
+  }
+
+  hosts.value = all
+  hostPagination.value.total = total || all.length
+  allHostsLoaded.value = true
+}
+
+const ensureHostsLoaded = async (force = false) => {
+  if (!allHostsLoaded.value || force) {
+    await fetchAllHosts(force)
   }
   if (hostGroups.value.length === 0) {
     const resp = await hostGroupApi.getGroups({ page_size: 200 })
     hostGroups.value = resp.results || []
   }
+}
+
+const fetchHosts = async () => {
+  await fetchAllHosts()
+}
+
+const handleHostPageChange = (page: number) => {
+  hostPagination.value.current = page
+}
+
+const handleHostPageSizeChange = (pageSize: number) => {
+  hostPagination.value.pageSize = 10
+  hostPagination.value.current = 1
 }
 
 onMounted(() => {
@@ -351,8 +401,8 @@ const copyHostIps = async (item: VariableItem) => {
   }
 }
 
-const openHostSelector = (item: VariableItem) => {
-  void ensureHostsLoaded()
+const openHostSelector = async (item: VariableItem) => {
+  await ensureHostsLoaded(true)
   // 确保变量名称存在
   const varName = (item.name || '').trim()
   if (!varName) {
@@ -363,6 +413,16 @@ const openHostSelector = (item: VariableItem) => {
   editingVarMap.set(varName, item)
   currentHostVar.value = item
   hostSelectorVisible.value = true
+}
+
+const fillAllHosts = async (item: VariableItem) => {
+  await ensureHostsLoaded(true)
+  if (!hosts.value.length) {
+    Message.info('暂无主机可填充')
+    return
+  }
+  item.hostList = hosts.value.map((host: any) => host.id)
+  emitChange()
 }
 
 const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) => {

@@ -656,6 +656,45 @@ class AgentExecutionService:
             overall_success = True
             all_results = []
 
+            def collect_step_host_ids(step_data: Dict[str, Any]) -> set:
+                host_ids = set()
+                # Direct hosts
+                for host in step_data.get('target_hosts') or []:
+                    if isinstance(host, dict):
+                        host_id = host.get('id') or host.get('host_id')
+                    else:
+                        host_id = host
+                    if host_id:
+                        host_ids.add(host_id)
+
+                # Groups -> expand to hosts when available; fallback to DB lookup by group id
+                group_ids_without_hosts = []
+                for group in step_data.get('target_groups') or []:
+                    if isinstance(group, dict):
+                        group_hosts = group.get('hosts') or []
+                        if group_hosts:
+                            for h in group_hosts:
+                                if isinstance(h, dict):
+                                    h_id = h.get('id') or h.get('host_id')
+                                else:
+                                    h_id = h
+                                if h_id:
+                                    host_ids.add(h_id)
+                        else:
+                            group_id = group.get('id')
+                            if group_id:
+                                group_ids_without_hosts.append(group_id)
+                    else:
+                        # group might be an id
+                        group_ids_without_hosts.append(group)
+
+                if group_ids_without_hosts:
+                    from apps.hosts.models import HostGroup
+                    for group in HostGroup.objects.filter(id__in=group_ids_without_hosts).prefetch_related('host_set'):
+                        host_ids.update(group.host_set.values_list('id', flat=True))
+
+                return host_ids
+
             # 按步骤顺序执行
             for step_index, step_data in enumerate(plan_steps):
                 step_order = step_data.get('order', step_index + 1)
@@ -685,16 +724,7 @@ class AgentExecutionService:
                     # 脚本执行步骤
                     # 获取步骤的目标主机
                     step_target_hosts = []
-                    step_host_ids = []
-                    
-                    # 从步骤数据中获取目标主机
-                    if step_data.get('target_hosts'):
-                        step_host_ids = [h.get('id') for h in step_data['target_hosts']]
-                    elif step_data.get('target_groups'):
-                        # 从分组中获取主机
-                        for group in step_data['target_groups']:
-                            if group.get('hosts'):
-                                step_host_ids.extend([h.get('id') for h in group['hosts']])
+                    step_host_ids = collect_step_host_ids(step_data)
                     
                     # 如果没有指定步骤主机，使用所有目标主机
                     if not step_host_ids:
@@ -769,16 +799,7 @@ class AgentExecutionService:
                     # 文件传输步骤
                     # 获取步骤的目标主机
                     step_target_hosts = []
-                    step_host_ids = []
-                    
-                    # 从步骤数据中获取目标主机
-                    if step_data.get('target_hosts'):
-                        step_host_ids = [h.get('id') for h in step_data['target_hosts']]
-                    elif step_data.get('target_groups'):
-                        # 从分组中获取主机
-                        for group in step_data['target_groups']:
-                            if group.get('hosts'):
-                                step_host_ids.extend([h.get('id') for h in group['hosts']])
+                    step_host_ids = collect_step_host_ids(step_data)
                     
                     # 如果没有指定步骤主机，使用所有目标主机
                     if not step_host_ids:

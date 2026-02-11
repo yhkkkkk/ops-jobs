@@ -115,6 +115,7 @@
                   :pagination="hostPaginationConfig"
                   v-model:selectedKeys="selectedHostIds"
                   :row-selection="{ type: 'checkbox' }"
+                  @selection-change="handleSelectionChange"
                   @row-click="handleHostsTableRowClick"
                   @page-change="handleHostPageChange"
                   @page-size-change="handleHostPageSizeChange"
@@ -127,7 +128,7 @@
                       <template #cell="{ record }">
                         <div class="host-name-cell">
                           <div class="host-name">{{ record.name }}</div>
-                          <div class="host-ip">{{ record.ip_address }}</div>
+                          <div class="host-ip">{{ getHostDisplayIp(record) }}</div>
                         </div>
                       </template>
                     </a-table-column>
@@ -339,7 +340,7 @@
                       <template #cell="{ record }">
                         <div class="host-name-cell">
                           <div class="host-name">{{ record.name }}</div>
-                          <div class="host-ip">{{ record.ip_address }}</div>
+                          <div class="host-ip">{{ getHostDisplayIp(record) }}</div>
                         </div>
                       </template>
                     </a-table-column>
@@ -424,7 +425,7 @@
                 :key="host.id"
                 class="preview-ip"
               >
-                <span class="preview-ip-text">{{ host.ip_address || '' }}</span>
+                <span class="preview-ip-text">{{ getHostDisplayIp(host) }}</span>
                 <span class="preview-ip-actions">
                   <a-button size="mini" type="text" @click.stop="copySingleIp(host)">复制</a-button>
                   <a-button size="mini" type="text" status="danger" @click.stop="removeResolvedHost(host.id)">删除</a-button>
@@ -448,7 +449,7 @@
                 :key="host.id"
                 class="preview-ip"
               >
-                <span class="preview-ip-text">{{ host.ip_address || '' }}</span>
+                <span class="preview-ip-text">{{ getHostDisplayIp(host) }}</span>
                 <span class="preview-ip-actions">
                   <a-button size="mini" type="text" @click.stop="copySingleIp(host)">复制</a-button>
                   <a-button size="mini" type="text" status="danger" @click.stop="removeSingleHost(host.id)">删除</a-button>
@@ -508,15 +509,20 @@ const props = defineProps({
     type: Object,
     default: () => ({
       current: 1,
-      pageSize: 50,
+      pageSize: 10,
       total: 0,
-      pageSizeOptions: ['20', '50', '100', '200']
+      pageSizeOptions: ['10', '20', '50', '100', '200']
     })
   },
   // 是否启用主机分页
   enableHostPagination: {
     type: Boolean,
     default: false
+  },
+  // 可选：获取全部主机（用于跨页全选/仅在线等操作）
+  fetchAllHosts: {
+    type: Function as PropType<() => Promise<Host[]>>,
+    default: undefined
   }
 })
 
@@ -538,6 +544,7 @@ const expandedKeys = ref<number[]>([])
 // 内部选择状态 - 用于静态选择
 const internalSelectedHostIds = ref<number[]>([])
 const selectedGroupIds = ref<number[]>([])
+const selectedHostMap = ref<Record<number, Host>>({})
 
 // 动态选择状态
 const dynamicSelectedGroupIds = ref<number[]>([])
@@ -547,10 +554,25 @@ const selectionMode = ref('static')  // 'static' | 'dynamic' | 'resolve'
 // 同步外部selectedHosts到内部状态
 watch(() => props.selectedHosts, (newVal) => {
   if (Array.isArray(newVal)) {
-    internalSelectedHostIds.value = newVal.map((h: any) => {
+    const normalizedIds = newVal.map((h: any) => {
       if (typeof h === 'object') return h.id
       return h
     }).filter((id: any) => typeof id === 'number')
+    internalSelectedHostIds.value = normalizedIds
+
+    const nextMap: Record<number, Host> = { ...selectedHostMap.value }
+    newVal.forEach((h: any) => {
+      if (h && typeof h === 'object' && typeof h.id === 'number') {
+        nextMap[h.id] = h
+      }
+    })
+    Object.keys(nextMap).forEach((id) => {
+      const numId = Number(id)
+      if (!normalizedIds.includes(numId)) {
+        delete nextMap[numId]
+      }
+    })
+    selectedHostMap.value = nextMap
   }
 }, { immediate: true, deep: true })
 
@@ -564,6 +586,28 @@ watch(() => props.selectedGroups, (newVal) => {
   }
 }, { immediate: true, deep: true })
 
+const syncSelectedHostMap = () => {
+  const selectedIds = new Set(internalSelectedHostIds.value)
+  const nextMap: Record<number, Host> = {}
+
+  Object.entries(selectedHostMap.value).forEach(([id, host]) => {
+    const numId = Number(id)
+    if (selectedIds.has(numId)) {
+      nextMap[numId] = host
+    }
+  })
+
+  ;(props.hosts || []).forEach((host: Host) => {
+    if (selectedIds.has(host.id)) {
+      nextMap[host.id] = host
+    }
+  })
+
+  selectedHostMap.value = nextMap
+}
+
+watch([internalSelectedHostIds, () => props.hosts], syncSelectedHostMap, { immediate: true, deep: true })
+
 // 主机解析相关
 const resolveInputText = ref('') // 主机解析输入
 const resolvedHosts = ref<any[]>([]) // 解析结果列表
@@ -575,19 +619,24 @@ const hostPaginationConfig = computed(() => {
   if (!props.enableHostPagination) {
     return { pageSize: 10, showSizeChanger: true, showQuickJumper: true }
   }
+  const pageSize = 10
   return {
-    current: props.hostPagination.current,
-    pageSize: props.hostPagination.pageSize,
-    total: props.hostPagination.total,
-    pageSizeOptions: props.hostPagination.pageSizeOptions || ['20', '50', '100', '200'],
-    showSizeChanger: true,
+    current: props.hostPagination.current || 1,
+    pageSize,
+    total: props.hostPagination.total || 0,
+    pageSizeOptions: ['10'],
+    showSizeChanger: false,
     showQuickJumper: true
   }
 })
 
+const handleSelectionChange = (keys: any[]) => {
+  selectedHostIds.value = Array.isArray(keys) ? keys : []
+}
+
 // 处理主机分页变化
-const handleHostPageChange = (page: number) => {
-  emit('hostPageChange', page)
+const handleHostPageChange = (page: number, pageSize?: number) => {
+  emit('hostPageChange', page, pageSize ?? hostPaginationConfig.value.pageSize)
 }
 
 // 处理主机每页数量变化
@@ -636,8 +685,8 @@ const treeData = computed(() => {
     })
 })
 
-const filteredHosts = computed<Host[]>(() => {
-  if (!hostSearchText.value) return props.hosts as Host[] || []
+const filterHosts = (list: Host[]) => {
+  if (!hostSearchText.value) return list
 
   // 解析搜索关键词，支持竖线、逗号、空格分隔的多IP搜索
   const searchTerms = hostSearchText.value
@@ -645,9 +694,9 @@ const filteredHosts = computed<Host[]>(() => {
     .map(term => term.trim())
     .filter(term => term.length > 0)
 
-  if (searchTerms.length === 0) return props.hosts as Host[] || []
+  if (searchTerms.length === 0) return list
 
-  return ((props.hosts as Host[]) || []).filter((host: Host) => {
+  return list.filter((host: Host) => {
     const hostIp = host.ip_address || ''
     const hostName = host.name?.toLowerCase() || ''
 
@@ -657,15 +706,26 @@ const filteredHosts = computed<Host[]>(() => {
       return hostName.includes(termLower) || hostIp.includes(term)
     })
   })
+}
+
+const filteredHosts = computed<Host[]>(() => {
+  return filterHosts((props.hosts as Host[]) || [])
 })
 
 // 使用内部状态的选择主机ID
-const selectedHostIds = computed(() => internalSelectedHostIds.value)
+const selectedHostIds = computed({
+  get: () => internalSelectedHostIds.value,
+  set: (value: any) => {
+    internalSelectedHostIds.value = Array.isArray(value)
+      ? value.map((id: any) => Number(id)).filter((id: number) => !Number.isNaN(id))
+      : []
+  }
+})
 
 // 选择的主机对象列表
 const selectedHostObjects = computed<{ id: number; ip_address?: string; name?: string }[]>(() => {
-  return internalSelectedHostIds.value.map(id => {
-    return (props.hosts || []).find((h: Host) => h.id === id)
+  return internalSelectedHostIds.value.map((id) => {
+    return selectedHostMap.value[id]
   }).filter((h: Host | undefined): h is Host => !!h)
 })
 
@@ -737,6 +797,35 @@ const getGroupOfflineCount = (groupId: number) => {
     h.groups_info?.some((g) => g.id === groupId)
   )
   return hosts.filter((h: any) => h.status === 'offline').length
+}
+
+const formatHostIp = (ip?: string, port?: number) => {
+  if (!ip) return ''
+
+  if (typeof port === 'number' && ip.endsWith(`:${port}`)) {
+    return ip.slice(0, -(`:${port}`).length)
+  }
+
+  if (ip.startsWith('[')) {
+    const closeIndex = ip.indexOf(']')
+    if (closeIndex > 0) {
+      return ip.slice(1, closeIndex)
+    }
+  }
+
+  const colonCount = (ip.match(/:/g) || []).length
+  if (colonCount === 1) {
+    const [hostPart, maybePort] = ip.split(':')
+    if (/^\d+$/.test(maybePort || '')) {
+      return hostPart
+    }
+  }
+
+  return ip
+}
+
+const getHostDisplayIp = (host: any) => {
+  return formatHostIp(host?.ip_address, host?.port)
 }
 
 // 获取Agent状态颜色
@@ -882,39 +971,49 @@ const handleDynamicGroupSearch = () => {
   // 搜索逻辑在computed中处理
 }
 
-// 全选
-const selectAllHosts = () => {
-  const allIds = filteredHosts.value.map((h: any) => h.id)
-  // 添加所有不在已选中的ID
-  allIds.forEach(id => {
-    if (!internalSelectedHostIds.value.includes(id)) {
-      internalSelectedHostIds.value.push(id)
+const resolveActionHosts = async () => {
+  if (props.fetchAllHosts) {
+    const allHosts = await props.fetchAllHosts()
+    if (Array.isArray(allHosts) && allHosts.length > 0) {
+      return filterHosts(allHosts)
     }
+  }
+  return filteredHosts.value
+}
+
+const upsertSelectedHosts = (hostsToSelect: Host[]) => {
+  const selectedSet = new Set(internalSelectedHostIds.value)
+  const nextMap: Record<number, Host> = { ...selectedHostMap.value }
+
+  hostsToSelect.forEach((host: Host) => {
+    if (!selectedSet.has(host.id)) {
+      internalSelectedHostIds.value.push(host.id)
+      selectedSet.add(host.id)
+    }
+    nextMap[host.id] = host
   })
+
+  selectedHostMap.value = nextMap
+}
+
+// 全选
+const selectAllHosts = async () => {
+  const allHosts = await resolveActionHosts()
+  upsertSelectedHosts(allHosts)
 }
 
 // 仅选择在线主机
-const selectOnlineHosts = () => {
-  const onlineIds = filteredHosts.value
-    .filter((h: any) => h.status === 'online')
-    .map((h: any) => h.id)
-  onlineIds.forEach(id => {
-    if (!internalSelectedHostIds.value.includes(id)) {
-      internalSelectedHostIds.value.push(id)
-    }
-  })
+const selectOnlineHosts = async () => {
+  const hostList = await resolveActionHosts()
+  const onlineHosts = hostList.filter((h: any) => h.status === 'online')
+  upsertSelectedHosts(onlineHosts)
 }
 
 // 仅选择Agent在线主机
-const selectAgentOnlineHosts = () => {
-  const agentOnlineIds = filteredHosts.value
-    .filter((h: any) => h.agent_info?.status === 'online')
-    .map((h: any) => h.id)
-  agentOnlineIds.forEach(id => {
-    if (!internalSelectedHostIds.value.includes(id)) {
-      internalSelectedHostIds.value.push(id)
-    }
-  })
+const selectAgentOnlineHosts = async () => {
+  const hostList = await resolveActionHosts()
+  const agentOnlineHosts = hostList.filter((h: any) => h.agent_info?.status === 'online')
+  upsertSelectedHosts(agentOnlineHosts)
 }
 
 // 清空主机选择
@@ -954,12 +1053,13 @@ const clearDynamicGroups = () => {
 
 // 复制单个IP（不包含端口）
 const copySingleIp = (host: any) => {
-  if (host.ip_address) {
-    // 只取IP部分，不包含端口
-    const ip = host.ip_address.split(':')[0]
-    navigator.clipboard.writeText(ip)
-    Message.success(`已复制IP: ${ip}`)
+  const ip = formatHostIp(host?.ip_address, host?.port)
+  if (!ip) {
+    Message.warning('没有可复制的IP地址')
+    return
   }
+  navigator.clipboard.writeText(ip)
+  Message.success(`已复制IP: ${ip}`)
 }
 
 // 复制所有选中的IP（不包含端口）
@@ -968,8 +1068,8 @@ const copySelectedIps = () => {
 
   // 添加表格选择的主机IP（不包含端口）
   selectedHostObjects.value.forEach((h: any) => {
-    if (h.ip_address) {
-      const ip = h.ip_address.split(':')[0]
+    const ip = formatHostIp(h?.ip_address, h?.port)
+    if (ip) {
       if (!ips.includes(ip)) {
         ips.push(ip)
       }
@@ -978,8 +1078,8 @@ const copySelectedIps = () => {
 
   // 添加解析匹配的主机IP（不包含端口）
   resolvedMatchedHosts.value.forEach((h: any) => {
-    if (h.ip_address) {
-      const ip = h.ip_address.split(':')[0]
+    const ip = formatHostIp(h?.ip_address, h?.port)
+    if (ip) {
       if (!ips.includes(ip)) {
         ips.push(ip)
       }
@@ -1075,8 +1175,7 @@ const handleConfirm = () => {
   const allSelectedHosts: any[] = []
 
   // 添加表格选择的主机
-  internalSelectedHostIds.value.forEach(id => {
-    const host = (props.hosts || []).find((h: any) => h.id === id)
+  selectedHostObjects.value.forEach((host: any) => {
     if (host) {
       allSelectedHosts.push(host)
     }

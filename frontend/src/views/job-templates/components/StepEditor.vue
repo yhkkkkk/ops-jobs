@@ -287,7 +287,8 @@
           </template>
 
           <!-- 选择摘要 -->
-          <div class="host-selection-summary">
+          <div class="target-host-preview">
+            <div class="host-selection-summary">
             <div v-if="selectedGroups.length === 0 && selectedHosts.length === 0" class="empty-selection">
               <div class="empty-icon">
                 <icon-computer />
@@ -339,7 +340,7 @@
                     >
                       <div class="host-info">
                         <div class="host-name">{{ host.name }}</div>
-                        <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
+                        <div class="host-ip">{{ getHostDisplayIp(host) }}</div>
                         <div class="host-meta">
                           <div class="host-os" :class="`os-${host.os_type}`">
                             {{ getOSText(host.os_type) }}
@@ -390,7 +391,7 @@
                     >
                       <div class="host-info">
                         <div class="host-name">{{ host.name }}</div>
-                        <div class="host-ip">{{ host.ip_address }}:{{ host.port }}</div>
+                        <div class="host-ip">{{ getHostDisplayIp(host) }}</div>
                         <div class="host-meta">
                           <div class="host-os" :class="`os-${host.os_type}`">
                             {{ getOSText(host.os_type) }}
@@ -427,6 +428,7 @@
               </div>
             </div>
           </div>
+          </div>
         </a-form-item>
       </template>
 
@@ -453,16 +455,89 @@
             <icon-info-circle />
             选择一个全局变量来作为目标主机来源，变量值应为逗号或换行符分隔的IP列表
           </div>
+        </a-form-item>
 
-          <!-- 已选变量预览 -->
-          <div v-if="selectedGlobalVariable && getGlobalVariablePreview" class="global-variable-preview">
-            <div class="preview-header">
-              <icon-eye />
-              <span>变量预览</span>
-            </div>
-            <div class="preview-content">{{ getGlobalVariablePreview }}</div>
-            <div class="preview-count">
-              共 {{ getGlobalVariableHostCount }} 个IP
+        <a-form-item>
+          <div class="target-host-preview">
+            <!-- 已选变量预览（与手动选择完全一致的样式布局） -->
+            <div v-if="selectedGlobalVariable && globalVariableHosts.length > 0" class="host-selection-summary">
+              <div class="selection-content">
+                <div class="selection-section">
+                  <div class="section-title">
+                    <icon-computer />
+                    目标主机 ({{ globalVariableHosts.length }})
+                    <div class="section-actions">
+                      <a-button type="text" size="mini" @click="copyGlobalVariableIPs">
+                        复制所有IP
+                      </a-button>
+                      <a-button type="text" size="mini" @click="copyGlobalVariableOfflineIPs">
+                        复制异常IP
+                      </a-button>
+                      <a-button type="text" size="mini" @click="clearGlobalVariableSelection">
+                        <template #icon>
+                          <icon-close />
+                        </template>
+                        清空
+                      </a-button>
+                      <a-button type="text" size="mini" @click="notifyGlobalVariableReadonly">
+                        <template #icon>
+                          <icon-exclamation-circle />
+                        </template>
+                        清除异常
+                      </a-button>
+                    </div>
+                  </div>
+
+                  <div class="host-group-section">
+                    <div class="group-header">
+                      <icon-computer />
+                      直接选择 ({{ globalVariableHosts.length }} 台)
+                    </div>
+                    <div class="host-list">
+                      <div
+                        v-for="host in globalVariableHosts"
+                        :key="host.__key"
+                        class="host-item"
+                        :class="{ 'host-offline': host.status === 'offline' }"
+                      >
+                        <div class="host-info">
+                          <div class="host-name">{{ host.name || getHostDisplayIp(host) || '未知主机' }}</div>
+                          <div class="host-ip">{{ getHostDisplayIp(host) }}</div>
+                          <div class="host-meta">
+                            <div class="host-os" :class="`os-${host.os_type}`">
+                              {{ getOSText(host.os_type || 'unknown') }}
+                            </div>
+                            <div class="host-status" :class="`status-${host.status}`">
+                              {{ getStatusText(host.status || 'unknown') }}
+                            </div>
+                            <div
+                              v-if="host.agent_info"
+                              class="host-agent"
+                              :class="`agent-${host.agent_info.status}`"
+                            >
+                              <span class="agent-dot" :class="`agent-dot-${host.agent_info.status}`"></span>
+                              {{ host.agent_info.status_display }}
+                            </div>
+                            <div v-else class="host-agent agent-none">
+                              Agent未安装
+                            </div>
+                          </div>
+                        </div>
+                        <a-button
+                          type="text"
+                          size="mini"
+                          class="remove-host-btn"
+                          @click="notifyGlobalVariableReadonly"
+                        >
+                          <template #icon>
+                            <icon-close />
+                          </template>
+                        </a-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </a-form-item>
@@ -575,10 +650,11 @@
     v-model:visible="showHostSelector"
     :hosts="hosts"
     :groups="hostGroups"
-    :selected-hosts="selectedHosts as any"
+    :selected-hosts="selectedHostRecords.length > 0 ? selectedHostRecords : (selectedHosts as any)"
     :selected-groups="selectedGroups as any"
     :host-pagination="hostPagination"
     :enable-host-pagination="true"
+    :fetch-all-hosts="fetchAllHosts"
     @confirm="handleHostSelection"
     @host-page-change="handleHostPageChange"
     @host-page-size-change="handleHostPageSizeChange"
@@ -633,10 +709,21 @@ const selectedAccountId = ref<number | undefined>()
 // 主机分页状态
 const hostPagination = ref({
   current: 1,
-  pageSize: 50,
+  pageSize: 10,
   total: 0,
-  pageSizeOptions: ['20', '50', '100', '200']
+  pageSizeOptions: ['10']
 })
+const allHostsCache = ref<Host[]>([])
+const allHostsLoaded = ref(false)
+const getCachedHostById = (id: number) => {
+  return allHostsCache.value.find(h => h.id === id) || hosts.value.find(h => h.id === id)
+}
+
+const getCachedHostByIp = (ip: string) => {
+  const normalized = formatHostIp(ip)
+  return allHostsCache.value.find(h => formatHostIp(h.ip_address, h.port) === normalized) ||
+    hosts.value.find(h => formatHostIp(h.ip_address, h.port) === normalized)
+}
 
 // 目标主机来源选择
 const targetSource = ref<'manual' | 'global'>('manual')
@@ -646,6 +733,7 @@ const selectedGlobalVariable = ref<string>('')
 const showHostSelector = ref(false)
 const selectedHosts = ref<number[]>([])
 const selectedGroups = ref<number[]>([])
+const selectedHostRecords = ref<Host[]>([])
 
 // 表单数据
 const form = reactive<Partial<JobStep>>({
@@ -733,59 +821,113 @@ const hostListGlobalVariables = computed(() => {
       return false
     })
     .map(([key, value]) => {
-      let displayValue = ''
+      let rawValue: any = ''
       if (typeof value === 'object') {
-        displayValue = value.value || ''
+        rawValue = value.value ?? ''
       } else if (typeof value === 'string') {
         try {
           const parsed = JSON.parse(value)
-          displayValue = parsed.value || ''
+          rawValue = parsed.value ?? ''
         } catch {
-          displayValue = value
+          rawValue = value
         }
+      }
+      // host_list 的 value 可能是主机ID数组，转为可显示的字符串
+      let displayValue = ''
+      if (Array.isArray(rawValue)) {
+        // 尝试将主机ID映射为IP显示
+        displayValue = rawValue.map((id: any) => {
+          const host = getCachedHostById(Number(id))
+          return host ? (formatHostIp(host.ip_address, host.port) || host.name || String(id)) : String(id)
+        }).join(', ')
+      } else {
+        displayValue = String(rawValue || '')
       }
       return {
         key,
         value: displayValue,
+        rawValue,
         type: typeof value === 'object' ? value.type : 'text'
       }
     })
 })
 
-// 获取已选全局变量的预览
-const getGlobalVariablePreview = computed(() => {
-  if (!selectedGlobalVariable.value || !props.globalParameters) return ''
+const globalVariableIps = computed(() => {
+  if (!selectedGlobalVariable.value || !props.globalParameters) return []
 
   const value = props.globalParameters[selectedGlobalVariable.value]
-  if (!value) return ''
+  if (!value) return []
 
-  if (typeof value === 'object' && value.value) {
-    return value.value
-  }
-  if (typeof value === 'string') {
-    // 尝试解析JSON
+  let rawValue: any = ''
+  if (typeof value === 'object' && value !== null) {
+    rawValue = value.value ?? ''
+  } else if (typeof value === 'string') {
     try {
       const parsed = JSON.parse(value)
-      return parsed.value || value
+      rawValue = parsed.value ?? value
     } catch {
-      return value
+      rawValue = value
     }
+  } else {
+    rawValue = value
   }
-  return String(value)
+
+  let ips: string[] = []
+  if (Array.isArray(rawValue)) {
+    ips = rawValue.map((item: any) => {
+      if (typeof item === 'number') {
+        const host = getCachedHostById(item)
+        return host ? formatHostIp(host.ip_address, host.port) : String(item)
+      }
+      if (typeof item === 'object' && item && typeof item.id === 'number') {
+        const host = item as Host
+        const cached = getCachedHostById(host.id)
+        return cached
+          ? formatHostIp(cached.ip_address, cached.port) || cached.name || String(cached.id)
+          : (formatHostIp(host.ip_address, host.port) || host.name || String(item.id))
+      }
+      return formatHostIp(String(item))
+    })
+  } else if (typeof rawValue === 'string') {
+    ips = rawValue
+      .split(/[,，\n\r\s]+/)
+      .map((ip: string) => ip.trim())
+      .filter((ip: string) => ip.length > 0)
+      .map((ip: string) => formatHostIp(ip))
+  } else if (rawValue !== null && rawValue !== undefined) {
+    ips = [formatHostIp(String(rawValue))]
+  }
+
+  return ips.filter(ip => ip)
+})
+
+const globalVariableHosts = computed<any[]>(() => {
+  return globalVariableIps.value.map((ip, index) => {
+    const matched = getCachedHostByIp(ip)
+    if (matched) {
+      return { ...matched, __key: `host-${matched.id}` }
+    }
+    return {
+      id: -(index + 1),
+      name: ip,
+      ip_address: ip,
+      port: 0,
+      os_type: 'unknown',
+      status: 'unknown',
+      agent_info: undefined,
+      groups_info: [],
+      __key: `ip-${ip}-${index}`
+    }
+  })
+})
+
+const globalVariableOfflineHosts = computed<any[]>(() => {
+  return globalVariableHosts.value.filter(host => host.status === 'offline')
 })
 
 // 获取已选全局变量的IP数量
 const getGlobalVariableHostCount = computed(() => {
-  const preview = getGlobalVariablePreview.value
-  if (!preview) return 0
-
-  // 解析IP列表
-  const ips = preview
-    .split(/[,，\n\r\s]+/)
-    .map(ip => ip.trim())
-    .filter(ip => ip.length > 0)
-
-  return ips.length
+  return globalVariableIps.value.length
 })
 
 // 主机配置警告
@@ -820,6 +962,7 @@ const handleTargetSourceChange = () => {
     // 切换到全局变量模式时，清空手动选择
     selectedHosts.value = []
     selectedGroups.value = []
+    selectedHostRecords.value = []
   } else {
     // 切换到手动选择模式时，清空全局变量选择
     selectedGlobalVariable.value = ''
@@ -871,9 +1014,10 @@ const totalSelectedTargets = computed(() => {
 const groupHosts = computed(() => {
   const groupHostIds = new Set<number>()
   const result: any[] = []
+  const baseHosts = allHostsCache.value.length > 0 ? allHostsCache.value : hosts.value
 
   selectedGroups.value.forEach(groupId => {
-    hosts.value.forEach(host => {
+    baseHosts.forEach(host => {
       if (host.groups_info && host.groups_info.some(g => g.id === groupId)) {
         if (!groupHostIds.has(host.id)) {
           groupHostIds.add(host.id)
@@ -889,9 +1033,7 @@ const groupHosts = computed(() => {
 // 获取直接选择的主机（排除已在分组中的主机）
 const directHosts = computed(() => {
   const groupHostIds = new Set(groupHosts.value.map(h => h.id))
-  return hosts.value.filter(host =>
-    selectedHosts.value.includes(host.id) && !groupHostIds.has(host.id)
-  )
+  return selectedHostRecords.value.filter(host => !groupHostIds.has(host.id))
 })
 
 // 获取所有目标主机（去重）
@@ -906,6 +1048,31 @@ const allTargetHosts = computed(() => {
   return Array.from(uniqueHosts.values())
 })
 
+const syncSelectedHostRecords = () => {
+  if (selectedHosts.value.length === 0) {
+    selectedHostRecords.value = []
+    return
+  }
+
+  const recordMap = new Map<number, Host>()
+
+  selectedHostRecords.value.forEach(host => {
+    recordMap.set(host.id, host)
+  })
+
+  hosts.value.forEach(host => {
+    if (selectedHosts.value.includes(host.id)) {
+      recordMap.set(host.id, host)
+    }
+  })
+
+  selectedHostRecords.value = Array.from(recordMap.values()).filter(host =>
+    selectedHosts.value.includes(host.id)
+  )
+}
+
+watch([selectedHosts, hosts], syncSelectedHostRecords, { deep: true, immediate: true })
+
 const getGroupName = (groupId: number) => {
   const group = hostGroups.value.find(g => g.id === groupId)
   return group?.name || `分组${groupId}`
@@ -916,9 +1083,38 @@ const getHostName = (hostId: number) => {
   return host?.name || `主机${hostId}`
 }
 
+const formatHostIp = (ip?: string, port?: number) => {
+  if (!ip) return ''
+
+  if (typeof port === 'number' && ip.endsWith(`:${port}`)) {
+    return ip.slice(0, -(`:${port}`).length)
+  }
+
+  if (ip.startsWith('[')) {
+    const closeIndex = ip.indexOf(']')
+    if (closeIndex > 0) {
+      return ip.slice(1, closeIndex)
+    }
+  }
+
+  const colonCount = (ip.match(/:/g) || []).length
+  if (colonCount === 1) {
+    const [hostPart, maybePort] = ip.split(':')
+    if (/^\d+$/.test(maybePort || '')) {
+      return hostPart
+    }
+  }
+
+  return ip
+}
+
+const getHostDisplayIp = (host: Host) => {
+  return formatHostIp(host?.ip_address, host?.port)
+}
+
 const getHostIP = (hostId: number) => {
   const host = hosts.value.find(h => h.id === hostId)
-  return host ? `${host.ip_address}:${host.port}` : '未知IP'
+  return host ? formatHostIp(host.ip_address, host.port) : '未知IP'
 }
 
 const getHostStatus = (hostId: number) => {
@@ -951,7 +1147,7 @@ const getOSText = (osType: string) => {
 }
 
 const getHostGroupNames = (hostId: number) => {
-  const host = hosts.value.find(h => h.id === hostId)
+  const host = getCachedHostById(hostId)
   if (!host || !host.groups_info) return ''
 
   const selectedGroupNames = host.groups_info
@@ -965,11 +1161,15 @@ const getHostGroupNames = (hostId: number) => {
 const fetchHosts = async () => {
   try {
     hostLoading.value = true
+    hostPagination.value.pageSize = 10
     const response = await hostApi.getHosts({
       page: hostPagination.value.current,
-      page_size: hostPagination.value.pageSize
+      page_size: 10
     })
-    hosts.value = response.results || []
+    hosts.value = (response.results || []).map((host: any) => ({
+      ...host,
+      ip_address: host.ip_address || host.internal_ip || host.public_ip || ''
+    }))
     hostPagination.value.total = response.total || 0
   } catch (error) {
     console.error('获取主机列表失败:', error)
@@ -978,16 +1178,59 @@ const fetchHosts = async () => {
   }
 }
 
+const fetchAllHosts = async () => {
+  if (allHostsLoaded.value && allHostsCache.value.length > 0) {
+    return allHostsCache.value
+  }
+
+  const pageSize = 500
+  let page = 1
+  let total = 0
+  const all: Host[] = []
+
+  while (true) {
+    const response = await hostApi.getHosts({ page, page_size: pageSize })
+    const results = (response.results || []).map((host: any) => ({
+      ...host,
+      ip_address: host.ip_address || host.internal_ip || host.public_ip || ''
+    }))
+    if (page === 1) {
+      total = response.total || 0
+    }
+    all.push(...results)
+    if (all.length >= total || results.length === 0) {
+      break
+    }
+    page += 1
+  }
+
+  allHostsCache.value = all
+  allHostsLoaded.value = true
+  return allHostsCache.value
+}
+
+watch([targetSource, selectedGlobalVariable], ([source, variable]) => {
+  if (source === 'global' && variable) {
+    void fetchAllHosts()
+  }
+})
+
+watch(selectedGroups, (groups) => {
+  if (groups.length > 0) {
+    void fetchAllHosts()
+  }
+}, { deep: true })
+
 // 处理主机分页变化
-const handleHostPageChange = (page: number, pageSize: number) => {
+const handleHostPageChange = (page: number, pageSize?: number) => {
   hostPagination.value.current = page
-  hostPagination.value.pageSize = pageSize
+  hostPagination.value.pageSize = 10
   fetchHosts()
 }
 
 // 处理主机每页数量变化
 const handleHostPageSizeChange = (pageSize: number) => {
-  hostPagination.value.pageSize = pageSize
+  hostPagination.value.pageSize = 10
   hostPagination.value.current = 1
   fetchHosts()
 }
@@ -1031,6 +1274,20 @@ watch(
           typeof host === 'object' && host ? (host as any).id : host
         )
         selectedHosts.value = form.target_hosts as number[]
+
+        if (step.target_hosts.length > 0 && typeof step.target_hosts[0] === 'object') {
+          const recordMap = new Map<number, Host>()
+          ;(step.target_hosts as any[]).forEach((host: any) => {
+            if (host && typeof host === 'object' && typeof host.id === 'number') {
+              recordMap.set(host.id, host as Host)
+            }
+          })
+          selectedHostRecords.value = Array.from(recordMap.values())
+        } else {
+          selectedHostRecords.value = []
+        }
+      } else {
+        selectedHostRecords.value = []
       }
 
       // 处理目标分组数据 - 如果是对象数组，提取ID
@@ -1558,16 +1815,28 @@ const handleCancel = () => {
 }
 
 // 主机选择处理方法
-const handleHostSelection = (selection: { selectedHosts: number[], selectedGroups: number[] }) => {
-  selectedHosts.value = selection.selectedHosts
-  selectedGroups.value = selection.selectedGroups
-  console.log('主机选择完成:', selection)
+// HostSelector confirm 事件返回 { hosts: Host[], groups: number[] }
+const handleHostSelection = (selection: { hosts: any[], groups: number[] }) => {
+  const hostIds = (selection.hosts || [])
+    .map((h: any) => typeof h === 'object' && h ? h.id : h)
+    .filter((id: any) => typeof id === 'number')
+  selectedHosts.value = hostIds
+
+  const recordMap = new Map<number, Host>()
+  ;(selection.hosts || []).forEach((h: any) => {
+    if (h && typeof h === 'object' && typeof h.id === 'number') {
+      recordMap.set(h.id, h as Host)
+    }
+  })
+  selectedHostRecords.value = Array.from(recordMap.values())
+  selectedGroups.value = selection.groups || []
 }
 
 // 主机管理方法
 const clearAllSelections = () => {
   selectedHosts.value = []
   selectedGroups.value = []
+  selectedHostRecords.value = []
   Message.success('已清空所有选择')
 }
 
@@ -1595,6 +1864,7 @@ const removeDirectHost = (hostId: number) => {
   const index = selectedHosts.value.indexOf(hostId)
   if (index > -1) {
     selectedHosts.value.splice(index, 1)
+    selectedHostRecords.value = selectedHostRecords.value.filter(host => host.id !== hostId)
     const hostName = getHostName(hostId)
     Message.success(`已移除主机: ${hostName}`)
   }
@@ -1608,10 +1878,13 @@ const removeOfflineHosts = () => {
   }
 
   // 移除离线的直接选择主机
-  selectedHosts.value = selectedHosts.value.filter(hostId => {
-    const host = hosts.value.find(h => h.id === hostId)
-    return host?.status !== 'offline'
-  })
+  const offlineHostIds = new Set(
+    selectedHostRecords.value
+      .filter(host => host.status === 'offline')
+      .map(host => host.id)
+  )
+  selectedHosts.value = selectedHosts.value.filter(hostId => !offlineHostIds.has(hostId))
+  selectedHostRecords.value = selectedHostRecords.value.filter(host => host.status !== 'offline')
 
   // 移除包含离线主机的分组
   selectedGroups.value = selectedGroups.value.filter(groupId => {
@@ -1667,7 +1940,10 @@ const copyAllIPs = async () => {
     return
   }
 
-  const ips = hosts.map(host => host.ip_address).join('\n')
+  const ips = hosts
+    .map(host => formatHostIp(host.ip_address, host.port))
+    .filter(ip => ip)
+    .join('\n')
 
   try {
     await navigator.clipboard.writeText(ips)
@@ -1686,7 +1962,10 @@ const copyOfflineIPs = async () => {
     return
   }
 
-  const ips = offlineHosts.map(host => host.ip_address).join('\n')
+  const ips = offlineHosts
+    .map(host => formatHostIp(host.ip_address, host.port))
+    .filter(ip => ip)
+    .join('\n')
 
   try {
     await navigator.clipboard.writeText(ips)
@@ -1695,6 +1974,58 @@ const copyOfflineIPs = async () => {
     console.error('复制异常IP失败:', error)
     Message.error('复制失败，请检查浏览器权限或手动复制')
   }
+}
+
+// 复制全局变量目标主机 IP
+const copyGlobalVariableIPs = async () => {
+  const hosts = globalVariableHosts.value
+  if (!hosts.length) {
+    Message.warning('当前没有目标主机可复制')
+    return
+  }
+
+  const ips = hosts
+    .map(host => formatHostIp(host.ip_address, host.port))
+    .filter(ip => ip)
+    .join('\n')
+
+  try {
+    await navigator.clipboard.writeText(ips)
+    Message.success(`已复制 ${hosts.length} 个主机 IP 到剪贴板`)
+  } catch (error) {
+    console.error('复制IP失败:', error)
+    Message.error('复制失败，请检查浏览器权限或手动复制')
+  }
+}
+
+// 复制全局变量异常（离线）主机 IP
+const copyGlobalVariableOfflineIPs = async () => {
+  const offlineHosts = globalVariableOfflineHosts.value
+  if (!offlineHosts.length) {
+    Message.info('当前没有异常（离线）主机')
+    return
+  }
+
+  const ips = offlineHosts
+    .map(host => formatHostIp(host.ip_address, host.port))
+    .filter(ip => ip)
+    .join('\n')
+
+  try {
+    await navigator.clipboard.writeText(ips)
+    Message.success(`已复制 ${offlineHosts.length} 个异常主机 IP 到剪贴板`)
+  } catch (error) {
+    console.error('复制异常IP失败:', error)
+    Message.error('复制失败，请检查浏览器权限或手动复制')
+  }
+}
+
+const clearGlobalVariableSelection = () => {
+  selectedGlobalVariable.value = ''
+}
+
+const notifyGlobalVariableReadonly = () => {
+  Message.info('全局变量来源为只读，请在全局变量中调整目标主机列表')
 }
 
 // 生命周期
@@ -1857,6 +2188,17 @@ onMounted(() => {
   min-height: 120px;
 }
 
+.target-host-preview {
+  max-width: 720px;
+  width: 100%;
+}
+
+.host-selection-summary .preview-count {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
 /* 目标来源选择器样式 */
 .target-source-selector {
   display: flex;
@@ -1904,6 +2246,7 @@ onMounted(() => {
   font-size: 12px;
   color: var(--color-text-3);
 }
+
 
 .empty-selection {
   display: flex;
