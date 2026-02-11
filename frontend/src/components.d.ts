@@ -56,6 +56,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     ScriptEditorWithValidation: typeof import('./components/ScriptEditorWithValidation.vue')['default']
     SimpleMonacoEditor: typeof import('./components/SimpleMonacoEditor.vue')['default']
+    StepCard: typeof import('./components/StepCard.vue')['default']
     SuccessModal: typeof import('./components/SuccessModal.vue')['default']
     TagEditor: typeof import('./components/TagEditor.vue')['default']
   }

@@ -120,19 +120,15 @@
       </div>
 
       <div v-else class="steps-list">
-        <div
+        <StepCard
           v-for="(step, index) in form.steps"
           :key="step.id || index"
-          class="step-item"
+          :step="step"
+          :index="index"
+          :show-detail="true"
+          :default-expanded="true"
         >
-          <div class="step-header">
-            <div class="step-info">
-              <span class="step-number">{{ index + 1 }}</span>
-              <span class="step-name">{{ step.name || '未命名步骤' }}</span>
-              <a-tag :color="getStepTypeColor(step.step_type)">
-                {{ getStepTypeText(step.step_type) }}
-              </a-tag>
-            </div>
+          <template #actions>
             <a-space>
               <a-button type="text" size="small" @click="handleEditStep(index)">
                 <template #icon>
@@ -161,20 +157,8 @@
                 </a-button>
               </a-popconfirm>
             </a-space>
-          </div>
-          <div class="step-content">
-            <div class="step-description">
-              {{ step.description || '无描述' }}
-            </div>
-            <div class="step-config">
-              <a-space>
-                <span>超时: {{ step.timeout }}秒</span>
-                <span v-if="step.ignore_error">忽略错误</span>
-                <span v-if="step.condition">有执行条件</span>
-              </a-space>
-            </div>
-          </div>
-        </div>
+          </template>
+        </StepCard>
       </div>
     </a-card>
 
@@ -214,6 +198,7 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
 import StepEditor from './components/StepEditor.vue'
+import StepCard from '@/components/StepCard.vue'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import TagEditor from '@/components/TagEditor.vue'
 import VariableEditor from './components/VariableEditor.vue'
@@ -923,23 +908,6 @@ const handleParameterKeyChange = (oldKey: string, newKey: string) => {
     // 检测变更
     checkFormChanges()
   }
-}
-
-// 工具函数
-const getStepTypeColor = (type: string) => {
-  const colors: Record<string, string> = {
-    script: 'blue',
-    file_transfer: 'green'
-  }
-  return colors[type] || 'gray'
-}
-
-const getStepTypeText = (type: string) => {
-  const texts: Record<string, string> = {
-    script: '脚本执行',
-    file_transfer: '文件传输'
-  }
-  return texts[type] || type
 }
 
 // 加载复制的数据

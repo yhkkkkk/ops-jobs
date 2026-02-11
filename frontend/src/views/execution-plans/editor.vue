@@ -154,53 +154,46 @@
             </div>
 
             <div v-else class="steps-list">
-              <div
+              <StepCard
                 v-for="(step, index) in displaySteps"
-                :key="step.id"
-                class="step-item"
-                :class="{ 'step-selected': isStepSelected(step.id) }"
+                :key="getStepId(step)"
+                :step="step"
+                :index="index"
+                :selected="isStepSelected(getStepId(step))"
+                :show-detail="isStepSelected(getStepId(step))"
+                :default-expanded="true"
               >
-                <div class="step-header">
+                <template #prefix>
                   <a-checkbox
-                    :model-value="isStepSelected(step.id)"
-                    @change="(checked) => handleStepSelect(step.id, checked)"
+                    :model-value="isStepSelected(getStepId(step))"
+                    @change="(checked) => handleStepSelect(getStepId(step), checked)"
                   />
-                  <div class="step-number">{{ index + 1 }}</div>
-                  <div class="step-info">
-                    <div class="step-name">{{ step.name }}</div>
-                    <div class="step-desc">{{ step.description || '无描述' }}</div>
+                </template>
+                <template #footer>
+                  <div v-if="isStepSelected(getStepId(step))" class="step-config">
+                    <a-form layout="inline" size="small">
+                      <a-form-item label="执行顺序">
+                        <a-input-number
+                          :model-value="getStepOrder(getStepId(step))"
+                          @change="(value) => handleStepOrderChange(getStepId(step), value)"
+                          :min="1"
+                          :max="selectedSteps.length"
+                          style="width: 80px"
+                        />
+                      </a-form-item>
+                      <a-form-item label="超时时间(秒)">
+                        <a-input-number
+                          :model-value="getStepTimeout(getStepId(step))"
+                          @change="(value) => handleStepTimeoutChange(getStepId(step), value)"
+                          :min="10"
+                          :max="3600"
+                          style="width: 100px"
+                        />
+                      </a-form-item>
+                    </a-form>
                   </div>
-                  <div class="step-type">
-                    <a-tag :color="getStepTypeColor(step.step_type)">
-                      {{ getStepTypeText(step.step_type) }}
-                    </a-tag>
-                  </div>
-                </div>
-
-                <!-- 步骤配置（当选中时显示） -->
-                <div v-if="isStepSelected(step.id)" class="step-config">
-                  <a-form layout="inline" size="small">
-                    <a-form-item label="执行顺序">
-                      <a-input-number
-                        :model-value="getStepOrder(step.id)"
-                        @change="(value) => handleStepOrderChange(step.id, value)"
-                        :min="1"
-                        :max="selectedSteps.length"
-                        style="width: 80px"
-                      />
-                    </a-form-item>
-                    <a-form-item label="超时时间(秒)">
-                      <a-input-number
-                        :model-value="getStepTimeout(step.id)"
-                        @change="(value) => handleStepTimeoutChange(step.id, value)"
-                        :min="10"
-                        :max="3600"
-                        style="width: 100px"
-                      />
-                    </a-form-item>
-                  </a-form>
-                </div>
-              </div>
+                </template>
+              </StepCard>
             </div>
           </a-card>
         </a-col>
@@ -247,6 +240,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { jobTemplateApi, executionPlanApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
+import StepCard from '@/components/StepCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -379,17 +373,31 @@ const fetchPlanDetail = async () => {
         name: planStep.step_name,
         description: planStep.step_description,
         step_type: planStep.step_type,
+        script_type: planStep.step_script_type,
         script_content: planStep.step_script_content,
+        account_id: planStep.step_account_id,
+        account_name: planStep.step_account_name,
+        step_parameters: planStep.step_parameters,
+        effective_parameters: planStep.effective_parameters,
+        target_hosts: planStep.target_hosts || [],
+        target_groups: planStep.target_groups || [],
+        timeout: planStep.effective_timeout ?? planStep.step_timeout,
+        ignore_error: planStep.step_ignore_error,
+        file_sources: planStep.step_file_sources || [],
+        overwrite_policy: planStep.step_overwrite_policy,
+        override_parameters: planStep.override_parameters || {},
         is_deleted: planStep.is_template_step_deleted
-      })).filter(step => step.id && !step.is_deleted) // 过滤掉已删除的步骤
+      })).filter(step => step.id && !step.is_deleted)
 
       // 设置选中的步骤
-      selectedSteps.value = plan.plan_steps.map(planStep => ({
-        step_id: planStep.template_step_id,
-        order: planStep.order,
-        override_timeout: planStep.override_timeout || undefined,
-        override_parameters: planStep.override_parameters || {}
-      })).filter(step => step.step_id) // 过滤掉没有step_id的步骤（已删除的步骤）
+      selectedSteps.value = plan.plan_steps
+        .filter(planStep => !planStep.is_template_step_deleted && planStep.template_step_id)
+        .map(planStep => ({
+          step_id: planStep.template_step_id,
+          order: planStep.order,
+          override_timeout: planStep.override_timeout || undefined,
+          override_parameters: planStep.override_parameters || {}
+        }))
     }
   } catch (error) {
     console.error('获取方案详情失败:', error)
@@ -413,6 +421,11 @@ const handleTemplateChange = async (templateId: number) => {
 }
 
 // 步骤选择相关方法
+const getStepId = (step: any) => {
+  if (!step) return 0
+  return step.id ?? step.template_step_id ?? step.step_id ?? 0
+}
+
 const isStepSelected = (stepId: number) => {
   return selectedSteps.value.some(s => s.step_id === stepId)
 }
@@ -442,9 +455,9 @@ const handleStepSelect = (stepId: number, checked: boolean) => {
 
 const handleSelectAllSteps = () => {
   selectedSteps.value = displaySteps.value.map((step, index) => ({
-    step_id: step.id,
+    step_id: getStepId(step),
     order: index + 1
-  }))
+  })).filter(step => step.step_id)
 }
 
 const handleClearSteps = () => {
@@ -549,23 +562,6 @@ const handleSave = async () => {
 // 返回列表
 const handleBack = () => {
   router.push('/execution-plans')
-}
-
-// 工具函数
-const getStepTypeColor = (type: string) => {
-  const colors: Record<string, string> = {
-    script: 'blue',
-    file_transfer: 'green'
-  }
-  return colors[type] || 'gray'
-}
-
-const getStepTypeText = (type: string) => {
-  const texts: Record<string, string> = {
-    script: '脚本执行',
-    file_transfer: '文件传输'
-  }
-  return texts[type] || type
 }
 
 // 格式化全局变量值（处理secret等类型）
@@ -737,9 +733,7 @@ onMounted(() => {
 }
 
 .step-config {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-2);
+  padding: 4px 0;
 }
 
 .template-info {

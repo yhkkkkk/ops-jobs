@@ -324,10 +324,13 @@ export interface PlanStep {
   step_condition: string
   step_target_host_ids: number[]
   step_target_group_ids: number[]
+  target_hosts?: Host[]
+  target_groups?: HostGroup[]
   step_account_id?: number | null
   step_account_name?: string | null
   step_file_sources?: any[]
   step_bandwidth_limit?: number
+  step_overwrite_policy?: string
   // 覆盖配置
   override_parameters: Record<string, any>
   override_timeout: number | null

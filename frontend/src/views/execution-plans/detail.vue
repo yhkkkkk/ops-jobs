@@ -159,198 +159,41 @@
         </div>
 
         <div v-else class="steps-list">
-          <div
+          <StepCard
             v-for="(step, index) in steps"
-            :key="step.id"
-            class="step-item"
-          >
-            <div class="step-header">
-              <div class="step-number">{{ index + 1 }}</div>
-              <div class="step-info">
-                <div class="step-name">{{ step.step_name }}</div>
-                <div class="step-desc">{{ step.step_description || '无描述' }}</div>
-              </div>
-              <div class="step-type">
-                <a-tag :color="getStepTypeColor(step.step_type)">
-                  {{ getStepTypeText(step.step_type) }}
-                </a-tag>
-              </div>
-              <div class="step-actions">
-                <a-button
-                  type="text"
-                  size="small"
-                  @click="toggleStepDetail(step.id)"
-                >
-                  <template #icon>
-                    <icon-eye v-if="!expandedSteps.includes(step.id)" />
-                    <icon-eye-invisible v-else />
-                  </template>
-                  {{ expandedSteps.includes(step.id) ? '收起' : '查看详情' }}
-                </a-button>
-              </div>
-            </div>
-
-            <div class="step-config">
-              <a-descriptions :column="3" size="small">
-                <a-descriptions-item label="执行顺序">
-                  {{ step.order }}
-                </a-descriptions-item>
-                <a-descriptions-item label="超时时间">
-                  {{ step.effective_timeout || step.step_timeout || 300 }}秒
-                </a-descriptions-item>
-                <a-descriptions-item label="错误处理">
-                  {{ step.step_ignore_error ? '忽略错误继续' : '遇错停止' }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </div>
-
-            <!-- 步骤详细内容（展开时显示） -->
-            <div v-if="expandedSteps.includes(step.id)" class="step-detail">
-              <a-divider />
-
-              <!-- 目标主机信息 -->
-              <div class="step-targets" style="margin-bottom: 16px">
-                <h4>目标主机</h4>
-                <div
-                  v-if="(step.target_hosts && step.target_hosts.length) || (step.target_groups && step.target_groups.length)"
-                  class="parameters"
-                >
-                  <div
-                    v-if="step.target_hosts && step.target_hosts.length"
-                    class="parameter-item"
-                  >
-                    <span class="param-key">主机</span>
-                    <span class="param-value">
-                      <span
-                        v-for="host in step.target_hosts"
-                        :key="host.id"
-                        style="display: inline-block; margin-right: 8px;"
-                      >
-                        {{ host.name }} ({{ host.ip_address }})
-                      </span>
-                    </span>
-                  </div>
-                  <div
-                    v-if="step.target_groups && step.target_groups.length"
-                    class="parameter-item"
-                  >
-                    <span class="param-key">分组</span>
-                    <span class="param-value">
-                      <span
-                        v-for="group in step.target_groups"
-                        :key="group.id"
-                        style="display: inline-block; margin-right: 8px;"
-                      >
-                        {{ group.name }}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-                <div v-else class="no-parameters">
-                  <a-empty description="未配置目标主机" :image-style="{ height: '40px' }" />
-                </div>
-              </div>
-
-              <!-- 脚本执行步骤 -->
-              <div v-if="step.step_type === 'script'" class="step-script">
-                <h4>执行配置</h4>
-                <a-descriptions :column="2" size="small" class="mb-4">
-                  <a-descriptions-item label="脚本类型">
-                    {{ step.step_script_type || '未指定' }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="执行账号">
-                    {{ step.step_account_name || (step.step_account_id ? `ID: ${step.step_account_id}` : '默认') }}
-                  </a-descriptions-item>
-                </a-descriptions>
-
-                <h4>脚本内容</h4>
-                <div class="script-content">
-                  <div class="script-code-block">
-                    <pre><code>{{ step.step_script_content || '无脚本内容' }}</code></pre>
-                  </div>
-                </div>
-
-                <h4 style="margin-top: 16px">位置参数</h4>
-                <div v-if="getPositionalArgs(step).length > 0" class="positional-args">
-                  <div
-                    v-for="(arg, index) in getPositionalArgs(step)"
-                    :key="index"
-                    class="positional-arg-item"
-                  >
-                    <span class="arg-index">{{ Number(index) + 1 }}</span>
-                    <span class="arg-value">{{ arg }}</span>
-                  </div>
-                </div>
-                <div v-else class="no-parameters">
-                  <a-empty description="无位置参数" :image-style="{ height: '40px' }" />
-                </div>
-              </div>
-
-              <!-- 文件传输步骤 -->
-              <div v-else-if="step.step_type === 'file_transfer'" class="step-file-transfer">
-                <h4>传输配置</h4>
-                <a-descriptions :column="2" size="small" class="mb-4">
-                  <a-descriptions-item label="执行账号">
-                    {{ step.step_account_name || (step.step_account_id ? `ID: ${step.step_account_id}` : '默认') }}
-                  </a-descriptions-item>
-                  <a-descriptions-item v-if="step.step_file_sources && step.step_file_sources.length > 0" label="文件来源">
-                    <div style="display:flex; flex-direction:column; gap:8px; max-width:100%">
-                      <div v-for="(src, si) in step.step_file_sources" :key="si" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-                        <a-tag :color="src.type === 'server' ? 'orange' : (src.type === 'local' ? 'cyan' : 'purple')">
-                          {{ src.type === 'server' ? '服务器' : (src.type === 'local' ? '本地' : '制品库') }}
-                        </a-tag>
-                        <div style="flex:1; min-width:0">
-                          <div v-if="src.type === 'server'" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            {{ src.server_name || src.server || (src.server_id ? ('ID:' + String(src.server_id)) : '-') }} · {{ src.source_path || src.path || '-' }}
-                          </div>
-                          <div v-else style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            {{ src.filename || src.name || src.storage_path || src.download_url || '-' }}
-                          </div>
-                          <div style="font-size:12px; color:#86909c">
-                            <span v-if="src.type === 'server' && src.account_name">账号: {{ src.account_name }} · </span>
-                            目标路径: {{ src.remote_path || '-' }}
-                            <span v-if="src.size"> · {{ formatFileSize(src.size) }}</span>
-                            <span v-if="src.checksum || src.sha256"> · sha256: {{ String(src.checksum || src.sha256).substr(0,12) }}...</span>
-                          </div>
-                        </div>
-                        <a-space>
-                          <a-button
-                            v-if="src.download_url"
-                            type="text"
-                            size="small"
-                            @click="() => openExternal(src.download_url)"
-                          >下载</a-button>
-                        </a-space>
-                      </div>
-                    </div>
-                  </a-descriptions-item>
-                  <a-descriptions-item v-else label="文件来源">
-                    <a-empty description="未配置文件来源" :image-style="{ height: '30px' }" />
-                  </a-descriptions-item>
-                </a-descriptions>
-              </div>
-
-              <!-- 覆盖参数 -->
-              <div v-if="step.override_parameters && Object.keys(step.override_parameters).length > 0" class="override-params">
-                <h4 style="margin-top: 16px">覆盖参数</h4>
-                <div class="parameters">
-                  <div
-                    v-for="(value, key) in step.override_parameters"
-                    :key="key"
-                    class="parameter-item override"
-                  >
-                    <span class="param-key">{{ key }}:</span>
-                    <span class="param-value">{{ value }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+            :key="step.id || step.template_step_id || index"
+            class="step-list-item"
+            :step="step"
+            :index="index"
+            :show-detail="false"
+            @click="openStepDrawer(step, index)"
+          />
         </div>
           </a-card>
 
         </a-col>
       </a-row>
+      <a-drawer
+        v-model:visible="drawerVisible"
+        :width="960"
+        :footer="false"
+        unmount-on-close
+      >
+        <template #title>
+          <div class="drawer-title">
+            <span>步骤 {{ drawerIndex + 1 }}</span>
+            <span class="drawer-title-name">{{ getStepDisplayName(drawerStep) }}</span>
+          </div>
+        </template>
+        <StepCard
+          v-if="drawerStep"
+          class="step-drawer-card"
+          :step="drawerStep"
+          :index="drawerIndex"
+          :show-detail="true"
+          :default-expanded="true"
+        />
+      </a-drawer>
     </div>
 
     <div v-else class="error-container">
@@ -377,6 +220,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
+import StepCard from '@/components/StepCard.vue'
 
 
 const route = useRoute()
@@ -386,7 +230,9 @@ const router = useRouter()
 const loading = ref(false)
 const plan = ref<ExecutionPlan | null>(null)
 const steps = ref<any[]>([])
-const expandedSteps = ref<number[]>([])
+const drawerVisible = ref(false)
+const drawerStep = ref<any | null>(null)
+const drawerIndex = ref(0)
 
 
 // 获取方案详情
@@ -410,18 +256,23 @@ const fetchPlanDetail = async () => {
   }
 };
 
+const openStepDrawer = (step: any, index: number) => {
+  drawerStep.value = step
+  drawerIndex.value = index
+  drawerVisible.value = true
+}
+
+const getStepDisplayName = (step: any) => {
+  if (!step) return '未命名步骤'
+  return step.step_name || step.name || '未命名步骤'
+}
+
 // 获取方案步骤
 
 
 // 返回列表
 const handleBack = () => {
   router.push('/execution-plans')
-}
-
-const openExternal = (url?: string) => {
-  if (url) {
-    window.open(url, '_blank')
-  }
 }
 
 // 刷新
@@ -477,33 +328,6 @@ const handleViewAllRecords = () => {
   router.push(`/execution-records?plan_id=${route.params.id}`)
 }
 
-// 切换步骤详情展开状态
-const toggleStepDetail = (stepId: number) => {
-  const index = expandedSteps.value.indexOf(stepId)
-  if (index > -1) {
-    expandedSteps.value.splice(index, 1)
-  } else {
-    expandedSteps.value.push(stepId)
-  }
-}
-
-// 工具函数
-const getStepTypeColor = (type: string) => {
-  const colors: Record<string, string> = {
-    script: 'blue',
-    file_transfer: 'green'
-  }
-  return colors[type] || 'gray'
-}
-
-const getStepTypeText = (type: string) => {
-  const texts: Record<string, string> = {
-    script: '脚本执行',
-    file_transfer: '文件传输'
-  }
-  return texts[type] || type
-}
-
 const formatDateTime = (dateTime: string) => {
   if (!dateTime) return '-'
   const date = new Date(dateTime)
@@ -514,21 +338,6 @@ const formatDateTime = (dateTime: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// 获取位置参数
-const getPositionalArgs = (step: any) => {
-  // 优先使用有效参数（如果有覆盖）
-  if (step.effective_parameters && Array.isArray(step.effective_parameters)) {
-    return step.effective_parameters.filter((arg: string) => arg.trim() !== '')
-  }
-
-  // 否则使用快照中的参数
-  if (step.step_parameters && Array.isArray(step.step_parameters)) {
-    return step.step_parameters.filter((arg: string) => arg.trim() !== '')
-  }
-
-  return []
 }
 
 // 全局变量展示：对密文参数做掩码处理（与作业模板详情保持一致）
@@ -551,16 +360,6 @@ const formatGlobalParameterValue = (rawValue: any) => {
 const getGlobalParameterDescription = (rawValue: any) => {
   if (!rawValue || typeof rawValue !== 'object') return ''
   return rawValue.description?.trim?.() || ''
-}
-
-// 文件大小格式化
-const formatFileSize = (bytes: number) => {
-  if (bytes === null || bytes === undefined) return '-'
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 生命周期
@@ -630,6 +429,41 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.step-list-item {
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.step-list-item:hover {
+  border-color: var(--color-primary-6);
+}
+
+.drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.drawer-title-name {
+  color: var(--color-text-2);
+  font-weight: 500;
+}
+
+.step-drawer-card {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.step-drawer-card :deep(.step-card-header) {
+  display: none;
+}
+
+.step-drawer-card :deep(.step-card-body) {
+  padding: 0;
 }
 
 .step-item {
