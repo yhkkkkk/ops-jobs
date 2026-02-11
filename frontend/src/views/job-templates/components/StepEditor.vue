@@ -232,17 +232,19 @@
           </a-select>
         </a-form-item>
 
-        <a-form-item label="最大匹配数">
-          <a-input-number
-            v-model="maxTargetMatches"
-            :min="1"
-            :max="1000"
-            placeholder="目标路径最多匹配的文件/目录数量"
-            style="width: 100%"
-          />
-          <div class="form-tip">
-            <icon-info-circle />
-            限制通配符匹配结果的数量，默认100，避免过度匹配
+        <a-form-item label="限速(MB/s)">
+          <div class="form-item-stack">
+            <a-input-number
+              v-model="bandwidthLimit"
+              :min="0"
+              :max="1000000"
+              placeholder="0=不限速（单位：MB/s）"
+              style="width: 100%"
+            />
+            <div class="form-tip form-tip-long">
+              <icon-info-circle />
+              <span class="form-tip-text">未设置或为 0 时：不限制带宽；若 Agent 配置了默认带宽限制，将按 Agent 默认值限速</span>
+            </div>
           </div>
         </a-form-item>
       </div>
@@ -780,7 +782,7 @@ const bulkParameters = ref('') // 批量参数输入
 // 文件传输相关（仅本地上传）
 const remotePath = ref('')
 const overwritePolicy = ref('overwrite')
-const maxTargetMatches = ref(100) // 最大匹配数
+const bandwidthLimit = ref(0) // 带宽限制（MB/s），0表示不限制
 const stepFileList = ref<any[]>([]) // 步骤文件列表
 const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
 
@@ -1316,7 +1318,7 @@ watch(
       // 解析文件传输配置（支持模板中保存的 file_sources，包括制品与服务器来源）
       remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
       overwritePolicy.value = step.overwrite_policy || 'overwrite'
-      maxTargetMatches.value = step.max_target_matches || 100
+      bandwidthLimit.value = Number(step.bandwidth_limit ?? 0) || 0
       selectedAccountId.value = step.account_id
         // populate fileArtifacts for UI display/editing
         fileArtifacts.value = []
@@ -1407,6 +1409,7 @@ const handleStepTypeChange = () => {
     })
   } else if (form.step_type === 'file_transfer') {
     overwritePolicy.value = 'overwrite'
+    bandwidthLimit.value = 0
   }
 }
 
@@ -1737,7 +1740,7 @@ const handleSubmit = async () => {
       }
       stepData.remote_path = remotePath.value
       stepData.overwrite_policy = overwritePolicy.value
-      stepData.max_target_matches = maxTargetMatches.value
+      stepData.bandwidth_limit = bandwidthLimit.value || 0
       stepData.account_id = selectedAccountId.value
 
       // 检查源服务器和目标服务器的agent状态
@@ -2042,6 +2045,30 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   margin-top: 4px;
+}
+
+.form-item-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.form-tip.form-tip-long {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.form-tip.form-tip-long .form-tip-text {
+  flex: 1 1 0;
+  min-width: 0;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.form-tip.form-tip-long .arco-icon {
+  margin-top: 2px;
 }
 
 .parameter-tip {

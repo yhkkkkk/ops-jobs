@@ -393,7 +393,7 @@ const handleSave = async () => {
         script_type: step.script_type,
         script_content: step.script_content,
         account_id: step.account_id,
-        max_target_matches: step.max_target_matches || 100,
+        bandwidth_limit: step.bandwidth_limit ?? 0,
         overwrite_policy: step.overwrite_policy,
         // 关键：提供 target_host_ids 以通过后端校验
         target_host_ids: targetHostIds,

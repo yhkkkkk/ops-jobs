@@ -627,20 +627,6 @@
               </a-select>
             </a-form-item>
 
-            <a-form-item label="最大匹配数">
-              <a-input-number
-                v-model="maxTargetMatches"
-                :min="1"
-                :max="1000"
-                style="width: 200px"
-                placeholder="目标路径最多匹配的文件/目录数量"
-              />
-              <div class="form-tip">
-                <icon-info-circle />
-                限制通配符匹配结果的数量，默认100，避免过度匹配
-              </div>
-            </a-form-item>
-
             <!-- 传输配置 -->
             <a-row :gutter="16">
               <a-col :span="6">
@@ -656,13 +642,19 @@
               </a-col>
               <a-col :span="6">
             <a-form-item label="限速(MB/s)">
-                  <a-input-number
-                    v-model="bandwidthLimit"
-                    :min="0"
-                    :max="1000000"
-                    style="width: 100%"
-                    placeholder="0=不限速（单位：MB/s）"
-                  />
+                  <div class="form-item-stack">
+                    <a-input-number
+                      v-model="bandwidthLimit"
+                      :min="0"
+                      :max="1000000"
+                      style="width: 100%"
+                      placeholder="0=不限速（单位：MB/s）"
+                    />
+                    <div class="form-tip form-tip-long">
+                      <icon-info-circle />
+                      <span class="form-tip-text">未设置或为 0 时：不限制带宽；若 Agent 配置了默认带宽限制，将按 Agent 默认值限速</span>
+                    </div>
+                  </div>
                 </a-form-item>
               </a-col>
               <a-col :span="6">
@@ -999,7 +991,6 @@ const scriptBulkParameters = ref('') // 脚本批量参数输入
 // 文件传输相关
 const remotePath = ref('')
 const overwritePolicy = ref<'overwrite' | 'skip' | 'backup' | 'fail'>('overwrite')
-const maxTargetMatches = ref(100) // 最大匹配数
 const bandwidthLimit = ref(0) // 带宽限制，0表示不限制
 const fileList = ref<any[]>([]) // a-upload 的文件列表 (UI)
 const fileArtifacts = ref<any[]>([]) // 已上传到制品库的 artifact metadata
@@ -1661,7 +1652,6 @@ const handleFileTransfer = async () => {
       name: '快速文件传输',
       remote_path: remotePath.value,
       overwrite_policy: overwritePolicy.value,
-      max_target_matches: maxTargetMatches.value,
       timeout: timeout.value,
       bandwidth_limit: bandwidthLimit.value || null,
       execution_mode: executionMode.value,
@@ -1766,7 +1756,6 @@ const handleClear = () => {
   // 清空文件传输相关
   remotePath.value = ''
   overwritePolicy.value = 'overwrite'
-  maxTargetMatches.value = 100
   bandwidthLimit.value = 0
   fileList.value = [] // 清空文件列表
   fileArtifacts.value = [] // 清空已上传的制品元数据
@@ -2334,6 +2323,30 @@ onUnmounted(() => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--color-text-3);
+}
+
+.form-item-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.form-tip.form-tip-long {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.form-tip.form-tip-long .form-tip-text {
+  flex: 1 1 0;
+  min-width: 0;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.form-tip.form-tip-long .arco-icon {
+  margin-top: 2px;
 }
 
 .parameter-tip {

@@ -41,6 +41,7 @@ class TemplateChangeDetector:
             step_data['remote_path'] = step.remote_path
             step_data['overwrite_policy'] = step.overwrite_policy
             step_data['file_sources'] = step.file_sources
+            step_data['bandwidth_limit'] = step.bandwidth_limit
 
         # 将数据序列化为json字符串，然后计算md5哈希
         step_json = json.dumps(step_data, sort_keys=True, ensure_ascii=False)
@@ -105,6 +106,7 @@ class TemplateChangeDetector:
                         'target_group_ids': plan_step.step_target_group_ids,
                         'account_id': plan_step.step_account_id,
                         'file_sources': plan_step.step_file_sources,
+                        'bandwidth_limit': plan_step.step_bandwidth_limit,
                     }
                 }
 

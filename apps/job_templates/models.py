@@ -108,8 +108,8 @@ class JobStep(models.Model):
     remote_path = models.TextField(blank=True, verbose_name="远程路径")
     overwrite_policy = models.CharField(max_length=20, blank=True, verbose_name="覆盖策略",
                                       help_text="overwrite, skip, backup")
-    max_target_matches = models.IntegerField(default=100, verbose_name="目标路径最大匹配数",
-                                           help_text="文件传输时，目标路径通配符匹配的最大文件/目录数量")
+    bandwidth_limit = models.IntegerField(default=0, verbose_name="带宽限制(MB/s)",
+                                        help_text="文件传输带宽限制，0表示不限制")
 
     # 目标主机配置（每个步骤有自己的目标主机）
     target_hosts = models.ManyToManyField('hosts.Host', blank=True, verbose_name="目标主机")
@@ -260,7 +260,7 @@ class PlanStep(models.Model):
 
     step_account_id = models.IntegerField(null=True, blank=True, verbose_name="执行账号ID快照")
     step_file_sources = models.JSONField(default=list, blank=True, verbose_name="文件来源快照")
-    step_max_target_matches = models.IntegerField(default=100, verbose_name="最大匹配数快照")
+    step_bandwidth_limit = models.IntegerField(default=0, verbose_name="带宽限制快照")
 
     # 可以在方案中覆盖步骤的某些参数
     override_parameters = models.JSONField(default=dict, blank=True, verbose_name="参数覆盖")
@@ -303,12 +303,6 @@ class PlanStep(models.Model):
             return self.override_parameters['script_type']
         return self.step_script_type
 
-    def get_effective_max_target_matches(self):
-        """获取有效的最大匹配数"""
-        if 'max_target_matches' in self.override_parameters:
-            return self.override_parameters['max_target_matches']
-        return self.step_max_target_matches
-
     def copy_from_template_step(self):
         """从模板步骤复制快照数据（根据步骤类型）"""
         if self.step:
@@ -337,7 +331,7 @@ class PlanStep(models.Model):
                 self.step_account_id = self.step.account_id
             elif self.step.step_type == 'file_transfer':
                 # 复制文件传输相关字段
-                self.step_max_target_matches = self.step.max_target_matches
+                self.step_bandwidth_limit = self.step.bandwidth_limit
                 # 仅复制 file_sources（并尝试附加 account_name），不再保留单独的 transfer/local/remote 快照字段
                 if self.step.file_sources:
                     from apps.hosts.models import ServerAccount

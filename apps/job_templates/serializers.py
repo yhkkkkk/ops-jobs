@@ -55,7 +55,7 @@ class JobStepSerializer(serializers.ModelSerializer):
             # 脚本相关字段
             'script_type', 'script_content', 'account_id', 'account_name',
             # 文件传输相关字段
-            'remote_path', 'overwrite_policy', 'file_sources',
+            'remote_path', 'overwrite_policy', 'file_sources', 'bandwidth_limit',
             # 目标主机相关字段
             'target_hosts', 'target_groups'
         ]
@@ -146,6 +146,7 @@ class JobStepCreateSerializer(serializers.Serializer):
     # 文件传输相关字段（仅 artifact/server 源）
     remote_path = serializers.CharField(required=False, allow_blank=True, help_text="远程路径")
     overwrite_policy = serializers.CharField(required=False, allow_blank=True, help_text="覆盖策略")
+    bandwidth_limit = serializers.IntegerField(required=False, min_value=0, default=0, help_text="带宽限制(MB/s)，0表示不限制")
     # file_sources 对应文件传输步骤，仅在 step_type == 'file_transfer' 时必需
     file_sources = serializers.ListField(
         child=serializers.DictField(),
@@ -273,7 +274,7 @@ class PlanStepSerializer(serializers.ModelSerializer):
             'step_target_host_ids', 'step_target_group_ids', 'step_targets',
             'target_hosts', 'target_groups',
             'step_account_name',
-            'step_account_id', 'step_file_sources',
+            'step_account_id', 'step_file_sources', 'step_bandwidth_limit',
             # 覆盖配置
             'override_parameters', 'override_timeout',
             # 有效值（仅在有覆盖时显示）

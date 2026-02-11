@@ -130,6 +130,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         'remote_path': step_data.get('remote_path', ''),
                         'overwrite_policy': step_data.get('overwrite_policy', ''),
                         'file_sources': step_data.get('file_sources', []),
+                        'bandwidth_limit': step_data.get('bandwidth_limit', 0),
                         'account_id': step_data.get('account_id')
                     })
 
@@ -317,6 +318,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                             'remote_path': step_data.get('remote_path', ''),
                             'overwrite_policy': step_data.get('overwrite_policy', ''),
                             'file_sources': step_data.get('file_sources', []),
+                            'bandwidth_limit': step_data.get('bandwidth_limit', 0),
                             'account_id': step_data.get('account_id')
                         })
 

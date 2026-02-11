@@ -136,17 +136,6 @@
               </div>
             </a-card>
 
-              <!-- 编辑模式：显示模板信息 -->
-              <a-form-item v-else label="所属模板">
-                <div class="template-display">
-                  <div class="template-name">
-                    {{ selectedTemplate?.name || '未知模板' }}
-                  </div>
-                  <div class="template-desc">
-                    {{ selectedTemplate?.description || '无描述' }}
-                  </div>
-                </div>
-              </a-form-item>
             </a-form>
           </a-card>
 

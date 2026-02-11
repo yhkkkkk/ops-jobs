@@ -268,7 +268,7 @@ export interface JobStep {
   account_name?: string | null
   step_account_id?: number | null
   step_account_name?: string | null
-  max_target_matches?: number
+  bandwidth_limit?: number
   file_sources?: any[]
   // 文件传输相关字段
   remote_path?: string
@@ -327,6 +327,7 @@ export interface PlanStep {
   step_account_id?: number | null
   step_account_name?: string | null
   step_file_sources?: any[]
+  step_bandwidth_limit?: number
   // 覆盖配置
   override_parameters: Record<string, any>
   override_timeout: number | null
