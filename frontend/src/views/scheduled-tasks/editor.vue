@@ -113,36 +113,65 @@
                     </a-tag>
                   </div>
                   <div class="parameter-value">
-                    <a-input
-                      v-model="param.overrideValue"
-                      :type="param.type === 'secret' && !parameterVisibility[param.key] ? 'password' : 'text'"
-                      :placeholder="param.type === 'secret' ? '密文覆盖值（留空使用默认值）' : `覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue)}）`"
-                    />
-                    <a-button
-                      v-if="param.type === 'secret'"
-                      type="text"
-                      size="small"
-                      @click="toggleParameterVisibility(param.key)"
-                      class="visibility-toggle"
-                    >
-                      <template #icon>
-                        <icon-eye v-if="parameterVisibility[param.key]" />
-                        <icon-eye-invisible v-else />
-                      </template>
-                    </a-button>
+                    <template v-if="param.type === 'host_list'">
+                      <div class="host-override-field">
+                        <div class="host-override-summary">
+                          <span>已选 {{ getOverrideHostCount(param.overrideValue) }} 台主机</span>
+                          <span class="host-override-default">默认 {{ getHostListCount(param.defaultValue) }} 台主机</span>
+                        </div>
+                        <a-space>
+                          <a-button type="outline" size="small" @click="openHostSelector(param.key)">选择主机</a-button>
+                          <a-button type="text" size="small" @click="clearHostOverride(param)">清空</a-button>
+                        </a-space>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <a-input
+                        v-model="param.overrideValue"
+                        :type="param.type === 'secret' && !parameterVisibility[param.key] ? 'password' : 'text'"
+                        :placeholder="param.type === 'secret' ? '密文覆盖值（留空使用默认值）' : `覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue, param.type)}）`"
+                      />
+                      <a-button
+                        v-if="param.type === 'secret'"
+                        type="text"
+                        size="small"
+                        @click="toggleParameterVisibility(param.key)"
+                        class="visibility-toggle"
+                      >
+                        <template #icon>
+                          <icon-eye v-if="parameterVisibility[param.key]" />
+                          <icon-eye-invisible v-else />
+                        </template>
+                      </a-button>
+                    </template>
                   </div>
                 </div>
                 <div class="parameter-description">
                   <div v-if="param.description" class="param-description-text">{{ param.description }}</div>
                   <div class="param-default">
                     <span class="label">默认值:</span>
-                    <span class="value">{{ formatParameterValue(param.defaultValue) }}</span>
+                    <span class="value">{{ formatParameterValue(param.defaultValue, param.type) }}</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </a-form-item>
+
+        <HostSelector
+          v-model:visible="hostSelectorVisible"
+          :hosts="hostSelectorHosts"
+          :groups="hostSelectorGroups"
+          :selected-hosts="currentSelectedHosts"
+          :selected-groups="[]"
+          :host-pagination="hostSelectorPagination"
+          :enable-host-pagination="false"
+          show-preview
+          show-copy
+          @confirm="handleHostSelectConfirm"
+          @host-page-change="handleHostPageChange"
+          @host-page-size-change="handleHostPageSizeChange"
+        />
 
         <a-row :gutter="24">
           <a-col :span="16">
@@ -229,6 +258,8 @@ import {
   IconEyeInvisible
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi, executionPlanApi, cronApi } from '@/api/scheduler'
+import { hostApi, hostGroupApi } from '@/api/ops'
+import HostSelector from '@/components/HostSelector.vue'
 import CronHelper from './components/CronHelper.vue'
 
 type ExecutionPlanOption = {
@@ -263,6 +294,14 @@ const tempCronExpression = ref('')
 // 判断是否为编辑模式
 const isEdit = computed(() => !!route.params.id)
 
+const currentSelectedHosts = computed(() => {
+  const key = currentHostParamKey.value
+  if (!key) return []
+  const param = globalParameters.value.find(item => item.key === key)
+  if (!param) return []
+  return Array.isArray(param.overrideValue) ? param.overrideValue : []
+})
+
 // 表单数据
 const form = reactive<{
   name: string
@@ -286,6 +325,17 @@ const form = reactive<{
 const globalParameters = ref<GlobalParam[]>([])
 const loadingPlanDetail = ref(false)
 const parameterVisibility = ref<Record<string, boolean>>({})
+const hostSelectorVisible = ref(false)
+const hostSelectorHosts = ref<any[]>([])
+const hostSelectorGroups = ref<any[]>([])
+const hostSelectorPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  pageSizeOptions: ['10']
+})
+const currentHostParamKey = ref<string | null>(null)
+const allHostsLoaded = ref(false)
 
 // 表单验证规则
 const rules = {
@@ -360,9 +410,14 @@ const handleExecutionPlanChange = async (planId) => {
       const description = typeof paramValue === 'object' && paramValue !== null
         ? paramValue.description
         : ''
-      const type = typeof paramValue === 'object' && paramValue !== null
+      let type = typeof paramValue === 'object' && paramValue !== null
         ? paramValue.type
         : 'text'
+      if (!type || type === 'text') {
+        if (Array.isArray(defaultValue) && defaultValue.length > 0 && defaultValue.every(item => isNumeric(item))) {
+          type = 'host_list'
+        }
+      }
 
       // 初始化可见性状态（密文默认隐藏）
       parameterVisibility.value[key] = type !== 'secret'
@@ -372,7 +427,9 @@ const handleExecutionPlanChange = async (planId) => {
         defaultValue,
         description,
         type,
-        overrideValue: form.execution_parameters[key] || ''
+        overrideValue: (form.execution_parameters && Object.prototype.hasOwnProperty.call(form.execution_parameters, key))
+          ? form.execution_parameters[key]
+          : (type === 'host_list' ? [] : '')
       }
     })
   } catch (error) {
@@ -384,13 +441,103 @@ const handleExecutionPlanChange = async (planId) => {
   }
 }
 
+const getHostListCount = (value: any) => {
+  if (Array.isArray(value)) return value.length
+  return 0
+}
+
+const getOverrideHostCount = (value: any) => {
+  if (Array.isArray(value)) return value.length
+  return 0
+}
+
+const openHostSelector = async (key: string) => {
+  currentHostParamKey.value = key
+  await ensureHostsLoaded()
+  hostSelectorVisible.value = true
+}
+
+const clearHostOverride = (param: GlobalParam) => {
+  param.overrideValue = []
+}
+
+const handleHostSelectConfirm = (payload: { hosts?: any[] }) => {
+  if (!currentHostParamKey.value) {
+    hostSelectorVisible.value = false
+    return
+  }
+  const param = globalParameters.value.find(item => item.key === currentHostParamKey.value)
+  if (!param) {
+    hostSelectorVisible.value = false
+    return
+  }
+  const hosts = payload.hosts || []
+  param.overrideValue = hosts.map((host: any) => host.id)
+  hostSelectorVisible.value = false
+}
+
+const handleHostPageChange = (page: number) => {
+  hostSelectorPagination.value.current = page
+}
+
+const handleHostPageSizeChange = () => {
+  hostSelectorPagination.value.pageSize = 10
+  hostSelectorPagination.value.current = 1
+}
+
+const fetchAllHosts = async (force = false) => {
+  if (allHostsLoaded.value && !force) return
+  const pageSize = 500
+  const all: any[] = []
+  let page = 1
+  let total = 0
+
+  while (true) {
+    const resp = await hostApi.getHosts({ page, page_size: pageSize })
+    const results = resp.results || []
+    if (page === 1) {
+      total = resp.total || 0
+    }
+    all.push(...results)
+    if (all.length >= total || results.length === 0) {
+      break
+    }
+    page += 1
+  }
+
+  hostSelectorHosts.value = all
+  hostSelectorPagination.value.total = total || all.length
+  allHostsLoaded.value = true
+}
+
+const ensureHostsLoaded = async (force = false) => {
+  if (!allHostsLoaded.value || force) {
+    await fetchAllHosts(force)
+  }
+  if (hostSelectorGroups.value.length === 0) {
+    const resp = await hostGroupApi.getGroups({ page_size: 200 })
+    hostSelectorGroups.value = resp.results || []
+  }
+}
+
 // 格式化参数值（对密文做掩码处理）
-const formatParameterValue = (value) => {
+const formatParameterValue = (value, type?: string) => {
   if (value === null || value === undefined) return ''
+  if (type === 'host_list') {
+    return `主机列表 (${getHostListCount(value)})`
+  }
   if (typeof value === 'object' && value.type === 'secret') {
     return '******'
   }
+  if (Array.isArray(value)) {
+    return `列表 (${value.length})`
+  }
   return String(value)
+}
+
+const isNumeric = (value: any) => {
+  const str = String(value)
+  return /^\\d+$/.test(str)
 }
 
 // 切换参数可见性
@@ -443,10 +590,17 @@ const handleSave = async () => {
     await formRef.value.validate()
 
     // 构建执行参数覆盖（只包含有覆盖值的参数）
-    const executionParameters = {}
+    const executionParameters: Record<string, any> = {}
     globalParameters.value.forEach(param => {
-      if (param.overrideValue !== null && param.overrideValue !== undefined && param.overrideValue !== '') {
-        executionParameters[param.key] = param.overrideValue
+      const value = param.overrideValue
+      if (Array.isArray(value)) {
+        if (value.length > 0) {
+          executionParameters[param.key] = value
+        }
+        return
+      }
+      if (value !== null && value !== undefined && value !== '') {
+        executionParameters[param.key] = value
       }
     })
     form.execution_parameters = Object.keys(executionParameters).length > 0 ? executionParameters : {}
@@ -700,6 +854,26 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.host-override-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.host-override-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+
+.host-override-default {
+  color: var(--color-text-3);
 }
 
 .param-description-text {

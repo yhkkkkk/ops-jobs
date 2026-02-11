@@ -110,13 +110,7 @@ class TemplateChangeDetector:
                     }
                 }
 
-            # 1. 检测全局变量变更
-            if template.global_parameters != plan.global_parameters_snapshot:
-                changes['global_parameters_changed'] = True
-                changes['old_global_parameters'] = plan.global_parameters_snapshot
-                changes['new_global_parameters'] = template.global_parameters
-
-            # 2. 检测步骤增删
+            # 1. 检测步骤增删
             template_step_ids = set(current_template_steps.keys())
             plan_step_ids = set(plan_steps.keys())
 
@@ -153,7 +147,6 @@ class TemplateChangeDetector:
 
             # 4. 判断最终是否有变更
             changes['has_changes'] = bool(
-                changes.get('global_parameters_changed') or
                 changes['added_steps'] or
                 changes['deleted_steps'] or
                 changes['modified_steps']
@@ -350,8 +343,6 @@ class TemplateChangeDetector:
     def _generate_change_summary(changes: Dict[str, Any]) -> str:
         """生成更全面的变更摘要"""
         summary_parts = []
-        if changes.get('global_parameters_changed'):
-            summary_parts.append('全局变量已更新')
         if changes.get('added_steps'):
             summary_parts.append(f"{len(changes['added_steps'])}个步骤已新增")
         if changes.get('deleted_steps'):
@@ -407,18 +398,14 @@ class TemplateSyncService:
                 # 统计本次同步中受影响的步骤数量
                 updated_steps = 0
 
-                # 1. 同步全局变量
-                if changes.get('global_parameters_changed'):
-                    plan.global_parameters_snapshot = plan.template.global_parameters
-
-                # 2. 删除步骤
+                # 1. 删除步骤
                 deleted_step_ids = [step['step_id'] for step in changes.get('deleted_steps', [])]
                 if deleted_step_ids:
                     deleted_count, _ = plan.planstep_set.filter(step_id__in=deleted_step_ids).delete()
                     # 删除的步骤数量也算进“受影响的步骤”统计
                     updated_steps += deleted_count
 
-                # 3. 新增步骤
+                # 2. 新增步骤
                 added_step_ids = [step['step_id'] for step in changes.get('added_steps', [])]
                 for step_id in added_step_ids:
                     template_step = plan.template.steps.get(id=step_id)
@@ -432,7 +419,7 @@ class TemplateSyncService:
                     plan_step.save()
                     updated_steps += 1
 
-                # 4. 更新修改的步骤
+                # 3. 更新修改的步骤
                 modified_step_ids = [step['step_id'] for step in changes.get('modified_steps', [])]
                 for step_id in modified_step_ids:
                     template_step = plan.template.steps.get(id=step_id)
@@ -442,7 +429,7 @@ class TemplateSyncService:
                     plan_step.save()
                     updated_steps += 1
 
-                # 5. 更新同步状态
+                # 4. 更新同步状态
                 plan.is_synced = True
                 plan.last_sync_at = timezone.now()
                 plan.save()

@@ -101,7 +101,7 @@
           <!-- 模板全局变量 -->
           <a-card title="模板全局变量" class="mb-4">
             <GlobalVariablesPanel
-              :variables="plan.template_global_parameters || {}"
+              :variables="plan.global_parameters_snapshot || plan.template_global_parameters || {}"
               title="模板全局变量"
               empty-text="该模板暂无全局变量"
             />
@@ -337,11 +337,11 @@ onMounted(() => {
 }
 
 .page-header {
-  background: white;
-  border-radius: 6px;
+  background: transparent;
+  border-radius: 0;
   margin-bottom: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  padding: 0 0 12px 0;
+  box-shadow: none;
 }
 
 .header-content {

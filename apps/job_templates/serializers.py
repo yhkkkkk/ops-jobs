@@ -385,6 +385,7 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True)
     template_global_parameters = serializers.JSONField(source='template.global_parameters', read_only=True)
+    global_parameters_snapshot = serializers.JSONField(read_only=True)
     step_count = serializers.ReadOnlyField()
     needs_sync = serializers.ReadOnlyField()
     success_rate = serializers.ReadOnlyField()
@@ -394,7 +395,7 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExecutionPlan
         fields = [
-            'id', 'template', 'template_name', 'template_global_parameters', 'name', 'description',
+            'id', 'template', 'template_name', 'template_global_parameters', 'global_parameters_snapshot', 'name', 'description',
             'is_synced', 'needs_sync', 'last_sync_at',
             'step_count', 'total_executions', 'success_executions', 'failed_executions',
             'success_rate', 'last_executed_at',

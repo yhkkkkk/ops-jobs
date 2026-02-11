@@ -88,11 +88,25 @@
                         <div style="font-weight:500;">{{ key }}</div>
                       </div>
                       <div class="parameter-value">
-                        <a-input
-                          v-model:value="form.global_parameter_overrides[key]"
-                          :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
-                          :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
-                        />
+                        <template v-if="isHostListParam(val)">
+                          <div class="host-override-field">
+                            <div class="host-override-summary">
+                              <span>已选 {{ getOverrideHostCount(key) }} 台主机</span>
+                              <span class="host-override-default">默认 {{ getHostListCount(getHostListValue(val)) }} 台主机</span>
+                            </div>
+                            <a-space>
+                              <a-button type="outline" size="small" @click="openHostSelector(key)">选择主机</a-button>
+                              <a-button type="text" size="small" @click="clearHostOverride(key)">清空</a-button>
+                            </a-space>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <a-input
+                            v-model:value="form.global_parameter_overrides[key]"
+                            :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
+                            :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
+                          />
+                        </template>
                       </div>
                     </div>
                     <div class="parameter-description" v-if="getGlobalParameterDescription(val)">
@@ -121,11 +135,25 @@
                         <div style="font-weight:500;">{{ key }}</div>
                       </div>
                       <div class="parameter-value">
-                        <a-input
-                          v-model:value="form.global_parameter_overrides[key]"
-                          :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
-                          :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
-                        />
+                        <template v-if="isHostListParam(val)">
+                          <div class="host-override-field">
+                            <div class="host-override-summary">
+                              <span>已选 {{ getOverrideHostCount(key) }} 台主机</span>
+                              <span class="host-override-default">默认 {{ getHostListCount(getHostListValue(val)) }} 台主机</span>
+                            </div>
+                            <a-space>
+                              <a-button type="outline" size="small" @click="openHostSelector(key)">选择主机</a-button>
+                              <a-button type="text" size="small" @click="clearHostOverride(key)">清空</a-button>
+                            </a-space>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <a-input
+                            v-model:value="form.global_parameter_overrides[key]"
+                            :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
+                            :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
+                          />
+                        </template>
                       </div>
                     </div>
                     <div class="parameter-description" v-if="getGlobalParameterDescription(val)">
@@ -137,6 +165,21 @@
             </a-card>
 
             </a-form>
+
+            <HostSelector
+              v-model:visible="hostSelectorVisible"
+              :hosts="hostSelectorHosts"
+              :groups="hostSelectorGroups"
+              :selected-hosts="currentSelectedHosts"
+              :selected-groups="[]"
+              :host-pagination="hostSelectorPagination"
+              :enable-host-pagination="false"
+              show-preview
+              show-copy
+              @confirm="handleHostSelectConfirm"
+              @host-page-change="handleHostPageChange"
+              @host-page-size-change="handleHostPageSizeChange"
+            />
           </a-card>
 
           <!-- 步骤选择 -->
@@ -238,9 +281,10 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { jobTemplateApi, executionPlanApi } from '@/api/ops'
+import { jobTemplateApi, executionPlanApi, hostApi, hostGroupApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
 import StepCard from '@/components/StepCard.vue'
+import HostSelector from '@/components/HostSelector.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -252,9 +296,27 @@ const templateLoading = ref(false)
 const templates = ref<JobTemplate[]>([])
 const templateSteps = ref<JobStep[]>([])
 const selectedTemplate = ref<JobTemplate | null>(null)
+const hostSelectorVisible = ref(false)
+const hostSelectorHosts = ref<any[]>([])
+const hostSelectorGroups = ref<any[]>([])
+const hostSelectorPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  pageSizeOptions: ['10']
+})
+const currentHostParamKey = ref<string | null>(null)
+const allHostsLoaded = ref(false)
 
 // 是否编辑模式
 const isEdit = computed(() => !!route.params.id)
+
+const currentSelectedHosts = computed(() => {
+  const key = currentHostParamKey.value
+  if (!key) return []
+  const value = form.global_parameter_overrides[key]
+  return Array.isArray(value) ? value : []
+})
 
 // 当前执行方案的步骤数据（用于编辑模式显示）
 const currentPlanSteps = ref<any[]>([])
@@ -417,6 +479,97 @@ const handleTemplateChange = async (templateId: number) => {
     templateSteps.value = []
     selectedTemplate.value = null
     selectedSteps.value = []
+  }
+}
+
+const isHostListParam = (val: any) => {
+  if (typeof val === 'object' && val !== null && val.type === 'host_list') return true
+  if (Array.isArray(val) && val.length > 0 && val.every(item => isNumeric(item))) return true
+  return false
+}
+
+const getHostListValue = (val: any) => {
+  if (val && typeof val === 'object') return val.value
+  return val
+}
+
+const getHostListCount = (value: any) => {
+  if (Array.isArray(value)) return value.length
+  return 0
+}
+
+const isNumeric = (value: any) => {
+  const str = String(value)
+  return /^\\d+$/.test(str)
+}
+
+const getOverrideHostCount = (key: string) => {
+  const value = form.global_parameter_overrides[key]
+  return Array.isArray(value) ? value.length : 0
+}
+
+const openHostSelector = async (key: string) => {
+  currentHostParamKey.value = key
+  await ensureHostsLoaded()
+  hostSelectorVisible.value = true
+}
+
+const clearHostOverride = (key: string) => {
+  form.global_parameter_overrides[key] = []
+}
+
+const handleHostSelectConfirm = (payload: { hosts?: any[] }) => {
+  if (!currentHostParamKey.value) {
+    hostSelectorVisible.value = false
+    return
+  }
+  const hosts = payload.hosts || []
+  const hostIds = hosts.map((host: any) => host.id)
+  form.global_parameter_overrides[currentHostParamKey.value] = hostIds
+  hostSelectorVisible.value = false
+}
+
+const handleHostPageChange = (page: number) => {
+  hostSelectorPagination.value.current = page
+}
+
+const handleHostPageSizeChange = () => {
+  hostSelectorPagination.value.pageSize = 10
+  hostSelectorPagination.value.current = 1
+}
+
+const fetchAllHosts = async (force = false) => {
+  if (allHostsLoaded.value && !force) return
+  const pageSize = 500
+  const all: any[] = []
+  let page = 1
+  let total = 0
+
+  while (true) {
+    const resp = await hostApi.getHosts({ page, page_size: pageSize })
+    const results = resp.results || []
+    if (page === 1) {
+      total = resp.total || 0
+    }
+    all.push(...results)
+    if (all.length >= total || results.length === 0) {
+      break
+    }
+    page += 1
+  }
+
+  hostSelectorHosts.value = all
+  hostSelectorPagination.value.total = total || all.length
+  allHostsLoaded.value = true
+}
+
+const ensureHostsLoaded = async (force = false) => {
+  if (!allHostsLoaded.value || force) {
+    await fetchAllHosts(force)
+  }
+  if (hostSelectorGroups.value.length === 0) {
+    const resp = await hostGroupApi.getGroups({ page_size: 200 })
+    hostSelectorGroups.value = resp.results || []
   }
 }
 
@@ -800,5 +953,25 @@ onMounted(() => {
 
 .parameter-description {
   margin-top: 4px;
+}
+
+.host-override-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.host-override-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+
+.host-override-default {
+  color: var(--color-text-3);
 }
 </style>
