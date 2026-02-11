@@ -899,20 +899,25 @@
     </a-modal>
 
     <!-- 主机选择器弹窗 -->
-    <HostSelector
-      v-model:visible="showHostSelector"
-      :hosts="hosts"
-      :groups="hostGroups"
-      :selected-hosts="selectedHosts as any"
-      :selected-groups="selectedGroups as any"
-      @confirm="handleHostSelection"
-    />
+  <HostSelector
+    v-model:visible="showHostSelector"
+    :hosts="hosts"
+    :groups="hostGroups"
+    :selected-hosts="selectedHosts as any"
+    :selected-groups="selectedGroups as any"
+    :host-pagination="hostPagination"
+    :enable-host-pagination="true"
+    :fetch-all-hosts="fetchAllHosts"
+    @confirm="handleHostSelection"
+    @host-page-change="handleHostPageChange"
+    @host-page-size-change="handleHostPageSizeChange"
+  />
   </div>
 
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { IconEye } from '@arco-design/web-vue/es/icon'
@@ -946,6 +951,19 @@ const activeTab = ref('script')
 
 // 主机相关
 const hosts = ref<Host[]>([])
+const hostPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  pageSizeOptions: ['10']
+})
+const allHostsCache = ref<Host[]>([])
+const allHostsLoaded = ref(false)
+const getBaseHosts = () => (allHostsCache.value.length > 0 ? allHostsCache.value : hosts.value)
+const normalizeHost = (host: any): Host => ({
+  ...host,
+  ip_address: host.ip_address || host.internal_ip || host.public_ip || ''
+})
 const selectedHosts = ref<number[]>([])
 const showHostSelector = ref(false)
 
@@ -1083,10 +1101,11 @@ const allTargetHosts = computed(() => {
   // 静态选择：合并分组和直接选择的主机
   const allHostIds = new Set<number>()
   const result: any[] = []
+  const baseHosts = getBaseHosts()
 
   // 添加分组中的主机
   selectedGroups.value.forEach(groupId => {
-    hosts.value.forEach(host => {
+    baseHosts.forEach(host => {
       if (host.groups_info && host.groups_info.some(g => g.id === groupId)) {
         if (!allHostIds.has(host.id)) {
           allHostIds.add(host.id)
@@ -1099,7 +1118,7 @@ const allTargetHosts = computed(() => {
   // 添加直接选择的主机
   selectedHosts.value.forEach(hostId => {
     if (!allHostIds.has(hostId)) {
-      const host = hosts.value.find(h => h.id === hostId)
+      const host = baseHosts.find(h => h.id === hostId)
       if (host) {
         allHostIds.add(hostId)
         result.push(host)
@@ -1116,7 +1135,7 @@ const isTransferFormValid = computed(() => {
 })
 
 const getHostStatus = (hostId: number) => {
-  const host = hosts.value.find(h => h.id === hostId)
+  const host = getBaseHosts().find(h => h.id === hostId)
   return host?.status || 'unknown'
 }
 
@@ -1140,7 +1159,7 @@ const getOSText = (osType: string) => {
 }
 
 const getHostGroupNames = (hostId: number) => {
-  const host = hosts.value.find(h => h.id === hostId)
+  const host = getBaseHosts().find(h => h.id === hostId)
   if (!host || !host.groups_info) return ''
 
   const selectedGroupNames = host.groups_info
@@ -1157,7 +1176,7 @@ const getGroupName = (groupId: number) => {
 
 // 获取分组内主机数量
 const getGroupHostCount = (groupId: number) => {
-  return hosts.value.filter(host => 
+  return getBaseHosts().filter(host => 
     host && host.groups_info && Array.isArray(host.groups_info) && 
     host.groups_info.some(g => g && g.id === groupId)
   ).length
@@ -1165,7 +1184,7 @@ const getGroupHostCount = (groupId: number) => {
 
 // 获取分组内在线主机数量
 const getGroupOnlineCount = (groupId: number) => {
-  return hosts.value.filter(host => 
+  return getBaseHosts().filter(host => 
     host && host.groups_info && Array.isArray(host.groups_info) && 
     host.groups_info.some(g => g && g.id === groupId) &&
     host.status === 'online'
@@ -1174,7 +1193,7 @@ const getGroupOnlineCount = (groupId: number) => {
 
 // 获取分组内离线主机数量
 const getGroupOfflineCount = (groupId: number) => {
-  return hosts.value.filter(host => 
+  return getBaseHosts().filter(host => 
     host && host.groups_info && Array.isArray(host.groups_info) && 
     host.groups_info.some(g => g && g.id === groupId) &&
     host.status === 'offline'
@@ -1183,7 +1202,7 @@ const getGroupOfflineCount = (groupId: number) => {
 
 // 获取分组内Agent在线主机数量
 const getGroupAgentOnlineCount = (groupId: number) => {
-  return hosts.value.filter(host => 
+  return getBaseHosts().filter(host => 
     host && host.groups_info && Array.isArray(host.groups_info) && 
     host.groups_info.some(g => g && g.id === groupId) &&
     host.agent_info && host.agent_info.status === 'online'
@@ -1201,27 +1220,78 @@ const removeGroup = (groupId: number) => {
 // 获取主机列表
 const fetchHosts = async () => {
   try {
-    const response = await hostApi.getHosts({ page_size: 20 })
-    hosts.value = response.results
+    hostPagination.value.pageSize = 10
+    const response = await hostApi.getHosts({
+      page: hostPagination.value.current,
+      page_size: 10
+    })
+    hosts.value = (response.results || []).map(normalizeHost)
+    hostPagination.value.total = response.total || 0
   } catch (error) {
     console.error('获取主机列表失败:', error)
     hosts.value = []
   }
 }
 
+const fetchAllHosts = async () => {
+  if (allHostsLoaded.value && allHostsCache.value.length > 0) {
+    return allHostsCache.value
+  }
+
+  const pageSize = 500
+  let page = 1
+  let total = 0
+  const all: Host[] = []
+
+  while (true) {
+    const response = await hostApi.getHosts({ page, page_size: pageSize })
+    const results = (response.results || []).map(normalizeHost)
+    if (page === 1) {
+      total = response.total || 0
+    }
+    all.push(...results)
+    if (all.length >= total || results.length === 0) {
+      break
+    }
+    page += 1
+  }
+
+  allHostsCache.value = all
+  allHostsLoaded.value = true
+  return allHostsCache.value
+}
+
+// 处理主机分页变化
+const handleHostPageChange = (page: number, pageSize?: number) => {
+  hostPagination.value.current = page
+  hostPagination.value.pageSize = 10
+  fetchHosts()
+}
+
+// 处理主机每页数量变化
+const handleHostPageSizeChange = (pageSize: number) => {
+  hostPagination.value.pageSize = 10
+  hostPagination.value.current = 1
+  fetchHosts()
+}
+
+watch(selectedGroups, (groups) => {
+  if (groups.length > 0) {
+    void fetchAllHosts()
+  }
+}, { deep: true })
+
+watch(selectedHosts, (hosts) => {
+  if (hosts.length > 0) {
+    void fetchAllHosts()
+  }
+}, { deep: true })
+
 // 获取主机分组列表
 const fetchHostGroups = async () => {
-  console.log('QuickExecute - 开始获取主机分组数据')
   try {
-    const response = await hostGroupApi.getGroups({ page_size: 50 })
-    console.log('QuickExecute - API响应:', response)
-    hostGroups.value = response.results
-    console.log('QuickExecute - 获取到主机分组数据:', hostGroups.value)
-    console.log('QuickExecute - 分组数据类型:', typeof hostGroups.value)
-    console.log('QuickExecute - 分组数据长度:', hostGroups.value?.length)
-    if (hostGroups.value && hostGroups.value.length > 0) {
-      console.log('QuickExecute - 第一个分组:', hostGroups.value[0])
-    }
+    const response = await hostGroupApi.getGroups({ page_size: 500 })
+    hostGroups.value = response.results || []
   } catch (error) {
     console.error('获取主机分组失败:', error)
     hostGroups.value = []
@@ -1612,7 +1682,7 @@ const handleFileTransfer = async () => {
     } else {
       const allSelectedHostIds = new Set(selectedHosts.value)
       selectedGroups.value.forEach(groupId => {
-        hosts.value.forEach(host => {
+        getBaseHosts().forEach(host => {
           if (host.groups_info && Array.isArray(host.groups_info)) {
             const isInGroup = host.groups_info.some(g => g && g.id === groupId)
             if (isInGroup) {
@@ -1628,7 +1698,7 @@ const handleFileTransfer = async () => {
     const file_sources: any[] = []
     for (const a of fileArtifacts.value) {
       if (a.type === 'server') {
-        const host = hosts.value.find(h => h.id === a.server_id)
+        const host = getBaseHosts().find(h => h.id === a.server_id)
         const sourceHost = a.source_server_host || host?.ip_address || host?.name || a.server
         const sourcePath = a.source_server_path || a.source_path
         const accountId = a.account_id ?? a.account
@@ -1764,7 +1834,7 @@ const handleConfirmExecute = async () => {
       
       // 将分组内的主机也添加到集合中（去重）
       selectedGroups.value.forEach(groupId => {
-        hosts.value.forEach(host => {
+        getBaseHosts().forEach(host => {
           if (host.groups_info && Array.isArray(host.groups_info)) {
             const isInGroup = host.groups_info.some(g => g && g.id === groupId)
             if (isInGroup) {
@@ -1818,21 +1888,23 @@ const getRollingStrategyText = (strategy: string) => {
 }
 
 // 主机选择处理方法
-const handleHostSelection = (selection: { 
-  selection_type?: 'static' | 'dynamic',
-  selectedHosts?: number[], 
-  selectedGroups?: number[]
-}) => {
-  if (selection.selection_type === 'dynamic') {
-    // 动态选择模式：只选择分组，执行时动态获取分组内的所有主机
+const handleHostSelection = (selection: { hosts?: any[], groups?: number[] }) => {
+  const hostIds = (selection.hosts || [])
+    .map((h: any) => typeof h === 'object' && h ? h.id : h)
+    .filter((id: any) => typeof id === 'number')
+
+  const groupIds = (selection.groups || []).filter((id: any) => typeof id === 'number')
+
+  if (groupIds.length > 0 && hostIds.length === 0) {
+    // 动态选择模式：只选择分组
     selectionType.value = 'dynamic'
-    selectedGroups.value = selection.selectedGroups || []
-    selectedHosts.value = [] // 动态选择不选择具体主机
+    selectedGroups.value = groupIds
+    selectedHosts.value = []
   } else {
-    // 静态选择模式：选择具体主机和分组（分组会展开为主机ID）
+    // 静态选择模式：仅选择具体主机
     selectionType.value = 'static'
-    selectedHosts.value = selection.selectedHosts || []
-    selectedGroups.value = selection.selectedGroups || []
+    selectedHosts.value = hostIds
+    selectedGroups.value = []
   }
   console.log('主机选择完成:', selection)
 }
@@ -1847,7 +1919,7 @@ const clearAllSelections = () => {
 
 // 统一的主机移除方法
 const removeHost = (hostId: number) => {
-  const host = hosts.value.find(h => h.id === hostId)
+  const host = getBaseHosts().find(h => h.id === hostId)
   if (!host) return
 
   // 从直接选择列表中移除
@@ -1866,7 +1938,7 @@ const removeHost = (hostId: number) => {
       // 如果主机来自选中的分组，我们需要将其他主机添加到直接选择中，然后移除分组
       affectedGroups.forEach(groupId => {
         // 获取该分组的所有其他主机
-        const groupOtherHosts = hosts.value.filter(h =>
+        const groupOtherHosts = getBaseHosts().filter(h =>
           h.id !== hostId &&
           h.groups_info &&
           h.groups_info.some(g => g.id === groupId)
@@ -1923,7 +1995,7 @@ const checkFileTransferAgentStatus = (fileArtifacts: any[], targetHosts: any[]) 
   const sourceServers = fileArtifacts.filter(a => a.type === 'server')
   sourceServers.forEach(source => {
     if (source.server_id) {
-      const sourceHost = hosts.value.find(h => h.id === source.server_id)
+      const sourceHost = getBaseHosts().find(h => h.id === source.server_id)
       if (sourceHost && sourceHost.agent_info && sourceHost.agent_info.status !== 'online') {
         warnings.push({
           type: 'source',

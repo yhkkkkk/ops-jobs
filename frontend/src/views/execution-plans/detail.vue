@@ -52,78 +52,82 @@
     </div>
 
     <div v-else-if="plan" class="detail-content">
-      <!-- 基本信息 -->
-      <a-card title="基本信息" class="mb-4">
-        <a-descriptions :column="2" bordered>
-          <a-descriptions-item label="方案名称">
-            {{ plan.name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="所属模板">
-            <a-link @click="handleViewTemplate">{{ plan.template_name }}</a-link>
-          </a-descriptions-item>
-          <a-descriptions-item label="方案描述">
-            {{ plan.description || '暂无描述' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="同步状态">
-            <a-tag v-if="plan.needs_sync" color="orange">
-              <template #icon>
-                <icon-exclamation-circle />
-              </template>
-              需要同步
-            </a-tag>
-            <a-tag v-else color="green">
-              <template #icon>
-                <icon-check-circle />
-              </template>
-              已同步
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="创建人">
-            {{ plan.created_by_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="创建时间">
-            {{ formatDateTime(plan.created_at) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="更新时间">
-            {{ formatDateTime(plan.updated_at) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="执行统计">
-            <div class="stats-info">
-              <span>总执行: {{ plan.total_executions || 0 }} 次</span>
-              <span>成功率: {{ plan.success_rate || 0 }}%</span>
-            </div>
-          </a-descriptions-item>
-        </a-descriptions>
-      </a-card>
+      <a-row :gutter="24">
+        <!-- 基本信息 -->
+        <a-col :span="8">
+          <a-card title="基本信息" class="mb-4">
+            <a-descriptions :column="1" bordered>
+              <a-descriptions-item label="方案名称">
+                {{ plan.name }}
+              </a-descriptions-item>
+              <a-descriptions-item label="所属模板">
+                <a-link @click="handleViewTemplate">{{ plan.template_name }}</a-link>
+              </a-descriptions-item>
+              <a-descriptions-item label="方案描述">
+                {{ plan.description || '暂无描述' }}
+              </a-descriptions-item>
+              <a-descriptions-item label="同步状态">
+                <a-tag v-if="plan.needs_sync" color="orange">
+                  <template #icon>
+                    <icon-exclamation-circle />
+                  </template>
+                  需要同步
+                </a-tag>
+                <a-tag v-else color="green">
+                  <template #icon>
+                    <icon-check-circle />
+                  </template>
+                  已同步
+                </a-tag>
+              </a-descriptions-item>
+              <a-descriptions-item label="创建人">
+                {{ plan.created_by_name }}
+              </a-descriptions-item>
+              <a-descriptions-item label="创建时间">
+                {{ formatDateTime(plan.created_at) }}
+              </a-descriptions-item>
+              <a-descriptions-item label="更新时间">
+                {{ formatDateTime(plan.updated_at) }}
+              </a-descriptions-item>
+              <a-descriptions-item label="执行统计">
+                <div class="stats-info">
+                  <span>总执行: {{ plan.total_executions || 0 }} 次</span>
+                  <span>成功率: {{ plan.success_rate || 0 }}%</span>
+                </div>
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-card>
 
-      <!-- 模板全局变量 -->
-      <a-card v-if="plan" title="模板全局变量" class="mb-4">
-        <div
-          v-if="plan.template_global_parameters && Object.keys(plan.template_global_parameters).length > 0"
-          class="global-parameters"
-        >
-          <div
-            v-for="(value, key) in plan.template_global_parameters"
-            :key="key"
-            class="parameter-item global"
-          >
-            <div class="param-key">{{ key }}</div>
-            <div class="param-value">{{ formatGlobalParameterValue(value) }}</div>
+          <!-- 模板全局变量 -->
+          <a-card title="模板全局变量" class="mb-4">
             <div
-              v-if="getGlobalParameterDescription(value)"
-              class="param-description"
+              v-if="plan.template_global_parameters && Object.keys(plan.template_global_parameters).length > 0"
+              class="global-parameters"
             >
-              {{ getGlobalParameterDescription(value) }}
+              <div
+                v-for="(value, key) in plan.template_global_parameters"
+                :key="key"
+                class="parameter-item global"
+              >
+                <div class="param-key">{{ key }}</div>
+                <div class="param-value">{{ formatGlobalParameterValue(value) }}</div>
+                <div
+                  v-if="getGlobalParameterDescription(value)"
+                  class="param-description"
+                >
+                  {{ getGlobalParameterDescription(value) }}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div v-else class="no-parameters">
-          <a-empty description="该模板暂无全局变量" :image-style="{ height: '40px' }" />
-        </div>
-      </a-card>
+            <div v-else class="no-parameters">
+              <a-empty description="该模板暂无全局变量" :image-style="{ height: '40px' }" />
+            </div>
+          </a-card>
+        </a-col>
 
-      <!-- 执行步骤 -->
-      <a-card title="执行步骤" class="mb-4">
+        <!-- 执行步骤 -->
+        <a-col :span="16">
+          <a-card title="执行步骤" class="mb-4">
         <template #extra>
           <a-space>
             <a-tag>共 {{ steps.length }} 个步骤</a-tag>
@@ -343,20 +347,10 @@
             </div>
           </div>
         </div>
-      </a-card>
+          </a-card>
 
-      <!-- 执行历史 -->
-      <a-card title="执行历史">
-        <template #extra>
-          <a-button size="small" @click="handleViewAllRecords">
-            查看全部
-          </a-button>
-        </template>
-
-        <div class="execution-history">
-          <a-empty description="暂无执行记录" />
-        </div>
-      </a-card>
+        </a-col>
+      </a-row>
     </div>
 
     <div v-else class="error-container">
@@ -689,13 +683,6 @@ onMounted(() => {
   padding: 40px 0;
 }
 
-.execution-history {
-  min-height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 /* 步骤详情样式 */
 .step-detail {
   margin-top: 12px;
@@ -864,7 +851,7 @@ onMounted(() => {
   background: transparent;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 300px;
+  max-height: 800px;
   overflow-y: auto;
 }
 
