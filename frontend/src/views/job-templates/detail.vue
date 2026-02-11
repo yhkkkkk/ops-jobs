@@ -100,25 +100,12 @@
             </div>
 
             <!-- 全局变量 -->
-            <div v-if="template.global_parameters && Object.keys(template.global_parameters).length > 0" class="global-variables-section">
-              <h4 class="section-title">全局变量</h4>
-              <div class="global-variables-container">
-                <div
-                  v-for="(value, key) in template.global_parameters"
-                  :key="key"
-                  class="variable-item"
-                >
-                  <div class="variable-key">{{ key }}</div>
-                  <div class="variable-value">{{ formatGlobalParameterValue(value) }}</div>
-                  <div
-                    v-if="getGlobalParameterDescription(value)"
-                    class="variable-description"
-                  >
-                    {{ getGlobalParameterDescription(value) }}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <GlobalVariablesPanel
+              class="global-variables-section"
+              :variables="template.global_parameters || {}"
+              title="全局变量"
+              empty-text="暂无全局变量"
+            />
           </a-card>
         </a-col>
 
@@ -177,6 +164,7 @@ import { IconEdit, IconCopy, IconPlayArrow, IconRefresh } from '@arco-design/web
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import StepCard from '@/components/StepCard.vue'
+import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -222,30 +210,6 @@ const formatDate = (dateString?: string) => {
 
 
 // 全局变量展示：对密文参数做掩码处理
-const formatGlobalParameterValue = (rawValue: any) => {
-  // 兼容老格式：直接是字符串
-  if (rawValue === null || rawValue === undefined) return ''
-  if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-    return String(rawValue)
-  }
-
-  // 新格式：{ value, type, description }
-  const value = rawValue?.value
-  const type = rawValue?.type
-
-  if (type === 'secret') {
-    // 密文统一显示为掩码
-    return '******'
-  }
-
-  return value !== undefined ? String(value) : ''
-}
-
-const getGlobalParameterDescription = (rawValue: any) => {
-  if (!rawValue || typeof rawValue !== 'object') return ''
-  return rawValue.description?.trim?.() || ''
-}
-
 // 操作方法
 // 无论从哪里进入详情，都统一返回到作业模板列表
 const handleBack = () => {
@@ -485,70 +449,6 @@ onMounted(() => {
 
 .mt-4 {
   margin-top: 16px;
-}
-
-.section-title {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.global-variables-container {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: #f7f8fa;
-  border: 1px solid #e5e6eb;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.variable-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid #e5e6eb;
-  transition: all 0.2s ease;
-}
-
-.variable-item:hover {
-  border-color: #165dff;
-  box-shadow: 0 2px 4px rgba(22, 93, 255, 0.1);
-}
-
-.variable-key {
-  font-weight: 500;
-  color: #1d2129;
-  min-width: 100px;
-  font-size: 13px;
-}
-
-.variable-key::after {
-  content: ':';
-  margin-left: 2px;
-  color: #86909c;
-}
-
-.variable-value {
-  color: #4e5969;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 13px;
-  background: #f2f3f5;
-  padding: 4px 8px;
-  border-radius: 3px;
-  word-break: break-all;
-}
-
-.variable-description {
-  font-size: 12px;
-  color: #86909c;
-  line-height: 1.5;
-  width: 100%;
-  word-break: break-word;
 }
 
 /* 位置参数样式 */

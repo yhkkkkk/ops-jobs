@@ -31,34 +31,6 @@
     </div>
 
     <div v-if="isExpanded" class="step-card-body">
-      <div v-if="hasTargets" class="step-targets">
-        <div v-if="targetHosts.length" class="target-group">
-          <div class="target-label">目标主机</div>
-          <a-space wrap>
-            <a-tag
-              v-for="host in targetHosts"
-              :key="getItemKey(host)"
-              color="cyan"
-              size="small"
-            >
-              {{ formatHostLabel(host) }}
-            </a-tag>
-          </a-space>
-        </div>
-        <div v-if="targetGroups.length" class="target-group">
-          <div class="target-label">目标分组</div>
-          <a-space wrap>
-            <a-tag
-              v-for="group in targetGroups"
-              :key="getItemKey(group)"
-              color="blue"
-              size="small"
-            >
-              {{ formatGroupLabel(group) }}
-            </a-tag>
-          </a-space>
-        </div>
-      </div>
       <div v-if="stepType === 'script'" class="script-content">
         <div class="script-info">
           <div class="script-meta">
@@ -174,6 +146,35 @@
             <a-empty description="未配置文件来源" :image-style="{ height: '30px' }" />
           </a-descriptions-item>
         </a-descriptions>
+      </div>
+
+      <div v-if="hasTargets" class="step-targets">
+        <div v-if="targetHosts.length" class="target-group">
+          <div class="target-label">目标主机</div>
+          <a-space wrap>
+            <a-tag
+              v-for="host in targetHosts"
+              :key="getItemKey(host)"
+              color="cyan"
+              size="small"
+            >
+              {{ formatHostLabel(host) }}
+            </a-tag>
+          </a-space>
+        </div>
+        <div v-if="targetGroups.length" class="target-group">
+          <div class="target-label">目标分组</div>
+          <a-space wrap>
+            <a-tag
+              v-for="group in targetGroups"
+              :key="getItemKey(group)"
+              color="blue"
+              size="small"
+            >
+              {{ formatGroupLabel(group) }}
+            </a-tag>
+          </a-space>
+        </div>
       </div>
 
       <div v-if="overrideParameterEntries.length > 0" class="override-params">

@@ -100,28 +100,11 @@
 
           <!-- 模板全局变量 -->
           <a-card title="模板全局变量" class="mb-4">
-            <div
-              v-if="plan.template_global_parameters && Object.keys(plan.template_global_parameters).length > 0"
-              class="global-parameters"
-            >
-              <div
-                v-for="(value, key) in plan.template_global_parameters"
-                :key="key"
-                class="parameter-item global"
-              >
-                <div class="param-key">{{ key }}</div>
-                <div class="param-value">{{ formatGlobalParameterValue(value) }}</div>
-                <div
-                  v-if="getGlobalParameterDescription(value)"
-                  class="param-description"
-                >
-                  {{ getGlobalParameterDescription(value) }}
-                </div>
-              </div>
-            </div>
-            <div v-else class="no-parameters">
-              <a-empty description="该模板暂无全局变量" :image-style="{ height: '40px' }" />
-            </div>
+            <GlobalVariablesPanel
+              :variables="plan.template_global_parameters || {}"
+              title="模板全局变量"
+              empty-text="该模板暂无全局变量"
+            />
           </a-card>
         </a-col>
 
@@ -221,6 +204,7 @@ import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
 import StepCard from '@/components/StepCard.vue'
+import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
 
 
 const route = useRoute()
@@ -338,28 +322,6 @@ const formatDateTime = (dateTime: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// 全局变量展示：对密文参数做掩码处理（与作业模板详情保持一致）
-const formatGlobalParameterValue = (rawValue: any) => {
-  if (rawValue === null || rawValue === undefined) return ''
-  if (typeof rawValue !== 'object') {
-    return String(rawValue)
-  }
-
-  const value = rawValue?.value
-  const type = rawValue?.type
-
-  if (type === 'secret') {
-    return '******'
-  }
-
-  return value !== undefined ? String(value) : ''
-}
-
-const getGlobalParameterDescription = (rawValue: any) => {
-  if (!rawValue || typeof rawValue !== 'object') return ''
-  return rawValue.description?.trim?.() || ''
 }
 
 // 生命周期
