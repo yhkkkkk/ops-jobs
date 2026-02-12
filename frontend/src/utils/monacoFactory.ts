@@ -1,5 +1,7 @@
 // Monaco Editor 工厂函数 - 按需加载和优化
 
+import { setupMonacoWorkers } from '@/utils/monacoWorkers'
+
 let monacoInstance: any = null
 let isLoading = false
 let loadPromise: Promise<any> | null = null
@@ -10,9 +12,13 @@ export const languageMap = {
   bash: 'shell',
   python: 'python',
   powershell: 'powershell',
+  perl: 'perl',
+  js: 'javascript',
+  node: 'javascript',
   sql: 'sql',
   javascript: 'javascript',
   go: 'go',
+  golang: 'go',
   typescript: 'typescript',
   json: 'json',
   yaml: 'yaml',
@@ -21,7 +27,57 @@ export const languageMap = {
 
 // 获取Monaco语言
 export const getMonacoLanguage = (lang: string) => {
-  return languageMap[lang] || 'plaintext'
+  const key = (lang || '').toLowerCase()
+  return languageMap[key] || 'plaintext'
+}
+
+const languageReady: Record<string, boolean> = {}
+
+const ensureBasicLanguage = async (
+  monaco: any,
+  id: 'shell' | 'powershell' | 'perl' | 'go',
+  loader: () => Promise<{ language: any; conf: any }>
+) => {
+  if (languageReady[id]) return
+  const languages = monaco.languages.getLanguages?.() || []
+  if (!languages.find((lang: any) => lang.id === id)) {
+    monaco.languages.register({ id })
+  }
+  const mod = await loader()
+  monaco.languages.setMonarchTokensProvider(id, mod.language)
+  monaco.languages.setLanguageConfiguration(id, mod.conf)
+  languageReady[id] = true
+}
+
+const ensureBuiltInLanguage = async (monaco: any, id: 'javascript' | 'typescript' | 'json' | 'css' | 'html') => {
+  const languages = monaco.languages.getLanguages?.() || []
+  const target = languages.find((lang: any) => lang.id === id)
+  if (target?.loader) {
+    await target.loader()
+  }
+}
+
+export const ensureMonacoLanguage = async (monaco: any, lang?: string) => {
+  if (!lang) return
+  const resolved = getMonacoLanguage(lang)
+  if (resolved === 'javascript') {
+    await ensureBuiltInLanguage(monaco, 'javascript')
+  }
+  if (resolved === 'typescript') {
+    await ensureBuiltInLanguage(monaco, 'typescript')
+  }
+  if (resolved === 'shell') {
+    await ensureBasicLanguage(monaco, 'shell', () => import('monaco-editor/esm/vs/basic-languages/shell/shell'))
+  }
+  if (resolved === 'powershell') {
+    await ensureBasicLanguage(monaco, 'powershell', () => import('monaco-editor/esm/vs/basic-languages/powershell/powershell'))
+  }
+  if (resolved === 'perl') {
+    await ensureBasicLanguage(monaco, 'perl', () => import('monaco-editor/esm/vs/basic-languages/perl/perl'))
+  }
+  if (resolved === 'go') {
+    await ensureBasicLanguage(monaco, 'go', () => import('monaco-editor/esm/vs/basic-languages/go/go'))
+  }
 }
 
 // 动态加载Monaco Editor
@@ -41,27 +97,7 @@ export const loadMonaco = async (): Promise<any> => {
       const monacoModule = await import('monaco-editor')
       monacoInstance = monacoModule.default || monacoModule
 
-      // 配置Monaco Editor的Web Worker
-      if (typeof window !== 'undefined') {
-        window.MonacoEnvironment = {
-          getWorkerUrl: function (moduleId: string, label: string) {
-            // 使用CDN加载Web Worker以减少打包体积
-            if (label === 'json') {
-              return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/esm/vs/language/json/json.worker.js'
-            }
-            if (label === 'css' || label === 'scss' || label === 'less') {
-              return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/esm/vs/language/css/css.worker.js'
-            }
-            if (label === 'html' || label === 'handlebars' || label === 'razor') {
-              return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/esm/vs/language/html/html.worker.js'
-            }
-            if (label === 'typescript' || label === 'javascript') {
-              return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/esm/vs/language/typescript/ts.worker.js'
-            }
-            return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/esm/vs/editor/editor.worker.js'
-          }
-        }
-      }
+      setupMonacoWorkers()
 
       isLoading = false
       resolve(monacoInstance)
@@ -185,6 +221,10 @@ export const createEditor = async (
       horizontalScrollbarSize: 8,
     },
     ...options,
+  }
+
+  if (typeof defaultOptions.language === 'string') {
+    await ensureMonacoLanguage(monaco, defaultOptions.language)
   }
 
   return monaco.editor.create(container, defaultOptions)

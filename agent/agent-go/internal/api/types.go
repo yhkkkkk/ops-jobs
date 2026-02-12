@@ -17,7 +17,7 @@ type TaskSpec struct {
 	Name       string            `json:"name"`
 	Type       string            `json:"type,omitempty"`        // script/file_transfer/command
 	Command    string            `json:"command,omitempty"`     // 要执行的命令或脚本内容
-	ScriptType string            `json:"script_type,omitempty"` // shell/python/powershell
+	ScriptType string            `json:"script_type,omitempty"` // shell/python/powershell/perl/javascript/go
 	Args       []string          `json:"args,omitempty"`        // 参数
 	Env        map[string]string `json:"env,omitempty"`         // 环境变量
 	TimeoutSec int               `json:"timeout_sec,omitempty"` // 超时时间

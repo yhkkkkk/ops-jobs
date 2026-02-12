@@ -42,6 +42,23 @@
       @change="handleFormChange"
     />
 
+    <!-- 未保存更改提示 -->
+    <a-modal
+      v-model:visible="leaveConfirmVisible"
+      title="未保存更改"
+      :width="480"
+      :footer="false"
+    >
+      <div class="leave-confirm-content">
+        您有未保存的更改，是否保存并离开？
+      </div>
+      <div class="leave-confirm-actions">
+        <a-button type="primary" :loading="saving" @click="handleLeaveSave">保存并离开</a-button>
+        <a-button status="danger" @click="handleLeaveDiscard">放弃更改</a-button>
+        <a-button @click="handleLeaveCancel">取消</a-button>
+      </div>
+    </a-modal>
+
     <!-- 预览弹窗 -->
     <a-modal
       v-model:visible="previewVisible"
@@ -119,6 +136,8 @@ const previewVisible = ref(false)
 const templateData = ref<ScriptTemplate | null>(null)
 const previewData = ref<Partial<ScriptTemplate> | null>(null)
 const currentEditorTheme = ref('vs-dark')
+const leaveConfirmVisible = ref(false)
+const leaveAfterSave = ref(false)
 
 // 使用未保存更改检测 composable
 const {
@@ -237,16 +256,19 @@ const handlePreview = async () => {
 }
 
 // 保存模板
-const handleSave = async () => {
+const handleSave = async (): Promise<boolean> => {
   try {
     const result = await formRef.value?.submit()
     if (result) {
       // submit 方法会触发 @submit 事件，在 handleSubmit 中处理实际保存
       console.log('表单验证通过，准备保存')
+      return true
     }
+    return false
   } catch (error) {
     console.error('保存失败:', error)
     Message.error('保存失败')
+    return false
   }
 }
 
@@ -284,6 +306,10 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
     // 重置变更状态
     markAsSaved()
 
+    if (leaveAfterSave.value) {
+      leaveAfterSave.value = false
+      leaveConfirmVisible.value = false
+    }
     router.push('/script-templates')
   } catch (error: any) {
     console.error('保存模板失败:', error)
@@ -297,6 +323,7 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
     }
 
     Message.error(errorMessage)
+    leaveAfterSave.value = false
   } finally {
     saving.value = false
   }
@@ -305,10 +332,24 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
 // 返回列表
 const goBack = () => {
   if (!canLeave.value) {
-    Message.warning('您有未保存的更改，请先保存或放弃。')
+    leaveConfirmVisible.value = true
     return
   }
   router.push('/script-templates')
+}
+
+const handleLeaveSave = async () => {
+  leaveAfterSave.value = true
+  await handleSave()
+}
+
+const handleLeaveDiscard = () => {
+  leaveConfirmVisible.value = false
+  router.push('/script-templates')
+}
+
+const handleLeaveCancel = () => {
+  leaveConfirmVisible.value = false
 }
 
 // 删除旧的 showLeaveConfirm 函数，使用 composable 中的
@@ -370,6 +411,7 @@ const getScriptTypeColor = (type: string) => {
     shell: 'blue',
     python: 'green',
     powershell: 'purple',
+    perl: 'magenta',
     javascript: 'orange',
     go: 'cyan',
   }
@@ -381,6 +423,7 @@ const getScriptTypeText = (type: string) => {
     shell: 'Shell',
     python: 'Python',
     powershell: 'PowerShell',
+    perl: 'Perl',
     javascript: 'JavaScript',
     go: 'Go',
   }
@@ -445,5 +488,16 @@ const getCategoryText = (category: string) => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.leave-confirm-content {
+  margin-bottom: 16px;
+  color: var(--color-text-2);
+}
+
+.leave-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

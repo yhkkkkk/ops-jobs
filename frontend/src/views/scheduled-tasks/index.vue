@@ -114,7 +114,7 @@
         :data="tasks"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1420 }"
+        :scroll="{ x: 1450 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -420,7 +420,7 @@ const columns = [
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 150
+    width: 160
   },
   {
     title: '操作',

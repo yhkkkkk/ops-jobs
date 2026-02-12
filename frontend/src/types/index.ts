@@ -200,7 +200,7 @@ export interface ScriptTemplate {
   id?: number
   name: string
   description?: string
-  script_type: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
+  script_type: 'shell' | 'python' | 'powershell' | 'perl' | 'javascript' | 'go'
   category?: string
   tags_json?: Record<string, string>  // 键值对格式的标签
   tag_list?: Array<{ key: string; value: string }>

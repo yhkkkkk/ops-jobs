@@ -456,7 +456,7 @@ class FabricSSHManager:
         Args:
             host: 主机对象
             script_content: 脚本内容
-            script_type: 脚本类型 (shell, python, powershell等)
+            script_type: 脚本类型 (shell, python, powershell, perl, javascript, go等)
             timeout: 超时时间(秒)，如果为None则使用配置的默认值
             task_id: 任务ID，用于实时日志
             account_id: 可选的账号ID，如果提供则使用账号管理的认证信息
@@ -493,6 +493,12 @@ class FabricSSHManager:
                 # 根据脚本类型执行
                 if script_type.lower() == 'python':
                     result = self._execute_python_script(conn, script_content, timeout, host, task_id, log_stream_key)
+                elif script_type.lower() == 'perl':
+                    result = self._execute_perl_script(conn, script_content, timeout, host, task_id, log_stream_key)
+                elif script_type.lower() in ('javascript', 'js', 'node'):
+                    result = self._execute_js_script(conn, script_content, timeout, host, task_id, log_stream_key)
+                elif script_type.lower() == 'go':
+                    result = self._execute_go_script(conn, script_content, timeout, host, task_id, log_stream_key)
                 elif script_type.lower() == 'powershell':
                     result = self._execute_powershell_script(conn, script_content, timeout, host, task_id, log_stream_key)
                 else:  # shell
@@ -960,6 +966,194 @@ class FabricSSHManager:
         except Exception as e:
             raise FabricSSHError(f"Python脚本执行失败: {str(e)}")
     
+    def _execute_perl_script(self, conn, script_content: str, timeout: int,
+                             host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
+        """执行Perl脚本"""
+        try:
+            # 创建临时脚本文件
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.pl', delete=False) as f:
+                f.write(script_content)
+                local_script_path = f.name
+
+            try:
+                # 上传脚本到远程主机
+                remote_script_path = f'/tmp/script_{int(time.time())}.pl'
+                conn.put(local_script_path, remote_script_path)
+
+                stdout_handler = None
+                stderr_handler = None
+
+                if task_id:
+                    stdout_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stdout", stream_key=log_stream_key
+                    )
+                    stderr_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stderr", stream_key=log_stream_key
+                    )
+
+                result = conn.run(
+                    f'perl {remote_script_path}',
+                    out_stream=stdout_handler,
+                    err_stream=stderr_handler,
+                    warn=True,
+                    pty=False,
+                    timeout=timeout,
+                )
+
+                if stdout_handler:
+                    stdout_handler.close()
+                if stderr_handler:
+                    stderr_handler.close()
+
+                try:
+                    conn.run(f'rm -f {remote_script_path}', timeout=10)
+                except:
+                    pass
+
+                return {
+                    'success': result.ok,
+                    'host_id': host.id,
+                    'host_name': host.name,
+                    'host_ip': host.ip_address,
+                    'stdout': result.stdout or '',
+                    'stderr': result.stderr or '',
+                    'exit_code': result.exited,
+                    'message': '执行成功' if result.ok else f'执行失败，退出码: {result.exited}'
+                }
+
+            finally:
+                try:
+                    os.unlink(local_script_path)
+                except:
+                    pass
+
+        except Exception as e:
+            raise FabricSSHError(f"Perl脚本执行失败: {str(e)}")
+
+    def _execute_js_script(self, conn, script_content: str, timeout: int,
+                           host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
+        """执行JavaScript脚本"""
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+                f.write(script_content)
+                local_script_path = f.name
+
+            try:
+                remote_script_path = f'/tmp/script_{int(time.time())}.js'
+                conn.put(local_script_path, remote_script_path)
+
+                stdout_handler = None
+                stderr_handler = None
+
+                if task_id:
+                    stdout_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stdout", stream_key=log_stream_key
+                    )
+                    stderr_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stderr", stream_key=log_stream_key
+                    )
+
+                result = conn.run(
+                    f'node {remote_script_path}',
+                    out_stream=stdout_handler,
+                    err_stream=stderr_handler,
+                    warn=True,
+                    pty=False,
+                    timeout=timeout,
+                )
+
+                if stdout_handler:
+                    stdout_handler.close()
+                if stderr_handler:
+                    stderr_handler.close()
+
+                try:
+                    conn.run(f'rm -f {remote_script_path}', timeout=10)
+                except:
+                    pass
+
+                return {
+                    'success': result.ok,
+                    'host_id': host.id,
+                    'host_name': host.name,
+                    'host_ip': host.ip_address,
+                    'stdout': result.stdout or '',
+                    'stderr': result.stderr or '',
+                    'exit_code': result.exited,
+                    'message': '执行成功' if result.ok else f'执行失败，退出码: {result.exited}'
+                }
+
+            finally:
+                try:
+                    os.unlink(local_script_path)
+                except:
+                    pass
+
+        except Exception as e:
+            raise FabricSSHError(f"JavaScript脚本执行失败: {str(e)}")
+
+    def _execute_go_script(self, conn, script_content: str, timeout: int,
+                           host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
+        """执行Go脚本"""
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.go', delete=False) as f:
+                f.write(script_content)
+                local_script_path = f.name
+
+            try:
+                remote_script_path = f'/tmp/script_{int(time.time())}.go'
+                conn.put(local_script_path, remote_script_path)
+
+                stdout_handler = None
+                stderr_handler = None
+
+                if task_id:
+                    stdout_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stdout", stream_key=log_stream_key
+                    )
+                    stderr_handler = RealTimeOutputHandler(
+                        task_id, host.id, host.name, host.ip_address, "stderr", stream_key=log_stream_key
+                    )
+
+                result = conn.run(
+                    f'go run {remote_script_path}',
+                    out_stream=stdout_handler,
+                    err_stream=stderr_handler,
+                    warn=True,
+                    pty=False,
+                    timeout=timeout,
+                )
+
+                if stdout_handler:
+                    stdout_handler.close()
+                if stderr_handler:
+                    stderr_handler.close()
+
+                try:
+                    conn.run(f'rm -f {remote_script_path}', timeout=10)
+                except:
+                    pass
+
+                return {
+                    'success': result.ok,
+                    'host_id': host.id,
+                    'host_name': host.name,
+                    'host_ip': host.ip_address,
+                    'stdout': result.stdout or '',
+                    'stderr': result.stderr or '',
+                    'exit_code': result.exited,
+                    'message': '执行成功' if result.ok else f'执行失败，退出码: {result.exited}'
+                }
+
+            finally:
+                try:
+                    os.unlink(local_script_path)
+                except:
+                    pass
+
+        except Exception as e:
+            raise FabricSSHError(f"Go脚本执行失败: {str(e)}")
+
     def _execute_powershell_script(self, conn, script_content: str, timeout: int,
                                   host, task_id: Optional[str], log_stream_key: Optional[str]) -> Dict[str, Any]:
         """执行PowerShell脚本"""

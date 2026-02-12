@@ -27,6 +27,7 @@
                 <a-option value="shell">Shell</a-option>
                 <a-option value="python">Python</a-option>
                 <a-option value="powershell">PowerShell</a-option>
+                <a-option value="perl">Perl</a-option>
                 <a-option value="javascript">JavaScript</a-option>
                 <a-option value="go">Go</a-option>
               </a-select>
@@ -367,6 +368,43 @@ job_start
 
 ###### 作业平台中执行脚本成功和失败的标准只取决于脚本最后一条执行语句的返回值
 ###### 如果返回值为0，则认为此脚本执行成功，如果非0，则认为脚本执行失败
+###### 可在此处开始编写您的脚本逻辑代码`,
+
+  perl: `#!/usr/bin/env perl
+use strict;
+use warnings;
+use POSIX qw(strftime);
+
+# Perl脚本模板
+# 作者: {{author}}
+# 创建时间: {{date}}
+
+sub _now {
+    return strftime("%Y-%m-%d %H:%M:%S", localtime);
+}
+
+sub job_start {
+    print "[" . _now() . "][PID:$$] job_start\n";
+}
+
+sub job_success {
+    my ($msg) = @_;
+    $msg = '' unless defined $msg;
+    print "[" . _now() . "][PID:$$] job_success:[$msg]\n";
+    exit 0;
+}
+
+sub job_fail {
+    my ($msg) = @_;
+    $msg = '' unless defined $msg;
+    print STDERR "[" . _now() . "][PID:$$] job_fail:[$msg]\n";
+    exit 1;
+}
+
+job_start();
+
+###### 作业平台中执行脚本成功和失败的标准只取决于脚本最后一条执行语句的返回值
+###### 如果返回值为0，则认为此脚本执行成功，如果非0，则认为此脚本执行失败
 ###### 可在此处开始编写您的脚本逻辑代码`,
 
   javascript: `// JavaScript 脚本模板

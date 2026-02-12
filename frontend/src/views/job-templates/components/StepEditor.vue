@@ -48,6 +48,7 @@
             <a-radio value="shell">Shell</a-radio>
             <a-radio value="python">Python</a-radio>
             <a-radio value="powershell">PowerShell</a-radio>
+            <a-radio value="perl">Perl</a-radio>
             <a-radio value="javascript">JavaScript</a-radio>
             <a-radio value="go">Go</a-radio>
           </a-radio-group>

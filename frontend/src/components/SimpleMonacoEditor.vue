@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as monaco from 'monaco-editor'
+import { setupMonacoWorkers } from '@/utils/monacoWorkers'
+import { ensureMonacoLanguage, getMonacoLanguage } from '@/utils/monacoFactory'
 
 interface Props {
   modelValue: string
@@ -29,24 +31,19 @@ const emit = defineEmits<Emits>()
 
 const editorContainer = ref<HTMLElement>()
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
+const resolveLanguage = (lang?: string) => getMonacoLanguage((lang || '').toLowerCase())
 
-const normalizeLanguage = (lang?: string) => {
-  if (!lang) return 'shell'
-  const lower = lang.toLowerCase()
-  if (lower === 'js' || lower === 'javascript') return 'javascript'
-  if (lower === 'ts' || lower === 'typescript') return 'typescript'
-  if (lower === 'golang' || lower === 'go') return 'go'
-  return lower
-}
-
-const initEditor = () => {
+const initEditor = async () => {
   if (!editorContainer.value) return
 
   try {
     // 创建编辑器
+    setupMonacoWorkers()
+    const resolvedLanguage = resolveLanguage(props.language)
+    await ensureMonacoLanguage(monaco, resolvedLanguage)
     editor = monaco.editor.create(editorContainer.value, {
       value: props.modelValue,
-      language: normalizeLanguage(props.language),
+      language: resolvedLanguage,
       theme: props.theme,
       readOnly: props.readonly,
       automaticLayout: true,
@@ -94,7 +91,9 @@ watch(() => props.language, (newLanguage) => {
   if (editor) {
     const model = editor.getModel()
     if (model) {
-      monaco.editor.setModelLanguage(model, normalizeLanguage(newLanguage))
+      const resolved = resolveLanguage(newLanguage)
+      void ensureMonacoLanguage(monaco, resolved)
+      monaco.editor.setModelLanguage(model, resolved)
     }
   }
 })
@@ -107,7 +106,9 @@ watch(() => props.theme, (newTheme) => {
 })
 
 onMounted(() => {
-  setTimeout(initEditor, 200)
+  setTimeout(() => {
+    void initEditor()
+  }, 200)
 })
 
 onUnmounted(() => {

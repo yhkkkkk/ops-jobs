@@ -184,7 +184,7 @@ class AgentExecutionService:
             name: 任务名称
             task_type: 任务类型（script/file_transfer/command）
             command: 命令或脚本内容
-            script_type: 脚本类型（shell/python/powershell）
+            script_type: 脚本类型（shell/python/powershell/perl）
             args: 命令参数
             env: 环境变量
             timeout_sec: 超时时间（秒）

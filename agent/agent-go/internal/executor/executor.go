@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -36,7 +37,9 @@ type RunningTask struct {
 	Cancel    context.CancelFunc
 	StartTime time.Time
 	Status    string // pending/running/success/failed/cancelled
-	LogBuffer strings.Builder
+	LogBuffer bytes.Buffer
+	LogBytes  int64
+	LogTruncated bool
 	LogLock   sync.Mutex
 	WaitErr   error // 命令等待的错误
 }
@@ -241,7 +244,8 @@ func (e *Executor) startCommand(cmd *exec.Cmd, taskID string, logFile *os.File, 
 	}
 
 	// 创建多写入器：同时写入日志文件和缓冲区
-	multiWriter := io.MultiWriter(logFile, &runningTask.LogBuffer)
+	cappedWriter := &cappedLogWriter{task: runningTask, max: constants.MaxTaskLogBytes}
+	multiWriter := io.MultiWriter(logFile, cappedWriter)
 
 	// 启动命令
 	runningTask.Status = constants.StatusRunning
@@ -256,6 +260,71 @@ func (e *Executor) startCommand(cmd *exec.Cmd, taskID string, logFile *os.File, 
 	go e.streamOutput(taskID, stderrPipe, multiWriter, logCallback, constants.StreamStderr)
 
 	return nil
+}
+
+type cappedLogWriter struct {
+	task *RunningTask
+	max  int64
+}
+
+func (w *cappedLogWriter) Write(p []byte) (int, error) {
+	if w.task == nil {
+		return len(p), nil
+	}
+	w.task.LogLock.Lock()
+	defer w.task.LogLock.Unlock()
+	if w.task.LogTruncated {
+		return len(p), nil
+	}
+	remaining := w.max - w.task.LogBytes
+	if remaining <= 0 {
+		w.task.LogTruncated = true
+		return len(p), nil
+	}
+	if int64(len(p)) > remaining {
+		_, _ = w.task.LogBuffer.Write(p[:remaining])
+		w.task.LogBytes += remaining
+		w.task.LogTruncated = true
+		return len(p), nil
+	}
+	n, _ := w.task.LogBuffer.Write(p)
+	w.task.LogBytes += int64(n)
+	return len(p), nil
+}
+
+func buildFinalLog(task *RunningTask) (string, int64) {
+	if task == nil {
+		return "", 0
+	}
+	task.LogLock.Lock()
+	content := task.LogBuffer.String()
+	truncated := task.LogTruncated
+	task.LogLock.Unlock()
+
+	if truncated {
+		content = appendTruncateNotice(content)
+	}
+	if int64(len(content)) > constants.MaxTaskLogBytes {
+		content = content[:constants.MaxTaskLogBytes]
+	}
+	return content, int64(len(content))
+}
+
+func appendTruncateNotice(content string) string {
+	notice := "\n" + constants.LogTruncatedNotice + "\n"
+	max := int(constants.MaxTaskLogBytes)
+	if len(notice) >= max {
+		if len(content) > max {
+			return content[:max]
+		}
+		return content
+	}
+	if len(content)+len(notice) > max {
+		if len(content) > max-len(notice) {
+			content = content[:max-len(notice)]
+		}
+	}
+	return content + notice
 }
 
 // waitForCommand 等待命令完成，如果被取消或超时则返回结果，否则返回 nil
@@ -304,14 +373,13 @@ func (e *Executor) handleContextDone(taskCtx context.Context, cmd *exec.Cmd, run
 func (e *Executor) buildTaskResult(taskID string, runningTask *RunningTask, finishedAt time.Time, waitErr error) *api.TaskResult {
 	// 如果状态已经是 cancelled 或 failed（由 handleContextDone 设置），直接使用
 	if runningTask.Status == constants.StatusCancelled {
-		runningTask.LogLock.Lock()
-		logContent := runningTask.LogBuffer.String()
-		runningTask.LogLock.Unlock()
+		logContent, logSize := buildFinalLog(runningTask)
 		return &api.TaskResult{
 			TaskID:     taskID,
 			Status:     constants.StatusCancelled,
 			ExitCode:   -1,
 			Log:        logContent,
+			LogSize:    logSize,
 			StartedAt:  runningTask.StartTime.Unix(),
 			FinishedAt: finishedAt.Unix(),
 			ErrorMsg:   constants.MsgTaskCancelled,
@@ -340,17 +408,15 @@ func (e *Executor) buildTaskResult(taskID string, runningTask *RunningTask, fini
 		runningTask.Status = constants.StatusSuccess
 	}
 
-	// 读取完整日志
-	runningTask.LogLock.Lock()
-	logContent := runningTask.LogBuffer.String()
-	runningTask.LogLock.Unlock()
+	// 读取完整日志（含截断提示）
+	logContent, logSize := buildFinalLog(runningTask)
 
 	return &api.TaskResult{
 		TaskID:     taskID,
 		Status:     runningTask.Status,
 		ExitCode:   exitCode,
 		Log:        logContent,
-		LogSize:    int64(len(logContent)),
+		LogSize:    logSize,
 		StartedAt:  runningTask.StartTime.Unix(),
 		FinishedAt: finishedAt.Unix(),
 		ErrorMsg:   errorMsg,
@@ -427,7 +493,10 @@ func buildCommand(ctx context.Context, task *api.TaskSpec) (*exec.Cmd, error) {
 			}
 			baseCmd = exec.CommandContext(ctx, pythonExe, "-c", task.Command)
 
-		case constants.ScriptTypeJS, constants.ScriptTypeNode:
+		case constants.ScriptTypePerl:
+			baseCmd = exec.CommandContext(ctx, "perl", "-e", task.Command)
+
+		case constants.ScriptTypeJS, constants.ScriptTypeJavaScript, constants.ScriptTypeNode:
 			// 通过 node -e 执行 JS 代码
 			baseCmd = exec.CommandContext(ctx, "node", "-e", task.Command)
 

@@ -62,6 +62,7 @@
             <a-option value="shell">Shell</a-option>
             <a-option value="python">Python</a-option>
             <a-option value="powershell">PowerShell</a-option>
+            <a-option value="perl">Perl</a-option>
             <a-option value="javascript">JavaScript</a-option>
             <a-option value="go">Go</a-option>
           </a-select>
@@ -660,6 +661,7 @@ const getScriptTypeColor = (type: string) => {
     shell: 'blue',
     python: 'green',
     powershell: 'purple',
+    perl: 'magenta',
   }
   return colors[type] || 'gray'
 }
@@ -669,6 +671,7 @@ const getScriptTypeText = (type: string) => {
     shell: 'Shell',
     python: 'Python',
     powershell: 'PowerShell',
+    perl: 'Perl',
   }
   return texts[type] || type
 }

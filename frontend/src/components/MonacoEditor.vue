@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as monaco from 'monaco-editor'
+import { setupMonacoWorkers } from '@/utils/monacoWorkers'
+import { ensureMonacoLanguage, getMonacoLanguage } from '@/utils/monacoFactory'
 
 interface Props {
   modelValue: string
@@ -32,26 +34,7 @@ const emit = defineEmits<Emits>()
 
 const editorRef = ref<HTMLElement>()
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
-
-// 语言映射
-const languageMap = {
-  shell: 'shell',
-  bash: 'shell',
-  python: 'python',
-  powershell: 'powershell',
-  sql: 'sql',
-  javascript: 'javascript',
-  go: 'go',
-  typescript: 'typescript',
-  json: 'json',
-  yaml: 'yaml',
-  xml: 'xml',
-}
-
-// 获取Monaco语言
-const getMonacoLanguage = (lang: string) => {
-  return languageMap[lang] || 'plaintext'
-}
+const resolveLanguage = (lang?: string) => getMonacoLanguage((lang || '').toLowerCase())
 
 // 初始化编辑器
 const initEditor = async () => {
@@ -67,9 +50,13 @@ const initEditor = async () => {
   }
 
   try {
+    setupMonacoWorkers()
+    const resolvedLanguage = resolveLanguage(props.language)
+    await ensureMonacoLanguage(monaco, resolvedLanguage)
+
     const defaultOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
       value: props.modelValue || '',
-      language: getMonacoLanguage(props.language),
+      language: resolvedLanguage,
       theme: props.theme,
       readOnly: props.readonly,
       automaticLayout: true,
@@ -120,24 +107,6 @@ const initEditor = async () => {
       })
     }
 
-  // 设置Shell语言的语法高亮
-  if (props.language === 'shell' || props.language === 'bash') {
-    monaco.languages.setMonarchTokensProvider('shell', {
-      tokenizer: {
-        root: [
-          [/#.*$/, 'comment'],
-          [/\$\w+/, 'variable'],
-          [/\$\{[^}]+\}/, 'variable'],
-          [/".*?"/, 'string'],
-          [/'.*?'/, 'string'],
-          [/\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|exit|break|continue)\b/, 'keyword'],
-          [/\b(echo|printf|read|cd|ls|cp|mv|rm|mkdir|rmdir|chmod|chown|grep|sed|awk|sort|uniq|head|tail|cat|less|more)\b/, 'keyword.control'],
-          [/[|&;()<>]/, 'delimiter'],
-          [/\d+/, 'number'],
-        ],
-      },
-    })
-  }
 }
 
 // 销毁编辑器
@@ -161,13 +130,13 @@ const getValue = () => {
 }
 
 // 设置语言
-const setLanguage = (language: string) => {
-  if (editor) {
-    const model = editor.getModel()
-    if (model) {
-      monaco.editor.setModelLanguage(model, getMonacoLanguage(language))
-    }
-  }
+const setLanguage = async (language: string) => {
+  if (!editor) return
+  const model = editor.getModel()
+  if (!model) return
+  const resolved = resolveLanguage(language)
+  await ensureMonacoLanguage(monaco, resolved)
+  monaco.editor.setModelLanguage(model, resolved)
 }
 
 // 设置主题
@@ -192,7 +161,7 @@ watch(() => props.modelValue, (newValue) => {
 })
 
 watch(() => props.language, (newLanguage) => {
-  setLanguage(newLanguage)
+  void setLanguage(newLanguage)
 })
 
 watch(() => props.theme, (newTheme) => {

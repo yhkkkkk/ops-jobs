@@ -279,6 +279,7 @@ const scriptTypeName = computed(() => {
     shell: 'Shell脚本',
     bash: 'Bash脚本',
     python: 'Python脚本',
+    perl: 'Perl脚本',
     powershell: 'PowerShell脚本',
     javascript: 'JavaScript脚本',
     go: 'Go脚本'
@@ -291,9 +292,12 @@ const scriptLanguage = computed(() => {
     shell: 'shell',
     bash: 'shell',
     python: 'python',
+    perl: 'perl',
     powershell: 'powershell',
     bat: 'bat',
     javascript: 'javascript',
+    js: 'javascript',
+    node: 'javascript',
     go: 'go'
   }
   return languageMap[scriptType.value] || 'shell'

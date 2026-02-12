@@ -54,6 +54,9 @@ class ScriptTemplate(models.Model):
         ('shell', 'Shell'),
         ('python', 'Python'),
         ('powershell', 'PowerShell'),
+        ('perl', 'Perl'),
+        ('javascript', 'JavaScript'),
+        ('go', 'Go'),
     ]
     
     TEMPLATE_TYPE_CHOICES = [

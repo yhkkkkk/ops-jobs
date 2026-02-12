@@ -97,7 +97,7 @@ class JobStep(models.Model):
 
     # 脚本配置 (仅当 step_type='script' 时使用)
     script_type = models.CharField(max_length=20, blank=True, verbose_name="脚本类型",
-                                 help_text="shell, python, powershell 等")
+                                 help_text="shell, python, powershell, perl, javascript, go 等")
     script_content = models.TextField(blank=True, verbose_name="脚本内容")
     account_id = models.IntegerField(null=True, blank=True, verbose_name="执行账号ID")
 

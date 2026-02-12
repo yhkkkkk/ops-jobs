@@ -14,7 +14,7 @@ import (
 	"ops-job-agent/internal/constants"
 )
 
-// ScriptExecutor 专门处理脚本执行（支持 shell/python/powershell）
+// ScriptExecutor 专门处理脚本执行（支持 shell/python/powershell/perl）
 type ScriptExecutor struct {
 	executor *Executor
 	tempDir  string
@@ -34,9 +34,18 @@ func NewScriptExecutor(executor *Executor, tempDir string) *ScriptExecutor {
 
 // ExecuteScript 执行脚本
 func (s *ScriptExecutor) ExecuteScript(ctx context.Context, task *api.TaskSpec, logCallback func(string)) (*api.TaskResult, error) {
+	if task.Command == "" {
+		return s.executor.ExecuteTask(ctx, task, logCallback)
+	}
+
+	scriptType := normalizeScriptType(task.ScriptType)
+	if scriptType != "" && scriptType != constants.ScriptTypeShell && scriptType != constants.ScriptTypeBash {
+		return s.executeScriptContent(ctx, task, scriptType, logCallback)
+	}
+
 	// 如果 Command 是脚本内容，需要先写入文件
-	if task.Command != "" && !isExecutableCommand(task.Command) {
-		return s.executeScriptContent(ctx, task, logCallback)
+	if !isExecutableCommand(task.Command) {
+		return s.executeScriptContent(ctx, task, "", logCallback)
 	}
 
 	// 直接执行命令
@@ -44,9 +53,13 @@ func (s *ScriptExecutor) ExecuteScript(ctx context.Context, task *api.TaskSpec, 
 }
 
 // executeScriptContent 执行脚本内容
-func (s *ScriptExecutor) executeScriptContent(ctx context.Context, task *api.TaskSpec, logCallback func(string)) (*api.TaskResult, error) {
-	// 检测脚本类型
-	scriptType := detectScriptType(task.Command)
+func (s *ScriptExecutor) executeScriptContent(ctx context.Context, task *api.TaskSpec, scriptType string, logCallback func(string)) (*api.TaskResult, error) {
+	// 使用显式脚本类型优先，否则检测
+	if scriptType == "" {
+		scriptType = detectScriptType(task.Command)
+	} else {
+		scriptType = normalizeScriptType(scriptType)
+	}
 
 	// 创建临时脚本文件
 	scriptFile, err := s.createScriptFile(task.ID, scriptType, task.Command)
@@ -69,6 +82,12 @@ func (s *ScriptExecutor) executeScriptContent(ctx context.Context, task *api.Tas
 			// 尝试 python
 			cmd = exec.CommandContext(ctx, "python", scriptFile)
 		}
+	case constants.ScriptTypePerl:
+		cmd = exec.CommandContext(ctx, "perl", scriptFile)
+	case constants.ScriptTypeJS, constants.ScriptTypeJavaScript, constants.ScriptTypeNode:
+		cmd = exec.CommandContext(ctx, "node", scriptFile)
+	case constants.ScriptTypeGo:
+		cmd = exec.CommandContext(ctx, "go", "run", scriptFile)
 	case constants.ScriptTypePowerShell:
 		if runtime.GOOS == constants.OSWindows {
 			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", scriptFile)
@@ -118,6 +137,12 @@ func (s *ScriptExecutor) createScriptFile(taskID, scriptType, content string) (s
 	switch scriptType {
 	case constants.ScriptTypePython:
 		ext = constants.ScriptExtPy
+	case constants.ScriptTypePerl:
+		ext = constants.ScriptExtPl
+	case constants.ScriptTypeJS, constants.ScriptTypeJavaScript, constants.ScriptTypeNode:
+		ext = constants.ScriptExtJs
+	case constants.ScriptTypeGo:
+		ext = constants.ScriptExtGo
 	case constants.ScriptTypePowerShell:
 		ext = constants.ScriptExtPs1
 	case constants.ScriptTypeShell, constants.ScriptTypeBash:
@@ -130,6 +155,37 @@ func (s *ScriptExecutor) createScriptFile(taskID, scriptType, content string) (s
 	return scriptPath, os.WriteFile(scriptPath, []byte(content), 0644)
 }
 
+// normalizeScriptType 归一化脚本类型
+func normalizeScriptType(scriptType string) string {
+	normalized := strings.ToLower(strings.TrimSpace(scriptType))
+	switch normalized {
+	case constants.ScriptTypeJavaScript:
+		return constants.ScriptTypeJS
+	case constants.ScriptTypeNode:
+		return constants.ScriptTypeNode
+	case constants.ScriptTypeJS:
+		return constants.ScriptTypeJS
+	case constants.ScriptTypeGo, "golang":
+		return constants.ScriptTypeGo
+	case constants.ScriptTypePy:
+		return constants.ScriptTypePython
+	case constants.ScriptTypePwsh:
+		return constants.ScriptTypePowerShell
+	case constants.ScriptTypeBash:
+		return constants.ScriptTypeBash
+	case constants.ScriptTypeShell:
+		return constants.ScriptTypeShell
+	case constants.ScriptTypePython:
+		return constants.ScriptTypePython
+	case constants.ScriptTypePerl:
+		return constants.ScriptTypePerl
+	case constants.ScriptTypePowerShell:
+		return constants.ScriptTypePowerShell
+	default:
+		return normalized
+	}
+}
+
 // detectScriptType 检测脚本类型
 func detectScriptType(content string) string {
 	content = strings.TrimSpace(content)
@@ -139,6 +195,12 @@ func detectScriptType(content string) string {
 		shebang := strings.ToLower(content[:strings.Index(content, "\n")])
 		if strings.Contains(shebang, constants.ScriptTypePython) {
 			return constants.ScriptTypePython
+		}
+		if strings.Contains(shebang, constants.ScriptTypePerl) {
+			return constants.ScriptTypePerl
+		}
+		if strings.Contains(shebang, "node") {
+			return constants.ScriptTypeJS
 		}
 		if strings.Contains(shebang, constants.ScriptTypeBash) {
 			return constants.ScriptTypeBash
@@ -155,6 +217,15 @@ func detectScriptType(content string) string {
 	if strings.Contains(content, constants.ScriptExtPy) {
 		return constants.ScriptTypePython
 	}
+	if strings.Contains(content, constants.ScriptExtPl) {
+		return constants.ScriptTypePerl
+	}
+	if strings.Contains(content, constants.ScriptExtJs) {
+		return constants.ScriptTypeJS
+	}
+	if strings.Contains(content, constants.ScriptExtGo) {
+		return constants.ScriptTypeGo
+	}
 	if strings.Contains(content, constants.ScriptExtPs1) {
 		return constants.ScriptTypePowerShell
 	}
@@ -167,6 +238,21 @@ func detectScriptType(content string) string {
 	// 检查 PowerShell 特征
 	if strings.Contains(content, "$") && strings.Contains(content, "Get-") {
 		return constants.ScriptTypePowerShell
+	}
+
+	// 检查 Perl 特征
+	if strings.Contains(content, "use strict") || strings.Contains(content, "use warnings") {
+		return constants.ScriptTypePerl
+	}
+
+	// 检查 JS 特征
+	if strings.Contains(content, "console.log") || strings.Contains(content, "require(") {
+		return constants.ScriptTypeJS
+	}
+
+	// 检查 Go 特征
+	if strings.Contains(content, "package main") && strings.Contains(content, "func main") {
+		return constants.ScriptTypeGo
 	}
 
 	// 默认 shell

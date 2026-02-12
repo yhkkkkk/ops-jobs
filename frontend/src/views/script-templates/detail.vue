@@ -281,6 +281,7 @@ const getScriptTypeColor = (type: string) => {
     shell: 'blue',
     python: 'green',
     powershell: 'purple',
+    perl: 'magenta',
     javascript: 'yellow',
     go: 'cyan',
   }
@@ -292,6 +293,7 @@ const getScriptTypeText = (type: string) => {
     shell: 'Shell',
     python: 'Python',
     powershell: 'PowerShell',
+    perl: 'Perl',
     javascript: 'JavaScript',
     go: 'Go',
   }

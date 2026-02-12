@@ -15,6 +15,9 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
             ('shell', 'Shell'),
             ('python', 'Python'),
             ('powershell', 'PowerShell'),
+            ('perl', 'Perl'),
+            ('javascript', 'JavaScript'),
+            ('go', 'Go'),
         ],
         default='shell',
         help_text="脚本类型"

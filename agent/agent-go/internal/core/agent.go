@@ -79,6 +79,9 @@ type Agent struct {
 	adaptiveCtrl *adaptiveController
 	// runningCount 当前正在执行的任务数（用于动态并发）
 	runningCount int64
+	// log quota
+	logQuotaMu sync.Mutex
+	logQuotas  map[string]*logQuota
 }
 
 func NewAgent(cfg *config.Config) *Agent {
@@ -133,6 +136,7 @@ func NewAgent(cfg *config.Config) *Agent {
 		completedTasks:   make(map[string]time.Time),
 		runningTaskLocks: make(map[string]*sync.Mutex),
 		maxTaskTime:      maxTaskTime,
+		logQuotas:        make(map[string]*logQuota),
 	}
 
 	agent.adaptiveCtrl = newAdaptiveController(cfg.ResourceAdaptive)
@@ -484,6 +488,8 @@ func (a *Agent) executeTask(task *TaskSpec) {
 
 	// 上报结果
 	a.reportTaskResult(result)
+	// 清理日志配额
+	a.clearLogQuota(task.ID)
 
 	// 记录任务已完成，用于后续幂等判断
 	a.markTaskCompleted(task.ID)
@@ -570,44 +576,107 @@ func (a *Agent) cleanupTaskLock(taskID string) {
 	delete(a.runningTaskLocks, taskID)
 }
 
+type logQuota struct {
+	bytes     int64
+	truncated bool
+	notified  bool
+}
+
+func (a *Agent) allowLog(taskID string, line string) (bool, bool) {
+	if taskID == "" {
+		return true, false
+	}
+	lineBytes := int64(len(line) + 1)
+	noticeBytes := int64(len(constants.LogTruncatedNotice) + 1)
+	maxBytes := constants.MaxTaskLogBytes
+	reservedMax := maxBytes - noticeBytes
+	if reservedMax < 0 {
+		reservedMax = 0
+	}
+
+	a.logQuotaMu.Lock()
+	defer a.logQuotaMu.Unlock()
+
+	quota, ok := a.logQuotas[taskID]
+	if !ok {
+		quota = &logQuota{}
+		a.logQuotas[taskID] = quota
+	}
+
+	if quota.truncated {
+		return false, false
+	}
+
+	if quota.bytes+lineBytes > reservedMax {
+		quota.truncated = true
+		if !quota.notified {
+			quota.notified = true
+			return false, true
+		}
+		return false, false
+	}
+
+	quota.bytes += lineBytes
+	return true, false
+}
+
+func (a *Agent) clearLogQuota(taskID string) {
+	if taskID == "" {
+		return
+	}
+	a.logQuotaMu.Lock()
+	delete(a.logQuotas, taskID)
+	a.logQuotaMu.Unlock()
+}
+
+func (a *Agent) sendLogLine(taskID string, content string, level string) {
+	logEntry := api.LogEntry{
+		Timestamp: time.Now().Unix(),
+		Level:     level,
+		Content:   content,
+		Stream:    constants.StreamStdout,
+		TaskID:    taskID,
+	}
+
+	if a.wsClient != nil && a.wsClient.IsConnected() {
+		if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
+			logger.GetLogger().WithError(err).Error("send log via websocket failed")
+			if a.outbox != nil {
+				a.outbox.Enqueue(wsclient.Message{
+					Type:      constants.MessageTypeLog,
+					Timestamp: time.Now().UnixMilli(),
+					TaskID:    taskID,
+					Logs:      []api.LogEntry{logEntry},
+				})
+			}
+		}
+		return
+	}
+
+	if a.outbox != nil {
+		a.outbox.Enqueue(wsclient.Message{
+			Type:      constants.MessageTypeLog,
+			Timestamp: time.Now().UnixMilli(),
+			TaskID:    taskID,
+			Logs:      []api.LogEntry{logEntry},
+		})
+	}
+}
+
 // createLogCallback 创建日志回调函数
 func (a *Agent) createLogCallback(taskID string) func(string) {
 	return func(logLine string) {
 		// 记录到本地日志
 		logger.GetLogger().WithField("task_id", taskID).Info(logLine)
 
-		// 通过 WebSocket 发送日志到 Agent-Server
-		logEntry := api.LogEntry{
-			Timestamp: time.Now().Unix(),
-			Level:     "info",
-			Content:   logLine,
-			Stream:    constants.StreamStdout,
-			TaskID:    taskID,
+		sendLine, sendNotice := a.allowLog(taskID, logLine)
+		if sendNotice {
+			a.sendLogLine(taskID, constants.LogTruncatedNotice, "warn")
 		}
-
-		// 优先直发，断线则进入 outbox 本地缓冲
-		if a.wsClient != nil && a.wsClient.IsConnected() {
-			if err := a.wsClient.SendLogs(taskID, []api.LogEntry{logEntry}); err != nil {
-				logger.GetLogger().WithError(err).Error("send log via websocket failed")
-				if a.outbox != nil {
-					a.outbox.Enqueue(wsclient.Message{
-						Type:      constants.MessageTypeLog,
-						Timestamp: time.Now().UnixMilli(),
-						TaskID:    taskID,
-						Logs:      []api.LogEntry{logEntry},
-					})
-				}
-			}
+		if !sendLine {
 			return
 		}
-		if a.outbox != nil {
-			a.outbox.Enqueue(wsclient.Message{
-				Type:      constants.MessageTypeLog,
-				Timestamp: time.Now().UnixMilli(),
-				TaskID:    taskID,
-				Logs:      []api.LogEntry{logEntry},
-			})
-		}
+		a.sendLogLine(taskID, logLine, "info")
 	}
 }
 

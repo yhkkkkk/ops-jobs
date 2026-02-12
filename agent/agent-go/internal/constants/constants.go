@@ -50,9 +50,15 @@ const (
 	ScriptTypePwsh       = "pwsh"
 	ScriptTypePython     = "python"
 	ScriptTypePy         = "py"
+	ScriptTypePerl       = "perl"
 	ScriptTypeJS         = "js"
+	ScriptTypeJavaScript = "javascript"
 	ScriptTypeNode       = "node"
+	ScriptTypeGo         = "go"
 	ScriptExtPy          = ".py"
+	ScriptExtPl          = ".pl"
+	ScriptExtJs          = ".js"
+	ScriptExtGo          = ".go"
 	ScriptExtPs1         = ".ps1"
 	ScriptExtSh          = ".sh"
 	OSWindows            = "windows"
@@ -77,6 +83,10 @@ const (
 	LogBufferSize    = 4096
 	LineBufferSize   = 1024
 	RateLimitBufSize = 32 * 1024
+
+	// 任务日志上限（字节）
+	MaxTaskLogBytes      int64  = 5 * 1024 * 1024
+	LogTruncatedNotice          = "[log truncated after 5MB]"
 
 	// 文件传输配置
 	DownloadRetryCount      = 3

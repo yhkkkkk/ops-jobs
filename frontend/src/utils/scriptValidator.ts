@@ -13,7 +13,7 @@ export interface ScriptValidationResult {
 }
 
 export interface ScriptValidationOptions {
-  language: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
+  language: 'shell' | 'python' | 'powershell' | 'perl' | 'javascript' | 'go'
   strictMode?: boolean
 }
 
@@ -55,6 +55,9 @@ export class ScriptValidator {
           break
         case 'powershell':
           results.push(...this.validatePowerShellLine(line, lineNumber))
+          break
+        case 'perl':
+          // Perl 暂不做语法级校验，仅预留扩展点
           break
         case 'javascript':
         case 'js':
@@ -266,7 +269,7 @@ export function createScriptValidator(options: ScriptValidationOptions): ScriptV
  */
 export function validateScript(
   script: string,
-  language: 'shell' | 'python' | 'powershell' | 'javascript' | 'go'
+  language: 'shell' | 'python' | 'powershell' | 'perl' | 'javascript' | 'go'
 ): ScriptValidationResult[] {
   const validator = createScriptValidator({ language })
   return validator.validate(script)
