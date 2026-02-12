@@ -120,7 +120,6 @@
 
 - **语言**: Go 1.24+
 - **Web 框架**: Gin 1.10+ (Agent 本地 HTTP 服务)
-- **HTTP 客户端**: Resty 2.13+ (与控制面通信)
 - **WebSocket**: Gorilla WebSocket 1.5+ (Agent-Server 模式)
 - **配置管理**: Viper 1.21+ (配置文件和环境变量)
 - **日志系统**: Logrus + Lumberjack (结构化日志和轮转)
@@ -135,7 +134,6 @@
 - **任务持久化**: PendingTaskStore Redis（离线任务存储）
 - **配置管理**: Viper 1.21+ (配置文件和环境变量)
 - **日志系统**: Logrus + Lumberjack (结构化日志)
-- **认证**: HMAC签名 (可选的安全认证)
 
 ### 前端技术栈
 
