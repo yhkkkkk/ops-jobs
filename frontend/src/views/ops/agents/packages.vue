@@ -212,7 +212,7 @@
           />
         </a-form-item>
 
-        <a-form-item label="操作系统" field="os_type" required>
+        <a-form-item label="操作系统" field="os_type" required v-if="!isEdit">
           <a-select
             v-model="packageForm.os_type"
             placeholder="请选择操作系统"
@@ -223,7 +223,21 @@
           </a-select>
         </a-form-item>
 
-        <a-form-item label="架构" field="arch" required>
+        <a-form-item label="操作系统" v-if="isEdit">
+          <a-input :model-value="getOsTypeDisplay(currentPackage?.os_type)" readonly>
+            <template #prefix>
+              <IconLock />
+            </template>
+          </a-input>
+          <template #extra>
+            <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+              <icon-info-circle />
+              <span>更新时无法修改操作系统，如需更改请重新上传安装包</span>
+            </div>
+          </template>
+        </a-form-item>
+
+        <a-form-item label="架构" field="arch" required v-if="!isEdit">
           <a-select
             v-model="packageForm.arch"
             placeholder="请选择架构"
@@ -232,6 +246,20 @@
             <a-option value="arm64">ARM64</a-option>
             <a-option value="386">i386</a-option>
           </a-select>
+        </a-form-item>
+
+        <a-form-item label="架构" v-if="isEdit">
+          <a-input :model-value="getArchDisplay(currentPackage?.arch)" readonly>
+            <template #prefix>
+              <IconLock />
+            </template>
+          </a-input>
+          <template #extra>
+            <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+              <icon-info-circle />
+              <span>更新时无法修改架构，如需更改请重新上传安装包</span>
+            </div>
+          </template>
         </a-form-item>
 
         <a-form-item label="存储方式" field="storage_type" v-if="!isEdit">
@@ -773,6 +801,26 @@ const handleConfirmDelete = async () => {
 onMounted(() => {
   fetchPackages()
 })
+const getOsTypeDisplay = (osType?: string): string => {
+  const typeMap: Record<string, string> = {
+    linux: 'Linux',
+    windows: 'Windows',
+    darwin: 'macOS',
+  }
+  if (!osType) return '-'
+  return typeMap[osType] || osType
+}
+
+const getArchDisplay = (arch?: string): string => {
+  const archMap: Record<string, string> = {
+    amd64: 'AMD64/x86_64',
+    arm64: 'ARM64',
+    386: 'i386',
+  }
+  if (!arch) return '-'
+  return archMap[arch] || arch
+}
+
 const getStorageTypeDisplay = (storageType: string): string => {
   const typeMap: Record<string, string> = {
     oss: '阿里云OSS',
