@@ -83,9 +83,10 @@
         <a-col :span="6">
           <a-date-picker
             v-model="searchForm.start_date"
-            placeholder="开始日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
+            placeholder="开始时间"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            show-time
             style="width: 100%"
             @change="handleSearch"
           />
@@ -93,24 +94,36 @@
         <a-col :span="6">
           <a-date-picker
             v-model="searchForm.end_date"
-            placeholder="结束日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
+            placeholder="结束时间"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            show-time
             style="width: 100%"
             @change="handleSearch"
           />
         </a-col>
         <a-col :span="12">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon><icon-search /></template>
-              搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon><icon-refresh /></template>
-              重置
-            </a-button>
-          </a-space>
+          <div class="time-actions">
+            <a-space size="mini" class="time-shortcuts">
+              <a-button size="mini" @click="applyDateShortcut('last1h')">近1h</a-button>
+              <a-button size="mini" @click="applyDateShortcut('last12h')">近12h</a-button>
+              <a-button size="mini" @click="applyDateShortcut('today')">今天</a-button>
+              <a-button size="mini" @click="applyDateShortcut('yesterday')">昨天</a-button>
+              <a-button size="mini" @click="applyDateShortcut('last7')">近7天</a-button>
+              <a-button size="mini" @click="applyDateShortcut('last30')">近30天</a-button>
+              <a-button size="mini" @click="applyDateShortcut('thisMonth')">本月</a-button>
+            </a-space>
+            <a-space>
+              <a-button type="primary" @click="handleSearch">
+                <template #icon><icon-search /></template>
+                搜索
+              </a-button>
+              <a-button @click="handleReset">
+                <template #icon><icon-refresh /></template>
+                重置
+              </a-button>
+            </a-space>
+          </div>
         </a-col>
       </a-row>
     </a-card>
@@ -333,6 +346,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
@@ -515,6 +529,50 @@ const fetchRecords = async () => {
 const handleSearch = () => {
   pagination.current = 1
   fetchRecords()
+}
+
+const applyDateShortcut = (type: string) => {
+  const now = dayjs()
+  const fmt = (value: dayjs.Dayjs) => value.format('YYYY-MM-DD HH:mm:ss')
+
+  let start = now
+  let end = now
+
+  switch (type) {
+    case 'last1h':
+      start = now.subtract(1, 'hour')
+      end = now
+      break
+    case 'last12h':
+      start = now.subtract(12, 'hour')
+      end = now
+      break
+    case 'yesterday':
+      start = now.subtract(1, 'day').startOf('day')
+      end = now.subtract(1, 'day').endOf('day')
+      break
+    case 'last7':
+      start = now.subtract(6, 'day').startOf('day')
+      end = now
+      break
+    case 'last30':
+      start = now.subtract(29, 'day').startOf('day')
+      end = now
+      break
+    case 'thisMonth':
+      start = now.startOf('month')
+      end = now
+      break
+    case 'today':
+    default:
+      start = now.startOf('day')
+      end = now
+      break
+  }
+
+  searchForm.start_date = fmt(start)
+  searchForm.end_date = fmt(end)
+  handleSearch()
 }
 
 // 重置
@@ -809,6 +867,17 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.time-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.time-shortcuts :deep(.arco-btn) {
+  padding: 0 8px;
 }
 
 /* 表格样式优化 */

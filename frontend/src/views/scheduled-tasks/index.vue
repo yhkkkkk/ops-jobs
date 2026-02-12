@@ -39,51 +39,51 @@
 
     <!-- 搜索和筛选 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="任务名称">
+      <a-form :model="searchForm" layout="inline" class="compact-filter-form">
+        <a-form-item>
           <a-input
             v-model="searchForm.name"
-            placeholder="请输入任务名称"
+            placeholder="任务名称"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 180px"
           />
         </a-form-item>
-        <a-form-item label="执行方案">
+        <a-form-item>
           <a-input
             v-model="searchForm.plan_name"
-            placeholder="请输入执行方案名称"
+            placeholder="执行方案"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 180px"
           />
         </a-form-item>
-        <a-form-item label="状态">
+        <a-form-item>
           <a-select
             v-model="searchForm.is_active"
-            placeholder="请选择状态"
+            placeholder="状态"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 110px"
           >
             <a-option :value="true">启用</a-option>
             <a-option :value="false">禁用</a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="创建者">
+        <a-form-item>
           <a-select
             v-model="searchForm.created_by"
-            placeholder="请输入创建者姓名"
+            placeholder="创建者"
             allow-clear
             show-search
             filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 140px"
           >
             <a-option
               v-for="user in filteredCreators"
@@ -94,15 +94,17 @@
             </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            <template #icon><icon-search /></template>
-            搜索
-          </a-button>
-          <a-button @click="handleReset">
-            <template #icon><icon-refresh /></template>
-            重置
-          </a-button>
+        <a-form-item class="search-actions">
+          <a-space>
+            <a-button type="primary" @click="handleSearch">
+              <template #icon><icon-search /></template>
+              搜索
+            </a-button>
+            <a-button @click="handleReset">
+              <template #icon><icon-refresh /></template>
+              重置
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
     </a-card>
@@ -755,6 +757,23 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+:deep(.compact-filter-form .arco-form-item) {
+  margin-right: 8px;
+  margin-bottom: 0;
+}
+
+:deep(.compact-filter-form .arco-form-item:last-child) {
+  margin-right: 0;
+}
+
+/* 搜索按钮定位（与作业模板一致） */
+.search-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding-top: 0;
 }
 
 .stats-cell {

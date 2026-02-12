@@ -39,24 +39,24 @@
 
     <!-- 搜索和筛选 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="模板名称">
+      <a-form :model="searchForm" layout="inline" class="compact-filter-form">
+        <a-form-item>
           <a-input
             v-model="searchForm.search"
-            placeholder="请输入模板名称"
+            placeholder="模板名称"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 180px"
           />
         </a-form-item>
-        <a-form-item label="分类">
+        <a-form-item>
           <a-select
             v-model="searchForm.category"
-            placeholder="选择分类"
+            placeholder="分类"
             allow-clear
             @change="handleSearch"
-            style="width: 150px"
+            style="width: 120px"
           >
             <a-option value="deployment">部署</a-option>
             <a-option value="maintenance">维护</a-option>
@@ -65,15 +65,15 @@
             <a-option value="other">其他</a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="标签">
+        <a-form-item>
           <a-select
             v-model="searchForm.tags"
-            placeholder="请选择标签"
+            placeholder="标签"
             allow-clear
             multiple
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 180px"
           >
             <a-option
               v-for="tag in availableTags"
@@ -84,17 +84,17 @@
             </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="创建者">
+        <a-form-item>
           <a-select
             v-model="searchForm.created_by"
-            placeholder="请输入创建者姓名"
+            placeholder="创建者"
             allow-clear
             show-search
             filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 140px"
           >
             <a-option
               v-for="user in filteredCreators"
@@ -783,6 +783,15 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+:deep(.compact-filter-form .arco-form-item) {
+  margin-right: 8px;
+  margin-bottom: 0;
+}
+
+:deep(.compact-filter-form .arco-form-item:last-child) {
+  margin-right: 0;
 }
 
 /* 搜索按钮定位（与脚本模板保持一致） */

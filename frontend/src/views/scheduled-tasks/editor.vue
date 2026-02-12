@@ -239,7 +239,7 @@
       width="800px"
       @ok="handleCronHelperOk"
     >
-      <cron-helper v-model="tempCronExpression" />
+      <cron-builder v-model="tempCronExpression" />
     </a-modal>
   </div>
 </template>
@@ -260,7 +260,7 @@ import {
 import { scheduledJobApi, executionPlanApi, cronApi } from '@/api/scheduler'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import HostSelector from '@/components/HostSelector.vue'
-import CronHelper from './components/CronHelper.vue'
+import CronBuilder from './components/CronBuilder.vue'
 
 type ExecutionPlanOption = {
   id: number
@@ -678,6 +678,12 @@ const formatDateTime = (dateTime) => {
 watch(() => form.cron_expression, () => {
   if (form.cron_expression) {
     handleCronValidation()
+  }
+})
+
+watch(showCronHelper, (visible) => {
+  if (visible) {
+    tempCronExpression.value = form.cron_expression || '* * * * *'
   }
 })
 

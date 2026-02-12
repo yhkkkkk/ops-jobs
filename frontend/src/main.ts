@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import ArcoVue from '@arco-design/web-vue'
 import ArcoVueIcon from '@arco-design/web-vue/es/icon'
 import '@arco-design/web-vue/dist/arco.css'
+import cronCore from '@vue-js-cron/core'
 
 import App from './App.vue'
 import router from './router'
@@ -17,6 +18,7 @@ app.use(pinia)
 app.use(router)
 app.use(ArcoVue as any)
 app.use(ArcoVueIcon as any)
+app.use(cronCore)
 
 // 注册权限指令
 setupPermissionDirectives(app)

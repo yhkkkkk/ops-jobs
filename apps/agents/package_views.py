@@ -217,7 +217,7 @@ def _run_package_validation(package_id: int, context: dict | None = None) -> Non
         logger.error("安装包校验/上传失败, id=%s, error=%s", package_id, msg, exc_info=True)
         AgentPackage.objects.filter(id=package_id).update(
             validate_status="failed",
-            validate_message=msg[:2000],
+            validate_message=msg[:500],
         )
     finally:
         _cleanup_temp_file()

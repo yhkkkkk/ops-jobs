@@ -2,6 +2,9 @@
 执行记录过滤器
 """
 import django_filters
+from datetime import datetime, time
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime, parse_date
 from django.db.models import Q
 from .models import ExecutionRecord
 
@@ -22,16 +25,14 @@ class ExecutionRecordFilter(django_filters.FilterSet):
     )
 
     # 按时间范围过滤
-    start_date = django_filters.DateFilter(
-        field_name='created_at',
-        lookup_expr='gte',
-        label='开始日期'
+    start_date = django_filters.CharFilter(
+        method='filter_start_datetime',
+        label='开始时间'
     )
-    
-    end_date = django_filters.DateFilter(
-        field_name='created_at',
-        lookup_expr='lte',
-        label='结束日期'
+
+    end_date = django_filters.CharFilter(
+        method='filter_end_datetime',
+        label='结束时间'
     )
 
     # 按执行用户过滤
@@ -53,6 +54,38 @@ class ExecutionRecordFilter(django_filters.FilterSet):
         method='filter_by_scheduled_job',
         label='定时任务ID'
     )
+
+    def _parse_datetime_value(self, value, is_end=False):
+        if not value:
+            return None
+
+        dt = parse_datetime(value)
+        if dt:
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            return dt
+
+        date_value = parse_date(value)
+        if date_value:
+            if is_end:
+                dt = datetime.combine(date_value, time(23, 59, 59))
+            else:
+                dt = datetime.combine(date_value, time(0, 0, 0))
+            return timezone.make_aware(dt, timezone.get_current_timezone())
+
+        return None
+
+    def filter_start_datetime(self, queryset, name, value):
+        start_dt = self._parse_datetime_value(value, is_end=False)
+        if not start_dt:
+            return queryset
+        return queryset.filter(created_at__gte=start_dt)
+
+    def filter_end_datetime(self, queryset, name, value):
+        end_dt = self._parse_datetime_value(value, is_end=True)
+        if not end_dt:
+            return queryset
+        return queryset.filter(created_at__lte=end_dt)
 
     def filter_by_scheduled_job(self, queryset, name, value):
         """通过定时任务ID过滤执行记录"""

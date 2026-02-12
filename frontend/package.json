@@ -21,6 +21,7 @@
     "highlight.js": "^11.11.1",
     "monaco-editor": "^0.45.0",
     "nprogress": "^0.2.0",
+    "@vue-js-cron/core": "^3.7.1",
     "pinia": "^2.1.0",
     "sse.js": "^2.7.2",
     "vue": "^3.4.0",
