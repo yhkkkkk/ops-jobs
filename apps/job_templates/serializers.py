@@ -5,7 +5,7 @@ from django.db import models
 from rest_framework import serializers
 from apps.hosts.models import Host, HostGroup
 from .models import JobTemplate, JobStep, ExecutionPlan, PlanStep
-from apps.script_templates.models import UserFavorite
+from apps.script_templates.models import UserFavorite, ScriptTemplate
 
 
 class JobStepListSerializer(serializers.ListSerializer):
@@ -53,7 +53,7 @@ class JobStepSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'step_type', 'step_type_display',
             'order', 'step_parameters', 'timeout', 'ignore_error',
             # 脚本相关字段
-            'script_type', 'script_content', 'account_id', 'account_name',
+            'script_type', 'script_content', 'script_template', 'account_id', 'account_name',
             # 文件传输相关字段
             'remote_path', 'overwrite_policy', 'file_sources', 'bandwidth_limit',
             # 目标主机相关字段
@@ -141,6 +141,7 @@ class JobStepCreateSerializer(serializers.Serializer):
     # 脚本相关字段
     script_type = serializers.CharField(required=False, allow_blank=True, help_text="脚本类型")
     script_content = serializers.CharField(required=False, allow_blank=True, help_text="脚本内容")
+    script_template = serializers.IntegerField(required=False, allow_null=True, help_text="脚本模板ID")
     account_id = serializers.IntegerField(required=False, allow_null=True, help_text="执行账号ID")
 
     # 文件传输相关字段（仅 artifact/server 源）
@@ -197,6 +198,15 @@ class JobStepCreateSerializer(serializers.Serializer):
                 else:
                     if not (s.get('download_url') or s.get('storage_path')):
                         raise serializers.ValidationError({'file_sources': 'artifact source 必须提供 download_url 或 storage_path'})
+
+        # 脚本模板校验
+        script_template_id = data.get('script_template')
+        if step_type == 'script':
+            if script_template_id:
+                if not ScriptTemplate.objects.filter(id=script_template_id).exists():
+                    raise serializers.ValidationError({'script_template': '脚本模板不存在'})
+        else:
+            data['script_template'] = None
 
         # 验证目标主机/分组ID格式：主机或分组至少要有一个
         target_host_ids = data.get('target_host_ids') or []
@@ -383,6 +393,7 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
     """执行方案序列化器"""
 
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    updated_by_name = serializers.CharField(source='updated_by.username', read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True)
     template_global_parameters = serializers.JSONField(source='template.global_parameters', read_only=True)
     global_parameters_snapshot = serializers.JSONField(read_only=True)
@@ -399,17 +410,18 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
             'is_synced', 'needs_sync', 'last_sync_at',
             'step_count', 'total_executions', 'success_executions', 'failed_executions',
             'success_rate', 'last_executed_at',
-            'created_by', 'created_by_name', 'created_at', 'updated_at',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at',
             'plan_steps'
         ]
         read_only_fields = ['id', 'template', 'is_synced', 'last_sync_at',
                            'total_executions', 'success_executions', 'failed_executions',
-                           'last_executed_at', 'created_by', 'created_at', 'updated_at']
+                           'last_executed_at', 'created_by', 'updated_by', 'created_at', 'updated_at']
 
 class JobTemplateSerializer(serializers.ModelSerializer):
     """作业模板序列化器"""
 
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    updated_by_name = serializers.CharField(source='updated_by.username', read_only=True)
     step_count = serializers.ReadOnlyField()
     plan_count = serializers.ReadOnlyField()
     has_unsync_plans = serializers.ReadOnlyField()
@@ -422,10 +434,10 @@ class JobTemplateSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'category', 'tags_json', 'tag_list',
             'global_parameters', 'step_count', 'plan_count', 'has_unsync_plans',
-            'created_by', 'created_by_name', 'created_at', 'updated_at',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at',
             'steps', 'plans'
         ]
-        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at']
 
 
 class JobTemplateCreateSerializer(serializers.Serializer):

@@ -211,8 +211,12 @@ export interface ScriptTemplate {
   is_active?: boolean
   is_public?: boolean
   usage_count?: number
+  job_template_ref_count?: number
+  execution_plan_ref_count?: number
   created_by?: number
   created_by_name?: string
+  updated_by?: number
+  updated_by_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -241,6 +245,8 @@ export interface JobTemplate {
   has_unsync_plans: boolean
   created_by: number
   created_by_name: string
+  updated_by?: number
+  updated_by_name?: string
   created_at: string
   updated_at: string
 }
@@ -263,6 +269,7 @@ export interface JobStep {
   // 脚本相关字段
   script_type?: string
   script_content?: string
+  script_template?: number | null
   account_id?: number
 
   account_name?: string | null
@@ -300,6 +307,8 @@ export interface ExecutionPlan {
   last_executed_at: string | null
   created_by: number
   created_by_name: string
+  updated_by?: number
+  updated_by_name?: string
   created_at: string
   updated_at: string
   plan_steps?: PlanStep[]
@@ -411,6 +420,8 @@ export interface ScheduledJob {
   execution_parameters?: Record<string, any>
   created_by: number
   created_by_name: string
+  updated_by?: number
+  updated_by_name?: string
   created_at: string
   updated_at: string
   total_runs: number

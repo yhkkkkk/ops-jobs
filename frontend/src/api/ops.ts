@@ -182,6 +182,10 @@ export const scriptTemplateApi = {
     return http.post(`/script-templates/${id}/rollback_version/`, { version_id: versionId })
   },
 
+  updateVersion(id: number, versionId: number, data: { script_content?: string; version?: string; description?: string }): Promise<any> {
+    return http.put(`/script-templates/${id}/versions/${versionId}/`, data)
+  },
+
   toggleStatus(id: number): Promise<{ is_active: boolean }> {
     return http.post(`/script-templates/${id}/toggle_status/`)
   },

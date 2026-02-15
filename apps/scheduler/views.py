@@ -36,7 +36,7 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """基于Guardian对象权限过滤定时作业列表"""
-        base_qs = super().get_queryset().select_related('execution_plan__template', 'created_by')
+        base_qs = super().get_queryset().select_related('execution_plan__template', 'created_by', 'updated_by')
 
         # 超级用户可以看到所有定时作业
         if self.request.user.is_superuser:
@@ -120,6 +120,7 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
         try:
             updated_job = SchedulerService.update_scheduled_job(
                 scheduled_job=instance,
+                updated_by=request.user,
                 **serializer.validated_data
             )
 

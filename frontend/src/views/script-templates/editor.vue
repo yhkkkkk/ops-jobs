@@ -38,6 +38,7 @@
     <template-form
       ref="formRef"
       :template="templateData"
+      :mode="isEditVersion ? 'version' : 'template'"
       @submit="handleSubmit"
       @change="handleFormChange"
     />
@@ -132,6 +133,7 @@ const router = useRouter()
 const formRef = ref()
 const saving = ref(false)
 const loading = ref(false)
+const editingVersionId = ref<number | null>(null)
 const previewVisible = ref(false)
 const templateData = ref<ScriptTemplate | null>(null)
 const previewData = ref<Partial<ScriptTemplate> | null>(null)
@@ -158,13 +160,17 @@ const isEdit = computed(() => {
   return !!route.params.id && route.params.id !== 'new'
 })
 
+const isEditVersion = computed(() => route.query.action === 'editVersion')
+
 const headerTitle = computed(() => {
   if (route.query.action === 'copy') return '复制脚本模板'
+  if (isEditVersion.value) return '编辑脚本版本'
   return isEdit.value ? '编辑脚本模板' : '新建脚本模板'
 })
 
 const headerDesc = computed(() => {
   if (route.query.action === 'copy') return '基于现有模板复制并调整脚本与元数据'
+  if (isEditVersion.value) return '修改版本脚本内容与版本信息'
   return isEdit.value ? '调整脚本内容、元数据和标签' : '创建可复用的脚本模板'
 })
 
@@ -215,10 +221,35 @@ const fetchTemplate = async () => {
           script_content: data.script_content || templateData.value.script_content,
           version: data.version || templateData.value.version,
         }
+        editingVersionId.value = data.version_id ?? null
         sessionStorage.removeItem('editTemplateData')
       }
     } catch (e) {
       console.error('解析版本编辑数据失败:', e)
+    }
+
+    if (isEditVersion.value && !editingVersionId.value) {
+      const versionIdParam = Number(route.query.version_id)
+      if (versionIdParam) {
+        try {
+          const versionList = await scriptTemplateApi.getVersions(templateId)
+          const targetVersion = versionList.find((v: any) => v.id === versionIdParam)
+          if (targetVersion) {
+            templateData.value = {
+              ...templateData.value,
+              description: targetVersion.description ?? templateData.value.description,
+              script_content: targetVersion.script_content || templateData.value.script_content,
+              version: targetVersion.version || templateData.value.version,
+            }
+            editingVersionId.value = targetVersion.id
+          } else {
+            Message.error('未找到指定版本')
+          }
+        } catch (e) {
+          console.error('获取版本内容失败:', e)
+          Message.error('获取版本内容失败')
+        }
+      }
     }
   } catch (error) {
     console.error('获取模板失败:', error)
@@ -292,7 +323,22 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
 
     console.log('转换后的API数据:', apiData)
 
-    if (isEdit.value) {
+    if (isEditVersion.value) {
+      if (!templateData.value?.id || !editingVersionId.value) {
+        Message.error('版本信息不完整，无法保存')
+        return
+      }
+
+      const versionData = {
+        script_content: data.content || '',
+        version: data.version || templateData.value.version || '1.0.0',
+        description: data.description || '',
+      }
+
+      console.log('更新版本，模板ID:', templateData.value.id, '版本ID:', editingVersionId.value)
+      await scriptTemplateApi.updateVersion(templateData.value.id, editingVersionId.value, versionData)
+      Message.success('版本更新成功')
+    } else if (isEdit.value) {
       console.log('更新模板，ID:', templateData.value!.id)
       await scriptTemplateApi.updateTemplate(templateData.value!.id, apiData)
       Message.success('模板更新成功')
@@ -310,12 +356,19 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
       leaveAfterSave.value = false
       leaveConfirmVisible.value = false
     }
-    router.push('/script-templates')
+
+    if (isEditVersion.value && templateData.value?.id) {
+      router.push(`/script-templates/${templateData.value.id}/versions`)
+    } else {
+      router.push('/script-templates')
+    }
   } catch (error: any) {
     console.error('保存模板失败:', error)
 
     // 详细的错误信息
-    let errorMessage = isEdit.value ? '模板更新失败' : '模板创建失败'
+    let errorMessage = isEditVersion.value
+      ? '版本更新失败'
+      : isEdit.value ? '模板更新失败' : '模板创建失败'
     if (error.response?.data?.message) {
       errorMessage += ': ' + error.response.data.message
     } else if (error.message) {

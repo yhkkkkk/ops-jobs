@@ -137,7 +137,7 @@
         :data="templates"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1150 }"
+        :scroll="{ x: 1700 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -196,8 +196,8 @@
 
         <template #created_at="{ record }">
           <div>
-            <div>{{ formatDate(record.created_at) }}</div>
-            <div class="text-gray-400 text-xs">{{ record.created_by_name }}</div>
+            <div class="meta-line">创建：{{ formatDate(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
+            <div class="meta-line">更新：{{ record.updated_at ? formatDate(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
           </div>
         </template>
 
@@ -383,7 +383,7 @@ const columns = [
     dataIndex: 'tags',
     key: 'tags',
     slotName: 'tags',
-    width: 200
+    width: 280
   },
   {
     title: '步骤数',
@@ -410,11 +410,11 @@ const columns = [
     width: 250
   },
   {
-    title: '创建信息',
+    title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 160
+    width: 240
   },
   {
     title: '操作',
@@ -513,10 +513,10 @@ const fetchTemplates = async () => {
     pagination.total = searchForm.favorites_only ? resultTemplates.length : (response.total || 0)
 
     // 异步刷新标签列表，确保下拉选项完整
-    fetchAvailableTags()
+    await fetchAvailableTags()
 
     // 拉取可用用户列表
-    fetchAvailableUsers()
+    await fetchAvailableUsers()
 
     // 异步加载收藏状态
     await favoritesStore.batchCheckFavorites('job_template', resultTemplates.map(t => t.id))
@@ -600,7 +600,7 @@ const handleCopy = async (record: JobTemplate) => {
     sessionStorage.setItem('copyTemplateData', JSON.stringify(copiedTemplate))
 
     // 跳转到编辑器页面
-    router.push('/job-templates/create?action=copy')
+    await router.push('/job-templates/create?action=copy')
     Message.success('模板数据已复制，请修改模板名称后保存')
   } catch (error) {
     console.error('复制模板失败:', error)
@@ -616,7 +616,7 @@ const handleDelete = (record: JobTemplate) => {
       try {
         await jobTemplateApi.deleteTemplate(record.id)
         Message.success('模板删除成功')
-        fetchTemplates()
+        await fetchTemplates()
       } catch (error) {
         console.error('删除模板失败:', error)
         Message.error('删除模板失败')
@@ -843,6 +843,12 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.meta-line {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-3);
+}
+
 /* 标签容器样式 */
 .tags-container {
   max-width: 100%;
@@ -850,7 +856,7 @@ onMounted(() => {
 }
 
 .tag-item {
-  max-width: 120px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

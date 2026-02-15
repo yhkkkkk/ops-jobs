@@ -153,7 +153,7 @@
         :data="templates"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1200 }"
+        :scroll="{ x: 1700 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -191,17 +191,24 @@
           </a-tag>
         </template>
 
+        <template #references="{ record }">
+          <div>
+            <div class="meta-line">作业：{{ record.job_template_ref_count || 0 }}</div>
+            <div class="meta-line">方案：{{ record.execution_plan_ref_count || 0 }}</div>
+          </div>
+        </template>
+
         <template #tags="{ record }">
           <div v-if="record.tag_list && record.tag_list.length">
             <a-space wrap>
-              <a-tag v-for="tag in record.tag_list" :key="tag.key || tag">
+              <a-tag v-for="tag in record.tag_list" :key="tag.key || tag" class="tag-item">
                 {{ formatTag(tag) }}
               </a-tag>
             </a-space>
           </div>
           <div v-else-if="record.tags_json && Object.keys(record.tags_json).length">
             <a-space wrap>
-              <a-tag v-for="(value, key) in record.tags_json" :key="key">
+              <a-tag v-for="(value, key) in record.tags_json" :key="key" class="tag-item">
                 {{ `${key}=${value}` }}
               </a-tag>
             </a-space>
@@ -210,22 +217,14 @@
         </template>
 
         <template #created_at="{ record }">
-          {{ formatTime(record.created_at) }}
+          <div>
+            <div class="meta-line">创建：{{ formatTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
+            <div class="meta-line">更新：{{ record.updated_at ? formatTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
+          </div>
         </template>
 
         <template #actions="{ record }">
           <a-space>
-            <a-button 
-              v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
-              type="text" 
-              size="small" 
-              @click="handleDetail(record)"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              查看
-            </a-button>
             <a-button
               v-if="record.is_active"
               v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
@@ -270,7 +269,7 @@
                   复制
                 </a-doption>
                 <a-doption 
-                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id!) }]"
+                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record) }]"
                   @click="handleClickDelete(record)" 
                 >
                   <template #icon>
@@ -371,10 +370,10 @@ const columns = [
     width: 110,
   },
   {
-    title: '版本',
+    title: '线上版本',
     dataIndex: 'version',
     key: 'version',
-    width: 90,
+    width: 100,
   },
   {
     title: '状态',
@@ -384,11 +383,18 @@ const columns = [
     width: 100,
   },
   {
+    title: '被引用',
+    dataIndex: 'references',
+    key: 'references',
+    slotName: 'references',
+    width: 120,
+  },
+  {
     title: '标签',
     dataIndex: 'tag_list',
     key: 'tag_list',
     slotName: 'tags',
-    width: 110,
+    width: 240,
   },
   {
     title: '描述',
@@ -399,17 +405,11 @@ const columns = [
     width: 200,
   },
   {
-    title: '创建者',
-    dataIndex: 'created_by_name',
-    key: 'created_by_name',
-    width: 110,
-  },
-  {
-    title: '创建时间',
+    title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 140,
+    width: 240,
   },
   {
     title: '操作',
@@ -469,7 +469,7 @@ const handleCreatorSearch = (searchValue: string) => {
   )
 }
 
-// 获取模板列表
+// 获取脚本模板列表
 const fetchTemplates = async () => {
   loading.value = true
   try {
@@ -492,9 +492,7 @@ const fetchTemplates = async () => {
       }
     })
 
-    console.log('调用模板列表API，参数:', params)
     const response = await scriptTemplateApi.getTemplates(params)
-    console.log('获取到的模板列表响应:', response)
     let resultTemplates = response.results
 
     // 前端过滤收藏
@@ -507,16 +505,16 @@ const fetchTemplates = async () => {
     console.log('设置模板列表数据:', templates.value)
 
     // 拉取可用标签（独立接口，保持选项完整）
-    fetchAvailableTags()
+    await fetchAvailableTags()
 
     // 拉取可用用户列表
-    fetchAvailableUsers()
+    await fetchAvailableUsers()
 
     // 异步加载收藏状态
     await favoritesStore.batchCheckFavorites('script_template', resultTemplates.map(t => t.id))
   } catch (error) {
-    console.error('获取模板列表失败:', error)
-    Message.error('获取模板列表失败')
+    Message.error('获取脚本模板列表失败')
+    console.error('获取脚本模板列表失败:', error)
     templates.value = []
     pagination.total = 0
   } finally {
@@ -610,7 +608,7 @@ const handleDelete = (record: ScriptTemplate) => {
       try {
         await scriptTemplateApi.deleteTemplate(record.id)
         Message.success('模板删除成功')
-        fetchTemplates()
+        await fetchTemplates()
       } catch (error) {
         Message.error('模板删除失败')
         console.error('删除模板失败:', error)
@@ -648,7 +646,13 @@ const handleClickCopy = (record: ScriptTemplate) => {
 }
 
 const handleClickDelete = (record: ScriptTemplate) => {
-  if (!canDeleteTemplate(record.id!)) {
+  if (hasReferences(record)) {
+    const jobCount = record.job_template_ref_count || 0
+    const planCount = record.execution_plan_ref_count || 0
+    Message.warning(`该模板已被 ${jobCount} 个作业模板、${planCount} 个执行方案引用，无法删除`)
+    return
+  }
+  if (!canDeleteTemplate(record)) {
     showNoPermissionMessage()
     return
   }
@@ -743,10 +747,17 @@ const canCopyTemplate = computed(() => {
   return permissionsStore.hasPermission('scripttemplate', 'add')
 })
 
-const canDeleteTemplate = (templateId: number): boolean => {
+const hasReferences = (record: ScriptTemplate): boolean => {
+  const jobCount = record.job_template_ref_count || 0
+  const planCount = record.execution_plan_ref_count || 0
+  return jobCount > 0 || planCount > 0
+}
+
+const canDeleteTemplate = (record: ScriptTemplate): boolean => {
+  if (hasReferences(record)) return false
   if (permissionsStore.isSuperUser) return true
   return (
-    permissionsStore.hasPermission('scripttemplate', 'delete', templateId) ||
+    permissionsStore.hasPermission('scripttemplate', 'delete', record.id!) ||
     permissionsStore.hasPermission('scripttemplate', 'delete')
   )
 }
@@ -841,6 +852,20 @@ onMounted(() => {
 
 .favorite-btn:hover .favorite-icon {
   color: var(--color-warning-5);
+}
+
+.meta-line {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-3);
+}
+
+.tag-item {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 /* 表格样式优化 */

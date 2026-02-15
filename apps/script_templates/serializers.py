@@ -12,6 +12,9 @@ class ScriptTemplateSerializer(serializers.ModelSerializer):
     """脚本模板序列化器"""
     
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    updated_by_name = serializers.CharField(source='updated_by.username', read_only=True)
+    job_template_ref_count = serializers.IntegerField(read_only=True)
+    execution_plan_ref_count = serializers.IntegerField(read_only=True)
     script_type_display = serializers.CharField(source='get_script_type_display', read_only=True)
     template_type_display = serializers.CharField(source='get_template_type_display', read_only=True)
     category_display = serializers.CharField(source='get_category_display', read_only=True)
@@ -28,9 +31,10 @@ class ScriptTemplateSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'script_type', 'script_type_display',
             'template_type', 'template_type_display', 'category', 'category_display',
             'script_content', 'version', 'is_active', 'tags_json', 'tag_list', 'usage_count',
-            'created_by', 'created_by_name', 'created_at', 'updated_at'
+            'job_template_ref_count', 'execution_plan_ref_count',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'usage_count', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'usage_count', 'created_by', 'updated_by', 'created_at', 'updated_at']
     
     def validate_script_content(self, value):
         """验证脚本内容"""

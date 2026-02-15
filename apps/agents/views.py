@@ -921,12 +921,15 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_enable_compression = data.get('ws_enable_compression', True)
         ws_allowed_origins = data.get('ws_allowed_origins', [])
         max_concurrent_tasks = data.get('max_concurrent_tasks')
+        control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
 
         # 验证参数
         if install_type == 'agent' and not agent_server_url:
             return SycResponse.error(message="agent_server_url 不能为空（安装 Agent 需要）", code=400)
         if install_type == 'agent-server' and not agent_server_listen_addr:
             return SycResponse.error(message="agent_server_listen_addr 不能为空（安装 Agent-Server 需要）", code=400)
+        if install_type == 'agent-server' and not control_plane_url:
+            return SycResponse.error(message="控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server", code=400)
 
         # 获取主机列表
         from apps.hosts.models import Host
@@ -1140,6 +1143,12 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_backoff_initial_ms = data.get('ws_backoff_initial_ms', 1000)
         ws_backoff_max_ms = data.get('ws_backoff_max_ms', 30000)
         ws_max_retries = data.get('ws_max_retries', 6)
+        # agent-server WebSocket 配置
+        ws_handshake_timeout = data.get('ws_handshake_timeout', '10s')
+        ws_read_buffer_size = data.get('ws_read_buffer_size', 4096)
+        ws_write_buffer_size = data.get('ws_write_buffer_size', 4096)
+        ws_enable_compression = data.get('ws_enable_compression', True)
+        ws_allowed_origins = data.get('ws_allowed_origins', [])
         ssh_timeout = data.get('ssh_timeout', 300)
         allow_reinstall = data.get('allow_reinstall', False)
         max_concurrent_tasks = data.get('max_concurrent_tasks')

@@ -39,7 +39,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         """基础查询集，结合Guardian对象权限进行过滤"""
-        base_qs = super().get_queryset().select_related('created_by').prefetch_related('steps', 'plans')
+        base_qs = super().get_queryset().select_related('created_by', 'updated_by').prefetch_related('steps', 'plans')
 
         # 超级用户可以看到所有作业模板
         if self.request.user.is_superuser:
@@ -101,7 +101,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 category=data.get('category', ''),
                 tags_json=tags_json,
                 global_parameters=data.get('global_parameters', {}),
-                created_by=request.user
+                created_by=request.user,
+                updated_by=request.user
             )
 
             # 创建步骤
@@ -123,6 +124,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                     step_kwargs.update({
                         'script_type': step_data.get('script_type', ''),
                         'script_content': step_data.get('script_content', ''),
+                        'script_template_id': step_data.get('script_template'),
                         'account_id': step_data.get('account_id')
                     })
                 elif step_data['step_type'] == 'file_transfer':
@@ -272,7 +274,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
             validated_data = update_serializer.validated_data
 
-            with (transaction.atomic()):
+            with transaction.atomic():
                 # 更新基本信息
                 instance.name = validated_data.get('name', instance.name)
                 instance.description = validated_data.get('description', instance.description)
@@ -288,6 +290,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                             tags_json[tag['key']] = tag['value']
                 instance.tags_json = tags_json
 
+                instance.updated_by = request.user
                 instance.save()
 
                 # 更新现有步骤（保持ID不变以维护关联关系）
@@ -311,6 +314,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         step_kwargs.update({
                             'script_type': step_data.get('script_type', ''),
                             'script_content': step_data.get('script_content', ''),
+                            'script_template_id': step_data.get('script_template'),
                             'account_id': step_data.get('account_id')
                         })
                     elif step_data['step_type'] == 'file_transfer':
@@ -354,13 +358,13 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             update_serializer = JobTemplateUpdateSerializer(instance, data=request.data, partial=partial)
             if not update_serializer.is_valid():
                 return SycResponse.validation_error(errors=update_serializer.errors)
-            
+
             # 更新基本信息
             instance.name = update_serializer.validated_data.get('name', instance.name)
             instance.description = update_serializer.validated_data.get('description', instance.description)
             instance.category = update_serializer.validated_data.get('category', instance.category)
             instance.global_parameters = update_serializer.validated_data.get('global_parameters', instance.global_parameters)
-            
+
             # 处理标签
             tags_list = update_serializer.validated_data.get('tags', [])
             if tags_list is not None:  # 只有当tags字段存在时才更新
@@ -370,7 +374,8 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         if isinstance(tag, dict) and 'key' in tag and 'value' in tag:
                             tags_json[tag['key']] = tag['value']
                 instance.tags_json = tags_json
-            
+
+            instance.updated_by = request.user
             instance.save()
 
         # 返回更新后的数据
@@ -543,7 +548,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         """基础查询集，结合Guardian对象权限进行过滤"""
-        base_qs = super().get_queryset().select_related('template', 'created_by').prefetch_related(
+        base_qs = super().get_queryset().select_related('template', 'created_by', 'updated_by').prefetch_related(
             'planstep_set__step'
         )
 
@@ -611,6 +616,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
                 name=data['name'],
                 description=data.get('description', ''),
                 created_by=request.user,
+                updated_by=request.user,
                 global_parameters_snapshot=snapshot  # 保存已应用覆盖的全局变量快照
             )
 
@@ -679,7 +685,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
         if not serializer.is_valid():
             return SycResponse.validation_error(errors=serializer.errors)
 
-        serializer.save()
+        serializer.save(updated_by=request.user)
 
         # 使用读取序列化器返回完整数据
         response_serializer = ExecutionPlanSerializer(instance)

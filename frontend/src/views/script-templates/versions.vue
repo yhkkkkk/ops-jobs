@@ -57,39 +57,47 @@
         </template>
 
         <template #actions="{ record }">
-          <a-space>
-            <a-button
-              v-if="!record.is_active"
-              type="text"
-              size="small"
-              @click="handleRollback(record)"
-            >
-              设为当前
+          <a-dropdown>
+            <a-button type="text" size="small">
+              <template #icon>
+                <icon-more />
+              </template>
             </a-button>
-            <a-button type="text" size="small" @click="handleEditVersion(record)">
-              编辑
-            </a-button>
-            <a-button type="text" size="small" @click="handleViewVersion(record)">
-              查看
-            </a-button>
-            <a-button type="text" size="small" @click="handleCopyFromVersion(record)">
-              复制并新建
-            </a-button>
-            <a-button type="text" size="small" @click="handleExecuteVersion(record)">
-              去执行
-            </a-button>
-            <a-button type="text" size="small" @click="handleDisableFromVersion">
-              {{ template?.is_active ? '禁用模板' : '启用模板' }}
-            </a-button>
-            <a-button
-              v-if="!record.is_active"
-              type="text"
-              size="small"
-              @click="handleCompareWithCurrent(record)"
-            >
-              对比当前
-            </a-button>
-          </a-space>
+            <template #content>
+              <a-doption
+                v-if="!record.is_active"
+                class="action-success"
+                @click="handleRollback(record)"
+              >
+                设为当前
+              </a-doption>
+              <a-doption
+                v-if="!record.is_active"
+                class="action-info"
+                @click="handleCompareWithCurrent(record)"
+              >
+                对比当前
+              </a-doption>
+              <a-doption class="action-primary" @click="handleEditVersion(record)">
+                编辑
+              </a-doption>
+              <a-doption class="action-muted" @click="handleViewVersion(record)">
+                查看
+              </a-doption>
+              <a-doption class="action-blue" @click="handleCopyFromVersion(record)">
+                复制并新建
+              </a-doption>
+              <a-doption class="action-success" @click="handleExecuteVersion(record)">
+                去执行
+              </a-doption>
+              <a-doption
+                :class="template?.is_active ? 'action-danger' : 'action-success'"
+                @click="handleDisableFromVersion"
+              >
+                {{ template?.is_active ? '禁用模板' : '启用模板' }}
+              </a-doption>
+            </template>
+          </a-dropdown>
         </template>
       </a-table>
     </a-card>
@@ -161,40 +169,37 @@
       :footer="false"
     >
       <div v-if="diffBaseVersion && diffTargetVersion" class="version-diff-container">
-        <div class="version-diff-column">
-          <h4>当前版本 {{ diffBaseVersion.version }}</h4>
-          <a-descriptions :column="1" bordered size="small" class="mb-2">
-            <a-descriptions-item label="创建者">
-              {{ diffBaseVersion.created_by_name }}
-            </a-descriptions-item>
-            <a-descriptions-item label="创建时间">
-              {{ dayjs(diffBaseVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-            </a-descriptions-item>
-          </a-descriptions>
-          <simple-monaco-editor
-            :model-value="diffBaseVersion.script_content"
-            :language="template?.script_type || 'shell'"
-            :height="400"
-            :readonly="true"
-          />
+        <div class="version-diff-meta">
+          <div class="version-diff-meta-column">
+            <h4>当前版本 {{ diffBaseVersion.version }}</h4>
+            <a-descriptions :column="1" bordered size="small" class="mb-2">
+              <a-descriptions-item label="创建者">
+                {{ diffBaseVersion.created_by_name }}
+              </a-descriptions-item>
+              <a-descriptions-item label="创建时间">
+                {{ dayjs(diffBaseVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </div>
+          <div class="version-diff-meta-column">
+            <h4>对比版本 {{ diffTargetVersion.version }}</h4>
+            <a-descriptions :column="1" bordered size="small" class="mb-2">
+              <a-descriptions-item label="创建者">
+                {{ diffTargetVersion.created_by_name }}
+              </a-descriptions-item>
+              <a-descriptions-item label="创建时间">
+                {{ dayjs(diffTargetVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </div>
         </div>
-        <div class="version-diff-column">
-          <h4>对比版本 {{ diffTargetVersion.version }}</h4>
-          <a-descriptions :column="1" bordered size="small" class="mb-2">
-            <a-descriptions-item label="创建者">
-              {{ diffTargetVersion.created_by_name }}
-            </a-descriptions-item>
-            <a-descriptions-item label="创建时间">
-              {{ dayjs(diffTargetVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-            </a-descriptions-item>
-          </a-descriptions>
-          <simple-monaco-editor
-            :model-value="diffTargetVersion.script_content"
-            :language="template?.script_type || 'shell'"
-            :height="400"
-            :readonly="true"
-          />
-        </div>
+        <monaco-diff-editor
+          :original="diffBaseVersion.script_content"
+          :modified="diffTargetVersion.script_content"
+          :language="template?.script_type || 'shell'"
+          :height="450"
+          :readonly="true"
+        />
       </div>
     </a-modal>
   </div>
@@ -207,8 +212,9 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
+import MonacoDiffEditor from '@/components/MonacoDiffEditor.vue'
 import dayjs from 'dayjs'
-import { IconPlus } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconMore } from '@arco-design/web-vue/es/icon'
 
 const route = useRoute()
 const router = useRouter()
@@ -268,7 +274,7 @@ const versionColumns = [
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 300,
+    width: 120,
     fixed: 'right',
   },
 ]
@@ -365,10 +371,12 @@ const handleEditVersion = (version: any) => {
     ...template.value,
     script_content: version.script_content,
     version: version.version,
+    description: version.description,
+    version_id: version.id,
   }
 
   sessionStorage.setItem('editTemplateData', JSON.stringify(editData))
-  router.push(`/script-templates/${template.value.id}/edit?action=editVersion`)
+  router.push(`/script-templates/${template.value.id}/edit?action=editVersion&version_id=${version.id}`)
 }
 
 const handleCopyFromVersion = (version: any) => {
@@ -485,11 +493,45 @@ onMounted(async () => {
 
 .version-diff-container {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.version-diff-meta {
+  display: flex;
   gap: 16px;
 }
 
-.version-diff-column {
+.version-diff-meta-column {
   flex: 1;
+}
+
+:deep(.action-success) {
+  color: var(--color-success-6);
+}
+
+:deep(.action-danger) {
+  color: var(--color-danger-6);
+}
+
+:deep(.action-warning) {
+  color: var(--color-warning-6);
+}
+
+:deep(.action-info) {
+  color: var(--color-primary-6);
+}
+
+:deep(.action-primary) {
+  color: var(--color-primary-6);
+}
+
+:deep(.action-blue) {
+  color: var(--color-blue-6, #165dff);
+}
+
+:deep(.action-muted) {
+  color: var(--color-text-3);
 }
 </style>
 

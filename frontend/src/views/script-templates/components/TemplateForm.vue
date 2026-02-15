@@ -15,6 +15,7 @@
                 v-model="form.name"
                 placeholder="请输入模板名称"
                 allow-clear
+                :disabled="isVersionMode"
               />
             </a-form-item>
 
@@ -22,6 +23,7 @@
               <a-select
                 v-model="form.script_type"
                 placeholder="请选择脚本类型"
+                :disabled="isVersionMode"
                 @change="handleScriptTypeChange"
               >
                 <a-option value="shell">Shell</a-option>
@@ -38,6 +40,7 @@
                 v-model="form.category"
                 placeholder="请选择分类"
                 allow-clear
+                :disabled="isVersionMode"
               >
                 <a-option value="deployment">部署</a-option>
                 <a-option value="monitoring">监控</a-option>
@@ -49,7 +52,15 @@
             </a-form-item>
 
             <a-form-item label="标签" field="tags_json">
-              <div class="tags-kv-editor">
+              <div v-if="isVersionMode" class="tags-readonly">
+                <a-space v-if="Object.keys(form.tags_json || {}).length" wrap>
+                  <a-tag v-for="(value, key) in form.tags_json" :key="key">
+                    {{ key }}={{ value }}
+                  </a-tag>
+                </a-space>
+                <span v-else class="text-gray">-</span>
+              </div>
+              <div v-else class="tags-kv-editor">
                 <div v-if="Object.keys(form.tags_json || {}).length === 0" class="empty-tags">
                   <a-empty description="暂无标签" size="small" />
                   <a-button size="small" @click="addTag" class="mt-2">
@@ -99,10 +110,10 @@
               </div>
             </a-form-item>
 
-            <a-form-item label="描述" field="description">
+            <a-form-item :label="isVersionMode ? '版本描述' : '描述'" field="description">
               <a-textarea
                 v-model="form.description"
-                placeholder="请输入模板描述"
+                placeholder="请输入描述"
                 :rows="4"
               />
             </a-form-item>
@@ -121,7 +132,7 @@
               </a-col>
               <a-col :span="12">
                 <a-form-item label="状态" field="is_active">
-                  <a-select v-model="form.is_active" placeholder="请选择状态">
+                  <a-select v-model="form.is_active" placeholder="请选择状态" :disabled="isVersionMode">
                     <a-option :value="true">
                       <a-tag color="green">上线</a-tag>
                     </a-option>
@@ -184,6 +195,7 @@ import type { ScriptValidationResult } from '@/utils/scriptValidator'
 
 interface Props {
   template?: ScriptTemplate | null
+  mode?: 'template' | 'version'
 }
 
 interface Emits {
@@ -193,9 +205,12 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   template: null,
+  mode: 'template',
 })
 
 const emit = defineEmits<Emits>()
+
+const isVersionMode = computed(() => props.mode === 'version')
 
 const formRef = ref()
 const editorRef = ref()
@@ -755,6 +770,14 @@ onMounted(() => {
 
 
 /* 标签编辑器样式 */
+.tags-readonly {
+  padding: 6px 2px;
+}
+
+.text-gray {
+  color: var(--color-text-3);
+}
+
 .tags-kv-editor {
   border: 1px solid #e5e7eb;
   border-radius: 6px;

@@ -116,7 +116,7 @@
         :data="tasks"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1450 }"
+        :scroll="{ x: 1550 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -158,8 +158,8 @@
 
         <template #created_at="{ record }">
           <div>
-            <div>{{ formatDateTime(record.created_at) }}</div>
-            <div style="color: #86909c; font-size: 12px">{{ record.created_by_name }}</div>
+            <div class="meta-line">创建：{{ formatDateTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
+            <div class="meta-line">更新：{{ record.updated_at ? formatDateTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
           </div>
         </template>
 
@@ -418,11 +418,11 @@ const columns = [
     width: 150
   },
   {
-    title: '创建信息',
+    title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 160
+    width: 230
   },
   {
     title: '操作',
@@ -497,8 +497,9 @@ const fetchTasks = async () => {
     pagination.total = response.total || 0
 
     // 提取用户列表
-    fetchAvailableUsers()
+    await fetchAvailableUsers()
   } catch (error) {
+    Message.error('获取定时任务列表失败')
     console.error('获取定时任务列表失败:', error)
   } finally {
     loading.value = false
@@ -605,13 +606,13 @@ const handleEdit = (record: ScheduledJob): void => {
 const handleToggleStatus = async (record: ScheduledJob): Promise<void> => {
   try {
     const action = record.is_active ? '禁用' : '启用'
-    await Modal.confirm({
+    Modal.confirm({
       title: `确认${action}任务`,
       content: `确定要${action}任务"${record.name}"吗？`,
       onOk: async () => {
         await scheduledJobApi.toggleStatus(record.id, !record.is_active)
         Message.success(`${action}成功`)
-        fetchTasks()
+        await fetchTasks()
       }
     })
   } catch (error) {
@@ -631,13 +632,13 @@ const handleClickToggleStatus = (record: ScheduledJob): void => {
 // 删除任务
 const handleDelete = async (record: ScheduledJob): Promise<void> => {
   try {
-    await Modal.confirm({
+    Modal.confirm({
       title: '确认删除',
       content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
       onOk: async () => {
         await scheduledJobApi.delete(record.id)
         Message.success('删除成功')
-        fetchTasks()
+        await fetchTasks()
       }
     })
   } catch (error) {
@@ -787,6 +788,12 @@ onMounted(() => {
 
 .stats-cell > div:last-child {
   margin-bottom: 0;
+}
+
+.meta-line {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-3);
 }
 
 .disabled-option {

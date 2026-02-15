@@ -41,7 +41,8 @@ class SchedulerService:
                     cron_expression=cron_expression,
                     timezone=kwargs.get('timezone', 'Asia/Shanghai'),
                     is_active=kwargs.get('is_active', False),
-                    created_by=created_by
+                    created_by=created_by,
+                    updated_by=kwargs.get('updated_by') or created_by
                 )
                 logger.info(f"创建定时作业成功（APScheduler）：{name}")
                 return scheduled_job
@@ -59,6 +60,10 @@ class SchedulerService:
                 for field in ['name', 'description', 'cron_expression', 'timezone', 'is_active']:
                     if field in kwargs:
                         setattr(scheduled_job, field, kwargs[field])
+
+                updated_by = kwargs.get('updated_by')
+                if updated_by is not None:
+                    scheduled_job.updated_by = updated_by
                 
                 # 删除目标主机更新逻辑，因为目标主机在JobStep中配置
                 

@@ -773,6 +773,7 @@ const templateModalVisible = ref(false)
 const templateLoading = ref(false)
 const scriptTemplates = ref<ScriptTemplate[]>([])
 const selectedTemplateKeys = ref<number[]>([])
+const selectedScriptTemplateId = ref<number | null>(null)
 
 // 参数相关
 const positionalArgs = ref<string[]>([''])
@@ -1315,7 +1316,9 @@ watch(
         scriptType.value = step.script_type || 'shell'
         scriptContent.value = step.script_content || ''
         selectedAccountId.value = step.account_id
+        selectedScriptTemplateId.value = (step as any).script_template ?? null
       } else if (step.step_type === 'file_transfer') {
+        selectedScriptTemplateId.value = null
       // 解析文件传输配置（支持模板中保存的 file_sources，包括制品与服务器来源）
       remotePath.value = step.remote_path || (step.file_sources && step.file_sources[0]?.remote_path) || ''
       overwritePolicy.value = step.overwrite_policy || 'overwrite'
@@ -1396,6 +1399,7 @@ const handleStepTypeChange = () => {
   scriptContent.value = ''
   remotePath.value = ''
   selectedAccountId.value = undefined
+  selectedScriptTemplateId.value = null
   // 清空脚本参数 & 文件相关
   stepFileList.value = []
   fileArtifacts.value = []
@@ -1472,6 +1476,7 @@ const handleTemplateSelect = () => {
     if (template) {
       scriptContent.value = template.script_content || template.content || ''
       scriptType.value = template.script_type
+      selectedScriptTemplateId.value = template.id ?? null
       Message.success(`已加载模板: ${template.name}`)
       templateModalVisible.value = false
       selectedTemplateKeys.value = []
@@ -1733,6 +1738,7 @@ const handleSubmit = async () => {
       
       stepData.script_type = scriptType.value
       stepData.script_content = scriptContent.value
+      stepData.script_template = selectedScriptTemplateId.value || undefined
       stepData.account_id = selectedAccountId.value
     } else if (form.step_type === 'file_transfer') {
       if (!remotePath.value.trim()) {

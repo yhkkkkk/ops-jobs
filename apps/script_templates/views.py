@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Count
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
 from .models import ScriptTemplate, ScriptTemplateVersion, UserFavorite
@@ -36,7 +37,10 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         # 管理页面：显示所有模板（包括下线的）
         queryset = super().get_queryset()
 
-        return queryset.select_related('created_by').order_by('-created_at')
+        return queryset.select_related('created_by', 'updated_by').annotate(
+            job_template_ref_count=Count('job_steps__template', distinct=True),
+            execution_plan_ref_count=Count('job_steps__planstep__plan', distinct=True)
+        ).order_by('-created_at')
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -63,6 +67,9 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         else:
             return SycResponse.validation_error(serializer.errors)
 
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
     def retrieve(self, request, *args, **kwargs):
         """获取脚本模板详情"""
         instance = self.get_object()
@@ -76,6 +83,17 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """删除脚本模板"""
         instance = self.get_object()
+
+        # 检查是否被作业模板/执行方案引用
+        from apps.job_templates.models import PlanStep
+        job_count = instance.job_steps.values('template_id').distinct().count()
+        plan_count = PlanStep.objects.filter(step__script_template=instance).values('plan_id').distinct().count()
+        if job_count > 0 or plan_count > 0:
+            return SycResponse.error(
+                message=f"该脚本模板已被 {job_count} 个作业模板、{plan_count} 个执行方案引用，无法删除",
+                code=400
+            )
+
         self.perform_destroy(instance)
         return SycResponse.success(message="脚本模板删除成功")
 
@@ -91,7 +109,7 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         return SycResponse.success(content=serializer.data, message="获取脚本模板列表成功")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     @action(detail=True, methods=['get'])
     def get_content(self, request, pk=None):
@@ -175,6 +193,67 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         return SycResponse.success(
             content=serializer.data,
             message="创建版本成功"
+        )
+
+    @action(detail=True, methods=['put'], url_path=r'versions/(?P<version_id>[^/.]+)')
+    def update_version(self, request, pk=None, version_id=None):
+        """更新指定版本内容"""
+        template = self.get_object()
+
+        if not version_id:
+            return SycResponse.error(message="版本ID不能为空")
+
+        try:
+            target_version = template.versions.get(id=version_id)
+        except ScriptTemplateVersion.DoesNotExist:
+            return SycResponse.error(message="版本不存在")
+
+        data = request.data or {}
+        update_fields = []
+
+        if 'script_content' in data:
+            script_content = str(data.get('script_content', '')).strip()
+            if not script_content:
+                return SycResponse.error(message="脚本内容不能为空")
+            target_version.script_content = script_content
+            update_fields.append('script_content')
+
+        if 'description' in data:
+            target_version.description = data.get('description', '') or ''
+            update_fields.append('description')
+
+        if 'version' in data:
+            new_version = data.get('version')
+            if not new_version:
+                return SycResponse.error(message="版本号不能为空")
+            if template.versions.exclude(id=target_version.id).filter(version=new_version).exists():
+                return SycResponse.error(message="版本号已存在")
+            target_version.version = new_version
+            update_fields.append('version')
+
+        if not update_fields:
+            return SycResponse.error(message="没有可更新字段")
+
+        target_version.save(update_fields=update_fields)
+
+        # 若更新的是当前版本，同步更新模板内容/版本号
+        template_update_fields = []
+        if target_version.is_active:
+            if 'script_content' in data:
+                template.script_content = target_version.script_content
+                template_update_fields.append('script_content')
+            if 'version' in data:
+                template.version = target_version.version
+                template_update_fields.append('version')
+            if template_update_fields:
+                template.updated_by = request.user
+                template_update_fields.append('updated_by')
+                template.save(update_fields=template_update_fields)
+
+        serializer = ScriptTemplateVersionSerializer(target_version)
+        return SycResponse.success(
+            content=serializer.data,
+            message="版本更新成功"
         )
 
     @action(detail=True, methods=['post'])

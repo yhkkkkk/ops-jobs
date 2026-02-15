@@ -96,6 +96,14 @@ class ScriptTemplate(models.Model):
 
     # 权限控制
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_script_templates',
+        verbose_name="更新人"
+    )
     
     # 时间信息
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")

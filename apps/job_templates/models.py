@@ -26,6 +26,14 @@ class JobTemplate(models.Model):
 
     # 创建信息
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_job_templates',
+        verbose_name="更新人"
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
@@ -99,6 +107,14 @@ class JobStep(models.Model):
     script_type = models.CharField(max_length=20, blank=True, verbose_name="脚本类型",
                                  help_text="shell, python, powershell, perl, javascript, go 等")
     script_content = models.TextField(blank=True, verbose_name="脚本内容")
+    script_template = models.ForeignKey(
+        'script_templates.ScriptTemplate',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_steps',
+        verbose_name="脚本模板"
+    )
     account_id = models.IntegerField(null=True, blank=True, verbose_name="执行账号ID")
 
     # 文件传输配置 (仅当 step_type='file_transfer' 时使用)
@@ -170,6 +186,14 @@ class ExecutionPlan(models.Model):
 
     # 创建信息
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_execution_plans',
+        verbose_name="更新人"
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 

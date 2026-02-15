@@ -48,6 +48,7 @@ declare module 'vue' {
     IconRight: typeof import('@arco-design/web-vue/es/icon')['IconRight']
     IconUser: typeof import('@arco-design/web-vue/es/icon')['IconUser']
     LightweightMonacoEditor: typeof import('./components/LightweightMonacoEditor.vue')['default']
+    MonacoDiffEditor: typeof import('./components/MonacoDiffEditor.vue')['default']
     MonacoEditor: typeof import('./components/MonacoEditor.vue')['default']
     OptimizedMonacoEditor: typeof import('./components/OptimizedMonacoEditor.vue')['default']
     PermissionButton: typeof import('./components/PermissionButton.vue')['default']

@@ -204,8 +204,8 @@
 
         <template #created_info="{ record }">
           <div class="created-info">
-            <div class="created-by">{{ record.created_by_name }}</div>
-            <div class="created-time">{{ formatDateTime(record.created_at) }}</div>
+            <div class="created-time">创建：{{ formatDateTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
+            <div class="created-time">更新：{{ record.updated_at ? formatDateTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
           </div>
         </template>
 
@@ -442,9 +442,9 @@ const columns = [
     width: 180
   },
   {
-    title: '创建信息',
+    title: '创建/更新',
     slotName: 'created_info',
-    width: 150
+    width: 240
   },
   {
     title: '操作',
@@ -525,7 +525,7 @@ const fetchPlans = async () => {
     await favoritesStore.batchCheckFavorites('execution_plan', resultPlans.map(p => p.id))
 
     // 拉取可用用户列表
-    fetchAvailableUsers()
+    await fetchAvailableUsers()
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
     Message.error('获取执行方案列表失败')
@@ -646,13 +646,10 @@ const handleTemplateRowClick = (record: any) => {
   }
 }
 
-// 表格行选择（兼容 selection-change 事件）
-const handleRowSelect = (selectedKeys: number[] | (string | number)[]) => {
-  selectedRowKeys.value = selectedKeys as number[]
-}
 const handleSelectionChange = (rowKeys: (string | number)[]) => {
   selectedRowKeys.value = rowKeys as number[]
 }
+
 // 确认选择模板
 const handleTemplateSelect = () => {
   if (selectedTemplateKeys.value.length === 0) {
@@ -711,7 +708,7 @@ const handleSchedule = (plan: ExecutionPlan) => {
 const handleMoreAction = async (action: string, plan: ExecutionPlan) => {
   switch (action) {
     case 'delete':
-      await handleDelete(plan)
+      handleDelete(plan)
       break
   }
 }
@@ -736,7 +733,7 @@ const handleDelete = (plan: ExecutionPlan) => {
       try {
         await executionPlanApi.deletePlan(plan.id)
         Message.success('方案删除成功')
-        fetchPlans()
+        await fetchPlans()
       } catch (error) {
         console.error('删除方案失败:', error)
         Message.error('删除方案失败')
