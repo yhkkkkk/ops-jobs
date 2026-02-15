@@ -615,11 +615,11 @@ const handleDelete = (record: JobTemplate) => {
     onOk: async () => {
       try {
         await jobTemplateApi.deleteTemplate(record.id)
-        Message.success('模板删除成功')
+        Message.success('作业模板删除成功')
         await fetchTemplates()
       } catch (error) {
-        console.error('删除模板失败:', error)
-        Message.error('删除模板失败')
+        console.error('删除作业模板失败:', error)
+        Message.error('删除作业模板失败')
       }
     }
   })
@@ -877,6 +877,10 @@ onMounted(() => {
   /* 表头背景色 */
   .arco-table-th {
     background-color: #fff;
+  }
+
+  .arco-table-td {
+    padding: 12px 16px;
   }
 }
 </style>
