@@ -95,6 +95,13 @@
               <h4>描述</h4>
               <p>{{ task.description }}</p>
             </div>
+
+            <GlobalVariablesPanel
+              class="global-variables-section"
+              :variables="effectiveVariables"
+              title="执行变量"
+              empty-text="暂无执行变量"
+            />
           </a-card>
         </a-col>
 
@@ -204,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
@@ -217,6 +224,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi } from '@/api/scheduler'
 import { executionRecordApi } from '@/api/ops'
+import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
 
 type ScheduledJob = {
   id: number
@@ -234,6 +242,7 @@ type ScheduledJob = {
   template_name?: string
   plan_name?: string
   execution_plan?: number
+  execution_parameters?: Record<string, any>
   created_by_name?: string
   created_at?: string
   updated_at?: string
@@ -272,6 +281,10 @@ const historyPagination = reactive({
 const historyFilters = reactive({
   keyword: '',
   status: undefined as string | undefined
+})
+
+const effectiveVariables = computed(() => {
+  return task.value?.execution_parameters || {}
 })
 
 // 执行历史表格列
@@ -475,6 +488,10 @@ onMounted(() => {
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.global-variables-section {
+  margin-top: 24px;
 }
 
 .stat-item {

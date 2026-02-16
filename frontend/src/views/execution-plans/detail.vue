@@ -98,12 +98,12 @@
             </a-descriptions>
           </a-card>
 
-          <!-- 模板全局变量 -->
-          <a-card title="模板全局变量" class="mb-4">
+          <!-- 执行变量 -->
+          <a-card title="执行变量" class="mb-4">
             <GlobalVariablesPanel
               :variables="plan.global_parameters_snapshot || plan.template_global_parameters || {}"
-              title="模板全局变量"
-              empty-text="该模板暂无全局变量"
+              title="执行变量"
+              empty-text="暂无执行变量"
             />
           </a-card>
         </a-col>

@@ -611,7 +611,7 @@ const handleCopy = async (record: JobTemplate) => {
 const handleDelete = (record: JobTemplate) => {
   Modal.confirm({
     title: '确认删除',
-    content: `确定要删除模板"${record.name}"吗？此操作不可恢复。`,
+    content: `确定要删除作业模板"${record.name}"吗？此操作不可恢复。`,
     onOk: async () => {
       try {
         await jobTemplateApi.deleteTemplate(record.id)
