@@ -1,9 +1,49 @@
 <template>
   <div class="login-container">
-    <div class="login-box">
-      <div class="login-header">
-        <h1>运维作业平台</h1>
+    <div class="login-shell">
+      <div class="login-visual">
+        <div class="visual-grid"></div>
+        <div class="visual-content">
+          <div class="visual-eyebrow">OPS CONTROL CENTER</div>
+          <h1>运维作业平台</h1>
+          <p>统一编排 · 任务可观测 · 审计可追踪</p>
+          <div class="visual-metrics">
+            <div class="metric">
+              <span class="dot dot-green"></span>
+              <span>执行链路可观测</span>
+            </div>
+            <div class="metric">
+              <span class="dot dot-blue"></span>
+              <span>任务回放与回滚</span>
+            </div>
+            <div class="metric">
+              <span class="dot dot-amber"></span>
+              <span>权限与审计闭环</span>
+            </div>
+          </div>
+        </div>
+        <div class="visual-terminal">
+          <div class="terminal-title">实时态势</div>
+          <div class="terminal-line">
+            <span class="terminal-key">AGENT</span>
+            <span>节点与心跳监测</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-key">TASK</span>
+            <span>执行结果与失败回溯</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-key">AUDIT</span>
+            <span>操作留痕与策略校验</span>
+          </div>
+        </div>
       </div>
+      <div class="login-panel">
+        <div class="login-box">
+          <div class="login-header">
+            <h1>欢迎登录</h1>
+            <p>使用您的账号进入作业与运维控制台</p>
+          </div>
       
       <!-- 登录方式选择标签页 -->
       <a-tabs 
@@ -138,6 +178,8 @@
           </a-button>
         </a-form-item>
       </a-form>
+        </div>
+      </div>
     </div>
 
     <!-- 2FA帮助对话框 -->
@@ -385,32 +427,219 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #0b1d2a;
+  padding: 32px 24px;
+  font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+.login-shell {
+  width: min(1200px, 100%);
+  min-height: 640px;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #0b1d2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 80px rgba(4, 10, 18, 0.55);
+}
+
+.login-visual {
+  position: relative;
+  padding: 56px 56px 48px;
+  color: #e7f1ff;
+  background: linear-gradient(160deg, #0b1d2a 0%, #0f2a3a 50%, #123447 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  animation: fadeIn 0.8s ease;
+}
+
+.login-visual::before {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(52, 201, 255, 0.35), transparent 70%);
+  top: -120px;
+  left: -60px;
+  opacity: 0.9;
+  animation: floatGlow 10s ease-in-out infinite;
+}
+
+.login-visual::after {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 70% 30%, rgba(16, 185, 129, 0.28), transparent 70%);
+  bottom: -140px;
+  right: -100px;
+  opacity: 0.7;
+  animation: floatGlow 12s ease-in-out infinite;
+}
+
+.visual-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(125, 163, 196, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 163, 196, 0.08) 1px, transparent 1px);
+  background-size: 36px 36px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.visual-content {
+  position: relative;
+  z-index: 2;
+  max-width: 420px;
+}
+
+.visual-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(127, 183, 217, 0.85);
+}
+
+.visual-content h1 {
+  font-size: 36px;
+  font-weight: 600;
+  margin: 16px 0 10px;
+  color: #f5faff;
+}
+
+.visual-content p {
+  font-size: 15px;
+  color: rgba(214, 228, 243, 0.8);
+  margin: 0;
+}
+
+.visual-metrics {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #d6e4f3;
+  background: rgba(11, 34, 52, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.6);
+}
+
+.dot-green {
+  background: #34d399;
+}
+
+.dot-blue {
+  background: #60a5fa;
+}
+
+.dot-amber {
+  background: #fbbf24;
+}
+
+.visual-terminal {
+  position: relative;
+  z-index: 2;
+  margin-top: 32px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(6, 16, 24, 0.7);
+  border: 1px solid rgba(122, 161, 188, 0.18);
+  color: rgba(214, 228, 243, 0.82);
+  font-size: 13px;
+  font-family: "IBM Plex Mono", "Menlo", "SFMono-Regular", monospace;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.terminal-title {
+  font-size: 12px;
+  color: rgba(125, 163, 196, 0.9);
+  margin-bottom: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.terminal-line {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.terminal-line:last-child {
+  margin-bottom: 0;
+}
+
+.terminal-key {
+  color: #7dd3fc;
+  min-width: 54px;
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f6f8fb;
+  padding: 48px 40px;
 }
 
 .login-box {
-  width: 400px;
-  padding: 40px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 420px;
+  padding: 36px;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+  animation: fadeUp 0.6s ease;
 }
 
 .login-header {
-  text-align: center;
-  margin-bottom: 32px;
+  text-align: left;
+  margin-bottom: 24px;
 }
 
 .login-header h1 {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
   color: #1d2129;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .login-header p {
   font-size: 14px;
-  color: #86909c;
+  color: #6b7280;
+  margin: 0;
+}
+
+.login-box :deep(.arco-input-wrapper),
+.login-box :deep(.arco-input),
+.login-box :deep(.arco-input-password) {
+  border-radius: 10px;
+}
+
+.login-box :deep(.arco-btn-primary) {
+  border-radius: 10px;
+  height: 44px;
+  font-weight: 600;
 }
 
 .login-options {
@@ -420,6 +649,7 @@ onMounted(() => {
   width: 100%;
   margin-bottom: 16px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .login-options :deep(.arco-checkbox) {
@@ -438,17 +668,26 @@ onMounted(() => {
   display: inline-flex;
   white-space: nowrap;
   min-width: 0;
+  border-radius: 999px;
+  background: #f3f4f6;
+  padding: 2px;
 }
 
 .platform-selector-inline :deep(.arco-radio-button) {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
-  padding: 2px 8px;
-  height: 24px;
+  padding: 2px 10px;
+  height: 26px;
   line-height: 20px;
   white-space: nowrap;
   flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.platform-selector-inline :deep(.arco-radio-button.arco-radio-checked) {
+  background: #e0f2fe;
+  color: #0369a1;
 }
 
 .platform-selector-inline :deep(.arco-radio-button-content) {
@@ -465,7 +704,7 @@ onMounted(() => {
 }
 
 .login-tabs {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .login-tabs :deep(.arco-tabs-nav) {
@@ -482,7 +721,7 @@ onMounted(() => {
   width: 120px;
   height: 40px;
   border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -493,7 +732,7 @@ onMounted(() => {
 
 .captcha-image:hover {
   border-color: #165dff;
-  background: #f2f3ff;
+  background: #eef2ff;
 }
 
 .captcha-placeholder {
@@ -510,5 +749,69 @@ onMounted(() => {
 
 .otp-help p {
   margin: 8px 0;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes floatGlow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(14px);
+  }
+}
+
+@media (max-width: 980px) {
+  .login-shell {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .login-visual {
+    padding: 36px 32px 32px;
+  }
+
+  .visual-terminal {
+    display: none;
+  }
+
+  .login-panel {
+    padding: 32px 28px;
+  }
+}
+
+@media (max-width: 560px) {
+  .login-container {
+    padding: 16px;
+  }
+
+  .login-box {
+    padding: 28px 22px;
+  }
+
+  .login-options {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
