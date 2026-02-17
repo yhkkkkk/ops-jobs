@@ -146,6 +146,7 @@ REST_FRAMEWORK = {
         'user': '1000/hour'
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'utils.exception_handler.custom_exception_handler',
 }
 
 # DRF Extensions 配置

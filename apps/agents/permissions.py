@@ -27,17 +27,23 @@ class AgentPermission(BasePermissionMixin):
         action = getattr(view, "action", None)
 
         if action == "retrieve":
-            return user.has_perm("agents.view_agent", obj) or user.is_superuser
+            allowed = user.has_perm("agents.view_agent", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.view_agent", obj=obj)
         if action == "issue_token":
-            return user.has_perm("agents.issue_agent_token", obj) or user.is_superuser
+            allowed = user.has_perm("agents.issue_agent_token", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.issue_agent_token", obj=obj)
         if action == "revoke_token":
-            return user.has_perm("agents.revoke_agent_token", obj) or user.is_superuser
+            allowed = user.has_perm("agents.revoke_agent_token", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.revoke_agent_token", obj=obj)
         if action == "enable_agent":
-            return user.has_perm("agents.enable_agent", obj) or user.is_superuser
+            allowed = user.has_perm("agents.enable_agent", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.enable_agent", obj=obj)
         if action == "disable_agent":
-            return user.has_perm("agents.disable_agent", obj) or user.is_superuser
+            allowed = user.has_perm("agents.disable_agent", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.disable_agent", obj=obj)
 
         # 其他情况默认按查看权限处理
-        return user.has_perm("agents.view_agent", obj) or user.is_superuser
+        allowed = user.has_perm("agents.view_agent", obj) or user.is_superuser
+        return self.ensure_permission(allowed, request, view, "agents.view_agent", obj=obj)
 
 

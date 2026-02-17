@@ -58,6 +58,73 @@ class BasePermissionMixin:
         else:
             return f'{action}_{model_name}'
 
+    def ensure_permission(
+        self,
+        allowed: bool,
+        request,
+        view,
+        required_permissions,
+        obj=None,
+        reason: str = ''
+    ) -> bool:
+        if allowed:
+            return True
+        self._deny_permission(
+            request=request,
+            view=view,
+            required_permissions=required_permissions,
+            obj=obj,
+            reason=reason
+        )
+        return False
+
+    def _deny_permission(
+        self,
+        request,
+        view,
+        required_permissions,
+        obj=None,
+        reason: str = ''
+    ) -> None:
+        action = getattr(view, 'action', None) or get_view_action(view, request)
+        permissions = required_permissions
+        if isinstance(permissions, (set, tuple)):
+            permissions = list(permissions)
+        elif isinstance(permissions, str):
+            permissions = [permissions]
+
+        resource_type = None
+        resource_id = None
+        resource_name = ''
+
+        if obj is not None:
+            resource_id = getattr(obj, 'pk', None)
+            resource_name = str(obj)
+            if hasattr(obj, '_meta'):
+                resource_type = obj._meta.model_name
+        else:
+            model = getattr(getattr(view, 'queryset', None), 'model', None)
+            if model is None:
+                try:
+                    model = view.get_queryset().model
+                except Exception:
+                    model = None
+            if model is not None:
+                resource_type = model._meta.model_name
+
+        detail = {
+            'resource_type': resource_type,
+            'resource_id': resource_id,
+            'resource_name': resource_name,
+            'action': action,
+            'required_permissions': permissions,
+            'reason': reason or 'permission_denied',
+            'path': getattr(request, 'path', None),
+            'method': getattr(request, 'method', None)
+        }
+
+        raise PermissionDenied(detail=detail)
+
 
 class ScheduledJobPermission(permissions.BasePermission, BasePermissionMixin):
     """调度作业权限 - 使用Guardian对象级权限"""
@@ -72,7 +139,14 @@ class ScheduledJobPermission(permissions.BasePermission, BasePermissionMixin):
             return True
         elif view.action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.create_jobs',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -92,7 +166,8 @@ class ScheduledJobPermission(permissions.BasePermission, BasePermissionMixin):
             permission = f'{view.action}_scheduledjob'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class JobTemplatePermission(permissions.BasePermission, BasePermissionMixin):
@@ -108,7 +183,14 @@ class JobTemplatePermission(permissions.BasePermission, BasePermissionMixin):
             return True
         elif view.action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.create_jobs',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -128,7 +210,8 @@ class JobTemplatePermission(permissions.BasePermission, BasePermissionMixin):
             permission = f'{view.action}_jobtemplate'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class HostManagementPermission(permissions.BasePermission, BasePermissionMixin):
@@ -144,7 +227,14 @@ class HostManagementPermission(permissions.BasePermission, BasePermissionMixin):
             return True
         elif view.action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.manage_hosts') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.manage_hosts') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.manage_hosts',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -164,7 +254,8 @@ class HostManagementPermission(permissions.BasePermission, BasePermissionMixin):
             permission = f'{view.action}_host'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class ScriptExecutionPermission(permissions.BasePermission, BasePermissionMixin):
@@ -183,7 +274,14 @@ class ScriptExecutionPermission(permissions.BasePermission, BasePermissionMixin)
             return True
         elif action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.execute_scripts') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.execute_scripts') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.execute_scripts',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -206,7 +304,8 @@ class ScriptExecutionPermission(permissions.BasePermission, BasePermissionMixin)
             permission = f'{action}_scripttemplate'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class ExecutionPlanPermission(permissions.BasePermission, BasePermissionMixin):
@@ -222,7 +321,14 @@ class ExecutionPlanPermission(permissions.BasePermission, BasePermissionMixin):
             return True
         elif view.action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.create_jobs') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.create_jobs',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -242,7 +348,8 @@ class ExecutionPlanPermission(permissions.BasePermission, BasePermissionMixin):
             permission = f'{view.action}_executionplan'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class ServerAccountPermission(permissions.BasePermission, BasePermissionMixin):
@@ -258,7 +365,14 @@ class ServerAccountPermission(permissions.BasePermission, BasePermissionMixin):
             return True
         elif view.action == 'create':
             # 创建权限检查全局权限
-            return request.user.has_perm('permissions.manage_hosts') or request.user.is_superuser
+            allowed = request.user.has_perm('permissions.manage_hosts') or request.user.is_superuser
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                'permissions.manage_hosts',
+                reason='create_requires_permission'
+            )
 
         return True  # 其他操作在has_object_permission中检查
 
@@ -278,7 +392,8 @@ class ServerAccountPermission(permissions.BasePermission, BasePermissionMixin):
             permission = f'{view.action}_serveraccount'
 
         # 使用 Guardian 检查对象级权限
-        return request.user.has_perm(permission, obj)
+        allowed = request.user.has_perm(permission, obj)
+        return self.ensure_permission(allowed, request, view, permission, obj=obj)
 
 
 class ExecutionRecordPermission(permissions.BasePermission, BasePermissionMixin):
@@ -312,7 +427,14 @@ class ExecutionRecordPermission(permissions.BasePermission, BasePermissionMixin)
 
         # 只读操作：查看详情 / 重试历史
         if action in ["retrieve", "retry_history"]:
-            return user.has_perm("executor.view_executionrecord", obj)
+            allowed = user.has_perm("executor.view_executionrecord", obj)
+            return self.ensure_permission(
+                allowed,
+                request,
+                view,
+                "executor.view_executionrecord",
+                obj=obj
+            )
 
         # 敏感操作：重做、取消、步骤重试/忽略错误
         if action in ["retry", "cancel", "retry_step_inplace", "ignore_step_error"]:
@@ -321,20 +443,65 @@ class ExecutionRecordPermission(permissions.BasePermission, BasePermissionMixin)
 
             if exec_type == "job_workflow":
                 if isinstance(related, ExecutionPlan):
-                    return user.has_perm("job_templates.execute_executionplan", related)
+                    allowed = user.has_perm("job_templates.execute_executionplan", related)
+                    return self.ensure_permission(
+                        allowed,
+                        request,
+                        view,
+                        "job_templates.execute_executionplan",
+                        obj=related,
+                        reason='execute_plan_required'
+                    )
                 if isinstance(related, JobTemplate):
-                    return user.has_perm("job_templates.execute_jobtemplate", related)
-                return False
+                    allowed = user.has_perm("job_templates.execute_jobtemplate", related)
+                    return self.ensure_permission(
+                        allowed,
+                        request,
+                        view,
+                        "job_templates.execute_jobtemplate",
+                        obj=related,
+                        reason='execute_template_required'
+                    )
+                return self.ensure_permission(
+                    False,
+                    request,
+                    view,
+                    "job_templates.execute_jobtemplate",
+                    obj=obj,
+                    reason='related_resource_missing'
+                )
 
             if exec_type in ["quick_script", "quick_file_transfer"]:
                 # 快速脚本/文件传输目前仍使用全局脚本执行权限
-                return user.has_perm("permissions.execute_scripts")
+                allowed = user.has_perm("permissions.execute_scripts")
+                return self.ensure_permission(
+                    allowed,
+                    request,
+                    view,
+                    "permissions.execute_scripts",
+                    obj=obj,
+                    reason='execute_scripts_required'
+                )
 
             # 其他执行类型暂不支持在执行记录界面发起敏感操作
-            return False
+            return self.ensure_permission(
+                False,
+                request,
+                view,
+                "executor.view_executionrecord",
+                obj=obj,
+                reason='unsupported_execution_type'
+            )
 
         # 其他未明确定义的操作，默认按“查看执行记录”处理
-        return user.has_perm("executor.view_executionrecord", obj)
+        allowed = user.has_perm("executor.view_executionrecord", obj)
+        return self.ensure_permission(
+            allowed,
+            request,
+            view,
+            "executor.view_executionrecord",
+            obj=obj
+        )
 
 class IsSuperUser(permissions.BasePermission):
     """
