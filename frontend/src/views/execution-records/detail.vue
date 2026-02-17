@@ -116,12 +116,12 @@
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.execution_parameters"
             size="small"
             type="outline"
-            status="success"
+            status="primary"
             @click="openGlobalVarDrawer"
           >
             <IconSettings /> 全局变量
           </a-button>
-          <a-button size="small" @click="openOperationDrawer">
+          <a-button size="small" type="outline" status="primary" @click="openOperationDrawer">
             <template #icon><IconEye /></template>
             查看操作记录
           </a-button>
@@ -729,7 +729,7 @@
   <!-- 链路视图 -->
   <a-drawer
     v-model:visible="chainDrawerVisible"
-    width="60%"
+    width="45%"
     title="链路视图"
     unmount-on-close
   >
@@ -846,7 +846,7 @@
   <!-- 全局变量抽屉（仅 job_workflow） -->
   <a-drawer
     v-model:visible="globalVarDrawerVisible"
-    width="40%"
+    width="45%"
     title="全局变量"
     unmount-on-close
   >
