@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from apps.permissions.permissions import ScheduledJobPermission
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
 from .models import ScheduledJob
@@ -37,6 +37,22 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """基于Guardian对象权限过滤定时作业列表"""
         base_qs = super().get_queryset().select_related('execution_plan__template', 'created_by', 'updated_by')
+
+        # 最新执行记录（用于展示最近执行结果）
+        from django.contrib.contenttypes.models import ContentType
+        from apps.executor.models import ExecutionRecord
+
+        scheduled_job_ct = ContentType.objects.get_for_model(ScheduledJob)
+        latest_records = ExecutionRecord.objects.filter(
+            content_type=scheduled_job_ct,
+            object_id=OuterRef('pk'),
+            execution_type='scheduled_job'
+        ).order_by('-created_at')
+
+        base_qs = base_qs.annotate(
+            last_execution_status=Subquery(latest_records.values('status')[:1]),
+            last_execution_at=Subquery(latest_records.values('created_at')[:1])
+        )
 
         # 超级用户可以看到所有定时作业
         if self.request.user.is_superuser:

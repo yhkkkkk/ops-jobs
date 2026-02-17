@@ -149,11 +149,19 @@
           </div>
         </template>
 
-        <template #next_run_time="{ record }">
-          <span v-if="record.next_run_time">
-            {{ formatDateTime(record.next_run_time) }}
-          </span>
-          <span v-else style="color: #86909c">-</span>
+        <template #last_execution="{ record }">
+          <div>
+            <template v-if="record.last_execution_status || record.last_execution_at || record.last_run_time">
+              <a-tag v-if="record.last_execution_status" :color="getExecutionStatusColor(record.last_execution_status)">
+                {{ getExecutionStatusText(record.last_execution_status) }}
+              </a-tag>
+              <span v-else style="color: #86909c">状态未知</span>
+              <div v-if="record.last_execution_at || record.last_run_time" class="meta-line">
+                {{ record.last_execution_at ? formatDateTime(record.last_execution_at) : formatDateTime(record.last_run_time) }}
+              </div>
+            </template>
+            <span v-else style="color: #86909c">暂无</span>
+          </div>
         </template>
 
         <template #created_at="{ record }">
@@ -435,11 +443,11 @@ const columns = [
     align: 'center'
   },
   {
-    title: '下次执行',
-    dataIndex: 'next_run_time',
-    key: 'next_run_time',
-    slotName: 'next_run_time',
-    width: 150
+    title: '最近执行结果',
+    dataIndex: 'last_execution',
+    key: 'last_execution',
+    slotName: 'last_execution',
+    width: 190
   },
   {
     title: '创建/更新',
@@ -759,6 +767,34 @@ const getProgressColor = (percent: number): string => {
   if (percent >= 90) return '#00b42a'
   if (percent >= 70) return '#ff7d00'
   return '#f53f3f'
+}
+
+const getExecutionStatusText = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: '等待中',
+    running: '执行中',
+    success: '成功',
+    failed: '失败',
+    cancelled: '已取消',
+    timeout: '超时',
+    paused: '已暂停',
+    retrying: '重试中'
+  }
+  return status ? (map[status] || status) : '暂无'
+}
+
+const getExecutionStatusColor = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: 'gray',
+    running: 'blue',
+    success: 'green',
+    failed: 'red',
+    cancelled: 'orange',
+    timeout: 'red',
+    paused: 'orange',
+    retrying: 'purple'
+  }
+  return status ? (map[status] || 'gray') : 'gray'
 }
 
 const formatDuration = (seconds?: number): string => {

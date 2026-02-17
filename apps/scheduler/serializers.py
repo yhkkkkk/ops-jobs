@@ -14,6 +14,8 @@ class ScheduledJobSerializer(serializers.ModelSerializer):
     # 方便前端跳转到模板详情
     template_id = serializers.IntegerField(source='execution_plan.template_id', read_only=True)
     success_rate = serializers.FloatField(read_only=True)
+    last_execution_status = serializers.CharField(read_only=True)
+    last_execution_at = serializers.DateTimeField(read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     updated_by_name = serializers.CharField(source='updated_by.username', read_only=True)
 
@@ -24,7 +26,8 @@ class ScheduledJobSerializer(serializers.ModelSerializer):
             'template_name', 'plan_name',
             'cron_expression', 'timezone', 'is_active', 'execution_parameters',
             'total_runs', 'success_runs', 'failed_runs', 'success_rate',
-            'last_run_time', 'next_run_time', 'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
+            'last_run_time', 'next_run_time', 'last_execution_status', 'last_execution_at',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
