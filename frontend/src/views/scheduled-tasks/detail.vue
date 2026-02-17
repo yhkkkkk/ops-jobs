@@ -92,11 +92,8 @@
               <p>{{ task.description }}</p>
             </div>
 
-            <GlobalVariablesPanel
-              class="global-variables-section"
+            <ExecutionVariablesPanel
               :variables="effectiveVariables"
-              title="执行变量"
-              empty-text="暂无执行变量"
             />
           </a-card>
         </a-col>
@@ -154,7 +151,7 @@ import {
   IconPlayArrow
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi } from '@/api/scheduler'
-import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
+import ExecutionVariablesPanel from '@/components/ExecutionVariablesPanel.vue'
 
 type ScheduledJob = {
   id: number
@@ -340,10 +337,6 @@ onMounted(() => {
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 16px;
-}
-
-.global-variables-section {
-  margin-top: 24px;
 }
 
 .stat-item {

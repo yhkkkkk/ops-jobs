@@ -174,6 +174,11 @@ export const scriptTemplateApi = {
     return http.get(`/script-templates/${id}/versions/`)
   },
 
+  // 获取引用关系
+  getReferences(id: number): Promise<{ job_templates: Array<{ id: number; name: string }>; execution_plans: Array<{ id: number; name: string }> }> {
+    return http.get(`/script-templates/${id}/references/`)
+  },
+
   createVersion(id: number, data: { version: string; description?: string }): Promise<any> {
     return http.post(`/script-templates/${id}/create_version/`, data)
   },
@@ -211,6 +216,11 @@ export const jobTemplateApi = {
   // 获取作业模板详情
   getTemplate(id: number): Promise<JobTemplate> {
     return http.get(`/job-templates/templates/${id}/`)
+  },
+
+  // 获取作业模板引用关系
+  getReferences(id: number): Promise<{ execution_plans: Array<{ id: number; name: string }>; scheduled_jobs: Array<{ id: number; name: string }> }> {
+    return http.get(`/job-templates/templates/${id}/references/`)
   },
 
   // 创建作业模板
@@ -259,6 +269,11 @@ export const executionPlanApi = {
   // 获取执行计划详情
   getPlan(id: number): Promise<ExecutionPlan> {
     return http.get(`/job-templates/plans/${id}/`)
+  },
+
+  // 获取执行计划引用关系
+  getReferences(id: number): Promise<{ scheduled_jobs: Array<{ id: number; name: string }> }> {
+    return http.get(`/job-templates/plans/${id}/references/`)
   },
 
   // 创建执行计划

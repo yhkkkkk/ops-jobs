@@ -35,6 +35,19 @@ class ScriptTemplateSerializer(serializers.ModelSerializer):
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'usage_count', 'created_by', 'updated_by', 'created_at', 'updated_at']
+
+
+class ScriptTemplateListSerializer(ScriptTemplateSerializer):
+    """脚本模板列表序列化器（裁剪字段）"""
+
+    class Meta(ScriptTemplateSerializer.Meta):
+        fields = [
+            'id', 'name', 'description', 'script_type', 'script_type_display',
+            'template_type', 'template_type_display', 'category', 'category_display',
+            'version', 'is_active', 'tags_json', 'tag_list', 'usage_count',
+            'job_template_ref_count', 'execution_plan_ref_count',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at'
+        ]
     
     def validate_script_content(self, value):
         """验证脚本内容"""

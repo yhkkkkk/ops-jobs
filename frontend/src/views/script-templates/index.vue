@@ -192,10 +192,10 @@
         </template>
 
         <template #references="{ record }">
-          <div>
+          <a-link class="reference-link" @click="handleViewReferences(record)">
             <div class="meta-line">作业：{{ record.job_template_ref_count || 0 }}</div>
             <div class="meta-line">方案：{{ record.execution_plan_ref_count || 0 }}</div>
-          </div>
+          </a-link>
         </template>
 
         <template #tags="{ record }">
@@ -217,10 +217,10 @@
         </template>
 
         <template #created_at="{ record }">
-          <div>
-            <div class="meta-line">创建：{{ formatTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
-            <div class="meta-line">更新：{{ record.updated_at ? formatTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
-          </div>
+          <MetaInfoLines
+            :created-text="`创建：${formatTime(record.created_at)} · ${record.created_by_name || '-'}`"
+            :updated-text="`更新：${record.updated_at ? formatTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
+          />
         </template>
 
         <template #actions="{ record }">
@@ -287,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
@@ -295,6 +295,7 @@ import type { ScriptTemplate } from '@/types'
 import dayjs from 'dayjs'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
+import MetaInfoLines from '@/components/MetaInfoLines.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -600,21 +601,112 @@ const handleCopy = (record: ScriptTemplate) => {
 }
 
 // 删除模板
-const handleDelete = (record: ScriptTemplate) => {
+const handleDelete = async (record: ScriptTemplate) => {
+  let references = { job_templates: [] as Array<{ id: number; name: string }>, execution_plans: [] as Array<{ id: number; name: string }> }
+  try {
+    references = await scriptTemplateApi.getReferences(record.id!)
+  } catch (error) {
+    console.error('获取引用关系失败:', error)
+  }
+
+  const jobCount = references.job_templates.length
+  const planCount = references.execution_plans.length
+  const hasRefs = jobCount > 0 || planCount > 0
+
+  const formatNames = (items: Array<{ name: string }>) => {
+    if (!items.length) return '无'
+    const sample = items.slice(0, 5).map(item => item.name).join('、')
+    return items.length > 5 ? `${sample} 等 ${items.length} 个` : sample
+  }
+
+  const content = h('div', { style: 'line-height:1.6;' }, [
+    h('div', {}, `将删除模板“${record.name}”。`),
+    h('div', { style: 'margin-top:8px;font-weight:600;' }, '引用情况'),
+    h('div', {}, `作业模板(${jobCount}): ${formatNames(references.job_templates)}`),
+    h('div', {}, `执行方案(${planCount}): ${formatNames(references.execution_plans)}`),
+    hasRefs ? h('div', { style: 'margin-top:8px;color:#f53f3f;' }, '存在引用，无法删除') : null
+  ])
+
   Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
+    title: hasRefs ? '无法删除' : '确认删除',
+    content,
+    okButtonProps: { disabled: hasRefs },
     onOk: async () => {
+      if (hasRefs) return
       try {
-        await scriptTemplateApi.deleteTemplate(record.id)
+        await scriptTemplateApi.deleteTemplate(record.id!)
         Message.success('模板删除成功')
         await fetchTemplates()
-      } catch (error) {
-        Message.error('模板删除失败')
+      } catch (error: any) {
+        const message = error?.response?.data?.message || '模板删除失败'
+        Message.error(message)
         console.error('删除模板失败:', error)
       }
     }
   })
+}
+
+const handleViewReferences = async (record: ScriptTemplate) => {
+  let references = { job_templates: [] as Array<{ id: number; name: string }>, execution_plans: [] as Array<{ id: number; name: string }> }
+  try {
+    references = await scriptTemplateApi.getReferences(record.id!)
+  } catch (error: any) {
+    const message = error?.response?.data?.message || '获取引用关系失败'
+    Message.error(message)
+    console.error('获取引用关系失败:', error)
+    return
+  }
+
+  const resolveHref = (path: string) => router.resolve({ path }).href
+
+  let modalClose: (() => void) | null = null
+
+  const renderLinks = (
+    items: Array<{ id: number; name: string }>,
+    type: 'job' | 'plan'
+  ) => {
+    if (!items.length) return '无'
+    const sample = items.slice(0, 5)
+    const nodes: any[] = []
+    sample.forEach((item, index) => {
+      const path = type === 'job'
+        ? `/job-templates/detail/${item.id}`
+        : `/execution-plans/detail/${item.id}`
+      nodes.push(h('a', {
+        href: resolveHref(path),
+        style: 'color: #165DFF; text-decoration: none; cursor: pointer;',
+        onClick: (event: MouseEvent) => {
+          event.preventDefault()
+          if (modalClose) modalClose()
+          const routeUrl = router.resolve({ path })
+          window.open(routeUrl.href, '_blank')
+        }
+      }, item.name))
+      if (index < sample.length - 1) nodes.push('、')
+    })
+    if (items.length > 5) nodes.push(` 等 ${items.length} 个`)
+    return h('span', {}, nodes)
+  }
+
+  const content = h('div', { style: 'line-height:1.6;' }, [
+    h('div', { style: 'margin-bottom:6px;' }, `模板：${record.name}`),
+    h('div', { style: 'font-weight:600;' }, '引用情况'),
+    h('div', {}, [
+      `作业模板(${references.job_templates.length}): `,
+      renderLinks(references.job_templates, 'job')
+    ]),
+    h('div', {}, [
+      `执行方案(${references.execution_plans.length}): `,
+      renderLinks(references.execution_plans, 'plan')
+    ])
+  ])
+
+  const modal = Modal.info({
+    title: '引用关系',
+    content,
+    okText: '关闭'
+  })
+  modalClose = modal?.close
 }
 
 const showNoPermissionMessage = () => {
@@ -646,12 +738,6 @@ const handleClickCopy = (record: ScriptTemplate) => {
 }
 
 const handleClickDelete = (record: ScriptTemplate) => {
-  if (hasReferences(record)) {
-    const jobCount = record.job_template_ref_count || 0
-    const planCount = record.execution_plan_ref_count || 0
-    Message.warning(`该模板已被 ${jobCount} 个作业模板、${planCount} 个执行方案引用，无法删除`)
-    return
-  }
   if (!canDeleteTemplate(record)) {
     showNoPermissionMessage()
     return
@@ -747,14 +833,7 @@ const canCopyTemplate = computed(() => {
   return permissionsStore.hasPermission('scripttemplate', 'add')
 })
 
-const hasReferences = (record: ScriptTemplate): boolean => {
-  const jobCount = record.job_template_ref_count || 0
-  const planCount = record.execution_plan_ref_count || 0
-  return jobCount > 0 || planCount > 0
-}
-
 const canDeleteTemplate = (record: ScriptTemplate): boolean => {
-  if (hasReferences(record)) return false
   if (permissionsStore.isSuperUser) return true
   return (
     permissionsStore.hasPermission('scripttemplate', 'delete', record.id!) ||
@@ -852,6 +931,14 @@ onMounted(() => {
 
 .favorite-btn:hover .favorite-icon {
   color: var(--color-warning-5);
+}
+
+.reference-link {
+  display: inline-block;
+}
+
+.reference-link:hover .meta-line {
+  color: var(--color-primary-6);
 }
 
 .meta-line {

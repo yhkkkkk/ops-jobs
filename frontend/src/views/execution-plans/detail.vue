@@ -100,10 +100,8 @@
 
           <!-- 执行变量 -->
           <a-card title="执行变量" class="mb-4">
-            <GlobalVariablesPanel
+            <ExecutionVariablesPanel
               :variables="plan.global_parameters_snapshot || plan.template_global_parameters || {}"
-              title="执行变量"
-              empty-text="暂无执行变量"
             />
           </a-card>
         </a-col>
@@ -204,7 +202,7 @@ import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
 import StepCard from '@/components/StepCard.vue'
-import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
+import ExecutionVariablesPanel from '@/components/ExecutionVariablesPanel.vue'
 
 
 const route = useRoute()
@@ -277,18 +275,10 @@ const handleExecute = () => {
 
 // 查看所属模板详情
 const handleViewTemplate = () => {
-  // if (plan.value?.template) {
-  //   router.push(`/job-templates/detail/${plan.value.template}`)
-  // }
   if (plan.value?.template) {
-    // 1. 使用 router.resolve 解析出完整的 URL
-    // 这样做的好处是无论你的路由模式是 history 还是 hash (#)，它都能生成正确的链接
     const routeUrl = router.resolve({
       path: `/job-templates/detail/${plan.value.template}`
     })
-
-    // 2. 使用 window.open 打开新标签页
-    // '_blank' 参数表示在新窗口/标签页打开
     window.open(routeUrl.href, '_blank')
   }
 }

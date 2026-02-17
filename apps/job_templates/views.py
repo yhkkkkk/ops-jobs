@@ -4,16 +4,20 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
+from django.db.models import Count
 from utils.responses import SycResponse
 from utils.pagination import CustomPagination
 from apps.permissions.permissions import JobTemplatePermission, ExecutionPlanPermission
 from .models import JobTemplate, JobStep, ExecutionPlan, PlanStep
 from .serializers import (
     JobTemplateSerializer,
+    JobTemplateListSerializer,
     JobStepSerializer,
     ExecutionPlanSerializer,
+    ExecutionPlanListSerializer,
     PlanStepSerializer,
     JobTemplateCreateSerializer,
     JobTemplateUpdateSerializer,
@@ -34,12 +38,22 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     serializer_class = JobTemplateSerializer
     permission_classes = [JobTemplatePermission]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = JobTemplateFilter
+    ordering_fields = ['created_at', 'updated_at', 'name']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         """基础查询集，结合Guardian对象权限进行过滤"""
-        base_qs = super().get_queryset().select_related('created_by', 'updated_by').prefetch_related('steps', 'plans')
+        base_qs = super().get_queryset().select_related('created_by', 'updated_by')
+
+        if self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'steps', 'plans', 'debug', 'batch_sync_all_plans']:
+            base_qs = base_qs.prefetch_related('steps', 'plans')
+
+        if self.action not in ['list', 'tags']:
+            base_qs = base_qs.annotate(
+                scheduled_job_ref_count=Count('plans__scheduled_jobs', distinct=True)
+            )
 
         # 超级用户可以看到所有作业模板
         if self.request.user.is_superuser:
@@ -56,6 +70,31 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         )
 
         return base_qs.filter(id__in=permitted_qs.values('id'))
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return JobTemplateListSerializer
+        return JobTemplateSerializer
+
+    def _attach_reference_counts(self, templates):
+        template_ids = [template.id for template in templates]
+        if not template_ids:
+            return
+
+        from apps.scheduler.models import ScheduledJob
+
+        scheduled_counts = ScheduledJob.objects.filter(
+            execution_plan__template_id__in=template_ids
+        ).values('execution_plan__template_id').annotate(
+            count=Count('id', distinct=True)
+        )
+
+        scheduled_count_map = {
+            item['execution_plan__template_id']: item['count'] for item in scheduled_counts
+        }
+
+        for template in templates:
+            template.scheduled_job_ref_count = scheduled_count_map.get(template.id, 0)
 
     def get_client_ip(self, request):
         """获取客户端IP地址"""
@@ -251,9 +290,11 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
         page = self.paginate_queryset(queryset)
         if page is not None:
+            self._attach_reference_counts(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
+        self._attach_reference_counts(queryset)
         serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(
             content=serializer.data,
@@ -418,6 +459,20 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             message=f"作业模板 '{template_name}' 删除成功"
         )
     
+    @action(detail=True, methods=['get'])
+    def references(self, request, pk=None):
+        """获取作业模板引用关系"""
+        template = self.get_object()
+        from apps.scheduler.models import ScheduledJob
+
+        execution_plans = template.plans.all().values('id', 'name')
+        scheduled_jobs = ScheduledJob.objects.filter(execution_plan__template=template).distinct().values('id', 'name')
+
+        return SycResponse.success(content={
+            'execution_plans': list(execution_plans),
+            'scheduled_jobs': list(scheduled_jobs)
+        }, message="获取引用关系成功")
+
     @action(detail=False, methods=['get'])
     def tags(self, request):
         """获取可用标签列表"""
@@ -543,14 +598,47 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
     serializer_class = ExecutionPlanSerializer
     permission_classes = [ExecutionPlanPermission]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ExecutionPlanFilter
+    ordering_fields = ['created_at', 'updated_at', 'name', 'last_executed_at']
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ExecutionPlanListSerializer
+        return ExecutionPlanSerializer
+
+    def _attach_reference_counts(self, plans):
+        plan_ids = [plan.id for plan in plans]
+        if not plan_ids:
+            return
+
+        from apps.scheduler.models import ScheduledJob
+
+        scheduled_counts = ScheduledJob.objects.filter(
+            execution_plan_id__in=plan_ids
+        ).values('execution_plan_id').annotate(
+            count=Count('id', distinct=True)
+        )
+
+        scheduled_count_map = {
+            item['execution_plan_id']: item['count'] for item in scheduled_counts
+        }
+
+        for plan in plans:
+            plan.scheduled_job_ref_count = scheduled_count_map.get(plan.id, 0)
 
     def get_queryset(self):
         """基础查询集，结合Guardian对象权限进行过滤"""
-        base_qs = super().get_queryset().select_related('template', 'created_by', 'updated_by').prefetch_related(
-            'planstep_set__step'
-        )
+        base_qs = super().get_queryset().select_related('template', 'created_by', 'updated_by')
+
+        if self.action in ['retrieve', 'update', 'partial_update', 'steps', 'sync_status_detail', 'execute']:
+            base_qs = base_qs.prefetch_related('planstep_set__step')
+
+        if self.action not in ['list']:
+            base_qs = base_qs.annotate(
+                scheduled_job_ref_count=Count('scheduled_jobs', distinct=True)
+            )
 
         # 超级用户可以看到所有执行方案
         if self.request.user.is_superuser:
@@ -666,9 +754,11 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
 
         page = self.paginate_queryset(queryset)
         if page is not None:
+            self._attach_reference_counts(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
+        self._attach_reference_counts(queryset)
         serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(
             content=serializer.data,
@@ -699,6 +789,13 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         plan_name = instance.name
 
+        # 检查是否有关联的定时任务
+        if instance.scheduled_jobs.exists():
+            return SycResponse.error(
+                message=f"执行方案 '{plan_name}' 已被定时任务引用，无法删除",
+                code=400
+            )
+
         # 检查是否有关联的执行记录
         if hasattr(instance, 'execution_records') and instance.execution_records.exists():
             return SycResponse.error(
@@ -711,6 +808,16 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
         return SycResponse.success(
             content=None,
             message=f"执行方案 '{plan_name}' 删除成功"
+        )
+
+    @action(detail=True, methods=['get'])
+    def references(self, request, pk=None):
+        """获取执行方案引用关系"""
+        plan = self.get_object()
+        scheduled_jobs = plan.scheduled_jobs.values('id', 'name')
+        return SycResponse.success(
+            content={'scheduled_jobs': list(scheduled_jobs)},
+            message="获取引用关系成功"
         )
 
     @action(detail=True, methods=['get'])

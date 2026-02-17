@@ -4,6 +4,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count
 from utils.pagination import CustomPagination
@@ -11,6 +12,7 @@ from utils.responses import SycResponse
 from .models import ScriptTemplate, ScriptTemplateVersion, UserFavorite
 from .serializers import (
     ScriptTemplateSerializer,
+    ScriptTemplateListSerializer,
     ScriptTemplateCreateSerializer,
     ScriptTemplateVersionSerializer,
     UserFavoriteSerializer,
@@ -27,23 +29,53 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = ScriptTemplateSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ScriptTemplateFilter
+    ordering_fields = ['created_at', 'updated_at', 'name', 'version', 'script_type']
+    ordering = ['-created_at']
 
     def get_queryset(self):
-        user = self.request.user
-
         # 管理页面：显示所有模板（包括下线的）
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().select_related('created_by', 'updated_by')
 
-        return queryset.select_related('created_by', 'updated_by').annotate(
+        if self.action in ['list', 'my_templates']:
+            return queryset.order_by('-created_at')
+
+        return queryset.annotate(
             job_template_ref_count=Count('job_steps__template', distinct=True),
             execution_plan_ref_count=Count('job_steps__planstep__plan', distinct=True)
         ).order_by('-created_at')
+
+    def _attach_reference_counts(self, templates):
+        template_ids = [template.id for template in templates]
+        if not template_ids:
+            return
+
+        from apps.job_templates.models import JobStep, PlanStep
+
+        job_counts = JobStep.objects.filter(
+            script_template_id__in=template_ids
+        ).values('script_template_id').annotate(
+            count=Count('template_id', distinct=True)
+        )
+        plan_counts = PlanStep.objects.filter(
+            step__script_template_id__in=template_ids
+        ).values('step__script_template_id').annotate(
+            count=Count('plan_id', distinct=True)
+        )
+
+        job_count_map = {item['script_template_id']: item['count'] for item in job_counts}
+        plan_count_map = {item['step__script_template_id']: item['count'] for item in plan_counts}
+
+        for template in templates:
+            template.job_template_ref_count = job_count_map.get(template.id, 0)
+            template.execution_plan_ref_count = plan_count_map.get(template.id, 0)
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return ScriptTemplateCreateSerializer
+        if self.action == 'list':
+            return ScriptTemplateListSerializer
         return ScriptTemplateSerializer
     
     def create(self, request, *args, **kwargs):
@@ -101,9 +133,11 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         if page is not None:
+            self._attach_reference_counts(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
+        self._attach_reference_counts(queryset)
         serializer = self.get_serializer(queryset, many=True)
         return SycResponse.success(content=serializer.data, message="获取脚本模板列表成功")
 
@@ -138,11 +172,32 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         # 分页
         page = self.paginate_queryset(templates)
         if page is not None:
+            self._attach_reference_counts(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         
+        self._attach_reference_counts(templates)
         serializer = self.get_serializer(templates, many=True)
         return SycResponse.success(content=serializer.data, message="获取我的模板成功")
+
+    @action(detail=True, methods=['get'])
+    def references(self, request, pk=None):
+        """获取脚本模板引用关系"""
+        template = self.get_object()
+        from apps.job_templates.models import JobTemplate, ExecutionPlan
+
+        job_templates = JobTemplate.objects.filter(
+            steps__script_template=template
+        ).distinct().values('id', 'name')
+
+        execution_plans = ExecutionPlan.objects.filter(
+            steps__script_template=template
+        ).distinct().values('id', 'name')
+
+        return SycResponse.success(content={
+            'job_templates': list(job_templates),
+            'execution_plans': list(execution_plans)
+        }, message="获取引用关系成功")
 
     @action(detail=True, methods=['get'])
     def versions(self, request, pk=None):

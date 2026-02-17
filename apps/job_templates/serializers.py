@@ -398,6 +398,7 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
     template_global_parameters = serializers.JSONField(source='template.global_parameters', read_only=True)
     global_parameters_snapshot = serializers.JSONField(read_only=True)
     step_count = serializers.ReadOnlyField()
+    scheduled_job_ref_count = serializers.IntegerField(read_only=True)
     needs_sync = serializers.ReadOnlyField()
     success_rate = serializers.ReadOnlyField()
     plan_steps = PlanStepSerializer(source='planstep_set', many=True, read_only=True)
@@ -408,7 +409,7 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'template', 'template_name', 'template_global_parameters', 'global_parameters_snapshot', 'name', 'description',
             'is_synced', 'needs_sync', 'last_sync_at',
-            'step_count', 'total_executions', 'success_executions', 'failed_executions',
+            'step_count', 'scheduled_job_ref_count', 'total_executions', 'success_executions', 'failed_executions',
             'success_rate', 'last_executed_at',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at',
             'plan_steps'
@@ -417,6 +418,19 @@ class ExecutionPlanSerializer(serializers.ModelSerializer):
                            'total_executions', 'success_executions', 'failed_executions',
                            'last_executed_at', 'created_by', 'updated_by', 'created_at', 'updated_at']
 
+
+class ExecutionPlanListSerializer(ExecutionPlanSerializer):
+    """执行方案列表序列化器（裁剪字段）"""
+
+    class Meta(ExecutionPlanSerializer.Meta):
+        fields = [
+            'id', 'template', 'template_name', 'name', 'description',
+            'is_synced', 'needs_sync', 'last_sync_at',
+            'step_count', 'scheduled_job_ref_count', 'total_executions', 'success_executions', 'failed_executions',
+            'success_rate', 'last_executed_at',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at'
+        ]
+
 class JobTemplateSerializer(serializers.ModelSerializer):
     """作业模板序列化器"""
 
@@ -424,6 +438,7 @@ class JobTemplateSerializer(serializers.ModelSerializer):
     updated_by_name = serializers.CharField(source='updated_by.username', read_only=True)
     step_count = serializers.ReadOnlyField()
     plan_count = serializers.ReadOnlyField()
+    scheduled_job_ref_count = serializers.IntegerField(read_only=True)
     has_unsync_plans = serializers.ReadOnlyField()
     tag_list = serializers.ReadOnlyField()
     steps = JobStepSerializer(many=True, read_only=True)
@@ -433,11 +448,22 @@ class JobTemplateSerializer(serializers.ModelSerializer):
         model = JobTemplate
         fields = [
             'id', 'name', 'description', 'category', 'tags_json', 'tag_list',
-            'global_parameters', 'step_count', 'plan_count', 'has_unsync_plans',
+            'global_parameters', 'step_count', 'plan_count', 'scheduled_job_ref_count', 'has_unsync_plans',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at',
             'steps', 'plans'
         ]
         read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at']
+
+
+class JobTemplateListSerializer(JobTemplateSerializer):
+    """作业模板列表序列化器（裁剪字段）"""
+
+    class Meta(JobTemplateSerializer.Meta):
+        fields = [
+            'id', 'name', 'description', 'category', 'tags_json', 'tag_list',
+            'step_count', 'plan_count', 'scheduled_job_ref_count', 'has_unsync_plans',
+            'created_by', 'created_by_name', 'updated_by', 'updated_by_name', 'created_at', 'updated_at'
+        ]
 
 
 class JobTemplateCreateSerializer(serializers.Serializer):

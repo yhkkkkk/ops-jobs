@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from apps.permissions.permissions import ScheduledJobPermission
 from django.db.models import Q, OuterRef, Subquery
@@ -26,8 +27,10 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
     serializer_class = ScheduledJobSerializer
     permission_classes = [ScheduledJobPermission]
     pagination_class = CustomPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ScheduledJobFilter
+    ordering_fields = ['created_at', 'updated_at', 'name', 'last_run_time', 'next_run_time']
+    ordering = ['-created_at']
 
     def get_serializer_class(self):
         if self.action == 'create':

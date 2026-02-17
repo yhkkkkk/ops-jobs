@@ -202,11 +202,17 @@
           </div>
         </template>
 
+        <template #references="{ record }">
+          <a-link class="reference-link" @click="handleViewReferences(record)">
+            <div class="meta-line">定时：{{ record.scheduled_job_ref_count || 0 }}</div>
+          </a-link>
+        </template>
+
         <template #created_info="{ record }">
-          <div class="created-info">
-            <div class="created-time">创建：{{ formatDateTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
-            <div class="created-time">更新：{{ record.updated_at ? formatDateTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
-          </div>
+          <MetaInfoLines
+            :created-text="`创建：${formatDateTime(record.created_at)} · ${record.created_by_name || '-'}`"
+            :updated-text="`更新：${record.updated_at ? formatDateTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
+          />
         </template>
 
         <template #actions="{ record }">
@@ -341,15 +347,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { executionPlanApi, jobTemplateApi } from '@/api/ops'
+import { scheduledJobApi } from '@/api/scheduler'
 import type { ExecutionPlan, JobTemplate } from '@/types'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useAuthStore } from '@/stores/auth'
 import { defineAsyncComponent } from 'vue'
+import MetaInfoLines from '@/components/MetaInfoLines.vue'
 // @ts-ignore - some editors/tsserver may not immediately include newly added .vue files in project file list
 const BatchSyncPreviewModal = defineAsyncComponent(() => import('./components/BatchSyncPreviewModal.vue'))
 
@@ -440,6 +448,11 @@ const columns = [
     title: '统计信息',
     slotName: 'stats',
     width: 180
+  },
+  {
+    title: '被引用',
+    slotName: 'references',
+    width: 120
   },
   {
     title: '创建/更新',
@@ -722,24 +735,94 @@ const handleClickMoreAction = async (action: string, plan: ExecutionPlan) => {
 }
 
 // 删除方案
-const handleDelete = (plan: ExecutionPlan) => {
+const handleDelete = async (plan: ExecutionPlan) => {
+  let jobRefs: Array<{ id: number; name: string }> = []
+  let total = 0
+  try {
+    const res = await scheduledJobApi.list({ execution_plan: plan.id, page_size: 5 })
+    jobRefs = res.results || []
+    total = res.total || jobRefs.length
+  } catch (error) {
+    console.error('获取定时任务引用失败:', error)
+  }
+
+  const hasRefs = total > 0
+  const sampleNames = jobRefs.map(item => item.name).join('、')
+  const refText = total > 5 ? `${sampleNames} 等 ${total} 个` : (sampleNames || '无')
+
   Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除执行方案「${plan.name}」吗？此操作不可恢复。`,
+    title: hasRefs ? '无法删除' : '确认删除',
+    content: `执行方案「${plan.name}」引用情况：定时任务(${total})：${refText}`,
     okText: '确认删除',
     cancelText: '取消',
-    okButtonProps: { status: 'danger' },
+    okButtonProps: { status: 'danger', disabled: hasRefs },
     onOk: async () => {
+      if (hasRefs) return
       try {
         await executionPlanApi.deletePlan(plan.id)
         Message.success('方案删除成功')
         await fetchPlans()
-      } catch (error) {
+      } catch (error: any) {
+        const message = error?.response?.data?.message || '删除方案失败'
         console.error('删除方案失败:', error)
-        Message.error('删除方案失败')
+        Message.error(message)
       }
     }
   })
+}
+
+const handleViewReferences = async (plan: ExecutionPlan) => {
+  let references = { scheduled_jobs: [] as Array<{ id: number; name: string }> }
+  try {
+    references = await executionPlanApi.getReferences(plan.id)
+  } catch (error: any) {
+    const message = error?.response?.data?.message || '获取引用关系失败'
+    Message.error(message)
+    console.error('获取引用关系失败:', error)
+    return
+  }
+
+  const resolveHref = (path: string) => router.resolve({ path }).href
+
+  let modalClose: (() => void) | null = null
+
+  const renderLinks = (items: Array<{ id: number; name: string }>) => {
+    if (!items.length) return '无'
+    const sample = items.slice(0, 5)
+    const nodes: any[] = []
+    sample.forEach((item, index) => {
+      const path = `/scheduled-tasks/detail/${item.id}`
+      nodes.push(h('a', {
+        href: resolveHref(path),
+        style: 'color: #165DFF; text-decoration: none; cursor: pointer;',
+        onClick: (event: MouseEvent) => {
+          event.preventDefault()
+          if (modalClose) modalClose()
+          const routeUrl = router.resolve({ path })
+          window.open(routeUrl.href, '_blank')
+        }
+      }, item.name))
+      if (index < sample.length - 1) nodes.push('、')
+    })
+    if (items.length > 5) nodes.push(` 等 ${items.length} 个`)
+    return h('span', {}, nodes)
+  }
+
+  const content = h('div', { style: 'line-height:1.6;' }, [
+    h('div', { style: 'margin-bottom:6px;' }, `方案：${plan.name}`),
+    h('div', { style: 'font-weight:600;' }, '引用情况'),
+    h('div', {}, [
+      `定时任务(${references.scheduled_jobs.length}): `,
+      renderLinks(references.scheduled_jobs)
+    ])
+  ])
+
+  const modal = Modal.info({
+    title: '引用关系',
+    content,
+    okText: '关闭'
+  })
+  modalClose = modal?.close
 }
 
 // 格式化日期时间
@@ -880,6 +963,20 @@ onMounted(() => {
 
 .template-category {
   font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.reference-link {
+  display: inline-block;
+}
+
+.reference-link:hover .meta-line {
+  color: var(--color-primary-6);
+}
+
+.meta-line {
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--color-text-3);
 }
 

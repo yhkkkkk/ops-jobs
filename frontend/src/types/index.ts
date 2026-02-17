@@ -242,6 +242,7 @@ export interface JobTemplate {
   steps: JobStep[]
   step_count: number
   plan_count: number
+  scheduled_job_ref_count?: number
   has_unsync_plans: boolean
   created_by: number
   created_by_name: string
@@ -300,6 +301,7 @@ export interface ExecutionPlan {
   needs_sync: boolean
   last_sync_at: string | null
   step_count: number
+  scheduled_job_ref_count?: number
   total_executions: number
   success_executions: number
   failed_executions: number

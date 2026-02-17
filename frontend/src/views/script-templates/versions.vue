@@ -341,7 +341,7 @@ const handleRollback = async (version: any) => {
 
   Modal.confirm({
     title: '确认设为当前版本',
-    content: `确定要将模板设为版本 ${version.version} 吗？`,
+    content: `将版本 ${version.version} 设为当前后，会同步更新模板内容并保留原当前版本为历史记录，是否继续？`,
     onOk: async () => {
       try {
         await scriptTemplateApi.rollbackVersion(template.value!.id!, version.id)
@@ -373,6 +373,7 @@ const handleEditVersion = (version: any) => {
     version: version.version,
     description: version.description,
     version_id: version.id,
+    is_active: !!version.is_active,
   }
 
   sessionStorage.setItem('editTemplateData', JSON.stringify(editData))

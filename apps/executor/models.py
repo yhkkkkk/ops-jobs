@@ -95,6 +95,7 @@ class ExecutionRecord(models.Model):
             models.Index(fields=['execution_type', 'status']),
             models.Index(fields=['executed_by', 'created_at']),
             models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['content_type', 'object_id', 'execution_type', 'created_at']),
         ]
 
     def __str__(self):

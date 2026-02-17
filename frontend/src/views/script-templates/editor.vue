@@ -35,6 +35,17 @@
       </div>
     </div>
 
+    <a-alert
+      v-if="isEditVersion"
+      class="version-edit-alert"
+      type="warning"
+      show-icon
+      :title="editingVersionIsActive ? '正在编辑当前版本' : '正在编辑历史版本'"
+      :description="editingVersionIsActive
+        ? '保存后会同步更新模板当前版本内容，请谨慎操作。'
+        : '保存只会更新该历史版本，不会自动切换为当前版本。'"
+    />
+
     <template-form
       ref="formRef"
       :template="templateData"
@@ -134,6 +145,7 @@ const formRef = ref()
 const saving = ref(false)
 const loading = ref(false)
 const editingVersionId = ref<number | null>(null)
+const editingVersionIsActive = ref(false)
 const previewVisible = ref(false)
 const templateData = ref<ScriptTemplate | null>(null)
 const previewData = ref<Partial<ScriptTemplate> | null>(null)
@@ -222,6 +234,7 @@ const fetchTemplate = async () => {
           version: data.version || templateData.value.version,
         }
         editingVersionId.value = data.version_id ?? null
+        editingVersionIsActive.value = !!data.is_active
         sessionStorage.removeItem('editTemplateData')
       }
     } catch (e) {
@@ -242,6 +255,7 @@ const fetchTemplate = async () => {
               version: targetVersion.version || templateData.value.version,
             }
             editingVersionId.value = targetVersion.id
+            editingVersionIsActive.value = !!targetVersion.is_active
           } else {
             Message.error('未找到指定版本')
           }
@@ -541,6 +555,10 @@ const getCategoryText = (category: string) => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.version-edit-alert {
+  margin: 0 24px 16px;
 }
 
 .leave-confirm-content {

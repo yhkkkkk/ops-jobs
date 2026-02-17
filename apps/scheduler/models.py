@@ -77,6 +77,11 @@ class ScheduledJob(models.Model):
             ('enable_scheduledjob', '启用定时作业'),
             ('disable_scheduledjob', '禁用定时作业'),
         ]
+        indexes = [
+            models.Index(fields=['execution_plan']),
+            models.Index(fields=['is_active', 'created_at']),
+            models.Index(fields=['created_by', 'created_at']),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.cron_expression})"

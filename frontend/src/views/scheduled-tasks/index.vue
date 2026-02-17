@@ -165,10 +165,10 @@
         </template>
 
         <template #created_at="{ record }">
-          <div>
-            <div class="meta-line">创建：{{ formatDateTime(record.created_at) }} · {{ record.created_by_name || '-' }}</div>
-            <div class="meta-line">更新：{{ record.updated_at ? formatDateTime(record.updated_at) : '-' }} · {{ record.updated_by_name || record.created_by_name || '-' }}</div>
-          </div>
+          <MetaInfoLines
+            :created-text="`创建：${formatDateTime(record.created_at)} · ${record.created_by_name || '-'}`"
+            :updated-text="`更新：${record.updated_at ? formatDateTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
+          />
         </template>
 
         <template #actions="{ record }">
@@ -337,6 +337,7 @@ import { scheduledJobApi } from '@/api/scheduler'
 import { executionRecordApi } from '@/api/ops'
 import { usePermissionsStore } from '@/stores/permissions'
 import type { ScheduledJob } from '@/types'
+import MetaInfoLines from '@/components/MetaInfoLines.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -723,9 +724,14 @@ const handleDelete = async (record: ScheduledJob): Promise<void> => {
       title: '确认删除',
       content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
       onOk: async () => {
-        await scheduledJobApi.delete(record.id)
-        Message.success('删除成功')
-        await fetchTasks()
+        try {
+          await scheduledJobApi.delete(record.id)
+          Message.success('删除成功')
+          await fetchTasks()
+        } catch (error: any) {
+          const message = error?.response?.data?.message || '删除任务失败'
+          Message.error(message)
+        }
       }
     })
   } catch (error) {
