@@ -258,6 +258,26 @@
           <a-option value="RUNNING">运行中</a-option>
           <a-option value="CANCELLED">已取消</a-option>
         </a-select>
+        <a-select
+          v-model="historyFilters.quick_range"
+          allow-clear
+          placeholder="时间范围"
+          style="width: 140px"
+          @change="handleQuickRangeChange"
+          @clear="handleQuickRangeClear"
+        >
+          <a-option value="1h">近1小时</a-option>
+          <a-option value="24h">近24小时</a-option>
+          <a-option value="7d">近7天</a-option>
+        </a-select>
+        <a-range-picker
+          v-model="historyFilters.range"
+          style="width: 320px"
+          show-time
+          value-format="YYYY-MM-DD HH:mm:ss"
+          allow-clear
+          @change="handleRangeChange"
+        />
       </div>
 
       <a-table
@@ -327,7 +347,11 @@ const historyPagination = reactive({
 })
 const historyFilters = reactive({
   keyword: '',
-  status: undefined as string | undefined
+  status: undefined as string | undefined,
+  quick_range: '' as string | undefined,
+  range: [] as string[],
+  start_date: '' as string,
+  end_date: '' as string
 })
 const currentHistoryJob = ref<ScheduledJob | null>(null)
 
@@ -550,6 +574,19 @@ const handleView = (record: ScheduledJob): void => {
   router.push(`/scheduled-tasks/detail/${record.id}`)
 }
 
+const formatDateTimeParam = (date: Date) => {
+  const pad = (num: number) => String(num).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+const applyHistoryRange = (start: Date, end: Date) => {
+  const startStr = formatDateTimeParam(start)
+  const endStr = formatDateTimeParam(end)
+  historyFilters.range = [startStr, endStr]
+  historyFilters.start_date = startStr
+  historyFilters.end_date = endStr
+}
+
 const fetchHistory = async () => {
   if (!currentHistoryJob.value) return
   historyLoading.value = true
@@ -561,6 +598,8 @@ const fetchHistory = async () => {
     }
     if (historyFilters.keyword) params.search = historyFilters.keyword
     if (historyFilters.status) params.status = historyFilters.status
+    if (historyFilters.start_date) params.start_date = historyFilters.start_date
+    if (historyFilters.end_date) params.end_date = historyFilters.end_date
     const res = await executionRecordApi.getRecords(params)
     historyRecords.value = res.results || []
     historyPagination.total = res.total || 0
@@ -577,6 +616,10 @@ const handleHistory = (record: ScheduledJob): void => {
   historyPagination.current = 1
   historyFilters.keyword = ''
   historyFilters.status = undefined
+  historyFilters.quick_range = undefined
+  historyFilters.range = []
+  historyFilters.start_date = ''
+  historyFilters.end_date = ''
   historyVisible.value = true
   fetchHistory()
 }
@@ -595,6 +638,42 @@ const handleHistoryPageSizeChange = (size: number) => {
 const handleHistorySearch = () => {
   historyPagination.current = 1
   fetchHistory()
+}
+
+const handleQuickRangeChange = (value: string) => {
+  if (!value) return
+  const end = new Date()
+  const start = new Date(end.getTime())
+  if (value === '1h') {
+    start.setHours(start.getHours() - 1)
+  } else if (value === '24h') {
+    start.setHours(start.getHours() - 24)
+  } else if (value === '7d') {
+    start.setDate(start.getDate() - 7)
+  }
+  applyHistoryRange(start, end)
+  handleHistorySearch()
+}
+
+const handleQuickRangeClear = () => {
+  historyFilters.quick_range = undefined
+  historyFilters.range = []
+  historyFilters.start_date = ''
+  historyFilters.end_date = ''
+  handleHistorySearch()
+}
+
+const handleRangeChange = (value: string[] | undefined) => {
+  if (!value || value.length !== 2) {
+    historyFilters.start_date = ''
+    historyFilters.end_date = ''
+    handleHistorySearch()
+    return
+  }
+  historyFilters.quick_range = undefined
+  historyFilters.start_date = value[0]
+  historyFilters.end_date = value[1]
+  handleHistorySearch()
 }
 
 // 编辑任务

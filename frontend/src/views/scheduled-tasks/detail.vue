@@ -8,10 +8,6 @@
           <template #icon><icon-refresh /></template>
           刷新
         </a-button>
-        <a-button type="outline" @click="openHistory">
-          <template #icon><icon-history /></template>
-          历史记录
-        </a-button>
         <a-button
           v-if="task.is_active"
           type="outline"
@@ -143,87 +139,21 @@
         </a-col>
       </a-row>
 
-      <!-- 执行历史 抽屉 -->
-      <a-drawer
-        v-model:visible="historyVisible"
-        title="执行历史"
-        width="70%"
-        unmount-on-close
-      >
-        <div class="history-toolbar">
-          <a-input
-            v-model="historyFilters.keyword"
-            allow-clear
-            placeholder="搜索名称 / 执行ID"
-            style="width: 240px"
-            @press-enter="handleHistorySearch"
-            @clear="handleHistorySearch"
-          />
-          <a-select
-            v-model="historyFilters.status"
-            allow-clear
-            placeholder="状态"
-            style="width: 140px"
-            @change="handleHistorySearch"
-            @clear="handleHistorySearch"
-          >
-            <a-option value="SUCCESS">成功</a-option>
-            <a-option value="FAILED">失败</a-option>
-            <a-option value="RUNNING">运行中</a-option>
-            <a-option value="CANCELLED">已取消</a-option>
-          </a-select>
-        </div>
-
-        <a-table
-          :columns="historyColumns"
-          :data="executionHistory"
-          :loading="loadingHistory"
-          :pagination="historyPagination"
-          @page-change="handleHistoryPageChange"
-          @page-size-change="handleHistoryPageSizeChange"
-        >
-          <template #status="{ record }">
-            <a-tag v-if="record.status === 'SUCCESS'" color="green">成功</a-tag>
-            <a-tag v-else-if="record.status === 'FAILED'" color="red">失败</a-tag>
-            <a-tag v-else-if="record.status === 'RUNNING'" color="blue">运行中</a-tag>
-            <a-tag v-else-if="record.status === 'CANCELLED'" color="orange">取消</a-tag>
-            <a-tag v-else color="gray">{{ record.status }}</a-tag>
-          </template>
-
-          <template #duration="{ record }">
-            <span v-if="record.duration">{{ formatDuration(record.duration) }}</span>
-            <span v-else style="color: #86909c">-</span>
-          </template>
-
-          <template #actions="{ record }">
-            <a-button
-              type="text"
-              size="small"
-              @click="handleViewExecution(record)"
-            >
-              查看详情
-            </a-button>
-          </template>
-        </a-table>
-      </a-drawer>
     </a-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import type { TableColumnData } from '@arco-design/web-vue'
 import {
   IconRefresh,
   IconEdit,
   IconPause,
-  IconPlayArrow,
-  IconHistory
+  IconPlayArrow
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi } from '@/api/scheduler'
-import { executionRecordApi } from '@/api/ops'
 import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
 
 type ScheduledJob = {
@@ -250,38 +180,12 @@ type ScheduledJob = {
   [k: string]: any
 }
 
-type ExecutionHistoryItem = {
-  id: number | string
-  status: string
-  start_time?: string
-  end_time?: string
-  duration?: number
-  [k: string]: any
-}
-
 const route = useRoute()
 const router = useRouter()
 
 // 响应式数据
 const loading = ref(false)
-const loadingHistory = ref(false)
-const historyVisible = ref(false)
 const task = ref<ScheduledJob>({} as ScheduledJob)
-const executionHistory = ref<ExecutionHistoryItem[]>([])
-
-// 执行历史分页
-const historyPagination = reactive({
-  current: 1,
-  pageSize: 10,
-  total: 0,
-  showTotal: true,
-  showPageSize: true,
-  pageSizeOptions: ['10', '20', '50']
-})
-const historyFilters = reactive({
-  keyword: '',
-  status: undefined as string | undefined
-})
 
 const effectiveVariables = computed(() => {
   return task.value?.execution_parameters || {}
@@ -309,29 +213,6 @@ const fetchTask = async () => {
     Message.error('获取任务详情失败')
   } finally {
     loading.value = false
-  }
-}
-
-// 获取执行历史
-const fetchExecutionHistory = async () => {
-  loadingHistory.value = true
-  try {
-    const params: any = {
-      page: historyPagination.current,
-      page_size: historyPagination.pageSize,
-      scheduled_job_id: Number(route.params.id)  // 使用定时任务ID作为过滤条件
-    }
-    if (historyFilters.keyword) params.search = historyFilters.keyword
-    if (historyFilters.status) params.status = historyFilters.status
-
-    const response = await executionRecordApi.getRecords(params)
-    executionHistory.value = response.results || []
-    historyPagination.total = response.total || 0
-  } catch (error) {
-    console.error('获取执行历史失败:', error)
-    Message.error('获取执行历史失败')
-  } finally {
-    loadingHistory.value = false
   }
 }
 
@@ -366,10 +247,6 @@ const handleToggleStatus = async () => {
   }
 }
 
-const handleViewExecution = (record) => {
-  router.push(`/execution-records/${record.id}`)
-}
-
 const handleViewPlan = () => {
   // if (!task.value || !task.value.execution_plan) return
   // router.push(`/execution-plans/detail/${task.value.execution_plan}`)
@@ -396,28 +273,6 @@ const handleViewTemplate = () => {
 
   // 在新标签页打开
   window.open(routeUrl.href, '_blank')
-}
-
-const handleHistoryPageChange = (page: number | string) => {
-  historyPagination.current = Number(page)
-  fetchExecutionHistory()
-}
-
-const handleHistoryPageSizeChange = (pageSize: number | string) => {
-  historyPagination.pageSize = Number(pageSize)
-  historyPagination.current = 1
-  fetchExecutionHistory()
-}
-
-const openHistory = () => {
-  historyVisible.value = true
-  historyPagination.current = 1
-  fetchExecutionHistory()
-}
-
-const handleHistorySearch = () => {
-  historyPagination.current = 1
-  fetchExecutionHistory()
 }
 
 // 工具函数
@@ -450,9 +305,6 @@ const getProgressColor = (percent) => {
 // 生命周期
 onMounted(() => {
   fetchTask()
-  if (route.query.history === '1') {
-    openHistory()
-  }
 })
 </script>
 
@@ -520,18 +372,4 @@ onMounted(() => {
   color: #86909c;
 }
 
-.history-toolbar {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* 表格样式优化 */
-:deep(.arco-table) {
-  .arco-table-th {
-    background-color: #fff;
-  }
-}
 </style>
