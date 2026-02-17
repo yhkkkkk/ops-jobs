@@ -427,7 +427,9 @@ class UserFavoriteViewSet(viewsets.ModelViewSet):
             # 取消收藏
             favorite.delete()
             return SycResponse.success(
-                content={'is_favorited': False},
+                content={
+                    'is_favorited': False
+                },
                 message="已取消收藏"
             )
         else:

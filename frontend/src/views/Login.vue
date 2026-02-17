@@ -10,11 +10,11 @@
           <div class="visual-metrics">
             <div class="metric">
               <span class="dot dot-green"></span>
-              <span>执行链路可观测</span>
+              <span>执行链路视图</span>
             </div>
             <div class="metric">
               <span class="dot dot-blue"></span>
-              <span>任务回放与回滚</span>
+              <span>执行记录回放与重试</span>
             </div>
             <div class="metric">
               <span class="dot dot-amber"></span>

@@ -324,6 +324,11 @@ export const executionRecordApi = {
     return http.get(`/executor/execution-records/${id}/`)
   },
 
+  // 获取执行链路
+  getTrace(id: number): Promise<any> {
+    return http.get(`/executor/execution-records/${id}/trace/`)
+  },
+
   // 取消执行
   cancelExecution(id: number): Promise<void> {
     return http.post(`/executor/execution-records/${id}/cancel/`)

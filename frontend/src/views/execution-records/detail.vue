@@ -105,7 +105,7 @@
       <template #extra>
         <a-space>
           <a-button
-            v-if="executionInfo.execution_type === 'job_workflow'"
+            v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.related_object_info?.type === 'executionplan'"
             size="small"
             type="outline"
             @click="goPlanDetail(executionInfo.related_object_info.id)"
@@ -116,6 +116,7 @@
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.execution_parameters"
             size="small"
             type="outline"
+            status="success"
             @click="openGlobalVarDrawer"
           >
             <IconSettings /> 全局变量
@@ -123,6 +124,10 @@
           <a-button size="small" @click="openOperationDrawer">
             <template #icon><IconEye /></template>
             查看操作记录
+          </a-button>
+          <a-button size="small" type="outline" @click="openChainDrawer">
+            <template #icon><IconLink /></template>
+            链路视图
           </a-button>
           <a-button size="small" @click="refreshLogs">
             <template #icon><icon-refresh /></template>
@@ -721,6 +726,123 @@
     </div>
   </a-drawer>
 
+  <!-- 链路视图 -->
+  <a-drawer
+    v-model:visible="chainDrawerVisible"
+    width="60%"
+    title="链路视图"
+    unmount-on-close
+  >
+    <div v-if="chainLoading" class="chain-loading">
+      <a-spin />
+    </div>
+    <div v-else-if="chainError" class="chain-error">
+      <a-result status="warning" :title="chainError" subtitle="加载失败，可重试">
+        <template #extra>
+          <a-button size="small" type="primary" @click="loadChainTrace(true)">重新加载</a-button>
+        </template>
+      </a-result>
+    </div>
+    <div v-else>
+      <a-empty
+        v-if="!chainData.chain && chainTimeline.length === 0"
+        description="暂无链路数据"
+      />
+
+      <template v-else>
+        <div class="chain-section">
+          <div class="chain-header">
+            <h4>链路概览</h4>
+          </div>
+          <div class="chain-path">
+            <div
+              v-for="(node, index) in chainNodes"
+              :key="node.key"
+              class="chain-node"
+            >
+              <div class="node-card">
+                <div class="node-head">
+                  <span class="node-label">{{ node.label }}</span>
+                  <a-tag
+                    v-if="node.status"
+                    size="small"
+                    :color="getStatusColor(node.status)"
+                  >
+                    {{ getStatusText(node.status) }}
+                  </a-tag>
+                </div>
+                <div class="node-name">{{ node.name }}</div>
+                <div class="node-meta">
+                  <span v-if="node.id">ID: {{ node.id }}</span>
+                  <span v-else>未关联</span>
+                </div>
+                <div class="node-actions">
+                  <a-button
+                    size="mini"
+                    type="text"
+                    :disabled="!getNodePath(node)"
+                    class="chain-link"
+                    @click="openNodeInNewTab(node)"
+                  >
+                    新标签打开
+                  </a-button>
+                </div>
+              </div>
+              <div v-if="index < chainNodes.length - 1" class="chain-arrow">→</div>
+            </div>
+          </div>
+
+          <div v-if="scheduledJobList.length > 1" class="chain-sublist">
+            <div class="chain-subtitle">定时任务列表</div>
+            <div class="chain-subitems">
+              <a-button
+                v-for="job in scheduledJobList"
+                :key="job.id"
+                size="mini"
+                type="text"
+                class="chain-link"
+                @click="openScheduledJobInNewTab(job.id)"
+              >
+                {{ job.name }}
+              </a-button>
+            </div>
+          </div>
+        </div>
+
+        <a-divider />
+
+        <div class="chain-section">
+          <div class="chain-header">
+            <h4>最近执行</h4>
+          </div>
+          <a-empty v-if="chainTimeline.length === 0" description="暂无执行记录" />
+          <a-timeline v-else mode="left" class="chain-timeline">
+            <a-timeline-item
+              v-for="item in chainTimeline"
+              :key="item.id"
+              :dotColor="getStatusColor(item.statusRaw)"
+            >
+              <div class="chain-item">
+                <div class="chain-item-title">
+                  <a-button
+                    size="mini"
+                    type="text"
+                    class="chain-link"
+                    @click="openExecutionRecordInNewTab(item.id)"
+                  >
+                    {{ item.name }}
+                  </a-button>
+                  <a-tag :color="getStatusColor(item.statusRaw)" size="small">{{ item.status }}</a-tag>
+                </div>
+                <div class="chain-item-meta">{{ item.time }}</div>
+              </div>
+            </a-timeline-item>
+          </a-timeline>
+        </div>
+      </template>
+    </div>
+  </a-drawer>
+
   <!-- 全局变量抽屉（仅 job_workflow） -->
   <a-drawer
     v-model:visible="globalVarDrawerVisible"
@@ -775,7 +897,8 @@ import {
   IconExclamation,
   IconEye,
   IconUser,
-  IconDownload
+  IconDownload,
+  IconLink
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
@@ -807,6 +930,15 @@ type StepLog = {
 }
 
 type ExecutionInfo = Record<string, any>
+
+type ChainNode = {
+  key: string
+  label: string
+  name: string
+  id?: number | string | null
+  type: 'job_template' | 'execution_plan' | 'scheduled_task' | 'execution_record'
+  status?: string
+}
 
 const toKey = (id: any) => String(id ?? '')
 
@@ -844,6 +976,13 @@ const operationPagination = reactive({
   page: 1,
   page_size: 10,
   total: 0,
+})
+const chainDrawerVisible = ref(false)
+const chainLoading = ref(false)
+const chainError = ref('')
+const chainData = ref<{ chain: any | null; recent_executions: any[] }>({
+  chain: null,
+  recent_executions: []
 })
 const globalVarDrawerVisible = ref(false)
 
@@ -978,6 +1117,135 @@ const executionMode = computed(() => {
     return 'ssh'
   }
   return null
+})
+
+const openChainDrawer = () => {
+  chainDrawerVisible.value = true
+  loadChainTrace(true)
+}
+
+const loadChainTrace = async (force = false) => {
+  if (chainLoading.value && !force) return
+  const recordId = Number(route.params.id)
+  if (!recordId) return
+  if (!force && chainData.value.chain) return
+
+  chainLoading.value = true
+  chainError.value = ''
+  try {
+    const res = await executionRecordApi.getTrace(recordId)
+    chainData.value = {
+      chain: res?.chain || null,
+      recent_executions: res?.recent_executions || []
+    }
+  } catch (error) {
+    console.error('加载链路失败:', error)
+    chainError.value = error?.message || '加载失败'
+    Message.error('加载链路失败')
+  } finally {
+    chainLoading.value = false
+  }
+}
+
+const getNodePath = (node: ChainNode) => {
+  if (!node.id) {
+    return ''
+  }
+  if (node.type === 'job_template') {
+    return `/job-templates/detail/${node.id}`
+  }
+  if (node.type === 'execution_plan') {
+    return `/execution-plans/detail/${node.id}`
+  }
+  if (node.type === 'scheduled_task') {
+    return `/scheduled-tasks/detail/${node.id}`
+  }
+  if (node.type === 'execution_record') {
+    return `/execution-records/${node.id}`
+  }
+  return ''
+}
+
+const openNodeInNewTab = (node: ChainNode) => {
+  const path = getNodePath(node)
+  if (!path) {
+    return
+  }
+  const url = router.resolve(path).href
+  window.open(url, '_blank')
+}
+
+const openScheduledJobInNewTab = (id?: number | string | null) => {
+  if (!id) return
+  const url = router.resolve(`/scheduled-tasks/detail/${id}`).href
+  window.open(url, '_blank')
+}
+
+const openExecutionRecordInNewTab = (id?: number | string | null) => {
+  if (!id) return
+  const url = router.resolve(`/execution-records/${id}`).href
+  window.open(url, '_blank')
+}
+
+const scheduledJobList = computed(() => {
+  return chainData.value.chain?.scheduled_jobs || []
+})
+
+const scheduledJobSummary = computed(() => {
+  const jobs = scheduledJobList.value
+  if (!jobs.length) return '未关联'
+  if (jobs.length === 1) return jobs[0].name || '定时任务'
+  return `关联 ${jobs.length} 个定时任务`
+})
+
+const chainNodes = computed<ChainNode[]>(() => {
+  const chain = chainData.value.chain || {}
+  const template = chain.job_template
+  const plan = chain.execution_plan
+  const execution = chain.execution_record || {}
+
+  return [
+    {
+      key: 'job_template',
+      label: '作业模板',
+      name: template?.name || '未关联',
+      id: template?.id || null,
+      type: 'job_template'
+    },
+    {
+      key: 'execution_plan',
+      label: '执行方案',
+      name: plan?.name || '未关联',
+      id: plan?.id || null,
+      type: 'execution_plan'
+    },
+    {
+      key: 'scheduled_task',
+      label: '定时任务',
+      name: scheduledJobSummary.value,
+      id: scheduledJobList.value.length === 1 ? scheduledJobList.value[0].id : null,
+      type: 'scheduled_task'
+    },
+    {
+      key: 'execution_record',
+      label: '执行记录',
+      name: execution?.name || displayName.value || '执行记录',
+      id: execution?.id || executionInfo.value?.id || null,
+      status: execution?.status || executionInfo.value?.status,
+      type: 'execution_record'
+    }
+  ]
+})
+
+const chainTimeline = computed(() => {
+  const list = chainData.value.recent_executions || []
+  return list.map((item) => ({
+    id: item.id,
+    name: item.name || `执行记录 ${item.execution_id || item.id}`,
+    status: item.status_display || getStatusText(item.status),
+    statusRaw: item.status,
+    time: formatDateTime(item.created_at)
+  }))
 })
 
 // 计算属性 - 排序后的步骤列表
@@ -3810,5 +4078,126 @@ onMounted(() => {
   font-size: 12px;
   color: #86909c;
   line-height: 1.5;
+}
+
+.chain-loading,
+.chain-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+}
+
+.chain-section {
+  margin-bottom: 16px;
+}
+
+.chain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chain-header h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #1d1d1f;
+}
+
+.chain-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chain-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-card {
+  width: 220px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.node-label {
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.node-name {
+  font-size: 13px;
+  color: #1f1f1f;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.node-meta {
+  font-size: 12px;
+  color: #86909c;
+}
+
+.node-actions {
+  margin-top: 6px;
+}
+
+.chain-sublist {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.chain-subtitle {
+  font-size: 12px;
+  color: #86909c;
+  margin-bottom: 8px;
+}
+
+.chain-subitems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chain-link {
+  color: #165dff;
+  padding: 0;
+}
+
+.chain-arrow {
+  font-size: 18px;
+  color: #86909c;
+}
+
+.chain-timeline {
+  margin-top: 8px;
+}
+
+.chain-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.chain-item-meta {
+  font-size: 12px;
+  color: #86909c;
 }
 </style>

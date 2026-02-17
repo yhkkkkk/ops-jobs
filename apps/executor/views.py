@@ -672,3 +672,104 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 error_message=str(e)
             )
             return SycResponse.error(message=f'忽略步骤错误失败: {str(e)}')
+
+    @action(detail=True, methods=['get'])
+    def trace(self, request, pk=None):
+        """获取执行链路信息"""
+        execution_record = self.get_object()
+
+        try:
+            from apps.job_templates.models import ExecutionPlan, JobTemplate
+            from apps.scheduler.models import ScheduledJob
+
+            related_object = execution_record.related_object
+            plan = None
+            template = None
+
+            if isinstance(related_object, ExecutionPlan):
+                plan = related_object
+                template = related_object.template
+            elif isinstance(related_object, JobTemplate):
+                template = related_object
+            elif isinstance(related_object, ScheduledJob):
+                plan = related_object.execution_plan
+                template = plan.template if plan else None
+
+            scheduled_jobs = []
+            if plan:
+                jobs = ScheduledJob.objects.filter(execution_plan=plan).only(
+                    'id',
+                    'name',
+                    'is_active',
+                    'cron_expression',
+                    'timezone',
+                    'last_run_time',
+                    'next_run_time'
+                )
+                scheduled_jobs = [
+                    {
+                        'id': job.id,
+                        'name': job.name,
+                        'is_active': job.is_active,
+                        'cron_expression': job.cron_expression,
+                        'timezone': job.timezone,
+                        'last_run_time': job.last_run_time,
+                        'next_run_time': job.next_run_time,
+                    }
+                    for job in jobs
+                ]
+
+            chain = {
+                'job_template': {
+                    'id': template.id,
+                    'name': template.name,
+                } if template else None,
+                'execution_plan': {
+                    'id': plan.id,
+                    'name': plan.name,
+                } if plan else None,
+                'scheduled_jobs': scheduled_jobs,
+                'execution_record': {
+                    'id': execution_record.id,
+                    'execution_id': execution_record.execution_id,
+                    'name': execution_record.name,
+                    'status': execution_record.status,
+                    'status_display': execution_record.get_status_display(),
+                    'created_at': execution_record.created_at,
+                    'execution_type': execution_record.execution_type,
+                }
+            }
+
+            recent_qs = ExecutionRecord.objects.none()
+            if execution_record.content_type_id and execution_record.object_id:
+                recent_qs = ExecutionRecord.objects.filter(
+                    content_type=execution_record.content_type,
+                    object_id=execution_record.object_id
+                ).order_by('-created_at')[:10]
+
+            if not recent_qs.exists():
+                recent_qs = ExecutionRecord.objects.filter(id=execution_record.id)
+
+            recent_executions = [
+                {
+                    'id': record.id,
+                    'execution_id': record.execution_id,
+                    'name': record.name,
+                    'status': record.status,
+                    'status_display': record.get_status_display(),
+                    'created_at': record.created_at,
+                }
+                for record in recent_qs
+            ]
+
+            return SycResponse.success(
+                content={
+                    'chain': chain,
+                    'recent_executions': recent_executions,
+                },
+                message='获取执行链路成功'
+            )
+
+        except Exception as e:
+            logger.error(f"获取执行链路失败: {str(e)}", exc_info=True)
+            return SycResponse.error(message=f'获取执行链路失败: {str(e)}')

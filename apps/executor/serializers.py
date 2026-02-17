@@ -95,6 +95,9 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
     
     # 实时日志相关字段
     realtime_urls = serializers.SerializerMethodField()
+
+    # 关联对象信息
+    related_object_info = serializers.SerializerMethodField()
     
     # 处理execution_results字段，移除其中的logs字段，并暴露日志指针/摘录元信息
     execution_results = serializers.SerializerMethodField()
@@ -109,7 +112,7 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             'execution_results', 'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'is_completed', 'is_running',
-            'realtime_urls'
+            'realtime_urls', 'related_object_info'
         ]
         read_only_fields = ['id', 'execution_id', 'created_at']
     
@@ -145,6 +148,17 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             }
         return None
     
+    @extend_schema_field(serializers.DictField(allow_null=True))
+    def get_related_object_info(self, obj):
+        """获取关联对象信息"""
+        if obj.related_object:
+            return {
+                'type': obj.content_type.model,
+                'id': obj.object_id,
+                'name': str(obj.related_object)
+            }
+        return None
+
     @extend_schema_field(serializers.DictField(allow_null=True))
     def get_execution_results(self, obj):
         """
