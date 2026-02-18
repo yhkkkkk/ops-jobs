@@ -360,9 +360,9 @@ export const executionRecordApi = {
     })
   },
 
-  // 获取单个步骤内容（脚本/参数，支持敏感掩码）
-  getStepContent(id: number, stepId: string | number, params?: { show_sensitive?: boolean }): Promise<any> {
-    return http.get(`/executor/execution-records/${id}/steps/${stepId}/content/`, { params })
+  // 获取单个步骤内容（脚本/参数）
+  getStepContent(id: number, stepId: string | number): Promise<any> {
+    return http.get(`/executor/execution-records/${id}/steps/${stepId}/content/`)
   },
 
   // 获取执行操作审计记录

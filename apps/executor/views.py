@@ -220,12 +220,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         except ExecutionStep.DoesNotExist:
             return SycResponse.error(message='步骤不存在')
 
-        show_sensitive = str(request.query_params.get('show_sensitive', '')).lower() in ['1', 'true', 'yes', 'on']
-
-        serializer = ExecutionStepContentSerializer(
-            step,
-            context={'show_sensitive': show_sensitive}
-        )
+        serializer = ExecutionStepContentSerializer(step)
         return SycResponse.success(content=serializer.data, message='步骤内容获取成功')
 
     @action(detail=True, methods=['get'])

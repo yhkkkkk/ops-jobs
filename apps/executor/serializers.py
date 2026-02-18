@@ -301,11 +301,9 @@ class ExecutionStepContentSerializer(serializers.ModelSerializer):
         params = obj.step_parameters or {}
         return params if isinstance(params, dict) else {}
 
-    def _mask_value(self, key, value, show_sensitive=False, is_secret=False):
+    def _mask_value(self, key, value, is_secret=False):
         import re
         key_lower = (key or '').lower()
-        if show_sensitive:
-            return value, False
         if is_secret:
             return '****', True
         if re.search(r'(password|secret|token|key|credential|pwd)', key_lower):
@@ -367,8 +365,6 @@ class ExecutionStepContentSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(MaskedParameterSerializer(many=True))
     def get_rendered_parameters(self, obj):
-        show_sensitive = self.context.get('show_sensitive', False)
-
         merged = {}
         exec_params = None
         if obj.execution_record and isinstance(obj.execution_record.execution_parameters, dict):
@@ -394,10 +390,12 @@ class ExecutionStepContentSerializer(serializers.ModelSerializer):
         for key, payload in merged.items():
             value = payload.get('value')
             is_secret = payload.get('is_secret', False)
-            masked_value, is_masked = self._mask_value(key, value, show_sensitive, is_secret)
+            masked_value, is_masked = self._mask_value(key, value, is_secret)
             rendered.append({
                 'key': key,
+                'value': value,
                 'display_value': masked_value,
+                'is_secret': is_secret,
                 'is_masked': is_masked,
             })
         return rendered

@@ -718,10 +718,10 @@
                   </div>
                 </template>
                 <template v-else>
-                  <span class="param-value" :class="{ masked: param.is_masked }">
-                    {{ param.display_value }}
+                  <span class="param-value" :class="{ masked: isStepParamMasked(param) }">
+                    {{ getStepParamDisplay(param) }}
                   </span>
-                  <a-tag v-if="param.is_masked" size="small" color="gray">已掩码</a-tag>
+                  <a-tag v-if="isStepParamMasked(param)" size="small" color="gray">已掩码</a-tag>
                 </template>
               </div>
             </div>
@@ -918,29 +918,70 @@
     title="全局变量"
     unmount-on-close
   >
-    <div v-if="!executionInfo.execution_parameters || Object.keys(executionInfo.execution_parameters).length === 0" class="var-empty">
+    <div v-if="globalVarItems.length === 0" class="var-empty">
       <a-empty description="暂无全局变量" />
     </div>
-    <div v-else class="global-parameters">
-      <div
-        v-for="(val, key) in executionInfo.execution_parameters"
-        :key="key"
-        class="parameter-item global"
-      >
-        <div class="param-key">{{ key }}</div>
-        <div class="param-value">
-          <template v-if="isObject(val)">
-            <pre>{{ formatVar(val, key, true) }}</pre>
+    <div v-else class="params-block">
+      <div class="step-content-header">
+        <h4>全局变量</h4>
+        <a-space size="small">
+          <span class="switch-label">显示敏感值</span>
+          <a-switch v-model="globalVarShowSensitive" size="small" />
+        </a-space>
+      </div>
+      <div class="params-list">
+        <div
+          v-for="item in globalVarItems"
+          :key="item.key"
+          class="param-row"
+          :class="{ 'param-row--ip': item.key === 'ip_list' }"
+        >
+          <span class="param-key">{{ item.key }}</span>
+          <template v-if="item.key === 'ip_list' && !item.isMasked">
+            <div class="param-row-head">
+              <span class="param-value">{{ formatIpListPreview(item.rawValue) }}</span>
+            </div>
+            <div class="param-row-body">
+              <a-collapse
+                v-model:active-key="globalIpListActiveKeys"
+                class="ip-list-collapse"
+                :bordered="false"
+              >
+                <a-collapse-item key="ip_list" :header="`IP列表 (${globalIpListPagination.total})`">
+                  <a-table
+                    :columns="ipListColumns"
+                    :data="globalIpListRows"
+                    :pagination="false"
+                    size="small"
+                    row-key="ip"
+                    :loading="globalIpListLoading"
+                  />
+                  <a-empty v-if="globalIpListPagination.total === 0" description="暂无IP" />
+                  <div v-if="globalIpListPagination.total > globalIpListPagination.pageSize" class="table-pagination">
+                    <a-pagination
+                      :current="globalIpListPagination.page"
+                      :page-size="globalIpListPagination.pageSize"
+                      :total="globalIpListPagination.total"
+                      size="small"
+                      show-total
+                      @change="handleGlobalIpListPageChange"
+                    />
+                  </div>
+                </a-collapse-item>
+              </a-collapse>
+            </div>
           </template>
           <template v-else>
-            {{ formatVar(val, key, true) }}
+            <div class="param-value-group">
+              <span class="param-value" :class="{ masked: item.isMasked }">
+                {{ item.displayValue }}
+              </span>
+              <div v-if="item.description" class="param-description">
+                {{ item.description }}
+              </div>
+            </div>
+            <a-tag v-if="item.isMasked" size="small" color="gray">已掩码</a-tag>
           </template>
-        </div>
-        <div
-          v-if="getVarDescription(val)"
-          class="param-description"
-        >
-          {{ getVarDescription(val) }}
         </div>
       </div>
     </div>
@@ -948,7 +989,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
@@ -1041,6 +1082,11 @@ const ipListRows = ref<Array<{ ip: string }>>([])
 const ipListPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const ipListSource = ref<Array<string | number | Record<string, any>>>([])
 const ipListActiveKeys = ref(['ip_list'])
+const globalIpListLoading = ref(false)
+const globalIpListRows = ref<Array<{ ip: string }>>([])
+const globalIpListPagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const globalIpListSource = ref<Array<string | number | Record<string, any>>>([])
+const globalIpListActiveKeys = ref(['ip_list'])
 const ipListColumns = [
   { title: 'IP', dataIndex: 'ip' }
 ]
@@ -1464,8 +1510,7 @@ const loadStepContent = async (stepId, options = { force: false }) => {
   try {
     const res = await executionRecordApi.getStepContent(
       Number(route.params.id),
-      stepId,
-      { show_sensitive: stepContentShowSensitive.value[stepId] === true }
+      stepId
     )
     stepContent.value = { ...stepContent.value, [stepId]: res }
     syncIpListSource(stepId)
@@ -1484,7 +1529,32 @@ const loadStepContent = async (stepId, options = { force: false }) => {
 // 切换敏感值显示
 const toggleSensitive = (stepId, val) => {
   stepContentShowSensitive.value = { ...stepContentShowSensitive.value, [stepId]: val }
-  loadStepContent(stepId, { force: true })
+}
+
+const getStepParamRaw = (param: any) => {
+  if (!param) return null
+  return param.value ?? param.display_value
+}
+
+const isStepParamMasked = (param: any) => {
+  const stepId = currentStepForContent.value
+  const showSensitive = stepId ? stepContentShowSensitive.value[stepId] === true : false
+  const key = param?.key || ''
+  const secretByKey = key ? secretKeyRegex.test(key) : false
+  const secretByMeta = !!param?.is_secret
+  return !showSensitive && (secretByMeta || secretByKey)
+}
+
+const getStepParamDisplay = (param: any) => {
+  const raw = getStepParamRaw(param)
+  if (isStepParamMasked(param)) return '******'
+  if (raw === null || raw === undefined) return '-'
+  if (typeof raw === 'string') return raw
+  try {
+    return JSON.stringify(raw, null, 2)
+  } catch (error) {
+    return String(raw)
+  }
 }
 
 const formatIpListPreview = (value: any) => {
@@ -1568,6 +1638,75 @@ const loadIpListPage = async () => {
   ipListRows.value = pageItems.map(item => ({ ip: String(item) }))
 }
 
+const syncGlobalIpListSource = () => {
+  const ipItem = globalVarItems.value.find(item => item.key === 'ip_list')
+  if (!ipItem) {
+    globalIpListSource.value = []
+    globalIpListPagination.page = 1
+    globalIpListPagination.total = 0
+    globalIpListRows.value = []
+    return
+  }
+  globalIpListSource.value = normalizeIpList(ipItem.rawValue)
+  globalIpListPagination.page = 1
+  globalIpListActiveKeys.value = ['ip_list']
+  loadGlobalIpListPage()
+}
+
+const handleGlobalIpListPageChange = (page: number) => {
+  globalIpListPagination.page = page
+  loadGlobalIpListPage()
+}
+
+const loadGlobalIpListPage = async () => {
+  const list = globalIpListSource.value || []
+  globalIpListPagination.total = list.length
+  if (list.length === 0) {
+    globalIpListRows.value = []
+    return
+  }
+
+  const start = (globalIpListPagination.page - 1) * globalIpListPagination.pageSize
+  const end = start + globalIpListPagination.pageSize
+  const pageItems = list.slice(start, end)
+
+  if (pageItems.every(item => item && typeof item === 'object' && (item.ip_address || item.ip))) {
+    globalIpListRows.value = pageItems.map((item: any) => ({ ip: item.ip_address || item.ip || '-' }))
+    return
+  }
+
+  if (pageItems.every(item => isIp(item))) {
+    globalIpListRows.value = pageItems.map(item => ({ ip: String(item) }))
+    return
+  }
+
+  if (pageItems.every(item => isNumeric(item))) {
+    globalIpListLoading.value = true
+    try {
+      const results = await Promise.all(pageItems.map(async (id) => {
+        const numericId = Number(id)
+        if (ipListHostCache[numericId]) {
+          return { ip: ipListHostCache[numericId] }
+        }
+        try {
+          const host = await hostApi.getHost(numericId)
+          const ip = host?.ip_address || host?.internal_ip || '-'
+          ipListHostCache[numericId] = ip
+          return { ip }
+        } catch (error) {
+          return { ip: '-' }
+        }
+      }))
+      globalIpListRows.value = results
+    } finally {
+      globalIpListLoading.value = false
+    }
+    return
+  }
+
+  globalIpListRows.value = pageItems.map(item => ({ ip: String(item) }))
+}
+
 const getMergedLogs = (hostLog: any) => {
   const out = hostLog?.stdout || hostLog?.logs || ''
   const err = hostLog?.stderr || hostLog?.error_logs || ''
@@ -1591,6 +1730,7 @@ const openStepContentDrawer = (stepId) => {
 
 const openGlobalVarDrawer = () => {
   globalVarDrawerVisible.value = true
+  syncGlobalIpListSource()
 }
 
 // 操作记录
@@ -1829,15 +1969,16 @@ const goPlanDetail = (planId: string | number | undefined | null) => {
 const secretKeyRegex = /(password|secret|token|key|credential|pwd)/i
 const isObject = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object'
 
-const formatVar = (val: unknown, key: any = '', mask = false): string => {
+const formatVar = (val: unknown, key: any = '', showSensitive = false): string => {
   if (val === null || val === undefined) return '-'
   const isSecretKey = key && secretKeyRegex.test(key)
   if (isObject(val)) {
-    if (val.type === 'secret' || val?.is_secret || isSecretKey || mask) {
+    const isSecret = val.type === 'secret' || val?.is_secret || isSecretKey
+    if (isSecret && !showSensitive) {
       return '******'
     }
     if ('value' in val) {
-      return formatVar((val as any).value, key, mask)
+      return formatVar((val as any).value, key, showSensitive)
     }
     try {
       return JSON.stringify(val, null, 2)
@@ -1845,14 +1986,96 @@ const formatVar = (val: unknown, key: any = '', mask = false): string => {
       return String(val)
     }
   }
-  if (mask && isSecretKey) return '******'
+  if (isSecretKey && !showSensitive) return '******'
   return String(val)
 }
 
-const getVarDescription = (val: unknown) => {
-  if (!isObject(val)) return ''
-  return val.description || ''
+const globalVarShowSensitive = ref(false)
+const GLOBAL_SKIP_KEYS = new Set([
+  'script_content',
+  'script_type',
+  'timeout',
+  'ignore_error',
+  'file_sources',
+  'execution_mode',
+  'rolling_strategy',
+  'rolling_batch_size',
+  'rolling_batch_delay',
+  'account_id',
+  'target_host_ids',
+  'agent_server_url',
+  'positional_args',
+  'file_items',
+  'target_hosts',
+  'target_ips',
+])
+
+const isSecretValue = (key: string, value: unknown, metaSecret = false) => {
+  if (metaSecret) return true
+  if (isObject(value) && (value.type === 'secret' || value?.is_secret)) return true
+  return key ? secretKeyRegex.test(key) : false
 }
+
+const globalVarItems = computed(() => {
+  const params = executionInfo.value?.execution_parameters
+  if (!params) return [] as Array<{ key: string; rawValue?: unknown; displayValue: string; isMasked: boolean; description?: string }>
+
+  const items: Array<{
+    key: string
+    value: unknown
+    description?: string
+    metaSecret?: boolean
+  }> = []
+
+  if (isObject(params) && Array.isArray(params.global_variables)) {
+    params.global_variables.forEach((item: any) => {
+      const key = item?.name || item?.key
+      if (!key) return
+      items.push({
+        key,
+        value: item?.value,
+        description: item?.description || '',
+        metaSecret: !!item?.is_secret || item?.type === 'secret',
+      })
+    })
+  } else if (isObject(params)) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (GLOBAL_SKIP_KEYS.has(key)) return
+      if (isObject(value) && 'value' in value) {
+        items.push({
+          key,
+          value: (value as any).value,
+          description: (value as any).description || '',
+          metaSecret: !!(value as any).is_secret || (value as any).type === 'secret',
+        })
+      } else {
+        items.push({
+          key,
+          value,
+          description: '',
+          metaSecret: false,
+        })
+      }
+    })
+  }
+
+  return items.map(item => {
+    const masked = !globalVarShowSensitive.value && isSecretValue(item.key, item.value, item.metaSecret)
+    return {
+      key: item.key,
+      rawValue: item.value,
+      displayValue: masked ? '******' : formatVar(item.value, item.key, true),
+      isMasked: masked,
+      description: item.description,
+    }
+  })
+})
+
+watch(globalVarItems, () => {
+  if (globalVarDrawerVisible.value) {
+    syncGlobalIpListSource()
+  }
+})
 
 // 重试执行
 const handleRetry = async () => {
@@ -4291,7 +4514,15 @@ onMounted(() => {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
-.global-parameters .param-description {
+.param-value-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.param-description {
   font-size: 12px;
   color: #86909c;
   line-height: 1.5;
