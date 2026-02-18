@@ -105,14 +105,6 @@
       <template #extra>
         <a-space>
           <a-button
-            v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.related_object_info?.type === 'executionplan'"
-            size="small"
-            type="outline"
-            @click="goPlanDetail(executionInfo.related_object_info.id)"
-          >
-            <IconArrowLeft /> 查看执行方案
-          </a-button>
-          <a-button
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.execution_parameters"
             size="small"
             type="outline"
@@ -582,21 +574,11 @@
       <a-empty description="请选择步骤后查看" />
     </div>
     <div v-else>
-      <div class="drawer-header">
-        <a-space>
-          <a-switch
-            size="small"
-            :model-value="stepContentShowSensitive[currentStepForContent] === true"
-            @change="(val) => toggleSensitive(currentStepForContent, val)"
-          >
-            <template #checked>显示敏感值</template>
-            <template #unchecked>隐藏敏感值</template>
-          </a-switch>
-          <a-button size="small" @click="loadStepContent(currentStepForContent, { force: true })">
-            <template #icon><IconRefresh /></template>
-            刷新
-          </a-button>
-        </a-space>
+      <div class="step-content-toolbar">
+        <a-button size="small" type="outline" @click="loadStepContent(currentStepForContent, { force: true })">
+          <template #icon><IconRefresh /></template>
+          刷新步骤内容
+        </a-button>
       </div>
 
       <div v-if="stepContentLoading[currentStepForContent]" class="step-content-body loading">
@@ -616,19 +598,56 @@
         </a-result>
       </div>
       <div v-else-if="stepContent[currentStepForContent]" class="step-content-body">
-        <div class="step-meta">
-          <a-space wrap>
-            <a-tag color="arcoblue">脚本类型: {{ stepContent[currentStepForContent].script_type || '未知' }}</a-tag>
-            <a-tag>超时: {{ stepContent[currentStepForContent].timeout ?? '-' }}s</a-tag>
-            <a-tag :color="stepContent[currentStepForContent].ignore_error ? 'orange' : 'green'">
-              忽略错误: {{ stepContent[currentStepForContent].ignore_error ? '是' : '否' }}
-            </a-tag>
-          </a-space>
+        <div class="step-content-card">
+          <div class="step-content-header">
+            <h4>基础信息</h4>
+          </div>
+          <a-descriptions :column="2" size="small" bordered>
+            <a-descriptions-item label="步骤名称">
+              {{ stepContent[currentStepForContent].step_name || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="步骤类型">
+              {{ stepContent[currentStepForContent].step_type === 'file_transfer' ? '文件传输' : '脚本执行' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="超时">
+              {{ stepContent[currentStepForContent].timeout ?? '-' }}s
+            </a-descriptions-item>
+            <a-descriptions-item label="忽略错误">
+              {{ stepContent[currentStepForContent].ignore_error ? '是' : '否' }}
+            </a-descriptions-item>
+            <a-descriptions-item
+              v-if="stepContent[currentStepForContent].step_type === 'script'"
+              label="脚本类型"
+            >
+              {{ stepContent[currentStepForContent].script_type || '-' }}
+            </a-descriptions-item>
+          </a-descriptions>
         </div>
 
-        <div v-if="stepContent[currentStepForContent].script_content" class="script-block">
-          <div class="block-header">
-            <h5>脚本</h5>
+        <div
+          v-if="stepContent[currentStepForContent].step_type === 'file_transfer' && stepContent[currentStepForContent].file_sources?.length"
+          class="step-content-card"
+        >
+          <div class="step-content-header">
+            <h4>文件来源</h4>
+          </div>
+          <div class="file-sources">
+            <a-tag
+              v-for="(file, index) in stepContent[currentStepForContent].file_sources"
+              :key="index"
+              color="arcoblue"
+            >
+              {{ typeof file === 'string' ? file : (file?.path || file?.name || String(file)) }}
+            </a-tag>
+          </div>
+        </div>
+
+        <div
+          v-if="stepContent[currentStepForContent].step_type === 'script' && stepContent[currentStepForContent].script_content"
+          class="step-content-card"
+        >
+          <div class="step-content-header">
+            <h4>脚本内容</h4>
             <a-button
               size="mini"
               type="text"
@@ -638,27 +657,76 @@
               复制
             </a-button>
           </div>
-          <pre class="script-pre">{{ stepContent[currentStepForContent].script_content }}</pre>
+          <div class="script-block">
+            <pre class="script-pre">{{ stepContent[currentStepForContent].script_content }}</pre>
+          </div>
         </div>
 
-        <div class="params-block">
-          <div class="block-header">
-            <h5>参数</h5>
+        <div class="step-content-card">
+          <div class="step-content-header">
+            <h4>执行参数</h4>
+            <a-space size="small">
+              <span class="switch-label">显示敏感值</span>
+              <a-switch
+                size="small"
+                :model-value="stepContentShowSensitive[currentStepForContent] === true"
+                @change="(val) => toggleSensitive(currentStepForContent, val)"
+              />
+            </a-space>
           </div>
-          <div v-if="stepContent[currentStepForContent].rendered_parameters?.length" class="params-list">
-            <div
-              v-for="param in stepContent[currentStepForContent].rendered_parameters"
-              :key="param.key"
-              class="param-row"
-            >
-              <span class="param-key">{{ param.key }}</span>
-              <span class="param-value" :class="{ masked: param.is_masked }">
-                {{ param.display_value }}
-              </span>
-              <a-tag v-if="param.is_masked" size="small" color="gray">已掩码</a-tag>
+          <div class="params-block">
+            <div v-if="stepContent[currentStepForContent].rendered_parameters?.length" class="params-list">
+              <div
+                v-for="param in stepContent[currentStepForContent].rendered_parameters"
+                :key="param.key"
+                class="param-row"
+                :class="{ 'param-row--ip': param.key === 'ip_list' }"
+              >
+                <span class="param-key">{{ param.key }}</span>
+                <template v-if="param.key === 'ip_list'">
+                  <div class="param-row-head">
+                    <span class="param-value">{{ formatIpListPreview(param.display_value) }}</span>
+                  </div>
+                  <div class="param-row-body">
+                    <a-collapse
+                      v-model:active-key="ipListActiveKeys"
+                      class="ip-list-collapse"
+                      :bordered="false"
+                    >
+                      <a-collapse-item key="ip_list" :header="`IP列表 (${ipListPagination.total})`">
+                        <a-table
+                          :columns="ipListColumns"
+                          :data="ipListRows"
+                          :pagination="false"
+                          size="small"
+                          row-key="ip"
+                          :loading="ipListLoading"
+                        />
+                        <a-empty v-if="ipListPagination.total === 0" description="暂无IP" />
+                        <div v-if="ipListPagination.total > ipListPagination.pageSize" class="table-pagination">
+                          <a-pagination
+                            :current="ipListPagination.page"
+                            :page-size="ipListPagination.pageSize"
+                            :total="ipListPagination.total"
+                            size="small"
+                            show-total
+                            @change="handleIpListPageChange"
+                          />
+                        </div>
+                      </a-collapse-item>
+                    </a-collapse>
+                  </div>
+                </template>
+                <template v-else>
+                  <span class="param-value" :class="{ masked: param.is_masked }">
+                    {{ param.display_value }}
+                  </span>
+                  <a-tag v-if="param.is_masked" size="small" color="gray">已掩码</a-tag>
+                </template>
+              </div>
             </div>
+            <a-empty v-else description="暂无参数" />
           </div>
-          <a-empty v-else description="暂无参数" />
         </div>
       </div>
       <div v-else class="step-content-body">
@@ -670,7 +738,7 @@
   <!-- 操作记录抽屉 -->
   <a-drawer
     v-model:visible="operationDrawerVisible"
-    width="45%"
+    :width="DRAWER_WIDTH"
     title="操作记录"
     unmount-on-close
   >
@@ -729,7 +797,7 @@
   <!-- 链路视图 -->
   <a-drawer
     v-model:visible="chainDrawerVisible"
-    width="45%"
+    :width="DRAWER_WIDTH"
     title="链路视图"
     unmount-on-close
   >
@@ -846,7 +914,7 @@
   <!-- 全局变量抽屉（仅 job_workflow） -->
   <a-drawer
     v-model:visible="globalVarDrawerVisible"
-    width="45%"
+    :width="DRAWER_WIDTH"
     title="全局变量"
     unmount-on-close
   >
@@ -898,9 +966,10 @@ import {
   IconEye,
   IconUser,
   IconDownload,
-  IconLink
+  IconLink,
+  IconSettings
 } from '@arco-design/web-vue/es/icon'
-import { executionRecordApi } from '@/api/ops'
+import { executionRecordApi, hostApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
@@ -966,6 +1035,16 @@ const stepContentLoading = ref<Record<string, boolean>>({})
 const stepContentError = ref<Record<string, any>>({})
 const stepContentShowSensitive = ref<Record<string, boolean>>({})
 const stepContentDrawerVisible = ref(false)
+
+const ipListLoading = ref(false)
+const ipListRows = ref<Array<{ ip: string }>>([])
+const ipListPagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const ipListSource = ref<Array<string | number | Record<string, any>>>([])
+const ipListActiveKeys = ref(['ip_list'])
+const ipListColumns = [
+  { title: 'IP', dataIndex: 'ip' }
+]
+const ipListHostCache = reactive<Record<number, string>>({})
 const currentStepForContent = ref(null)
 
 const operationDrawerVisible = ref(false)
@@ -977,6 +1056,8 @@ const operationPagination = reactive({
   page_size: 10,
   total: 0,
 })
+const DRAWER_WIDTH = '45%'
+
 const chainDrawerVisible = ref(false)
 const chainLoading = ref(false)
 const chainError = ref('')
@@ -1387,6 +1468,7 @@ const loadStepContent = async (stepId, options = { force: false }) => {
       { show_sensitive: stepContentShowSensitive.value[stepId] === true }
     )
     stepContent.value = { ...stepContent.value, [stepId]: res }
+    syncIpListSource(stepId)
   } catch (error) {
     console.error('加载步骤内容失败:', error)
     stepContentError.value = {
@@ -1403,6 +1485,87 @@ const loadStepContent = async (stepId, options = { force: false }) => {
 const toggleSensitive = (stepId, val) => {
   stepContentShowSensitive.value = { ...stepContentShowSensitive.value, [stepId]: val }
   loadStepContent(stepId, { force: true })
+}
+
+const formatIpListPreview = (value: any) => {
+  const list = normalizeIpList(value)
+  if (!list.length) return '-'
+  return `IP列表 (${list.length})`
+}
+
+const normalizeIpList = (value: any) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    return value.split(/[\s,;]+/).filter(Boolean)
+  }
+  return []
+}
+
+const isNumeric = (value: any) => /^\d+$/.test(String(value))
+const isIp = (value: any) => /^(\d{1,3}\.){3}\d{1,3}$/.test(String(value))
+
+const syncIpListSource = (stepId: string | number) => {
+  const params = stepContent.value?.[stepId]?.rendered_parameters || []
+  const ipParam = params.find((item: any) => item?.key === 'ip_list')
+  ipListSource.value = normalizeIpList(ipParam?.display_value)
+  ipListPagination.page = 1
+  ipListActiveKeys.value = ['ip_list']
+  loadIpListPage()
+}
+
+const handleIpListPageChange = (page: number) => {
+  ipListPagination.page = page
+  loadIpListPage()
+}
+
+const loadIpListPage = async () => {
+  const list = ipListSource.value || []
+  ipListPagination.total = list.length
+  if (list.length === 0) {
+    ipListRows.value = []
+    return
+  }
+
+  const start = (ipListPagination.page - 1) * ipListPagination.pageSize
+  const end = start + ipListPagination.pageSize
+  const pageItems = list.slice(start, end)
+
+  if (pageItems.every(item => item && typeof item === 'object' && (item.ip_address || item.ip))) {
+    ipListRows.value = pageItems.map((item: any) => ({ ip: item.ip_address || item.ip || '-' }))
+    return
+  }
+
+  if (pageItems.every(item => isIp(item))) {
+    ipListRows.value = pageItems.map(item => ({ ip: String(item) }))
+    return
+  }
+
+  if (pageItems.every(item => isNumeric(item))) {
+    ipListLoading.value = true
+    try {
+      const results = await Promise.all(pageItems.map(async (id) => {
+        const numericId = Number(id)
+        if (ipListHostCache[numericId]) {
+          return { ip: ipListHostCache[numericId] }
+        }
+        try {
+          const host = await hostApi.getHost(numericId)
+          const ip = host?.ip_address || host?.internal_ip || '-'
+          ipListHostCache[numericId] = ip
+          return { ip }
+        } catch (error) {
+          return { ip: '-' }
+        }
+      }))
+      ipListRows.value = results
+    } finally {
+      ipListLoading.value = false
+    }
+    return
+  }
+
+  ipListRows.value = pageItems.map(item => ({ ip: String(item) }))
 }
 
 const getMergedLogs = (hostLog: any) => {
@@ -3909,12 +4072,23 @@ onMounted(() => {
 }
 
 /* 步骤内容卡片 */
+.step-content-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.step-content-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .step-content-card {
   border: 1px solid #e8e8e8;
   border-radius: 8px;
   background: #fff;
   padding: 14px 16px;
-  margin-bottom: 16px;
 }
 
 .step-content-header {
@@ -3922,6 +4096,24 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+}
+
+.step-content-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.switch-label {
+  font-size: 12px;
+  color: #666;
+}
+
+.file-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .step-content-body.loading,
@@ -3932,16 +4124,11 @@ onMounted(() => {
   min-height: 100px;
 }
 
-.step-meta {
-  margin-bottom: 12px;
-}
-
 .script-block {
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   padding: 10px;
   background: #fafafa;
-  margin-bottom: 12px;
 }
 
 .script-pre {
@@ -3967,6 +4154,30 @@ onMounted(() => {
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fafafa;
+}
+
+.param-row--ip {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.param-row--ip .param-key {
+  min-width: auto;
+}
+
+.param-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.param-row-body {
+  width: 100%;
+}
+
+.ip-list-collapse :deep(.arco-collapse-item-content) {
+  padding: 0;
 }
 
 .param-key {
@@ -4037,6 +4248,12 @@ onMounted(() => {
 .op-pagination {
   margin-top: 12px;
   text-align: right;
+}
+
+.table-pagination {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .global-parameters {

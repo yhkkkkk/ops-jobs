@@ -255,6 +255,25 @@ class MaskedParameterSerializer(serializers.Serializer):
 class ExecutionStepContentSerializer(serializers.ModelSerializer):
     """步骤内容（脚本/参数）"""
 
+    SYSTEM_PARAM_KEYS = {
+        'script_content',
+        'script_type',
+        'timeout',
+        'ignore_error',
+        'file_sources',
+        'execution_mode',
+        'rolling_strategy',
+        'rolling_batch_size',
+        'rolling_batch_delay',
+        'account_id',
+        'target_host_ids',
+        'agent_server_url',
+        'positional_args',
+        'file_items',
+        'target_hosts',
+        'target_ips',
+    }
+
     script_type = serializers.SerializerMethodField()
     script_content = serializers.SerializerMethodField()
     timeout = serializers.SerializerMethodField()
@@ -282,11 +301,13 @@ class ExecutionStepContentSerializer(serializers.ModelSerializer):
         params = obj.step_parameters or {}
         return params if isinstance(params, dict) else {}
 
-    def _mask_value(self, key, value, show_sensitive=False):
+    def _mask_value(self, key, value, show_sensitive=False, is_secret=False):
         import re
         key_lower = (key or '').lower()
         if show_sensitive:
             return value, False
+        if is_secret:
+            return '****', True
         if re.search(r'(password|secret|token|key|credential|pwd)', key_lower):
             return '****', True
         return value, False
@@ -306,20 +327,74 @@ class ExecutionStepContentSerializer(serializers.ModelSerializer):
     def get_file_sources(self, obj):
         return self._get_step_params(obj).get('file_sources') or []
 
+    def _extract_variables(self, raw, exclude_keys=None):
+        result = {}
+        exclude = set(exclude_keys or [])
+        if not raw:
+            return result
+
+        if isinstance(raw, list):
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                key = item.get('name') or item.get('key')
+                if not key or key in exclude:
+                    continue
+                value = item.get('value')
+                is_secret = bool(item.get('is_secret')) or (item.get('type') == 'secret')
+                result[key] = {
+                    'value': value,
+                    'is_secret': is_secret,
+                }
+            return result
+
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                if key in exclude:
+                    continue
+                if isinstance(value, dict) and 'value' in value:
+                    is_secret = bool(value.get('is_secret')) or (value.get('type') == 'secret')
+                    result[key] = {
+                        'value': value.get('value'),
+                        'is_secret': is_secret,
+                    }
+                else:
+                    result[key] = {
+                        'value': value,
+                        'is_secret': False,
+                    }
+        return result
+
     @extend_schema_field(MaskedParameterSerializer(many=True))
     def get_rendered_parameters(self, obj):
         show_sensitive = self.context.get('show_sensitive', False)
 
         merged = {}
-        # execution_parameters 作为全局参数
+        exec_params = None
         if obj.execution_record and isinstance(obj.execution_record.execution_parameters, dict):
-            merged.update(obj.execution_record.execution_parameters)
-        # step_parameters 覆盖或补充
-        merged.update(self._get_step_params(obj))
+            exec_params = obj.execution_record.execution_parameters
+
+        if isinstance(exec_params, dict):
+            global_vars = exec_params.get('global_variables')
+            if isinstance(global_vars, list):
+                merged.update(self._extract_variables(global_vars))
+            extra = {
+                key: value
+                for key, value in exec_params.items()
+                if key not in self.SYSTEM_PARAM_KEYS and key != 'global_variables'
+            }
+            merged.update(self._extract_variables(extra))
+        else:
+            merged.update(self._extract_variables(exec_params, self.SYSTEM_PARAM_KEYS))
+
+        step_exec_params = self._get_step_params(obj).get('execution_parameters')
+        merged.update(self._extract_variables(step_exec_params))
 
         rendered = []
-        for key, value in merged.items():
-            masked_value, is_masked = self._mask_value(key, value, show_sensitive)
+        for key, payload in merged.items():
+            value = payload.get('value')
+            is_secret = payload.get('is_secret', False)
+            masked_value, is_masked = self._mask_value(key, value, show_sensitive, is_secret)
             rendered.append({
                 'key': key,
                 'display_value': masked_value,
