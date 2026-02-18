@@ -127,16 +127,13 @@
           field="otp_token" 
           label="双因子验证码"
         >
-          <a-input
+          <a-verification-code
             v-model="form.otp_token"
-            placeholder="请输入6位验证码"
+            :length="6"
             size="large"
-            :max-length="6"
-          >
-            <template #prefix>
-              <IconLock />
-            </template>
-          </a-input>
+            :formatter="formatOtpChar"
+            @finish="handleOtpFinish"
+          />
           <template #extra>
             <a-link @click="showOtpHelp = true">如何使用？</a-link>
           </template>
@@ -224,6 +221,22 @@ const showOtpInput = ref(false)
 const showOtpHelp = ref(false)
 const loginType = ref<'normal' | 'ldap'>('normal')
 const selectedPlatform = ref<'job' | 'ops'>('job')
+
+const formatOtpChar = (char: string) => {
+  const cleaned = String(char).replace(/\D/g, '')
+  return cleaned ? cleaned.charAt(0) : false
+}
+
+const handleOtpFinish = async (value: string) => {
+  if (!showOtpInput.value || loading.value) return
+  form.otp_token = value
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return
+  }
+  await handleSubmit({ values: form, errors: null } as any)
+}
 
 // 表单数据
 const form = reactive<LoginParams & { remember: boolean }>({
@@ -634,6 +647,17 @@ onMounted(() => {
 .login-box :deep(.arco-input),
 .login-box :deep(.arco-input-password) {
   border-radius: 10px;
+}
+
+.login-box :deep(.arco-verification-code) {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.login-box :deep(.arco-verification-code .arco-input) {
+  border-radius: 10px;
+  text-align: center;
+  font-weight: 600;
 }
 
 .login-box :deep(.arco-btn-primary) {
