@@ -450,6 +450,7 @@
                       class="host-tabs"
                       :tab-position="'top'"
                       :scrollable="true"
+                      @change="handleHostTabChange"
                     >
                       <a-tab-pane
                         v-for="hostLog in group.hosts"
@@ -504,6 +505,18 @@
                       <div class="log-section-header">
                         <h5>输出</h5>
                         <a-space>
+                          <a-space size="mini" align="center">
+                            <span class="switch-label">自动滚动</span>
+                            <a-switch
+                              v-model="stepLogAutoScroll"
+                              size="small"
+                              @change="handleLogAutoScrollChange"
+                            />
+                          </a-space>
+                          <a-button size="small" @click="exportHostLog(selectedStepKey, hostLog)">
+                            <template #icon><IconDownload /></template>
+                            下载日志
+                          </a-button>
                           <a-button size="small" @click="zoomLogs(getMergedLogs(hostLog), '输出')">
                             <template #icon><IconEye /></template>
                             放大查看
@@ -514,12 +527,27 @@
                           </a-button>
                         </a-space>
                       </div>
-                      <div class="log-text-container">
+                      <div class="log-text-container" ref="logContainerRef">
                         <pre class="log-text" v-html="highlightLogContent(getMergedLogs(hostLog), selectedStepId)"></pre>
+                      </div>
+                      <div
+                        v-if="hasMoreHostLogs(selectedStepKey, hostLog.host_id || hostLog.id)"
+                        class="log-section-footer"
+                      >
+                        <a-button
+                          size="small"
+                          :loading="isHostLogLoading(selectedStepKey, hostLog.host_id || hostLog.id)"
+                          @click="loadHostLogs(selectedStepKey, hostLog.host_id || hostLog.id, { append: true, force: true })"
+                        >
+                          加载更多
+                        </a-button>
                       </div>
                     </div>
 
-                    <div v-if="!getMergedLogs(hostLog)" class="no-logs">
+                    <div
+                      v-if="!getMergedLogs(hostLog) && !isHostLogLoading(selectedStepKey, hostLog.host_id || hostLog.id)"
+                      class="no-logs"
+                    >
                       <a-empty description="该主机在此步骤暂无日志数据" />
                     </div>
                   </div>
@@ -1058,8 +1086,13 @@ const permissionsStore = usePermissionsStore()
 
 // 响应式数据
 const loading = ref(false)
+const LOG_FETCH_LIMIT = 500
 const executionInfo = ref<ExecutionInfo>({})
 const stepLogs = ref<Record<string | number, StepLog>>({})
+const stepResultLoading = ref<Record<string | number, boolean>>({})
+const hostLogLoading = ref<Record<string | number, Record<string, boolean>>>({})
+const hostLogContent = ref<Record<string | number, Record<string, string>>>({})
+const hostLogPointers = ref<Record<string | number, Record<string, string | null>>>({})
 const selectedStepId = ref<string | null>(null)
 const selectedHostId = ref<string | null>(null)
 const selectedStepKey = computed(() => selectedStepId.value != null ? String(selectedStepId.value) : '')
@@ -1076,6 +1109,8 @@ const stepContentLoading = ref<Record<string, boolean>>({})
 const stepContentError = ref<Record<string, any>>({})
 const stepContentShowSensitive = ref<Record<string, boolean>>({})
 const stepContentDrawerVisible = ref(false)
+const stepLogAutoScroll = ref(true)
+const logContainerRef = ref<HTMLElement | null>(null)
 
 const ipListLoading = ref(false)
 const ipListRows = ref<Array<{ ip: string }>>([])
@@ -1122,6 +1157,51 @@ const logZoomRawContent = ref('')
 // 时间线引用
 const timelineRef = ref(null)
 
+const ensureHostLogState = (stepId: string | number, hostId: string | number) => {
+  const stepKey = String(stepId)
+  const hostKey = String(hostId)
+  if (!hostLogContent.value[stepKey]) {
+    hostLogContent.value[stepKey] = {}
+  }
+  if (!hostLogPointers.value[stepKey]) {
+    hostLogPointers.value[stepKey] = {}
+  }
+  if (!hostLogLoading.value[stepKey]) {
+    hostLogLoading.value[stepKey] = {}
+  }
+  if (hostLogContent.value[stepKey][hostKey] === undefined) {
+    hostLogContent.value[stepKey][hostKey] = ''
+  }
+  if (hostLogPointers.value[stepKey][hostKey] === undefined) {
+    hostLogPointers.value[stepKey][hostKey] = null
+  }
+  if (hostLogLoading.value[stepKey][hostKey] === undefined) {
+    hostLogLoading.value[stepKey][hostKey] = false
+  }
+}
+
+const getHostLogText = (stepId: string | number, hostId: string | number) => {
+  const stepKey = String(stepId)
+  const hostKey = String(hostId)
+  return hostLogContent.value?.[stepKey]?.[hostKey] || ''
+}
+
+const getHostLogPointer = (stepId: string | number, hostId: string | number) => {
+  const stepKey = String(stepId)
+  const hostKey = String(hostId)
+  return hostLogPointers.value?.[stepKey]?.[hostKey] || null
+}
+
+const isHostLogLoading = (stepId: string | number, hostId: string | number) => {
+  const stepKey = String(stepId)
+  const hostKey = String(hostId)
+  return hostLogLoading.value?.[stepKey]?.[hostKey] === true
+}
+
+const hasMoreHostLogs = (stepId: string | number, hostId: string | number) => {
+  return !!getHostLogPointer(stepId, hostId)
+}
+
 // 获取步骤的主机分组（带搜索过滤）
 const getHostGroupsForStep = (stepId) => {
   const stepLog = stepLogs.value[stepId]
@@ -1157,17 +1237,17 @@ const getHostGroupsForStep = (stepId) => {
     // 应用主机名称/IP搜索过滤
     if (hostSearchText) {
       const hostName = (hostLog.hostname || hostLog.host_name || '').toLowerCase()
-      const hostIP = (hostLog.host_ip || '').toLowerCase()
+      const hostIP = (hostLog.host_ip || hostLog.ip || '').toLowerCase()
       if (!hostName.includes(hostSearchText) && !hostIP.includes(hostSearchText)) {
         return // 跳过不匹配的主机
       }
     }
 
-    // 应用日志内容搜索过滤
+    // 应用日志内容搜索过滤（仅在已有日志时过滤）
     if (logSearchText) {
-      const logs = (hostLog.stdout || hostLog.logs || '').toLowerCase()
-      const errorLogs = (hostLog.stderr || hostLog.error_logs || '').toLowerCase()
-      if (!logs.includes(logSearchText) && !errorLogs.includes(logSearchText)) {
+      const hostId = hostLog.host_id ?? hostLog.id
+      const logText = hostId ? getHostLogText(stepId, hostId).toLowerCase() : ''
+      if (logText && !logText.includes(logSearchText)) {
         return // 跳过日志内容不匹配的主机
       }
     }
@@ -1413,79 +1493,295 @@ const hostLogs = computed<Record<string, Record<string, HostLog>>>(() => {
   return results.host_logs || {}
 })
 
+const mergeLogValue = (value: any) => {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item)).join('\n')
+  }
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+const mapStepLogsToSteps = (stepLogsMap: Record<string, any> = {}) => {
+  const steps: any[] = []
+  Object.entries(stepLogsMap).forEach(([stepId, stepData], index) => {
+    if (!stepData || typeof stepData !== 'object') return
+
+    const stepName = stepData.step_name || stepId
+    const stepOrder = stepData.step_order || index + 1
+    const stepStatus = stepData.status || 'unknown'
+
+    const hostsMapping = stepData.hosts || stepData.host_logs || {}
+    const hosts: any[] = []
+    Object.entries(hostsMapping).forEach(([hostKey, hostData]: [string, any]) => {
+      if (!hostData || typeof hostData !== 'object') return
+      const hostId = hostData.host_id ?? hostKey
+      hosts.push({
+        id: hostId,
+        name: hostData.host_name || hostData.hostname || String(hostId),
+        ip: hostData.host_ip || hostData.ip || '',
+        status: hostData.status || 'unknown',
+        stdout: mergeLogValue(hostData.stdout || hostData.logs),
+        stderr: mergeLogValue(hostData.stderr || hostData.error_logs),
+      })
+    })
+
+    steps.push({
+      id: stepId,
+      order: stepOrder,
+      name: stepName,
+      status: stepStatus,
+      hosts,
+    })
+  })
+  return steps
+}
+
+const applyExecutionResults = (results: any) => {
+  if (!results) return
+  const steps = Array.isArray(results.steps)
+    ? results.steps
+    : mapStepLogsToSteps(results.step_logs || {})
+
+  if (!Array.isArray(steps) || steps.length === 0) return
+
+  const normalizedStepLogs: Record<string, any> = {}
+
+  steps.forEach((step, index) => {
+    if (!step) return
+
+    const stepId =
+      step.id ||
+      `step_${step.order || index + 1}_${step.name || 'step'}`
+
+    const hosts = Array.isArray(step.hosts) ? step.hosts : []
+    const hostLogsMap: Record<string, any> = {}
+
+    hosts.forEach((host) => {
+      if (!host) return
+
+      const hostId =
+        host.id ?? host.host_id ?? host.ip ?? host.name ?? `${Math.random()}`
+
+      const stdout = mergeLogValue(host.stdout || host.logs)
+      const stderr = mergeLogValue(host.stderr || host.error_logs)
+
+      hostLogsMap[hostId] = {
+        host_id: hostId,
+        host_name: host.name || host.host_name || `Host-${hostId}`,
+        host_ip: host.ip || host.host_ip || '',
+        status: host.status || 'unknown',
+        stdout,
+        stderr,
+        logs: stdout,
+        error_logs: stderr,
+        log_count: stdout
+          .split('\n')
+          .filter(line => line.trim()).length,
+      }
+    })
+
+    normalizedStepLogs[stepId] = {
+      step_name: step.name || stepId,
+      step_order: step.order || index + 1,
+      status: step.status || 'unknown',
+      host_logs: hostLogsMap,
+    }
+  })
+
+  stepLogs.value = normalizedStepLogs
+
+  const stepIds = Object.keys(stepLogs.value)
+  stepIds.forEach(stepId => {
+    if (!hostSearchTexts.value[stepId]) {
+      hostSearchTexts.value[stepId] = ''
+    }
+    if (!logSearchTexts.value[stepId]) {
+      logSearchTexts.value[stepId] = ''
+    }
+    if (expandedSteps.value[stepId] === undefined) {
+      expandedSteps.value[stepId] = false
+    }
+  })
+}
+
+const buildStepLogMap = (steps: any[] = []) => {
+  const map: Record<string, StepLog> = {}
+  steps.forEach((step) => {
+    if (!step || step.id === undefined || step.id === null) return
+    const key = String(step.id)
+    map[key] = {
+      ...step,
+      step_name: step.step_name ?? step.name ?? step.step_title,
+      step_order: step.step_order ?? step.order ?? step.step_seq,
+      status: step.status ?? 'unknown',
+      hosts: stepLogs.value[key]?.hosts || {},
+    }
+  })
+  return map
+}
+
+const loadStepResult = async (stepId, options = { force: false }) => {
+  if (!stepId) return
+  const stepKey = String(stepId)
+  if (stepResultLoading.value[stepKey] && !options.force) return
+  const existingHosts = stepLogs.value[stepKey]?.hosts
+  if (!options.force && existingHosts && Object.keys(existingHosts).length > 0) {
+    return
+  }
+
+  stepResultLoading.value = { ...stepResultLoading.value, [stepKey]: true }
+  try {
+    const res = await executionRecordApi.getStepResult(Number(route.params.id), stepId)
+    const hostsArray = Array.isArray(res?.hosts) ? res.hosts : []
+    const hostsMap: Record<string, HostLog> = {}
+
+    hostsArray.forEach((host) => {
+      if (!host) return
+      const hostId = host.id ?? host.host_id ?? host.host ?? host.ip
+      if (hostId === undefined || hostId === null) return
+      const hostKey = String(hostId)
+      hostsMap[hostKey] = {
+        host_id: hostId,
+        host_name: host.name || host.host_name || `Host-${hostId}`,
+        hostname: host.hostname || host.name,
+        host_ip: host.ip || host.host_ip || '',
+        status: host.status || 'unknown',
+        return_code: host.exit_code,
+        exit_code: host.exit_code,
+        started_at: host.started_at,
+        finished_at: host.finished_at,
+      }
+    })
+
+    stepLogs.value = {
+      ...stepLogs.value,
+      [stepKey]: {
+        ...(stepLogs.value[stepKey] || {}),
+        step_name: res?.step_name || stepLogs.value[stepKey]?.step_name,
+        step_order: res?.step_order ?? stepLogs.value[stepKey]?.step_order,
+        status: res?.status || stepLogs.value[stepKey]?.status,
+        started_at: res?.started_at ?? stepLogs.value[stepKey]?.started_at,
+        finished_at: res?.finished_at ?? stepLogs.value[stepKey]?.finished_at,
+        hosts: hostsMap,
+      }
+    }
+  } catch (error) {
+    console.error('获取步骤结果失败:', error)
+    Message.error('获取步骤结果失败')
+  } finally {
+    stepResultLoading.value = { ...stepResultLoading.value, [stepKey]: false }
+  }
+}
+
+const loadHostLogs = async (stepId, hostId, options = { append: false, force: false }) => {
+  if (!stepId || hostId === undefined || hostId === null) return
+  const stepKey = String(stepId)
+  const hostKey = String(hostId)
+  ensureHostLogState(stepKey, hostKey)
+
+  if (options.append && !getHostLogPointer(stepKey, hostKey)) {
+    return
+  }
+  if (hostLogLoading.value[stepKey]?.[hostKey] && !options.force) return
+  if (!options.append && hostLogContent.value[stepKey]?.[hostKey] && !options.force) {
+    return
+  }
+
+  hostLogLoading.value = {
+    ...hostLogLoading.value,
+    [stepKey]: {
+      ...hostLogLoading.value[stepKey],
+      [hostKey]: true,
+    }
+  }
+
+  try {
+    const pointer = options.append ? getHostLogPointer(stepKey, hostKey) : undefined
+    const res = await executionRecordApi.getHostLogs(
+      Number(route.params.id),
+      stepId,
+      hostKey,
+      {
+        limit: LOG_FETCH_LIMIT,
+        pointer: pointer || undefined,
+      }
+    )
+
+    const content = res?.log_context || ''
+    const nextPointer = res?.next_pointer || null
+    const existing = hostLogContent.value[stepKey]?.[hostKey] || ''
+    const merged = options.append ? `${content}${existing}` : content
+
+    const stepHosts = stepLogs.value[stepKey]?.hosts || stepLogs.value[stepKey]?.host_logs
+    if (stepHosts && stepHosts[hostKey]) {
+      stepHosts[hostKey] = {
+        ...stepHosts[hostKey],
+        logs: merged,
+        stdout: merged,
+      }
+    }
+
+    hostLogContent.value = {
+      ...hostLogContent.value,
+      [stepKey]: {
+        ...hostLogContent.value[stepKey],
+        [hostKey]: merged,
+      }
+    }
+    hostLogPointers.value = {
+      ...hostLogPointers.value,
+      [stepKey]: {
+        ...hostLogPointers.value[stepKey],
+        [hostKey]: nextPointer,
+      }
+    }
+    triggerSearchUpdate()
+    if (!options.append) {
+      scrollLogToBottom()
+    }
+  } catch (error) {
+    console.error('获取主机日志失败:', error)
+    Message.error('获取主机日志失败')
+  } finally {
+    hostLogLoading.value = {
+      ...hostLogLoading.value,
+      [stepKey]: {
+        ...hostLogLoading.value[stepKey],
+        [hostKey]: false,
+      }
+    }
+  }
+}
+
 // 获取执行记录详情
-const fetchExecutionDetail = async () => {
+const fetchExecutionDetail = async (options = { refreshSelected: false }) => {
   loading.value = true
   try {
     const response = await executionRecordApi.getRecord(Number(route.params.id))
     executionInfo.value = response
 
-    // 处理日志数据 —— 现在只支持统一结构：{ summary, steps }
-    if (response.execution_results) {
-      const results = response.execution_results
-      const steps = Array.isArray(results.steps) ? results.steps : []
-      const normalizedStepLogs = {}
+    const steps = Array.isArray(response.steps) ? response.steps : []
+    stepLogs.value = buildStepLogMap(steps)
 
-      steps.forEach((step, index) => {
-        if (!step) return
+    Object.keys(stepLogs.value).forEach(stepId => {
+      if (!hostSearchTexts.value[stepId]) {
+        hostSearchTexts.value[stepId] = ''
+      }
+      if (!logSearchTexts.value[stepId]) {
+        logSearchTexts.value[stepId] = ''
+      }
+      if (expandedSteps.value[stepId] === undefined) {
+        expandedSteps.value[stepId] = false
+      }
+    })
 
-        const stepId =
-          step.id ||
-          `step_${step.order || index + 1}_${step.name || 'step'}`
+    if (selectedStepId.value && !stepLogs.value[selectedStepId.value]) {
+      selectedStepId.value = null
+      selectedHostId.value = null
+    }
 
-        const hosts = Array.isArray(step.hosts) ? step.hosts : []
-        const hostLogsMap = {}
-
-        hosts.forEach((host) => {
-          if (!host) return
-
-          const hostId =
-            host.id ?? host.host_id ?? host.ip ?? host.name ?? `${Math.random()}`
-
-          const stdout = host.stdout || ''
-          const stderr = host.stderr || ''
-
-          hostLogsMap[hostId] = {
-            host_id: hostId,
-            host_name: host.name || host.host_name || `Host-${hostId}`,
-            host_ip: host.ip || host.host_ip || '',
-            status: host.status || 'unknown',
-            stdout,
-            stderr,
-            logs: stdout,
-            error_logs: stderr,
-            log_count: stdout
-              .split('\n')
-              .filter(line => line.trim()).length,
-          }
-        })
-
-        normalizedStepLogs[stepId] = {
-          step_name: step.name || stepId,
-          step_order: step.order || index + 1,
-          status: step.status || 'unknown',
-          host_logs: hostLogsMap,
-        }
-      })
-
-      stepLogs.value = normalizedStepLogs
-
-      // 初始化所有步骤的状态
-      const stepIds = Object.keys(stepLogs.value)
-
-      // 初始化所有步骤的搜索文本和展开状态
-      stepIds.forEach(stepId => {
-        if (!hostSearchTexts.value[stepId]) {
-          hostSearchTexts.value[stepId] = ''
-        }
-        if (!logSearchTexts.value[stepId]) {
-          logSearchTexts.value[stepId] = ''
-        }
-        // 默认不展开任何步骤
-        if (expandedSteps.value[stepId] === undefined) {
-          expandedSteps.value[stepId] = false
-        }
-      })
+    if (options.refreshSelected && selectedStepId.value) {
+      await loadStepResult(selectedStepId.value, { force: true })
     }
   } catch (error) {
     console.error('获取执行记录详情失败:', error)
@@ -1495,8 +1791,11 @@ const fetchExecutionDetail = async () => {
 }
 
 // 刷新日志
-const refreshLogs = () => {
-  fetchExecutionDetail()
+const refreshLogs = async () => {
+  await fetchExecutionDetail({ refreshSelected: true })
+  if (selectedStepId.value && selectedHostId.value) {
+    await loadHostLogs(selectedStepId.value, selectedHostId.value, { force: true })
+  }
 }
 
 // 加载步骤内容（脚本/参数）
@@ -1707,18 +2006,34 @@ const loadGlobalIpListPage = async () => {
   globalIpListRows.value = pageItems.map(item => ({ ip: String(item) }))
 }
 
-const getMergedLogs = (hostLog: any) => {
-  const out = hostLog?.stdout || hostLog?.logs || ''
-  const err = hostLog?.stderr || hostLog?.error_logs || ''
-  if (!out && !err) return ''
-  const lines = []
-  out.split('\n').forEach(l => {
-    if (l.trim()) lines.push(l)
+const getMergedLogs = (hostLog: any, stepId = selectedStepKey.value) => {
+  const hostId = hostLog?.host_id ?? hostLog?.id
+  if (!stepId || hostId === undefined || hostId === null) return ''
+  return getHostLogText(stepId, hostId)
+}
+
+const scrollLogToBottom = () => {
+  if (!stepLogAutoScroll.value) return
+  nextTick(() => {
+    const container = logContainerRef.value
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   })
-  err.split('\n').forEach(l => {
-    if (l.trim()) lines.push(`[ERR] ${l}`)
-  })
-  return lines.join('\n')
+}
+
+const handleHostTabChange = (hostId) => {
+  if (hostId !== undefined && hostId !== null) {
+    selectedHostId.value = String(hostId)
+    if (selectedStepKey.value) {
+      loadHostLogs(selectedStepKey.value, hostId, { force: false })
+    }
+  }
+  scrollLogToBottom()
+}
+
+const handleLogAutoScrollChange = (value: boolean) => {
+  if (value) scrollLogToBottom()
 }
 
 const openStepContentDrawer = (stepId) => {
@@ -1766,32 +2081,36 @@ const openOperationDrawer = () => {
 }
 
 // 选择步骤（点击步骤时切换选中状态）
-const selectStep = (stepId: string | number) => {
+const selectStep = async (stepId: string | number) => {
   const sid = String(stepId)
   // 如果点击的是已选中的步骤，则取消选中（回到单栏布局）
   if (selectedStepId.value === sid) {
     selectedStepId.value = null
-  } else {
-    selectedStepId.value = sid
-    loadStepContent(sid, { force: true })
+    selectedHostId.value = null
+    return
+  }
 
-    // 自动选择该步骤的第一个主机
-    const step = stepLogs.value[sid]
-    if (step) {
-      // 兼容新旧格式：优先使用hosts，其次使用host_logs
-      const hosts = step.hosts || step.host_logs
-      if (hosts) {
-        const hostIds = Object.keys(hosts)
-        if (hostIds.length > 0) {
-          // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
-          if (!selectedHostIds.value[sid] || !hostIds.includes(selectedHostIds.value[sid])) {
-            selectedHostIds.value[sid] = hostIds[0]
-          }
-          selectedHostId.value = String(selectedHostIds.value[sid])
+  selectedStepId.value = sid
+  await loadStepResult(sid, { force: false })
+
+  // 自动选择该步骤的第一个主机
+  const step = stepLogs.value[sid]
+  if (step) {
+    // 兼容新旧格式：优先使用hosts，其次使用host_logs
+    const hosts = step.hosts || step.host_logs
+    if (hosts) {
+      const hostIds = Object.keys(hosts)
+      if (hostIds.length > 0) {
+        // 如果没有选中主机或选中的主机不在当前步骤中，选择第一个主机
+        if (!selectedHostIds.value[sid] || !hostIds.includes(String(selectedHostIds.value[sid]))) {
+          selectedHostIds.value[sid] = hostIds[0]
         }
+        selectedHostId.value = String(selectedHostIds.value[sid])
+        await loadHostLogs(sid, selectedHostIds.value[sid], { force: false })
       }
     }
   }
+  scrollLogToBottom()
 }
 
 // 复制日志
@@ -1850,18 +2169,19 @@ const exportStepLogs = (stepId) => {
 
   let lines = ''
   Object.values(hosts).forEach(hostLog => {
+    const hostId = hostLog.host_id ?? hostLog.id
+    const content = hostId !== undefined && hostId !== null ? getHostLogText(stepId, hostId) : ''
+    if (!content) return
     const ip = hostLog.host_ip || hostLog.ip || hostLog.host || '未知IP'
-    const merged = [
-      ...(hostLog.stdout || hostLog.logs || '').split('\n').filter(l => l.trim()).map(l => `✓ ${l}`),
-      ...(hostLog.stderr || hostLog.error_logs || '').split('\n').filter(l => l.trim()).map(l => `✗ ${l}`)
-    ]
-    merged.forEach(line => {
-      lines += `${ip} | ${line}\n`
+    content.split('\n').forEach(line => {
+      if (line.trim()) {
+        lines += `${ip} | ${line}\n`
+      }
     })
   })
 
   if (!lines) {
-    Message.warning('该步骤没有日志内容')
+    Message.warning('该步骤暂无已加载的日志内容')
     return
   }
 
@@ -1877,6 +2197,41 @@ const exportStepLogs = (stepId) => {
   URL.revokeObjectURL(url)
 
   Message.success('步骤日志已导出')
+}
+
+const exportHostLog = async (stepId, hostLog) => {
+  if (!hostLog) {
+    Message.warning('未找到主机日志')
+    return
+  }
+  const hostId = hostLog.host_id ?? hostLog.id
+  if (hostId === undefined || hostId === null) {
+    Message.warning('未找到主机日志')
+    return
+  }
+  if (!getHostLogText(stepId, hostId)) {
+    await loadHostLogs(stepId, hostId, { force: true })
+  }
+  const merged = getMergedLogs(hostLog, stepId)
+  if (!merged) {
+    Message.warning('该主机没有日志内容')
+    return
+  }
+
+  const step = stepLogs.value[stepId]
+  const ip = getHostIP(hostLog) || hostLog.host_ip || '未知IP'
+  const filename = `step_${step?.step_order || stepId}_${ip}.txt`
+  const blob = new Blob([merged], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  Message.success('主机日志已下载')
 }
 
 // 获取步骤状态颜色
@@ -2538,7 +2893,10 @@ const getTotalHostCountInStep = (stepId: any) => {
 
   // 兼容新旧格式：优先使用hosts，其次使用host_logs
   const hosts = stepLog.hosts || stepLog.host_logs
-  if (!hosts) {
+  if (!hosts || Object.keys(hosts).length === 0) {
+    if (typeof stepLog.host_count === 'number') {
+      return stepLog.host_count
+    }
     console.log('No hosts found for step total count:', stepId, stepLog)
     return 0
   }
@@ -2556,7 +2914,7 @@ const getHostDisplayName = (hostLog: any) => {
 
 // 获取主机IP
 const getHostIP = (hostLog: any) => {
-  return hostLog.host_ip || '未知IP'
+  return hostLog.host_ip || hostLog.ip || '未知IP'
 }
 
 // 复制步骤中指定状态的主机IP
@@ -2588,7 +2946,7 @@ const copyHostsByStatusInStep = async (stepId: any, status: string | number) => 
     return
   }
 
-  const ips = hosts.map(host => host.host_ip || host.ip_address).join('\n')
+  const ips = hosts.map(host => host.host_ip || host.ip || host.ip_address).join('\n')
   try {
     await navigator.clipboard.writeText(ips)
     Message.success(`已复制 ${hosts.length} 台主机的IP地址`)
@@ -4229,6 +4587,12 @@ onMounted(() => {
 .disabled-option {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.log-section-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
 }
 
 /* 日志放大模态框样式 */

@@ -355,6 +355,7 @@ class RealtimeLogService:
     def get_logs_by_pointer(self, pointer: str, limit: int = 500):
         """
         通过 storage_uri 指针获取历史日志（默认返回最新 limit 条，按时间正序）
+        过滤 execution_id，避免跨任务混入。
         """
         task_id, max_id = self._parse_redis_pointer(pointer)
         if not task_id:
@@ -365,10 +366,12 @@ class RealtimeLogService:
             messages = self.redis_client.xrevrange(
                 stream_key,
                 max=max_id or "+",
-                count=limit,
+                count=limit * 10,
             )
             logs = []
             for msg_id, fields in messages:
+                if fields.get("execution_id") != str(task_id):
+                    continue
                 logs.append(
                     {
                         "id": msg_id,
@@ -382,11 +385,93 @@ class RealtimeLogService:
                         "step_order": int(fields.get("step_order", 0)),
                     }
                 )
+                if len(logs) >= limit:
+                    break
             logs.reverse()
             return logs
         except Exception as e:
             logger.error(f"通过指针获取历史日志失败 pointer={pointer}: {e}")
             return []
+
+    def get_logs_by_pointer_filtered(
+        self,
+        pointer: str,
+        limit: int = 500,
+        step_name: str | None = None,
+        step_order: int | None = None,
+        host_id: str | int | None = None,
+    ):
+        """
+        按 execution_id + step + host 过滤日志，并返回分页指针。
+        返回: {logs: [...], next_pointer: str | None}
+        """
+        task_id, max_id = self._parse_redis_pointer(pointer)
+        if not task_id:
+            return {"logs": [], "next_pointer": None}
+
+        stream_key = self.log_stream_key
+        try:
+            logs = []
+            next_pointer = None
+            cursor = max_id or "+"
+
+            while len(logs) < limit:
+                messages = self.redis_client.xrevrange(
+                    stream_key,
+                    max=cursor,
+                    count=limit * 10,
+                )
+                if not messages:
+                    break
+
+                for msg_id, fields in messages:
+                    if fields.get("execution_id") != str(task_id):
+                        continue
+                    if host_id is not None and str(fields.get("host_id")) != str(host_id):
+                        continue
+                    if step_order is not None:
+                        try:
+                            if int(fields.get("step_order", 0)) != int(step_order):
+                                continue
+                        except Exception:
+                            continue
+                    if step_name and fields.get("step_name") != step_name:
+                        continue
+                    if cursor and msg_id == cursor:
+                        continue
+
+                    logs.append(
+                        {
+                            "id": msg_id,
+                            "timestamp": fields.get("timestamp"),
+                            "host_id": fields.get("host_id"),
+                            "host_name": fields.get("host_name"),
+                            "host_ip": fields.get("host_ip"),
+                            "log_type": fields.get("log_type"),
+                            "content": fields.get("content"),
+                            "step_name": fields.get("step_name"),
+                            "step_order": int(fields.get("step_order", 0)),
+                        }
+                    )
+                    if len(logs) >= limit:
+                        break
+
+                last_id = messages[-1][0]
+                if last_id == cursor:
+                    break
+                cursor = last_id
+
+                if len(messages) < limit * 10:
+                    break
+
+            logs.reverse()
+            if logs:
+                next_pointer = f"redis:agent_logs/{task_id}@{logs[0]['id']}"
+
+            return {"logs": logs, "next_pointer": next_pointer}
+        except Exception as e:
+            logger.error(f"通过指针过滤日志失败 pointer={pointer}: {e}")
+            return {"logs": [], "next_pointer": None}
 
 
 # 全局实例

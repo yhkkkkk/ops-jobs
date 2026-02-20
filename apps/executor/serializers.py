@@ -98,10 +98,13 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
 
     # 关联对象信息
     related_object_info = serializers.SerializerMethodField()
-    
+
+    # 步骤简要信息（仅元数据，日志按需加载）
+    steps = serializers.SerializerMethodField()
+
     # 处理execution_results字段，移除其中的logs字段，并暴露日志指针/摘录元信息
     execution_results = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ExecutionRecord
         fields = [
@@ -112,7 +115,7 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             'execution_results', 'error_message', 'created_at', 'started_at',
             'finished_at', 'duration', 'retry_count', 'max_retries',
             'is_completed', 'is_running',
-            'realtime_urls', 'related_object_info'
+            'steps', 'realtime_urls', 'related_object_info'
         ]
         read_only_fields = ['id', 'execution_id', 'created_at']
     
@@ -159,88 +162,84 @@ class ExecutionRecordDetailSerializer(serializers.ModelSerializer):
             }
         return None
 
+    @extend_schema_field(serializers.ListField())
+    def get_steps(self, obj):
+        steps_qs = obj.steps.all().order_by('step_order')
+        return ExecutionStepBriefSerializer(steps_qs, many=True).data
+
     @extend_schema_field(serializers.DictField(allow_null=True))
     def get_execution_results(self, obj):
         """
-        获取执行结果：返回步骤/主机聚合后的结构，剔除大日志字段，同时暴露 logs_meta（pointer/size/excerpt）。
-
-        兼容来源：
-        - log_archive_service.get_execution_logs 返回的 step_logs（通过 self.log_data 传入）
-        - ExecutionRecord.execution_results 中已有的 step_logs（例如模拟数据）
+        返回轻量化执行结果，仅包含 logs_meta/summary 等小字段。
+        详细步骤/主机日志通过按需接口获取。
         """
         raw_results = obj.execution_results or {}
+        if not isinstance(raw_results, dict):
+            return {}
 
-        # 1. 优先从 log_data 中获取步骤日志（归档后的标准结构）
-        step_logs = None
-        if self.log_data and isinstance(self.log_data, dict):
-            step_logs = self.log_data.get('step_logs')
+        logs_meta = raw_results.get('logs_meta') if isinstance(raw_results.get('logs_meta'), dict) else {}
+        summary = raw_results.get('summary') or raw_results.get('log_summary')
 
-        # 2. 如果 log_data 中没有步骤日志，尝试从 execution_results 中获取
-        if step_logs is None and isinstance(raw_results, dict):
-            step_logs = raw_results.get('step_logs')
+        result = {}
+        if logs_meta:
+            result['logs_meta'] = logs_meta
+        if summary:
+            result['summary'] = summary
+        return result
 
-        # 安全兜底
-        if not isinstance(step_logs, dict):
-            step_logs = {}
 
-        def _merge_log(log_value):
-            """将列表日志合并为字符串，避免大数组膨胀"""
-            if isinstance(log_value, list):
-                return "\n".join([str(item) for item in log_value])
-            return log_value or ''
+def _extract_step_host_results(step: ExecutionStep):
+    host_results = step.host_results or []
+    if isinstance(host_results, dict):
+        host_results = list(host_results.values())
 
-        # 3. 将 step_logs 统一转换为前端友好的 steps 结构
-        steps = []
-        for idx, (step_id, step_data) in enumerate(step_logs.items(), start=1):
-            if not isinstance(step_data, dict):
-                continue
+    if host_results:
+        return host_results
 
-            step_name = step_data.get('step_name') or step_id
-            step_order = step_data.get('step_order') or idx
-            step_status = step_data.get('status') or 'unknown'
+    results = step.execution_record.execution_results or {}
+    if not isinstance(results, dict):
+        return []
 
-            # 兼容 hosts / host_logs 两种字段
-            hosts_mapping = step_data.get('hosts') or step_data.get('host_logs') or {}
-            if not isinstance(hosts_mapping, dict):
-                hosts_mapping = {}
+    step_logs = results.get('step_logs') or {}
+    if not isinstance(step_logs, dict):
+        return []
 
-            hosts = []
-            for host_key, host_data in hosts_mapping.items():
-                if not isinstance(host_data, dict):
-                    continue
+    for _, step_data in step_logs.items():
+        if not isinstance(step_data, dict):
+            continue
+        if step_data.get('step_order') != step.step_order and step_data.get('step_name') != step.step_name:
+            continue
+        host_map = step_data.get('host_logs') or step_data.get('hosts') or {}
+        if isinstance(host_map, dict):
+            return list(host_map.values())
+    return []
 
-                host_id = host_data.get('host_id') or host_key
-                host_name = host_data.get('host_name') or host_data.get('hostname') or str(host_id)
-                host_ip = host_data.get('host_ip') or ''
-                host_status = host_data.get('status') or 'unknown'
 
-                # 统一 stdout/stderr 字段，兼容 logs / error_logs
-                stdout = _merge_log(host_data.get('stdout') or host_data.get('logs'))
-                stderr = _merge_log(host_data.get('stderr') or host_data.get('error_logs'))
+class ExecutionStepBriefSerializer(serializers.ModelSerializer):
+    duration = serializers.SerializerMethodField()
+    host_count = serializers.SerializerMethodField()
 
-                hosts.append({
-                    'id': host_id,
-                    'name': host_name,
-                    'ip': host_ip,
-                    'status': host_status,
-                    'stdout': stdout,
-                    'stderr': stderr,
-                })
+    class Meta:
+        model = ExecutionStep
+        fields = [
+            'id',
+            'step_name',
+            'step_type',
+            'step_order',
+            'status',
+            'started_at',
+            'finished_at',
+            'duration',
+            'host_count',
+        ]
 
-            steps.append({
-                'id': step_id,
-                'order': step_order,
-                'name': step_name,
-                'status': step_status,
-                'hosts': hosts,
-            })
+    @extend_schema_field(serializers.FloatField(allow_null=True))
+    def get_duration(self, obj):
+        return obj.duration
 
-        # 附带日志元信息（指针/大小/摘录）供前端回源或展示
-        logs_meta = raw_results.get('logs_meta', {}) if isinstance(raw_results, dict) else {}
-        if not isinstance(logs_meta, dict):
-            logs_meta = {}
-
-        return {'steps': steps, 'logs_meta': logs_meta}
+    @extend_schema_field(serializers.IntegerField())
+    def get_host_count(self, obj):
+        return len(_extract_step_host_results(obj))
 
 
 class MaskedParameterSerializer(serializers.Serializer):
@@ -250,6 +249,48 @@ class MaskedParameterSerializer(serializers.Serializer):
 
     def get_value(self, obj):
         return obj.get('display_value')
+
+
+class ExecutionStepResultSerializer(serializers.ModelSerializer):
+    hosts = serializers.SerializerMethodField()
+    duration = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExecutionStep
+        fields = [
+            'id',
+            'step_name',
+            'step_order',
+            'status',
+            'started_at',
+            'finished_at',
+            'duration',
+            'hosts',
+        ]
+
+    @extend_schema_field(serializers.FloatField(allow_null=True))
+    def get_duration(self, obj):
+        return obj.duration
+
+    @extend_schema_field(serializers.ListField())
+    def get_hosts(self, obj):
+        host_results = _extract_step_host_results(obj)
+
+        results = []
+        for item in host_results:
+            if not isinstance(item, dict):
+                continue
+            host_id = item.get('host_id') or item.get('id') or item.get('host')
+            results.append({
+                'id': host_id,
+                'name': item.get('host_name') or item.get('hostname') or item.get('name'),
+                'ip': item.get('host_ip') or item.get('ip'),
+                'status': item.get('status') or ('success' if item.get('exit_code') == 0 else 'failed'),
+                'exit_code': item.get('exit_code'),
+                'started_at': item.get('started_at') or item.get('start_time'),
+                'finished_at': item.get('finished_at') or item.get('end_time'),
+            })
+        return results
 
 
 class ExecutionStepContentSerializer(serializers.ModelSerializer):

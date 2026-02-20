@@ -15,6 +15,7 @@ from .serializers import (
     ExecutionRecordSerializer,
     ExecutionRecordDetailSerializer,
     ExecutionStepContentSerializer,
+    ExecutionStepResultSerializer,
     ExecutionOperationLogSerializer,
 )
 from .filters import ExecutionRecordFilter
@@ -90,95 +91,20 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
     def retrieve(self, request, *args, **kwargs):
-        """获取执行记录详情和日志信息"""
+        """获取执行记录详情（日志另行按需拉取）"""
         execution_record = self.get_object()
+        serializer = self.get_serializer(execution_record)
 
-        # 如果执行正在运行，返回实时日志连接信息
         if execution_record.is_running:
-            serializer = self.get_serializer(execution_record)
             return SycResponse.success(
                 content=serializer.data,
                 message='执行正在进行中，可使用实时日志接口'
             )
-        # 如果执行已完成，优先尝试返回历史日志；如日志缺失则回退为基本信息
-        elif execution_record.is_completed:
-            from utils.log_archive_service import log_archive_service
-            logs_meta = {}
-            if isinstance(execution_record.execution_results, dict):
-                logs_meta = execution_record.execution_results.get('logs_meta', {}) or {}
 
-            # 获取历史日志（不分页）
-            result = log_archive_service.get_execution_logs(execution_record.execution_id)
-            log_data = None
-
-            if result.get('success'):
-                # 准备序列化器需要的数据
-                log_data = {
-                    'step_logs': result['data'].get('step_logs', {}),
-                    'summary': result['data']['summary']
-                }
-
-            # 如果归档缺失或无日志，尝试使用存储指针从 Redis 补偿
-            if (not log_data or not log_data.get('step_logs')) and logs_meta.get('log_pointer'):
-                pointer_result = log_archive_service.get_execution_logs_by_pointer(
-                    logs_meta.get('log_pointer'),
-                    limit=500
-                )
-                if pointer_result.get('success'):
-                    log_data = pointer_result['data']
-
-            if log_data:
-                # 使用详情序列化器
-                serializer = self.get_serializer(
-                    execution_record,
-                    log_data=log_data
-                )
-                
-                return SycResponse.success(
-                    content=serializer.data,
-                    message='执行记录详情获取成功'
-                )
-            else:
-                # 日志不存在或获取失败时，不再直接返回404，
-                # 而是根据状态返回空日志或仅基础信息，避免前端跳404页面。
-                if execution_record.status == 'cancelled':
-                    # 取消状态：返回空日志摘要
-                    log_data = {
-                        'step_logs': {},
-                        'summary': {
-                            'total_steps': 0,
-                            'total_hosts': 0,
-                            'success_hosts': 0,
-                            'failed_hosts': 0
-                        }
-                    }
-                    serializer = self.get_serializer(
-                        execution_record,
-                        log_data=log_data
-                    )
-                    
-                    return SycResponse.success(
-                        content=serializer.data,
-                        message='任务已取消，暂无执行日志'
-                    )
-                else:
-                    # 其他完成状态：返回无日志的详情（execution_results 会是空/原始值）
-                    serializer = self.get_serializer(
-                        execution_record,
-                        log_data=None
-                    )
-                    return SycResponse.success(
-                        content=serializer.data,
-                        message=f'执行记录详情获取成功，但历史日志获取失败: {result.get("message")}'
-                    )
-
-        else:
-            # 其他状态，返回基本信息
-            serializer = self.get_serializer(execution_record)
-            return SycResponse.success(
-                content=serializer.data,
-                message='执行记录详情获取成功'
-            )
+        return SycResponse.success(
+            content=serializer.data,
+            message='执行记录详情获取成功'
+        )
 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
@@ -222,6 +148,108 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
 
         serializer = ExecutionStepContentSerializer(step)
         return SycResponse.success(content=serializer.data, message='步骤内容获取成功')
+
+    @action(detail=True, methods=['get'], url_path='steps/(?P<step_id>[^/.]+)/result')
+    def step_result(self, request, pk=None, step_id=None):
+        """获取步骤执行结果（主机列表/状态/耗时）"""
+        execution_record = self.get_object()
+        try:
+            step = execution_record.steps.get(id=step_id)
+        except ExecutionStep.DoesNotExist:
+            return SycResponse.error(message='步骤不存在')
+
+        serializer = ExecutionStepResultSerializer(step)
+        data = serializer.data
+
+        host_ids = [h.get('id') for h in data.get('hosts', []) if h.get('id')]
+        if host_ids:
+            hosts = Host.objects.filter(id__in=host_ids)
+            host_map = {str(h.id): h for h in hosts}
+            for item in data['hosts']:
+                hid = item.get('id')
+                if hid is None:
+                    continue
+                host_obj = host_map.get(str(hid))
+                if not host_obj:
+                    continue
+                if not item.get('name'):
+                    item['name'] = host_obj.name
+                if not item.get('ip'):
+                    item['ip'] = host_obj.internal_ip or host_obj.public_ip or ''
+
+        return SycResponse.success(content=data, message='步骤结果获取成功')
+
+    @action(detail=True, methods=['get'], url_path='steps/(?P<step_id>[^/.]+)/hosts/(?P<host_id>[^/.]+)/logs')
+    def host_logs(self, request, pk=None, step_id=None, host_id=None):
+        """获取步骤内单主机日志（pointer+limit 分页）"""
+        execution_record = self.get_object()
+        try:
+            step = execution_record.steps.get(id=step_id)
+        except ExecutionStep.DoesNotExist:
+            return SycResponse.error(message='步骤不存在')
+
+        try:
+            limit = int(request.query_params.get('limit', 500))
+        except Exception:
+            limit = 500
+
+        pointer = request.query_params.get('pointer')
+        if not pointer:
+            logs_meta = {}
+            if isinstance(execution_record.execution_results, dict):
+                logs_meta = execution_record.execution_results.get('logs_meta', {}) or {}
+            pointer = logs_meta.get('log_pointer')
+
+        if pointer:
+            from utils.realtime_logs import realtime_log_service
+            result = realtime_log_service.get_logs_by_pointer_filtered(
+                pointer=pointer,
+                limit=limit,
+                step_name=step.step_name,
+                step_order=step.step_order,
+                host_id=host_id,
+            )
+            logs = result.get('logs', [])
+            log_context = "".join([
+                f"[{log.get('timestamp')}] {log.get('content')}\n" for log in logs if log.get('content')
+            ])
+            return SycResponse.success(
+                content={
+                    'log_context': log_context,
+                    'finished': True,
+                    'next_pointer': result.get('next_pointer'),
+                },
+                message='日志获取成功'
+            )
+
+        # fallback: 从归档 step_logs 中读取
+        results = execution_record.execution_results or {}
+        step_logs = results.get('step_logs', {}) if isinstance(results, dict) else {}
+        log_context = ''
+        if isinstance(step_logs, dict):
+            for _, step_data in step_logs.items():
+                if not isinstance(step_data, dict):
+                    continue
+                if step_data.get('step_order') != step.step_order and step_data.get('step_name') != step.step_name:
+                    continue
+                host_logs = step_data.get('hosts') or {}
+                host_data = host_logs.get(str(host_id)) or host_logs.get(host_id)
+                if isinstance(host_data, dict):
+                    stdout = host_data.get('stdout') or ''
+                    stderr = host_data.get('stderr') or ''
+                    if stdout and stderr and not stdout.endswith('\n'):
+                        stdout = f"{stdout}\n"
+                    log_context = f"{stdout}{stderr}"
+                break
+
+        return SycResponse.success(
+            content={
+                'log_context': log_context,
+                'finished': True,
+                'next_pointer': None,
+            },
+            message='日志获取成功'
+        )
 
     @action(detail=True, methods=['get'])
     def operation_logs(self, request, pk=None):

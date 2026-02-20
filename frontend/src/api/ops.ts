@@ -365,9 +365,32 @@ export const executionRecordApi = {
     return http.get(`/executor/execution-records/${id}/steps/${stepId}/content/`)
   },
 
+  // 获取步骤执行结果（主机列表/状态/耗时）
+  getStepResult(id: number, stepId: string | number): Promise<any> {
+    return http.get(`/executor/execution-records/${id}/steps/${stepId}/result/`)
+  },
+
+  // 获取步骤内单主机日志（pointer+limit 分页）
+  getHostLogs(
+    id: number,
+    stepId: string | number,
+    hostId: string | number,
+    params?: { limit?: number; pointer?: string }
+  ): Promise<any> {
+    return http.get(
+      `/executor/execution-records/${id}/steps/${stepId}/hosts/${hostId}/logs/`,
+      { params }
+    )
+  },
+
   // 获取执行操作审计记录
   getExecutionOperations(id: number, params?: { action?: string; page?: number; page_size?: number }): Promise<PaginatedResponse<any>> {
     return http.get(`/executor/execution-records/${id}/operation_logs/`, { params })
+  },
+
+  // 获取执行记录历史日志（按需/分页）
+  getExecutionLogs(id: number, params?: { limit?: number; pointer?: string }): Promise<any> {
+    return http.get(`/executor/execution-records/${id}/logs/`, { params })
   },
 }
 
