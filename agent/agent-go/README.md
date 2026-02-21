@@ -126,6 +126,8 @@ export AGENT_TASK_MAX_CONCURRENT_TASKS=5
 export AGENT_TASK_MAX_EXECUTION_TIME_SEC=7200
 
 # Outbox 冲刷配置（可选，<=0 则使用默认/禁用）
+export AGENT_LOGGING_LOG_FORMAT=text
+export AGENT_LOGGING_LOG_REPORT_CALLER=true
 export AGENT_LOGGING_LOG_BATCH_SIZE=200
 export AGENT_LOGGING_LOG_FLUSH_INTERVAL=200
 
@@ -150,6 +152,8 @@ log_dir: "/var/log/ops-job-agent"
 log_max_size: 10        # MB
 log_max_files: 5
 log_max_age: 7          # 天
+log_format: "text"       # text | json
+log_report_caller: true # 是否输出调用位置
 # 任务配置
 task:
   heartbeat_interval: 10   # 秒
@@ -198,6 +202,8 @@ logging:
 | `AGENT_LOGGING_LOG_MAX_SIZE`               | `log_max_size`                   | `10`                           | 日志文件最大大小（MB）                      |
 | `AGENT_LOGGING_LOG_MAX_FILES`              | `log_max_files`                  | `5`                            | 最大保留日志文件数                          |
 | `AGENT_LOGGING_LOG_MAX_AGE`                | `log_max_age`                    | `7`                            | 日志保留天数                                |
+| `AGENT_LOGGING_LOG_FORMAT`                 | `log_format`                     | `text`                         | 日志格式（text/json）                       |
+| `AGENT_LOGGING_LOG_REPORT_CALLER`          | `log_report_caller`              | `true`                         | 是否输出调用位置                            |
 | `AGENT_TASK_HEARTBEAT_INTERVAL`            | `task.heartbeat_interval`        | `10`                           | 心跳间隔（秒，WS）                          |
 | `AGENT_TASK_MAX_CONCURRENT_TASKS`          | `task.max_concurrent_tasks`      | `5`                            | 最大并发任务数                              |
 | `AGENT_TASK_MAX_EXECUTION_TIME_SEC`        | `task.max_execution_time_sec`    | `7200`                         | 全局最大任务执行时间（秒）                  |

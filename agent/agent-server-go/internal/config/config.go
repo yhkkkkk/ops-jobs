@@ -47,11 +47,13 @@ type AgentConfig struct {
 
 // LoggingConfig 日志配置
 type LoggingConfig struct {
-	Level    string `mapstructure:"level"`
-	Dir      string `mapstructure:"dir"`
-	MaxSize  int    `mapstructure:"max_size"` // MB
-	MaxFiles int    `mapstructure:"max_files"`
-	MaxAge   int    `mapstructure:"max_age"` // days
+	Level        string `mapstructure:"level"`
+	Dir          string `mapstructure:"dir"`
+	MaxSize      int    `mapstructure:"max_size"` // MB
+	MaxFiles     int    `mapstructure:"max_files"`
+	MaxAge       int    `mapstructure:"max_age"` // days
+	Format       string `mapstructure:"format"`  // json | text
+	ReportCaller bool   `mapstructure:"report_caller"`
 }
 
 // LogStreamConfig Redis Stream 写日志配置
@@ -158,6 +160,8 @@ func setDefaults() {
 	viper.SetDefault("logging.max_size", 100)
 	viper.SetDefault("logging.max_files", 10)
 	viper.SetDefault("logging.max_age", 7)
+	viper.SetDefault("logging.format", "json")
+	viper.SetDefault("logging.report_caller", true)
 
 	// Log Stream 默认值（统一日志流写入）
 	viper.SetDefault("log_stream.enabled", true)

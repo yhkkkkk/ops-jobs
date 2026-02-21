@@ -33,6 +33,8 @@ var startCmd = &cobra.Command{
 			cfg.Logging.MaxFiles,
 			cfg.Logging.MaxAge,
 			cfg.Logging.Level,
+			cfg.Logging.Format,
+			cfg.Logging.ReportCaller,
 		)
 		log := logger.GetLogger()
 

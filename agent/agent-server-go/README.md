@@ -64,7 +64,9 @@ auth:
 
 logging:
   level: "info"
-  file: "logs/agent-server.log"
+  dir: "logs"
+  format: "json"
+  report_caller: true
 ```
 
 ### 运行
@@ -83,6 +85,8 @@ CONTROL_PLANE_TOKEN=server-auth-token
 CONTROL_PLANE_SCOPE=default
 AUTH_SHARED_SECRET=your-hmac-secret
 AUTH_REQUIRE_SIGNATURE=true
+LOGGING_FORMAT=json
+LOGGING_REPORT_CALLER=true
 ```
 
 ## API 接口

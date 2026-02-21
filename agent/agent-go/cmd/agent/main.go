@@ -27,7 +27,15 @@ var startCmd = &cobra.Command{
 		}
 
 		// 初始化日志
-		logger.InitLogger(cfg.Logging.LogDir, cfg.Logging.LogMaxSize, cfg.Logging.LogMaxFiles, cfg.Logging.LogMaxAge, cfg.Logging.LogLevel)
+		logger.InitLogger(
+			cfg.Logging.LogDir,
+			cfg.Logging.LogMaxSize,
+			cfg.Logging.LogMaxFiles,
+			cfg.Logging.LogMaxAge,
+			cfg.Logging.LogLevel,
+			cfg.Logging.LogFormat,
+			cfg.Logging.LogReportCaller,
+		)
 		log := logger.GetLogger()
 
 		logFields := map[string]interface{}{

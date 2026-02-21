@@ -37,6 +37,8 @@ type LoggingConfig struct {
 	LogMaxSize       int    `mapstructure:"log_max_size"`       // 日志文件最大大小（MB）
 	LogMaxFiles      int    `mapstructure:"log_max_files"`      // 最大保留日志文件数
 	LogMaxAge        int    `mapstructure:"log_max_age"`        // 日志保留天数
+	LogFormat        string `mapstructure:"log_format"`         // 日志格式：text | json
+	LogReportCaller  bool   `mapstructure:"log_report_caller"`  // 是否输出调用位置
 	LogBatchSize     int    `mapstructure:"log_batch_size"`     // 日志批量推送大小
 	LogFlushInterval int    `mapstructure:"log_flush_interval"` // 日志刷新间隔（毫秒）
 }
@@ -222,6 +224,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logging.log_max_size", 10) // 10MB
 	v.SetDefault("logging.log_max_files", 5)
 	v.SetDefault("logging.log_max_age", 7) // 7天
+	v.SetDefault("logging.log_format", "text")
+	v.SetDefault("logging.log_report_caller", true)
 	v.SetDefault("logging.log_batch_size", 10)
 	v.SetDefault("logging.log_flush_interval", 200)
 
