@@ -148,13 +148,13 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="资源" data-index="resource_name" width="150">
+          <a-table-column title="资源" data-index="resource_name" width="170">
             <template #cell="{ record }">
               <div v-if="record.resource_name">
                 <div class="resource-info">
                   <span class="resource-name">{{ record.resource_name }}</span>
-                  <span v-if="record.resource_type" class="resource-type">
-                    ({{ record.resource_type }})
+                  <span v-if="record.resource_type_name || record.resource_type" class="resource-type">
+                    ({{ record.resource_type_name || record.resource_type }})
                   </span>
                 </div>
               </div>
@@ -162,7 +162,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="描述" data-index="description" min-width="140">
+          <a-table-column title="描述" data-index="description" min-width="280" width="400">
             <template #cell="{ record }">
               <div class="description-cell">
                 <a-tooltip :content="record.description" position="top">
@@ -224,7 +224,7 @@
             {{ currentLog.resource_name || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="资源类型">
-            {{ currentLog.resource_type || '-' }}
+            {{ currentLog.resource_type_name || currentLog.resource_type || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="IP地址">
             {{ currentLog.ip_address }}
