@@ -9,6 +9,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
+from utils.audit_mixin import AuditLogMixin
 from .models import ScriptTemplate, ScriptTemplateVersion, UserFavorite
 from .serializers import (
     ScriptTemplateSerializer,
@@ -23,7 +24,7 @@ from .services import ScriptTemplateService
 from .filters import ScriptTemplateFilter, UserFavoriteFilter
 
 
-class ScriptTemplateViewSet(viewsets.ModelViewSet):
+class ScriptTemplateViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """脚本模板ViewSet"""
     queryset = ScriptTemplate.objects.all()
     serializer_class = ScriptTemplateSerializer
@@ -99,7 +100,8 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
             return SycResponse.validation_error(serializer.errors)
 
     def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        template = serializer.save(updated_by=self.request.user)
+        self.audit_log_update(template)
 
     def retrieve(self, request, *args, **kwargs):
         """获取脚本模板详情"""
@@ -125,6 +127,7 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
                 code=400
             )
 
+        self.audit_log_delete(instance)
         self.perform_destroy(instance)
         return SycResponse.success(message="脚本模板删除成功")
 
@@ -142,7 +145,8 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         return SycResponse.success(content=serializer.data, message="获取脚本模板列表成功")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        template = serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        self.audit_log_create(template)
 
     @action(detail=True, methods=['get'])
     def get_content(self, request, pk=None):
@@ -244,6 +248,11 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         template.save(update_fields=['version'])
 
         serializer = ScriptTemplateVersionSerializer(new_version)
+        self.audit_log_action(
+            action='update',
+            description=f"创建脚本模板版本: {template.name} ({version})",
+            resource_obj=template
+        )
         return SycResponse.success(
             content=serializer.data,
             message="创建版本成功"
@@ -305,6 +314,11 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
                 template.save(update_fields=template_update_fields)
 
         serializer = ScriptTemplateVersionSerializer(target_version)
+        self.audit_log_action(
+            action='update',
+            description=f"更新脚本模板版本: {template.name} ({target_version.version})",
+            resource_obj=template
+        )
         return SycResponse.success(
             content=serializer.data,
             message="版本更新成功"
@@ -334,6 +348,11 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         target_version.is_active = True
         target_version.save(update_fields=['is_active'])
 
+        self.audit_log_action(
+            action='update',
+            description=f"回滚脚本模板版本: {template.name} -> {target_version.version}",
+            resource_obj=template
+        )
         return SycResponse.success(message="版本回滚成功")
 
     @action(detail=True, methods=['post'])
@@ -344,6 +363,11 @@ class ScriptTemplateViewSet(viewsets.ModelViewSet):
         template.save(update_fields=['is_active'])
 
         status_text = "上线" if template.is_active else "下线"
+        self.audit_log_action(
+            action='update',
+            description=f"脚本模板{status_text}: {template.name}",
+            resource_obj=template
+        )
         return SycResponse.success(
             content={'is_active': template.is_active},
             message=f"模板已{status_text}"

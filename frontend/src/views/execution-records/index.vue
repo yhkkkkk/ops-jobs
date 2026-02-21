@@ -345,6 +345,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -441,6 +442,19 @@ const pagination = reactive({
   showLessItems: false,
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'name' },
+    { key: 'execution_type' },
+    { key: 'status' },
+    { key: 'executed_by' },
+    { key: 'start_date' },
+    { key: 'end_date' }
+  ]
+})
+
 // 表格列配置
 const columns = [
   {
@@ -527,6 +541,7 @@ const fetchRecords = async () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchRecords()
 }
 
@@ -584,6 +599,7 @@ const handleReset = () => {
     }
   })
   pagination.current = 1
+  syncToQuery()
   fetchRecords()
 }
 
@@ -595,12 +611,14 @@ const handleRefresh = () => {
 // 分页处理
 const handlePageChange = (page: number | string) => {
   pagination.current = Number(page)
+  syncToQuery()
   fetchRecords()
 }
 
 const handlePageSizeChange = (pageSize: number | string) => {
   pagination.pageSize = Number(pageSize)
   pagination.current = 1
+  syncToQuery()
   fetchRecords()
 }
 
@@ -828,6 +846,7 @@ const formatDateTime = (dateTime) => {
 
 // 初始化
 onMounted(() => {
+  initFromQuery()
   fetchRecords()
 })
 </script>

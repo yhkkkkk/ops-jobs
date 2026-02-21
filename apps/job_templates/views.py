@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Count
 from utils.responses import SycResponse
 from utils.pagination import CustomPagination
+from utils.audit_mixin import AuditLogMixin
 from apps.permissions.permissions import JobTemplatePermission, ExecutionPlanPermission
 from .models import JobTemplate, JobStep, ExecutionPlan, PlanStep
 from .serializers import (
@@ -32,7 +33,7 @@ from .sync_views import TemplateSyncMixin, ExecutionPlanSyncMixin
 from ..script_templates.models import UserFavorite
 
 
-class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
+class JobTemplateViewSet(AuditLogMixin, TemplateSyncMixin, viewsets.ModelViewSet):
     """作业模板ViewSet"""
     queryset = JobTemplate.objects.all()
     serializer_class = JobTemplateSerializer
@@ -208,6 +209,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 plan_step.save()
 
         serializer = JobTemplateSerializer(template)
+        self.audit_log_create(template)
         return SycResponse.success(content=serializer.data, message="作业模板创建成功")
 
     def retrieve(self, request, *args, **kwargs):
@@ -421,6 +423,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
         # 返回更新后的数据
         result_serializer = JobTemplateSerializer(instance)
+        self.audit_log_update(instance)
         return SycResponse.success(
             content=result_serializer.data,
             message="作业模板更新成功"
@@ -452,6 +455,7 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             )
 
         # 若无定时任务与执行记录，则允许删除（会级联删除执行方案等）
+        self.audit_log_delete(instance)
         self.perform_destroy(instance)
 
         return SycResponse.success(
@@ -520,6 +524,12 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         unsync_plans = [plan for plan in plans if plan.needs_sync]
 
         if not unsync_plans:
+            self.audit_log_action(
+                action='update',
+                description=f"批量同步执行方案: {template.name}",
+                resource_obj=template,
+                extra_data={'synced_count': 0}
+            )
             return SycResponse.success(content={
                 'synced_count': 0,
                 'message': '所有执行方案都已是最新状态'
@@ -540,6 +550,16 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                     'error': result['message']
                 })
 
+        self.audit_log_action(
+            action='update',
+            description=f"批量同步执行方案: {template.name}",
+            resource_obj=template,
+            extra_data={
+                'total_plans': len(unsync_plans),
+                'success_count': success_count,
+                'failed_count': len(failed_plans)
+            }
+        )
         return SycResponse.success(content={
             'total_plans': len(unsync_plans),
             'success_count': success_count,
@@ -580,19 +600,39 @@ class JobTemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             )
 
             if result['success']:
+                self.audit_log_action(
+                    action='execute_job',
+                    description=f"调试执行作业模板: {template.name}",
+                    resource_obj=template,
+                    extra_data={'is_debug': True}
+                )
                 return SycResponse.success(content={
                     **result,
                     'is_debug': True,
                     'message': '模板调试执行已启动，执行完成后调试数据将自动清理'
                 }, message="模板调试执行已启动")
             else:
+                self.audit_log_action(
+                    action='execute_job',
+                    description=f"调试执行作业模板失败: {template.name}",
+                    resource_obj=template,
+                    success=False,
+                    error_message=result.get('error')
+                )
                 return SycResponse.error(content=result, message=result.get('error', '模板调试执行启动失败'))
 
         except Exception as e:
+            self.audit_log_action(
+                action='execute_job',
+                description=f"调试执行作业模板异常: {template.name}",
+                resource_obj=template,
+                success=False,
+                error_message=str(e)
+            )
             return SycResponse.error(message=f"模板调试失败: {str(e)}")
 
 
-class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
+class ExecutionPlanViewSet(AuditLogMixin, ExecutionPlanSyncMixin, viewsets.ModelViewSet):
     """执行方案ViewSet"""
     queryset = ExecutionPlan.objects.all()
     serializer_class = ExecutionPlanSerializer
@@ -735,6 +775,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
                 plan_step.save()
 
         serializer = ExecutionPlanSerializer(plan)
+        self.audit_log_create(plan)
         return SycResponse.success(content=serializer.data, message="执行方案创建成功")
 
     def retrieve(self, request, *args, **kwargs):
@@ -779,6 +820,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
 
         # 使用读取序列化器返回完整数据
         response_serializer = ExecutionPlanSerializer(instance)
+        self.audit_log_update(instance)
         return SycResponse.success(
             content=response_serializer.data,
             message="执行方案更新成功"
@@ -803,6 +845,7 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
                 code=400
             )
 
+        self.audit_log_delete(instance)
         self.perform_destroy(instance)
 
         return SycResponse.success(
@@ -883,8 +926,28 @@ class ExecutionPlanViewSet(ExecutionPlanSyncMixin, viewsets.ModelViewSet):
         )
 
         if result['success']:
+            self.audit_log_action(
+                action='execute_job',
+                description=f"执行执行方案: {plan.name}",
+                resource_obj=plan,
+                extra_data={
+                    'trigger_type': data.get('trigger_type', 'manual'),
+                    'execution_mode': data.get('execution_mode', 'parallel')
+                }
+            )
             return SycResponse.success(content=result, message="执行方案启动成功")
         else:
+            self.audit_log_action(
+                action='execute_job',
+                description=f"执行执行方案失败: {plan.name}",
+                resource_obj=plan,
+                success=False,
+                error_message=result.get('error'),
+                extra_data={
+                    'trigger_type': data.get('trigger_type', 'manual'),
+                    'execution_mode': data.get('execution_mode', 'parallel')
+                }
+            )
             return SycResponse.error(content=result, message=result.get('error', '执行方案启动失败'))
 
 

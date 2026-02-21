@@ -16,6 +16,7 @@ class AuditLog(models.Model):
     ACTION_CHOICES = [
         # 认证相关
         ('login', '登录'),
+        ('logout', '登出'),
 
         # 基础操作
         ('create', '创建'),
@@ -30,6 +31,7 @@ class AuditLog(models.Model):
         ('cancel_execution', '取消执行'),
         ('ignore_error', '忽略错误继续'),
         ('retry_step', '步骤重试'),
+        ('retry_failed_hosts', '失败主机重试'),
         
         # 作业相关
         ('create_job', '创建作业'),
@@ -45,6 +47,7 @@ class AuditLog(models.Model):
         
         # 主机管理
         ('manage_host', '管理主机'),
+        ('manage_server_account', '管理服务器账号'),
         ('test_connection', '测试连接'),
         
         # Agent管理

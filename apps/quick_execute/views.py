@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.permissions.permissions import ScriptExecutionPermission
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from utils.responses import SycResponse
+from utils.audit_service import AuditLogService
 from .serializers import (
     QuickScriptExecuteSerializer,
     QuickFileTransferSerializer,
@@ -48,10 +49,35 @@ class QuickScriptExecuteView(APIView):
             user_agent=user_agent
         )
 
+        meta = {
+            'name': serializer.validated_data.get('name'),
+            'script_type': serializer.validated_data.get('script_type'),
+            'execution_mode': serializer.validated_data.get('execution_mode'),
+            'target_host_count': len(serializer.validated_data.get('target_host_ids') or []),
+            'dynamic_ip_count': len(serializer.validated_data.get('dynamic_ips') or []),
+        }
+
         if result['success']:
+            AuditLogService.log_action(
+                user=request.user,
+                action='execute_script',
+                description='快速执行脚本',
+                request=request,
+                success=True,
+                extra_data=meta
+            )
             return SycResponse.success(content=result, message="脚本执行已启动")
         else:
             message = result.get('message') or result.get('error') or "脚本执行启动失败"
+            AuditLogService.log_action(
+                user=request.user,
+                action='execute_script',
+                description='快速执行脚本失败',
+                request=request,
+                success=False,
+                error_message=message,
+                extra_data=meta
+            )
             return SycResponse.error(content=result, message=message)
 
     def get_client_ip(self, request):
@@ -151,12 +177,38 @@ class QuickFileTransferView(APIView):
             user_agent=user_agent
         )
 
+        meta = {
+            'name': serializer.validated_data.get('name'),
+            'execution_mode': serializer.validated_data.get('execution_mode'),
+            'target_host_count': len(serializer.validated_data.get('target_host_ids') or []),
+            'dynamic_ip_count': len(serializer.validated_data.get('dynamic_ips') or []),
+            'sources_count': len(serializer.validated_data.get('sources') or []),
+        }
+
         if result['success']:
+            AuditLogService.log_action(
+                user=request.user,
+                action='transfer_file',
+                description='快速文件传输',
+                request=request,
+                success=True,
+                extra_data=meta
+            )
             return SycResponse.success(content=result, message="文件传输已启动")
         else:
+            message = result.get('message') or result.get('error') or "文件传输启动失败"
+            AuditLogService.log_action(
+                user=request.user,
+                action='transfer_file',
+                description='快速文件传输失败',
+                request=request,
+                success=False,
+                error_message=message,
+                extra_data=meta
+            )
             return SycResponse.error(
                 content=result,
-                message=result.get('message') or result.get('error') or "文件传输启动失败"
+                message=message
             )
 
     def get_client_ip(self, request):

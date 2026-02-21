@@ -144,7 +144,7 @@
                       @paste="handleIpPaste"
                       @input="handleIpInput"
                       :auto-size="{ minRows: 1, maxRows: 6 }"
-                      style="width: 350px"
+                      style="width: 360px"
                     />
                   </a-form-item>
                 </div>
@@ -154,28 +154,28 @@
             <a-select
               v-model="searchForm.os_type"
               placeholder="请选择操作系统"
-                      allow-clear
-                      @change="handleSearch"
-                      @clear="handleSearch"
-                      style="width: 140px"
-                    >
-                      <a-option value="linux">Linux</a-option>
-                      <a-option value="windows">Windows</a-option>
-                    </a-select>
-                  </a-form-item>
-                  <a-form-item label="状态">
-                    <a-select
-                      v-model="searchForm.status"
-                      placeholder="请选择状态"
-                      allow-clear
-                      @change="handleSearch"
-                      @clear="handleSearch"
-                      style="width: 120px"
-                    >
-                      <a-option value="online">在线</a-option>
-                      <a-option value="offline">离线</a-option>
-                      <a-option value="unknown">未知</a-option>
-                    </a-select>
+              allow-clear
+              @change="handleSearch"
+              @clear="handleSearch"
+              style="width: 150px"
+            >
+              <a-option value="linux">Linux</a-option>
+              <a-option value="windows">Windows</a-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="状态">
+            <a-select
+              v-model="searchForm.status"
+              placeholder="请选择状态"
+              allow-clear
+              @change="handleSearch"
+              @clear="handleSearch"
+              style="width: 120px"
+            >
+              <a-option value="online">在线</a-option>
+              <a-option value="offline">离线</a-option>
+              <a-option value="unknown">未知</a-option>
+            </a-select>
           </a-form-item>
           <a-form-item label="标签">
           <a-select
@@ -186,8 +186,6 @@
             allow-search
             :options="tagOptions"
             style="width: 240px"
-            @change="handleSearch"
-            @clear="handleSearch"
           />
           </a-form-item>
         </div>
@@ -222,10 +220,10 @@
           <!-- 高级筛选栏 -->
           <div v-if="showAdvancedFilter" class="advanced-filter">
             <a-divider orientation="left">高级筛选</a-divider>
-            <a-form :model="advancedForm" layout="inline">
+            <a-form :model="searchForm" layout="inline">
               <a-form-item label="云厂商">
                 <a-select
-                  v-model="advancedForm.cloud_provider"
+                  v-model="searchForm.cloud_provider"
                   placeholder="请选择云厂商"
                   allow-clear
                   @change="handleSearch"
@@ -253,7 +251,7 @@
                   @paste="handleInternalIpPaste"
                   @input="handleInternalIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 250px"
+                  style="width: 300px"
                 />
               </a-form-item>
               <a-form-item label="外网IP">
@@ -265,18 +263,18 @@
                   @paste="handlePublicIpPaste"
                   @input="handlePublicIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 250px"
+                  style="width: 300px"
                 />
               </a-form-item>
               <a-form-item label="CPU架构">
                 <a-select
-                  v-model="advancedForm.cpu_arch"
+                  v-model="searchForm.cpu_arch"
                   placeholder="请选择CPU架构"
                   allow-clear
                   allow-search
                   @change="handleSearch"
                   @clear="handleSearch"
-                  style="width: 180px"
+                  style="width: 150px"
                 >
                   <a-option value="x86_64">x86_64</a-option>
                   <a-option value="arm64">arm64</a-option>
@@ -288,7 +286,7 @@
               </a-form-item>
               <a-form-item label="CPU逻辑核心数">
                 <a-input-number
-                  v-model="advancedForm.cpu_cores_min"
+                  v-model="searchForm.cpu_cores_min"
                   placeholder="最小值"
                   :min="0"
                   @change="handleSearch"
@@ -296,7 +294,7 @@
                 />
                 <span style="margin: 0 6px;">~</span>
                 <a-input-number
-                  v-model="advancedForm.cpu_cores_max"
+                  v-model="searchForm.cpu_cores_max"
                   placeholder="最大值"
                   :min="0"
                   @change="handleSearch"
@@ -305,7 +303,7 @@
               </a-form-item>
               <a-form-item label="负责人">
                 <a-input
-                  v-model="advancedForm.owner"
+                  v-model="searchForm.owner"
                   placeholder="请输入负责人"
                   allow-clear
                   @press-enter="handleSearch"
@@ -314,7 +312,7 @@
               </a-form-item>
               <a-form-item label="所属部门">
                 <a-input
-                  v-model="advancedForm.department"
+                  v-model="searchForm.department"
                   placeholder="请输入所属部门"
                   allow-clear
                   @press-enter="handleSearch"
@@ -323,7 +321,7 @@
               </a-form-item>
               <a-form-item label="地域">
                 <a-input
-                  v-model="advancedForm.region"
+                  v-model="searchForm.region"
                   placeholder="请输入地域"
                   allow-clear
                   @press-enter="handleSearch"
@@ -332,7 +330,7 @@
               </a-form-item>
               <a-form-item label="可用区">
                 <a-input
-                  v-model="advancedForm.zone"
+                  v-model="searchForm.zone"
                   placeholder="请输入可用区"
                   allow-clear
                   @press-enter="handleSearch"
@@ -998,6 +996,7 @@ import { hostApi, hostGroupApi } from '@/api/ops'
 import type { Host, HostGroup, HostImportResult } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useFilterQuerySync, parseStringArrayQuery, parseNumberQuery } from '@/composables/useFilterQuerySync'
 import HostForm from './components/HostForm.vue'
 import HostGroupTree from './components/HostGroupTree.vue'
 import HostGroupForm from './components/HostGroupForm.vue'
@@ -1039,6 +1038,7 @@ const hostGroups = ref<HostGroup[]>([])
 const hostGroupTree = ref<HostGroup[]>([])
 const selectedGroupId = ref<number | null>(null)
 const totalHostCount = ref(0)
+
 const expandedGroups = ref<number[]>([])
 
 const groupOptions = computed(() => {
@@ -1097,17 +1097,13 @@ const batchEditForm = reactive({
 const batchTagEntries = ref<Array<{ key: string; value: string }>>([])
 
 
-// 搜索表单
+// 搜索表单（包含高级筛选字段）
 const searchForm = reactive({
   name: '',
   ip_address: '',
   os_type: '',
   status: '',
   tags: [] as string[],
-})
-
-// 高级筛选表单
-const advancedForm = reactive({
   cloud_provider: '',
   internal_ip: '',
   public_ip: '',
@@ -1118,7 +1114,15 @@ const advancedForm = reactive({
   department: '',
   region: '',
   zone: '',
+  group_id: undefined as number | undefined,
 })
+
+watch(
+  () => searchForm.group_id,
+  (value) => {
+    selectedGroupId.value = value ?? null
+  }
+)
 
 // IP地址显示格式化
 const displayIpAddress = ref('')
@@ -1186,7 +1190,7 @@ const handleInternalIpPaste = (event: ClipboardEvent) => {
   if (pastedText) {
     const formattedText = formatIpDisplay(pastedText)
     displayInternalIp.value = formattedText
-    advancedForm.internal_ip = parseIpInput(formattedText)
+    searchForm.internal_ip = parseIpInput(formattedText)
 
   }
 }
@@ -1194,7 +1198,7 @@ const handleInternalIpPaste = (event: ClipboardEvent) => {
 // 处理内网IP输入事件
 const handleInternalIpInput = (value: string) => {
   displayInternalIp.value = value
-  advancedForm.internal_ip = parseIpInput(value)
+  searchForm.internal_ip = parseIpInput(value)
 
 }
 
@@ -1206,7 +1210,7 @@ const handlePublicIpPaste = (event: ClipboardEvent) => {
   if (pastedText) {
     const formattedText = formatIpDisplay(pastedText)
     displayPublicIp.value = formattedText
-    advancedForm.public_ip = parseIpInput(formattedText)
+    searchForm.public_ip = parseIpInput(formattedText)
 
   }
 }
@@ -1214,7 +1218,7 @@ const handlePublicIpPaste = (event: ClipboardEvent) => {
 // 处理外网IP输入事件
 const handlePublicIpInput = (value: string) => {
   displayPublicIp.value = value
-  advancedForm.public_ip = parseIpInput(value)
+  searchForm.public_ip = parseIpInput(value)
 
 }
 
@@ -1225,13 +1229,13 @@ watch(() => searchForm.ip_address, (newValue) => {
   }
 })
 
-watch(() => advancedForm.internal_ip, (newValue) => {
+watch(() => searchForm.internal_ip, (newValue) => {
   if (newValue !== parseIpInput(displayInternalIp.value)) {
     displayInternalIp.value = formatIpDisplay(newValue)
   }
 })
 
-watch(() => advancedForm.public_ip, (newValue) => {
+watch(() => searchForm.public_ip, (newValue) => {
   if (newValue !== parseIpInput(displayPublicIp.value)) {
     displayPublicIp.value = formatIpDisplay(newValue)
   }
@@ -1248,6 +1252,47 @@ const pagination = reactive({
   showTotal: true,
   showPageSize: true,
   pageSizeOptions: ['10', '20', '50', '100']
+})
+
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'name' },
+    { key: 'ip_address' },
+    { key: 'os_type' },
+    { key: 'status' },
+    {
+      key: 'tags',
+      toQuery: (value: any) => {
+        if (value === null || value === undefined || value === '') return undefined
+        const list = Array.isArray(value)
+          ? value
+          : (typeof value === 'string' ? value.split(',') : [value])
+        const cleaned = list
+          .map((t: any) => {
+            if (t && typeof t === 'object') {
+              return String(t.value ?? t.label ?? '').trim()
+            }
+            return String(t ?? '').trim()
+          })
+          .filter((t: string) => t.length > 0)
+        return cleaned.length ? cleaned.join(',') : undefined
+      },
+      fromQuery: (value) => parseStringArrayQuery(value)
+    },
+    { key: 'cloud_provider' },
+    { key: 'internal_ip' },
+    { key: 'public_ip' },
+    { key: 'cpu_arch' },
+    { key: 'cpu_cores_min', fromQuery: (value) => parseNumberQuery(value) },
+    { key: 'cpu_cores_max', fromQuery: (value) => parseNumberQuery(value) },
+    { key: 'owner' },
+    { key: 'department' },
+    { key: 'region' },
+    { key: 'zone' },
+    { key: 'group_id', fromQuery: (value) => parseNumberQuery(value) },
+  ]
 })
 
 const columns = [
@@ -1343,7 +1388,6 @@ const fetchHosts = async () => {
       page: pagination.current,
       page_size: pagination.pageSize,
       ...searchForm,
-      ...advancedForm,
     }
 
     // 构建搜索参数（后端只有 search 一个入口）
@@ -1363,8 +1407,8 @@ const fetchHosts = async () => {
     }
 
     // 处理内/外网 IP 批量搜索
-    if (advancedForm.internal_ip) {
-      const internalIpList = advancedForm.internal_ip
+    if (searchForm.internal_ip) {
+      const internalIpList = searchForm.internal_ip
         .split(/[,，\s\n\r|]+/)
         .map(ip => ip.trim())
         .filter(ip => ip.length > 0)
@@ -1372,8 +1416,8 @@ const fetchHosts = async () => {
         searchTerms.push(...internalIpList)
       }
     }
-    if (advancedForm.public_ip) {
-      const publicIpList = advancedForm.public_ip
+    if (searchForm.public_ip) {
+      const publicIpList = searchForm.public_ip
         .split(/[,，\s\n\r|]+/)
         .map(ip => ip.trim())
         .filter(ip => ip.length > 0)
@@ -1389,13 +1433,13 @@ const fetchHosts = async () => {
     }
 
     // 清理可选高级筛选参数
-    if (!advancedForm.cpu_arch) delete params.cpu_arch
-    if (!advancedForm.owner) delete params.owner
-    if (!advancedForm.department) delete params.department
-    if (advancedForm.cpu_cores_min === undefined || advancedForm.cpu_cores_min === null) {
+    if (!searchForm.cpu_arch) delete params.cpu_arch
+    if (!searchForm.owner) delete params.owner
+    if (!searchForm.department) delete params.department
+    if (searchForm.cpu_cores_min === undefined || searchForm.cpu_cores_min === null) {
       delete params.cpu_cores_min
     }
-    if (advancedForm.cpu_cores_max === undefined || advancedForm.cpu_cores_max === null) {
+    if (searchForm.cpu_cores_max === undefined || searchForm.cpu_cores_max === null) {
       delete params.cpu_cores_max
     }
 
@@ -1421,8 +1465,8 @@ const fetchHosts = async () => {
     delete params.ip_address
 
     // 添加分组筛选
-    if (selectedGroupId.value !== null) {
-      params.group_id = selectedGroupId.value
+    if (searchForm.group_id !== undefined && searchForm.group_id !== null) {
+      params.group_id = searchForm.group_id
     }
 
     // 过滤空值
@@ -1456,19 +1500,18 @@ const fetchHosts = async () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchHosts()
 }
 
 // 重置搜索
 const handleReset = () => {
   Object.assign(searchForm, {
-  name: '',
-  ip_address: '',
-  os_type: '',
-  status: '',
-  tags: [],
-})
-  Object.assign(advancedForm, {
+    name: '',
+    ip_address: '',
+    os_type: '',
+    status: '',
+    tags: [],
     cloud_provider: '',
     internal_ip: '',
     public_ip: '',
@@ -1479,8 +1522,10 @@ const handleReset = () => {
     department: '',
     region: '',
     zone: '',
+    group_id: undefined,
   })
   pagination.current = 1
+  syncToQuery()
   fetchHosts()
 }
 
@@ -1540,12 +1585,14 @@ const startResize = (e: MouseEvent) => {
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
+  syncToQuery()
   fetchHosts()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  syncToQuery()
   fetchHosts()
 }
 
@@ -1759,23 +1806,19 @@ const refreshAll = () => {
   fetchHosts()
 }
 
-// 预加载所有标签（取较大页容量），避免仅当前页
+// 拉取可用标签列表（独立接口，避免受当前筛选影响）
 const preloadAllTags = async () => {
   try {
-    const resp = await hostApi.getHosts({ page: 1, page_size: 1000 })
-    const list = resp.results || []
-    collectTags(list.map((h: any) => ({
-      ...h,
-      ip_address: h.ip_address || h.internal_ip || h.public_ip || '',
-      account_info: h.account_info || null,
-    })))
+    const resp = await hostApi.getTags()
+    const tags = Array.isArray(resp?.tags) ? resp.tags : Array.isArray(resp) ? resp : []
+    tagSet.value = new Set(tags.filter((t: any) => String(t ?? '').trim()).map((t: any) => String(t).trim()))
   } catch (err) {
-    console.warn('预加载标签失败', err)
+    console.warn('获取标签列表失败', err)
   }
 }
 
 const selectGroup = (groupId: number | null) => {
-  selectedGroupId.value = groupId
+  searchForm.group_id = groupId ?? undefined
   selectedRowKeys.value = [] // 清空选择
   handleSearch() // 重新搜索
 }
@@ -2199,6 +2242,7 @@ onMounted(async () => {
   }
 
   console.log('用户已登录，开始获取数据')
+  initFromQuery()
   fetchHosts()
   preloadAllTags()
   fetchGroups()
@@ -2206,9 +2250,10 @@ onMounted(async () => {
 
 // 标签筛选变化时自动触发搜索，避免选择后未发送请求
 watch(
-  () => [...searchForm.tags],
+  () => (Array.isArray(searchForm.tags) ? searchForm.tags.slice() : []),
   () => {
     pagination.current = 1
+    syncToQuery()
     fetchHosts()
   }
 )

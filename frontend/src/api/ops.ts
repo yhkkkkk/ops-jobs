@@ -19,6 +19,11 @@ export const hostApi = {
     return http.get('/hosts/hosts/', { params })
   },
 
+  // 获取主机标签列表
+  getTags(): Promise<{ tags: string[] }> {
+    return http.get('/hosts/hosts/tags/')
+  },
+
   // 获取主机详情
   getHost(id: number): Promise<Host> {
     return http.get(`/hosts/hosts/${id}/`)

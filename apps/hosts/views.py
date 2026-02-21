@@ -9,6 +9,7 @@ from apps.permissions.permissions import HostManagementPermission, ServerAccount
 
 from utils.responses import SycResponse
 from utils.pagination import HostPagination
+from utils.audit_mixin import AuditLogMixin
 from .models import Host, HostGroup, ServerAccount
 from .services import HostService, HostGroupService
 from .cloud_sync_service import CloudSyncService
@@ -30,7 +31,7 @@ from .serializers import (
 from .filters import HostFilter, HostGroupFilter, ServerAccountFilter
 
 
-class HostViewSet(viewsets.ModelViewSet):
+class HostViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """主机管理API"""
     queryset = Host.objects.all()
     serializer_class = HostSerializer
@@ -93,6 +94,46 @@ class HostViewSet(viewsets.ModelViewSet):
             message="获取主机列表成功"
         )
 
+    @action(detail=False, methods=['get'])
+    def tags(self, request):
+        """获取可用标签列表"""
+        queryset = self.get_queryset()
+        tags = set()
+
+        for tag_list in queryset.values_list('tags', flat=True):
+            if not tag_list:
+                continue
+            if isinstance(tag_list, dict):
+                for key, value in tag_list.items():
+                    key = str(key or '').strip()
+                    if not key:
+                        continue
+                    val = '' if value is None else str(value).strip()
+                    tags.add(f"{key}={val}" if val else key)
+                continue
+            if isinstance(tag_list, (list, tuple)):
+                for item in tag_list:
+                    if isinstance(item, dict):
+                        key = str(item.get('key', '') or '').strip()
+                        if not key:
+                            continue
+                        val_raw = item.get('value', '')
+                        val = '' if val_raw is None else str(val_raw).strip()
+                        tags.add(f"{key}={val}" if val else key)
+                    else:
+                        text = str(item or '').strip()
+                        if text:
+                            tags.add(text)
+                continue
+            text = str(tag_list or '').strip()
+            if text:
+                tags.add(text)
+
+        return SycResponse.success(
+            content={'tags': sorted(tags)},
+            message="获取标签列表成功"
+        )
+
     def create(self, request, *args, **kwargs):
         """创建主机"""
         serializer = self.get_serializer(data=request.data)
@@ -100,6 +141,7 @@ class HostViewSet(viewsets.ModelViewSet):
             return SycResponse.validation_error(serializer.errors)
         
         host = serializer.save(created_by=request.user)
+        self.audit_log_create(host)
 
         # 返回统一格式的响应
         response_serializer = self.get_serializer(host)
@@ -128,6 +170,7 @@ class HostViewSet(viewsets.ModelViewSet):
             return SycResponse.validation_error(serializer.errors)
         
         host = serializer.save()
+        self.audit_log_update(host)
 
         # 返回统一格式的响应
         response_serializer = self.get_serializer(host)
@@ -139,6 +182,7 @@ class HostViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """删除主机"""
         instance = self.get_object()
+        self.audit_log_delete(instance)
         instance.delete()
 
         # 返回统一格式的响应
@@ -159,6 +203,12 @@ class HostViewSet(viewsets.ModelViewSet):
                 'connection_info': result.get('connection_info', {}),
                 'test_time': result.get('test_time')
             }
+            self.audit_log_action(
+                action='test_connection',
+                description=f"测试主机连接: {host.name}",
+                resource_obj=host,
+                extra_data={'test_time': result.get('test_time')}
+            )
             return SycResponse.success(content=content, message="连接测试成功")
         else:
             # 错误情况下返回错误详情
@@ -166,6 +216,13 @@ class HostViewSet(viewsets.ModelViewSet):
                 'error_details': result.get('error_details', ''),
                 'connection_info': result.get('connection_info', {})
             }
+            self.audit_log_action(
+                action='test_connection',
+                description=f"测试主机连接失败: {host.name}",
+                resource_obj=host,
+                success=False,
+                error_message=result.get('message') or result.get('error_details')
+            )
             return SycResponse.error(content=content, message="连接测试失败")
 
     @action(detail=True, methods=['post'])
@@ -180,11 +237,24 @@ class HostViewSet(viewsets.ModelViewSet):
                 'system_info': result.get('system_info', {}),
                 'updated_fields': result.get('updated_fields', [])
             }
+            self.audit_log_action(
+                action='collect_system_info',
+                description=f"收集主机系统信息: {host.name}",
+                resource_obj=host,
+                extra_data={'updated_fields': result.get('updated_fields', [])}
+            )
             return SycResponse.success(content=content, message=result['message'])
         else:
             content = {
                 'system_info': result.get('system_info', {})
             }
+            self.audit_log_action(
+                action='collect_system_info',
+                description=f"收集主机系统信息失败: {host.name}",
+                resource_obj=host,
+                success=False,
+                error_message=result.get('message')
+            )
             return SycResponse.error(content=content, message=result['message'])
 
     @action(detail=True, methods=['post'])
@@ -201,8 +271,22 @@ class HostViewSet(viewsets.ModelViewSet):
         result = HostService.execute_command_on_host(host, command, timeout, request.user)
 
         if result['success']:
+            self.audit_log_action(
+                action='execute',
+                description=f"主机命令执行: {host.name}",
+                resource_obj=host,
+                extra_data={'command_preview': (command or '')[:200]}
+            )
             return SycResponse.success(content=result, message="命令执行成功")
         else:
+            self.audit_log_action(
+                action='execute',
+                description=f"主机命令执行失败: {host.name}",
+                resource_obj=host,
+                success=False,
+                error_message=result.get('message') or result.get('error'),
+                extra_data={'command_preview': (command or '')[:200]}
+            )
             return SycResponse.error(content=result, message="命令执行失败")
 
     @action(detail=True, methods=['get'])
@@ -222,6 +306,11 @@ class HostViewSet(viewsets.ModelViewSet):
         host_ids = serializer.validated_data['host_ids']
         hosts = Host.objects.filter(id__in=host_ids)
         result = HostService.batch_test_connections(list(hosts), request.user)
+        self.audit_log_action(
+            action='test_connection',
+            description="批量测试主机连接",
+            extra_data={'host_count': len(host_ids)}
+        )
         return SycResponse.success(content=result, message="批量连接测试完成")
 
     @action(detail=False, methods=['post'], url_path='batch_update')
@@ -291,6 +380,11 @@ class HostViewSet(viewsets.ModelViewSet):
             "updated_count": updated_count,
             "no_permission_ids": no_permission_ids,
         }
+        self.audit_log_action(
+            action='manage_host',
+            description="批量更新主机",
+            extra_data=content
+        )
         return SycResponse.success(content=content, message="批量更新主机成功")
 
     @action(detail=False, methods=['post'])
@@ -314,6 +408,11 @@ class HostViewSet(viewsets.ModelViewSet):
                 'provider': provider,
                 'region': region
             }
+            self.audit_log_action(
+                action='sync_cloud_hosts',
+                description=f"同步云主机: {provider}",
+                extra_data=content
+            )
             return SycResponse.success(content=content, message=result['message'])
         else:
             # 错误情况下返回基本信息
@@ -321,6 +420,13 @@ class HostViewSet(viewsets.ModelViewSet):
                 'provider': provider,
                 'region': region
             }
+            self.audit_log_action(
+                action='sync_cloud_hosts',
+                description=f"同步云主机失败: {provider}",
+                success=False,
+                error_message=result.get('message'),
+                extra_data=content
+            )
             return SycResponse.error(content=content, message=result['message'])
 
     @action(detail=False, methods=['post'])
@@ -368,9 +474,21 @@ class HostViewSet(viewsets.ModelViewSet):
                 'target_group_name': target_group.name if target_group else None
             }
 
+            self.audit_log_action(
+                action='manage_host',
+                description=message,
+                extra_data=content
+            )
             return SycResponse.success(content=content, message=message)
 
         except Exception as e:
+            self.audit_log_action(
+                action='manage_host',
+                description="批量移动主机失败",
+                success=False,
+                error_message=str(e),
+                extra_data={'target_group_id': group_id}
+            )
             return SycResponse.error(message=f"批量移动失败: {str(e)}", code=500)
 
     @action(detail=False, methods=['post'], url_path='import_excel')
@@ -396,7 +514,18 @@ class HostViewSet(viewsets.ModelViewSet):
         )
 
         if result.get('success', True):
+            self.audit_log_action(
+                action='manage_host',
+                description="导入主机",
+                extra_data={'synced_hosts': result.get('synced_hosts'), 'updated_hosts': result.get('updated_hosts')}
+            )
             return SycResponse.success(content=result, message=result.get('message', '导入完成'))
+        self.audit_log_action(
+            action='manage_host',
+            description="导入主机失败",
+            success=False,
+            error_message=result.get('message')
+        )
         return SycResponse.error(content=result, message=result.get('message', '导入失败'))
 
     @action(detail=False, methods=['get'], url_path='import_excel_template')
@@ -436,7 +565,7 @@ class HostViewSet(viewsets.ModelViewSet):
         return SycResponse.error(message="已禁用 SSH 主机间文件传输，请使用 Agent 文件传输", code=400)
 
 
-class HostGroupViewSet(viewsets.ModelViewSet):
+class HostGroupViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """主机分组管理API"""
     queryset = HostGroup.objects.select_related('created_by', 'parent').prefetch_related('children')
     serializer_class = HostGroupSerializer
@@ -483,6 +612,7 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         group = serializer.save(created_by=request.user)
+        self.audit_log_create(group)
 
         # 返回统一格式的响应
         response_serializer = self.get_serializer(group)
@@ -509,6 +639,7 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         group = serializer.save()
+        self.audit_log_update(group)
 
         # 返回统一格式的响应
         response_serializer = self.get_serializer(group)
@@ -520,6 +651,7 @@ class HostGroupViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """删除主机分组"""
         instance = self.get_object()
+        self.audit_log_delete(instance)
         instance.delete()
 
         # 返回统一格式的响应
@@ -576,6 +708,13 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         group.sort_order = new_sort_order
         group.save()
 
+        self.audit_log_action(
+            action='manage_host',
+            description=f"移动主机分组: {group.name}",
+            resource_obj=group,
+            extra_data={'parent_id': new_parent_id, 'sort_order': new_sort_order}
+        )
+
         # 返回更新后的分组信息
         serializer = self.get_serializer(group)
         return SycResponse.success(
@@ -595,6 +734,12 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         hosts = Host.objects.filter(id__in=host_ids)
 
         HostGroupService.add_hosts_to_group(group, list(hosts), request.user)
+        self.audit_log_action(
+            action='manage_host',
+            description=f"主机添加到分组: {group.name}",
+            resource_obj=group,
+            extra_data={'host_ids': host_ids}
+        )
         return SycResponse.success(message="主机添加成功")
 
     @action(detail=True, methods=['post'])
@@ -609,6 +754,12 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         hosts = Host.objects.filter(id__in=host_ids)
 
         HostGroupService.remove_hosts_from_group(group, list(hosts), request.user)
+        self.audit_log_action(
+            action='manage_host',
+            description=f"主机从分组移除: {group.name}",
+            resource_obj=group,
+            extra_data={'host_ids': host_ids}
+        )
         return SycResponse.success(message="主机移除成功")
 
     @action(detail=True, methods=['get'])
@@ -626,7 +777,7 @@ class HostGroupViewSet(viewsets.ModelViewSet):
         return SycResponse.success(content=result, message="批量连接测试完成")
 
 
-class ServerAccountViewSet(viewsets.ModelViewSet):
+class ServerAccountViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """服务器账号管理API"""
     queryset = ServerAccount.objects.all()
     serializer_class = ServerAccountSerializer
@@ -672,6 +823,7 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         account = serializer.save()
+        self.audit_log_create(account)
 
         response_serializer = self.get_serializer(account)
         return SycResponse.success(
@@ -686,6 +838,7 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         account = serializer.save()
+        self.audit_log_update(account)
 
         response_serializer = self.get_serializer(account)
         return SycResponse.success(
@@ -709,6 +862,7 @@ class ServerAccountViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
 
         try:
+            self.audit_log_delete(instance)
             instance.delete()
         except ProtectedError as e:
             # 获取被保护的外键引用信息

@@ -39,6 +39,7 @@ RESOURCE_MAP = {
     'scripttemplate': ('script_templates','scripttemplate'),
     'job':            ('scheduler',       'scheduledjob'),
     'serveraccount':  ('hosts',           'serveraccount'),
+    'server_account':  ('hosts',           'serveraccount'),
     'executionrecord':('executor',        'executionrecord'),
     # 'script' 可以根据后续业务再单独映射
 }

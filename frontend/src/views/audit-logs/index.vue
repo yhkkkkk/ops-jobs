@@ -162,7 +162,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="描述" data-index="description" min-width="180">
+          <a-table-column title="描述" data-index="description" min-width="140">
             <template #cell="{ record }">
               <div class="description-cell">
                 <a-tooltip :content="record.description" position="top">
@@ -182,7 +182,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="时间" data-index="created_at" width="160">
+          <a-table-column title="时间" data-index="created_at" width="200">
             <template #cell="{ record }">
               <span>{{ formatDateTime(record.created_at) }}</span>
             </template>
@@ -259,6 +259,7 @@ import { auditLogApi } from '@/api/ops'
 import { authApi } from '@/api/auth'
 import type { AuditLog, AuditLogQueryParams } from '@/types'
 import { formatDateTime } from '@/utils/date'
+import { useFilterQuerySync, parseNumberQuery, parseBooleanQuery } from '@/composables/useFilterQuerySync'
 
 // 响应式数据
 const loading = ref(false)
@@ -294,30 +295,54 @@ const searchForm = reactive<AuditLogQueryParams>({
   end_date: '',
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'search' },
+    { key: 'user_id', fromQuery: value => parseNumberQuery(value) },
+    { key: 'action' },
+    { key: 'success', fromQuery: value => parseBooleanQuery(value) },
+    { key: 'start_date' },
+    { key: 'end_date' },
+  ]
+})
+
 // 用户选项（这里需要从用户API获取）
 const userOptions = ref<Array<{ id: number; username: string }>>([])
 
 // 操作类型选项
 const actionOptions = computed(() => [
   { value: 'login', label: '登录' },
+  { value: 'logout', label: '登出' },
   { value: 'create', label: '创建' },
   { value: 'update', label: '更新' },
   { value: 'delete', label: '删除' },
   { value: 'execute', label: '执行' },
   { value: 'execute_script', label: '执行脚本' },
   { value: 'transfer_file', label: '传输文件' },
+  { value: 'retry_execution', label: '重做执行' },
+  { value: 'cancel_execution', label: '取消执行' },
+  { value: 'ignore_error', label: '忽略错误继续' },
+  { value: 'retry_step', label: '步骤重试' },
+  { value: 'retry_failed_hosts', label: '失败主机重试' },
   { value: 'create_job', label: '创建作业' },
   { value: 'execute_job', label: '执行作业' },
+  { value: 'cancel_job', label: '取消作业' },
   { value: 'create_scheduled_job', label: '创建定时作业' },
   { value: 'update_scheduled_job', label: '更新定时作业' },
   { value: 'delete_scheduled_job', label: '删除定时作业' },
   { value: 'enable_scheduled_job', label: '启用定时作业' },
   { value: 'disable_scheduled_job', label: '停用定时作业' },
   { value: 'manage_host', label: '管理主机' },
+  { value: 'manage_server_account', label: '管理服务器账号' },
   { value: 'test_connection', label: '测试连接' },
   { value: 'enable_agent', label: '启用Agent' },
   { value: 'disable_agent', label: '禁用Agent' },
   { value: 'manage_template', label: '管理模板' },
+  { value: 'create_template', label: '创建模板' },
+  { value: 'update_template', label: '更新模板' },
+  { value: 'delete_template', label: '删除模板' },
   { value: 'system_config', label: '系统配置' },
   { value: 'user_management', label: '用户管理' },
   { value: 'collect_system_info', label: '收集系统信息' },
@@ -335,18 +360,28 @@ const getActionColor = (action: string) => {
     execute: 'purple',
     execute_script: 'cyan',
     transfer_file: 'purple',
+    retry_execution: 'orange',
+    cancel_execution: 'red',
+    ignore_error: 'orange',
+    retry_step: 'orange',
+    retry_failed_hosts: 'orange',
     create_job: 'green',
     execute_job: 'blue',
+    cancel_job: 'red',
     create_scheduled_job: 'green',
     update_scheduled_job: 'orange',
     delete_scheduled_job: 'red',
     enable_scheduled_job: 'cyan',
     disable_scheduled_job: 'gray',
     manage_host: 'orange',
+    manage_server_account: 'orange',
     test_connection: 'cyan',
     enable_agent: 'green',
     disable_agent: 'red',
     manage_template: 'purple',
+    create_template: 'green',
+    update_template: 'orange',
+    delete_template: 'red',
     grant_permission: 'green',
     revoke_permission: 'red',
     system_config: 'orange',
@@ -366,25 +401,15 @@ const fetchAuditLogs = async () => {
       page_size: pagination.pageSize,
       ...searchForm,
     }
-    
-    console.log('请求参数:', params)
+
     const response = await auditLogApi.getAuditLogs(params)
-    console.log('API响应:', response)
     
-         // 处理响应数据
+    // 处理响应数据
      auditLogs.value = response.results || []
      pagination.total = response.total || 0
      pagination.current = response.page || 1
      pagination.pageSize = response.page_size || 20
      lastApiStatus.value = `成功 - 获取到 ${auditLogs.value.length} 条记录`
-    
-    console.log('处理后的数据:', {
-      logs: auditLogs.value,
-      total: pagination.total,
-      current: pagination.current,
-      pageSize: pagination.pageSize
-    })
-    
   } catch (error: any) {
     console.error('获取审计日志失败:', error)
     const msg = error?.message || '获取审计日志失败'
@@ -415,6 +440,7 @@ const handleRefresh = () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchAuditLogs()
 }
 
@@ -430,6 +456,7 @@ const resetSearch = () => {
   })
   dateRange.value = null
   pagination.current = 1
+  syncToQuery()
   fetchAuditLogs()
 }
 
@@ -447,6 +474,7 @@ const handleDateChange = (dates: [string, string] | null) => {
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
+  syncToQuery()
   fetchAuditLogs()
 }
 
@@ -454,6 +482,7 @@ const handlePageChange = (page: number) => {
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  syncToQuery()
   fetchAuditLogs()
 }
 
@@ -487,6 +516,7 @@ const exportLogs = async () => {
 
 // 初始化
 onMounted(() => {
+  initFromQuery()
   fetchAuditLogs()
   fetchUsers()
 })
