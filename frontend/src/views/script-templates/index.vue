@@ -493,7 +493,7 @@ const columns = [
     dataIndex: 'tag_list',
     key: 'tag_list',
     slotName: 'tags',
-    width: 240,
+    width: 200,
   },
   {
     title: '描述',
@@ -501,14 +501,14 @@ const columns = [
     key: 'description',
     ellipsis: true,
     tooltip: true,
-    width: 200,
+    width: 220,
   },
   {
     title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 240,
+    width: 250,
   },
   {
     title: '操作',

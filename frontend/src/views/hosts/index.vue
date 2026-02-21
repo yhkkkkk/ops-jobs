@@ -149,46 +149,46 @@
                   </a-form-item>
                 </div>
                 <!-- 第二行：操作系统和状态 -->
-        <div class="search-row">
-          <a-form-item label="操作系统">
-            <a-select
-              v-model="searchForm.os_type"
-              placeholder="请选择操作系统"
-              allow-clear
-              @change="handleSearch"
-              @clear="handleSearch"
-              style="width: 150px"
-            >
-              <a-option value="linux">Linux</a-option>
-              <a-option value="windows">Windows</a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="状态">
-            <a-select
-              v-model="searchForm.status"
-              placeholder="请选择状态"
-              allow-clear
-              @change="handleSearch"
-              @clear="handleSearch"
-              style="width: 120px"
-            >
-              <a-option value="online">在线</a-option>
-              <a-option value="offline">离线</a-option>
-              <a-option value="unknown">未知</a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="标签">
-          <a-select
-            v-model="searchForm.tags"
-            mode="tags"
-            placeholder="输入/选择标签"
-            allow-clear
-            allow-search
-            :options="tagOptions"
-            style="width: 240px"
-          />
-          </a-form-item>
-        </div>
+                <div class="search-row">
+                  <a-form-item label="操作系统">
+                    <a-select
+                      v-model="searchForm.os_type"
+                      placeholder="请选择操作系统"
+                      allow-clear
+                      @change="handleSearch"
+                      @clear="handleSearch"
+                      style="width: 150px"
+                    >
+                      <a-option value="linux">Linux</a-option>
+                      <a-option value="windows">Windows</a-option>
+                    </a-select>
+                  </a-form-item>
+                  <a-form-item label="状态">
+                    <a-select
+                      v-model="searchForm.status"
+                      placeholder="请选择状态"
+                      allow-clear
+                      @change="handleSearch"
+                      @clear="handleSearch"
+                      style="width: 120px"
+                    >
+                      <a-option value="online">在线</a-option>
+                      <a-option value="offline">离线</a-option>
+                      <a-option value="unknown">未知</a-option>
+                    </a-select>
+                  </a-form-item>
+                  <a-form-item label="标签">
+                  <a-select
+                    v-model="searchForm.tags"
+                    mode="tags"
+                    placeholder="输入/选择标签"
+                    allow-clear
+                    allow-search
+                    :options="tagOptions"
+                    style="width: 240px"
+                  />
+                  </a-form-item>
+                </div>
               </a-form>
             </div>
             <div class="search-actions">
