@@ -39,25 +39,25 @@
 
     <!-- 搜索筛选 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline" class="compact-filter-form">
-        <a-form-item>
+      <a-row :gutter="16">
+        <a-col :span="4">
           <a-input
             v-model="searchForm.name"
             placeholder="模板名称"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 180px"
+            style="width: 100%"
           />
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="2">
           <a-select
             v-model="searchForm.script_type"
             placeholder="脚本类型"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option value="shell">Shell</a-option>
             <a-option value="python">Python</a-option>
@@ -66,15 +66,15 @@
             <a-option value="javascript">JavaScript</a-option>
             <a-option value="go">Go</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="2">
           <a-select
             v-model="searchForm.category"
             placeholder="分类"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option value="deployment">部署</a-option>
             <a-option value="monitoring">监控</a-option>
@@ -83,8 +83,8 @@
             <a-option value="security">安全</a-option>
             <a-option value="other">其他</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.tags"
             placeholder="标签"
@@ -92,7 +92,7 @@
             multiple
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 180px"
+            style="width: 100%"
           >
             <a-option
               v-for="tag in availableTags"
@@ -102,18 +102,18 @@
               {{ tag }}
             </a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.created_by"
             placeholder="创建者"
             allow-clear
-            show-search
+            allow-search
             filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 140px"
+            style="width: 100%"
           >
             <a-option
               v-for="user in filteredCreators"
@@ -123,27 +123,53 @@
               {{ user.name }}
             </a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="收藏">
-          <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
-        </a-form-item>
-        <a-form-item class="search-actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon>
-                <icon-search />
-              </template>
-              搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              重置
-            </a-button>
-          </a-space>
-        </a-form-item>
-      </a-form>
+        </a-col>
+        <a-col :span="3">
+          <a-select
+            v-model="searchForm.updated_by"
+            placeholder="更新者"
+            allow-clear
+            allow-search
+            filter-option="false"
+            @search="handleUpdaterSearch"
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 100%"
+          >
+            <a-option
+              v-for="user in filteredUpdaters"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="2">
+          <div class="filter-switch">
+            <span class="filter-label">收藏</span>
+            <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+          </div>
+        </a-col>
+        <a-col :span="5">
+          <div class="search-actions">
+            <a-space>
+              <a-button type="primary" @click="handleSearch">
+                <template #icon>
+                  <icon-search />
+                </template>
+                搜索
+              </a-button>
+              <a-button @click="handleReset">
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重置
+              </a-button>
+            </a-space>
+          </div>
+        </a-col>
+      </a-row>
     </a-card>
 
     <!-- 模板列表 -->
@@ -310,7 +336,8 @@ const searchForm = reactive({
   category: '',
   tags: [] as string[],
   favorites_only: false,
-  created_by: undefined as number | undefined
+  created_by: undefined as number | undefined,
+  updated_by: undefined as number | undefined
 })
 
 // 可用标签列表
@@ -321,6 +348,9 @@ const availableUsers = ref<Array<{id: number, username: string, name: string}>>(
 
 // 创建者搜索过滤结果
 const filteredCreators = ref<Array<{id: number, username: string, name: string}>>([])
+
+// 更新者搜索过滤结果
+const filteredUpdaters = ref<Array<{id: number, username: string, name: string}>>([])
 
 // 收藏相关方法
 const isFavorite = (id: number) => favoritesStore.isFavorite('script_template', id)
@@ -438,36 +468,45 @@ const fetchAvailableUsers = async () => {
     // 从现有模板中提取唯一用户列表
     if (templates.value.length > 0) {
       const userMap = new Map<number, {id: number, username: string, name: string}>()
+      const appendUser = (id?: number, name?: string) => {
+        if (!id || !name) return
+        userMap.set(id, { id, username: name, name })
+      }
+
       templates.value.forEach(template => {
-        if (template.created_by && template.created_by_name) {
-          userMap.set(template.created_by, {
-            id: template.created_by,
-            username: template.created_by_name,
-            name: template.created_by_name
-          })
-        }
+        appendUser(template.created_by, template.created_by_name)
+        appendUser(template.updated_by, template.updated_by_name)
       })
       availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
       // 初始化过滤结果为全部用户
       filteredCreators.value = [...availableUsers.value]
+      filteredUpdaters.value = [...availableUsers.value]
     }
   } catch (error) {
     console.error('获取用户列表失败:', error)
   }
 }
 
-// 处理创建者搜索
-const handleCreatorSearch = (searchValue: string) => {
+const filterUsers = (searchValue: string) => {
   if (!searchValue.trim()) {
-    filteredCreators.value = [...availableUsers.value]
-    return
+    return [...availableUsers.value]
   }
 
   const searchTerm = searchValue.toLowerCase().trim()
-  filteredCreators.value = availableUsers.value.filter(user =>
+  return availableUsers.value.filter(user =>
     user.name.toLowerCase().includes(searchTerm) ||
     user.username.toLowerCase().includes(searchTerm)
   )
+}
+
+// 处理创建者搜索
+const handleCreatorSearch = (searchValue: string) => {
+  filteredCreators.value = filterUsers(searchValue)
+}
+
+// 处理更新者搜索
+const handleUpdaterSearch = (searchValue: string) => {
+  filteredUpdaters.value = filterUsers(searchValue)
 }
 
 // 获取脚本模板列表
@@ -538,10 +577,12 @@ const handleReset = () => {
     category: '',
     tags: [],
     favorites_only: false,
-    created_by: undefined
+    created_by: undefined,
+    updated_by: undefined
   })
-  // 重置创建者过滤
+  // 重置创建者/更新者过滤
   filteredCreators.value = [...availableUsers.value]
+  filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
   fetchTemplates()
 }
@@ -853,10 +894,22 @@ onMounted(() => {
 }
 
 .search-actions {
-  margin-left: auto;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  padding-top: 0;
+  width: 100%;
+}
+
+.filter-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+}
+
+.filter-label {
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 .page-header {
@@ -889,16 +942,6 @@ onMounted(() => {
 .mb-4 {
   margin-bottom: 16px;
 }
-
-:deep(.compact-filter-form .arco-form-item) {
-  margin-right: 8px;
-  margin-bottom: 0;
-}
-
-:deep(.compact-filter-form .arco-form-item:last-child) {
-  margin-right: 0;
-}
-
 
 /* 模板名称单元格样式 */
 .template-name-cell {

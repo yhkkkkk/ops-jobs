@@ -68,25 +68,25 @@
 
     <!-- 搜索和筛选 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline" class="compact-filter-form">
-        <a-form-item>
+      <a-row :gutter="16">
+        <a-col :span="4">
           <a-input
             v-model="searchForm.search"
             placeholder="方案名称"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 180px"
+            style="width: 100%"
           />
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="4">
           <a-select
             v-model="searchForm.template_id"
             placeholder="所属模板"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 100%"
             :loading="templateLoading"
           >
             <a-option
@@ -97,18 +97,18 @@
               {{ template.name }}
             </a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item>
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.created_by"
             placeholder="创建者"
             allow-clear
-            show-search
+            allow-search
             filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 140px"
+            style="width: 100%"
           >
             <a-option
               v-for="user in filteredCreators"
@@ -118,31 +118,59 @@
               {{ user.name }}
             </a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="收藏">
-          <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
-        </a-form-item>
-        <a-form-item label="我的方案">
-          <a-switch v-model="searchForm.my_plans_only" @change="handleSearch" />
-        </a-form-item>
-
-        <a-form-item class="search-actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon>
-                <icon-search />
-              </template>
-              搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              重置
-            </a-button>
-          </a-space>
-        </a-form-item>
-      </a-form>
+        </a-col>
+        <a-col :span="3">
+          <a-select
+            v-model="searchForm.updated_by"
+            placeholder="更新者"
+            allow-clear
+            allow-search
+            filter-option="false"
+            @search="handleUpdaterSearch"
+            @change="handleSearch"
+            @clear="handleSearch"
+            style="width: 100%"
+          >
+            <a-option
+              v-for="user in filteredUpdaters"
+              :key="user.id"
+              :value="user.id"
+            >
+              {{ user.name }}
+            </a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="4">
+          <div class="filter-group">
+            <div class="filter-switch">
+              <span class="filter-label">收藏</span>
+              <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+            </div>
+            <div class="filter-switch">
+              <span class="filter-label">我的方案</span>
+              <a-switch v-model="searchForm.my_plans_only" @change="handleSearch" />
+            </div>
+          </div>
+        </a-col>
+        <a-col :span="6">
+          <div class="search-actions">
+            <a-space>
+              <a-button type="primary" @click="handleSearch">
+                <template #icon>
+                  <icon-search />
+                </template>
+                搜索
+              </a-button>
+              <a-button @click="handleReset">
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重置
+              </a-button>
+            </a-space>
+          </div>
+        </a-col>
+      </a-row>
     </a-card>
 
     <!-- 执行方案列表 -->
@@ -380,6 +408,9 @@ const availableUsers = ref<Array<{id: number, username: string, name: string}>>(
 // 创建者搜索过滤结果
 const filteredCreators = ref<Array<{id: number, username: string, name: string}>>([])
 
+// 更新者搜索过滤结果
+const filteredUpdaters = ref<Array<{id: number, username: string, name: string}>>([])
+
 // 模板选择相关
 const templateSelectVisible = ref(false)
 const templateSearchText = ref('')
@@ -403,7 +434,8 @@ const searchForm = reactive({
   template_id: undefined as number | undefined,
   favorites_only: false,
   my_plans_only: false,
-  created_by: undefined as number | undefined
+  created_by: undefined as number | undefined,
+  updated_by: undefined as number | undefined
 })
 
 // 收藏相关方法
@@ -515,7 +547,8 @@ const fetchPlans = async () => {
       search: searchForm.search || undefined,
       template: searchForm.template_id || undefined,
       // 如果启用“我的方案”，把创建者传给后端以便服务器端过滤
-      created_by: searchForm.my_plans_only ? authStore.user?.id : undefined
+      created_by: searchForm.my_plans_only ? authStore.user?.id : (searchForm.created_by || undefined),
+      updated_by: searchForm.updated_by || undefined
     }
 
     const response = await executionPlanApi.getPlans(params)
@@ -553,36 +586,45 @@ const fetchAvailableUsers = async () => {
     // 从当前执行方案列表中提取唯一用户列表
     if (plans.value.length > 0) {
       const userMap = new Map<number, {id: number, username: string, name: string}>()
+      const appendUser = (id?: number, name?: string) => {
+        if (!id || !name) return
+        userMap.set(id, { id, username: name, name })
+      }
+
       plans.value.forEach(plan => {
-        if (plan.created_by && plan.created_by_name) {
-          userMap.set(plan.created_by, {
-            id: plan.created_by,
-            username: plan.created_by_name,
-            name: plan.created_by_name
-          })
-        }
+        appendUser(plan.created_by, plan.created_by_name)
+        appendUser(plan.updated_by, plan.updated_by_name)
       })
       availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
       // 初始化过滤结果为全部用户
       filteredCreators.value = [...availableUsers.value]
+      filteredUpdaters.value = [...availableUsers.value]
     }
   } catch (error) {
     console.error('获取用户列表失败:', error)
   }
 }
 
-// 处理创建者搜索
-const handleCreatorSearch = (searchValue: string) => {
+const filterUsers = (searchValue: string) => {
   if (!searchValue.trim()) {
-    filteredCreators.value = [...availableUsers.value]
-    return
+    return [...availableUsers.value]
   }
 
   const searchTerm = searchValue.toLowerCase().trim()
-  filteredCreators.value = availableUsers.value.filter(user =>
+  return availableUsers.value.filter(user =>
     user.name.toLowerCase().includes(searchTerm) ||
     user.username.toLowerCase().includes(searchTerm)
   )
+}
+
+// 处理创建者搜索
+const handleCreatorSearch = (searchValue: string) => {
+  filteredCreators.value = filterUsers(searchValue)
+}
+
+// 处理更新者搜索
+const handleUpdaterSearch = (searchValue: string) => {
+  filteredUpdaters.value = filterUsers(searchValue)
 }
 
 // 获取模板列表（用于筛选）
@@ -611,8 +653,10 @@ const handleReset = () => {
   searchForm.favorites_only = false
   searchForm.my_plans_only = false
   searchForm.created_by = undefined
-  // 重置创建者过滤
+  searchForm.updated_by = undefined
+  // 重置创建者/更新者过滤
   filteredCreators.value = [...availableUsers.value]
+  filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
   fetchPlans()
 }
@@ -895,21 +939,31 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
-:deep(.compact-filter-form .arco-form-item) {
-  margin-right: 8px;
-  margin-bottom: 0;
-}
-
-:deep(.compact-filter-form .arco-form-item:last-child) {
-  margin-right: 0;
-}
-
 /* 搜索按钮定位（与作业模板一致） */
 .search-actions {
-  margin-left: auto;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  padding-top: 0;
+  width: 100%;
+}
+
+.filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+}
+
+.filter-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+}
+
+.filter-label {
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 /* 表格内容样式 */

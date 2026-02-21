@@ -71,7 +71,6 @@
             placeholder="执行用户"
             allow-clear
             allow-search
-            allow-create
             :options="executedByOptions"
             @change="handleSearch"
           />

@@ -38,49 +38,51 @@
       </div>
     </div>
 
-    <!-- 搜索栏（对齐脚本管理风格） -->
+    <!-- 搜索栏（与执行记录间距一致） -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="账号名称">
+      <a-row :gutter="16">
+        <a-col :span="4">
           <a-input
             v-model="searchForm.search"
-            placeholder="请输入账号名称或用户名"
+            placeholder="账号名称/用户名"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 200px"
+            style="width: 100%"
           />
-        </a-form-item>
-        <a-form-item label="认证方式">
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.auth_type"
-            placeholder="请选择认证方式"
+            placeholder="认证方式"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 150px"
+            style="width: 100%"
           >
             <a-option value="password">密码认证</a-option>
             <a-option value="key">密钥认证</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item class="search-actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon>
-                <icon-search />
-              </template>
-              搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              重置
-            </a-button>
-          </a-space>
-        </a-form-item>
-      </a-form>
+        </a-col>
+        <a-col :span="17">
+          <div class="search-actions">
+            <a-space>
+              <a-button type="primary" @click="handleSearch">
+                <template #icon>
+                  <icon-search />
+                </template>
+                搜索
+              </a-button>
+              <a-button @click="handleReset">
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重置
+              </a-button>
+            </a-space>
+          </div>
+        </a-col>
+      </a-row>
     </a-card>
 
     <!-- 账号列表 -->
@@ -364,10 +366,10 @@ onMounted(() => {
 }
 
 .search-actions {
-  margin-left: auto;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  padding-top: 0;
+  width: 100%;
 }
 
 

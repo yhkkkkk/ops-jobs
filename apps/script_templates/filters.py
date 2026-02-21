@@ -41,9 +41,12 @@ class ScriptTemplateFilter(django_filters.FilterSet):
     # 按创建者过滤
     created_by = django_filters.NumberFilter(field_name='created_by', label='创建者ID')
 
+    # 按更新者过滤
+    updated_by = django_filters.NumberFilter(field_name='updated_by', label='更新者ID')
+
     class Meta:
         model = ScriptTemplate
-        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags', 'created_by']
+        fields = ['name', 'search', 'script_type', 'category', 'template_type', 'tags', 'created_by', 'updated_by']
 
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""

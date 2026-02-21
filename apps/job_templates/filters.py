@@ -38,6 +38,12 @@ class JobTemplateFilter(django_filters.FilterSet):
         label='创建人ID'
     )
 
+    # 按更新人过滤
+    updated_by = django_filters.NumberFilter(
+        field_name='updated_by_id',
+        label='更新人ID'
+    )
+
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""
         if value:
@@ -93,7 +99,7 @@ class JobTemplateFilter(django_filters.FilterSet):
 
     class Meta:
         model = JobTemplate
-        fields = ['search', 'category', 'tag', 'tags', 'created_by']
+        fields = ['search', 'category', 'tag', 'tags', 'created_by', 'updated_by']
 
 
 class ExecutionPlanFilter(django_filters.FilterSet):
@@ -115,6 +121,12 @@ class ExecutionPlanFilter(django_filters.FilterSet):
         label='创建人ID'
     )
 
+    # 按更新人过滤
+    updated_by = django_filters.NumberFilter(
+        field_name='updated_by_id',
+        label='更新人ID'
+    )
+
     # 按同步状态过滤
     needs_sync = django_filters.BooleanFilter(
         method='filter_needs_sync',
@@ -123,7 +135,7 @@ class ExecutionPlanFilter(django_filters.FilterSet):
 
     class Meta:
         model = ExecutionPlan
-        fields = ['search', 'template', 'created_by', 'needs_sync']
+        fields = ['search', 'template', 'created_by', 'updated_by', 'needs_sync']
     
     def filter_search(self, queryset, name, value):
         """自定义搜索过滤方法"""

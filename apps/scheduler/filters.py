@@ -42,6 +42,12 @@ class ScheduledJobFilter(django_filters.FilterSet):
         label='创建者ID'
     )
 
+    # 按更新者过滤
+    updated_by = django_filters.NumberFilter(
+        field_name='updated_by',
+        label='更新者ID'
+    )
+
     class Meta:
         model = ScheduledJob
-        fields = ['name', 'plan_name', 'is_active', 'execution_plan', 'created_by']
+        fields = ['name', 'plan_name', 'is_active', 'execution_plan', 'created_by', 'updated_by']
