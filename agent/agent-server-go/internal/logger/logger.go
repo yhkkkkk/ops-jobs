@@ -52,31 +52,31 @@ func InitLogger(logDir string, maxSize, maxFiles, maxAge int, level, format stri
 		log.SetOutput(os.Stdout)
 	}
 }
-+
-+func buildFormatter(format string, callerPrettyfier func(*runtime.Frame) (string, string)) logrus.Formatter {
-+	fmtLower := strings.ToLower(strings.TrimSpace(format))
-+	if fmtLower == "text" {
-+		return &logrus.TextFormatter{
-+			FullTimestamp:   true,
-+			TimestampFormat: "2006-01-02 15:04:05",
-+			CallerPrettyfier: callerPrettyfier,
-+		}
-+	}
-+	return &logrus.JSONFormatter{
-+		TimestampFormat:  "2006-01-02 15:04:05",
-+		CallerPrettyfier: callerPrettyfier,
-+	}
-+}
-+
-+func trimFuncName(name string) string {
-+	if name == "" {
-+		return ""
-+	}
-+	if idx := strings.LastIndex(name, "/"); idx >= 0 && idx+1 < len(name) {
-+		return name[idx+1:]
-+	}
-+	return name
-+}
+
+func buildFormatter(format string, callerPrettyfier func(*runtime.Frame) (string, string)) logrus.Formatter {
+	fmtLower := strings.ToLower(strings.TrimSpace(format))
+	if fmtLower == "text" {
+		return &logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+			CallerPrettyfier: callerPrettyfier,
+		}
+	}
+	return &logrus.JSONFormatter{
+		TimestampFormat:  "2006-01-02 15:04:05",
+		CallerPrettyfier: callerPrettyfier,
+	}
+}
+
+func trimFuncName(name string) string {
+	if name == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(name, "/"); idx >= 0 && idx+1 < len(name) {
+		return name[idx+1:]
+	}
+	return name
+}
 
 // GetLogger 获取日志实例
 func GetLogger() *logrus.Logger {

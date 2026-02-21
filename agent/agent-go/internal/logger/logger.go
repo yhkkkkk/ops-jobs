@@ -56,22 +56,22 @@ func InitLogger(logDir string, maxSize int, maxFiles int, maxAge int, level, for
 	// 同时输出到标准输出和文件
 	Log.SetOutput(io.MultiWriter(os.Stdout, lumberjackLogger))
 }
-+
-+func buildFormatter(format string, callerPrettyfier func(*runtime.Frame) (string, string)) logrus.Formatter {
-+	fmtLower := strings.ToLower(strings.TrimSpace(format))
-+	if fmtLower == "json" {
-+		return &logrus.JSONFormatter{
-+			TimestampFormat:  "2006-01-02 15:04:05",
-+			CallerPrettyfier: callerPrettyfier,
-+		}
-+	}
-+	return &logrus.TextFormatter{
-+		FullTimestamp:   true,
-+		ForceColors:     true,
-+		TimestampFormat: "2006-01-02 15:04:05",
-+		CallerPrettyfier: callerPrettyfier,
-+	}
-+}
+
+func buildFormatter(format string, callerPrettyfier func(*runtime.Frame) (string, string)) logrus.Formatter {
+	fmtLower := strings.ToLower(strings.TrimSpace(format))
+	if fmtLower == "json" {
+		return &logrus.JSONFormatter{
+			TimestampFormat:  "2006-01-02 15:04:05",
+			CallerPrettyfier: callerPrettyfier,
+		}
+	}
+	return &logrus.TextFormatter{
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "2006-01-02 15:04:05",
+		CallerPrettyfier: callerPrettyfier,
+	}
+}
 
 // GetLogger 获取日志实例
 func GetLogger() *logrus.Logger {
