@@ -211,68 +211,71 @@
               </template>
               查看
             </a-button>
-            <a-dropdown v-if="record.status !== 'running'">
-              <a-button type="text" size="small">
+            <template v-if="record.status === 'running'">
+              <a-button
+                type="text"
+                size="small"
+                status="danger"
+                v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
+                @click="handleCancel(record)"
+              >
                 <template #icon>
-                  <icon-more />
+                  <icon-close />
                 </template>
+                取消
               </a-button>
-              <template #content>
-                <a-doption 
-                  :class="{ 'disabled-option': !canExecute(record.id) }"
-                  @click="handleClickRetry(record)" 
-                  v-if="record.status === 'failed'"
-                >
-                  <template #icon>
-                    <icon-refresh />
-                  </template>
-                  重试
-                </a-doption>
-                <a-doption 
-                  :class="{ 'disabled-option': !canExecute(record.id) }"
-                  @click="handleClickCancel(record)" 
-                  v-if="record.status === 'pending'"
-                >
-                  <template #icon>
-                    <icon-close />
-                  </template>
-                  取消
-                </a-doption>
-                <a-doption 
-                  :class="{ 'disabled-option': !canExecute(record.id) }"
-                  @click="handleClickRetry(record)" 
-                  v-if="record.status === 'success' || record.status === 'cancelled'"
-                >
-                  <template #icon>
-                    <icon-refresh />
-                  </template>
-                  重做
-                </a-doption>
-                <a-doption 
-                  :class="{ 'disabled-option': !canView(record.id) }"
-                  @click="handleClickShowRetryHistory(record)" 
-                  v-if="record.has_retries"
-                >
-                  <template #icon>
-                    <icon-history />
-                  </template>
-                  重试历史 ({{ record.total_retry_count }})
-                </a-doption>
-              </template>
-            </a-dropdown>
-            <a-button
-              v-else
-              type="text"
-              size="small"
-              status="danger"
-              v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
-              @click="handleCancel(record)"
-            >
-              <template #icon>
-                <icon-close />
-              </template>
-              取消
-            </a-button>
+            </template>
+            <template v-else>
+              <a-button
+                v-if="record.status === 'failed'"
+                type="text"
+                size="small"
+                :class="{ 'disabled-option': !canExecute(record.id) }"
+                @click="handleClickRetry(record)"
+              >
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重试
+              </a-button>
+              <a-button
+                v-else-if="record.status === 'pending'"
+                type="text"
+                size="small"
+                status="danger"
+                :class="{ 'disabled-option': !canExecute(record.id) }"
+                @click="handleClickCancel(record)"
+              >
+                <template #icon>
+                  <icon-close />
+                </template>
+                取消
+              </a-button>
+              <a-button
+                v-else-if="record.status === 'success' || record.status === 'cancelled'"
+                type="text"
+                size="small"
+                :class="{ 'disabled-option': !canExecute(record.id) }"
+                @click="handleClickRetry(record)"
+              >
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重做
+              </a-button>
+              <a-button
+                v-if="record.has_retries"
+                type="text"
+                size="small"
+                :class="{ 'disabled-option': !canView(record.id) }"
+                @click="handleClickShowRetryHistory(record)"
+              >
+                <template #icon>
+                  <icon-history />
+                </template>
+                重试历史 ({{ record.total_retry_count }})
+              </a-button>
+            </template>
           </a-space>
         </template>
       </a-table>
@@ -354,7 +357,6 @@ import {
   IconRefresh,
   IconHistory,
   IconEye,
-  IconMore,
   IconClose
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
@@ -497,7 +499,7 @@ const columns = [
     width: 120
   },
   {
-    title: '创建时间',
+    title: '创建信息',
     dataIndex: 'created_at',
     slotName: 'created_at',
     width: 160

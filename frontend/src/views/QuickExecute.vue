@@ -642,7 +642,7 @@
                 </a-form-item>
               </a-col>
               <a-col :span="6">
-            <a-form-item label="限速(MB/s)">
+                <a-form-item label="限速(MB/s)">
                   <div class="form-item-stack">
                     <a-input-number
                       v-model="bandwidthLimit"
@@ -704,26 +704,30 @@
             </a-row>
 
             <!-- 执行账号 -->
-            <a-form-item label="执行账号">
-              <a-select
-                v-model="selectedAccountId"
-                placeholder="选择服务器账号（可选）"
-                allow-clear
-                :loading="accountLoading"
-              >
-                <a-option
-                  v-for="account in serverAccounts"
-                  :key="account.id"
-                  :value="account.id"
-                >
-                  {{ account.name }} ({{ account.username }})
-                </a-option>
-              </a-select>
-              <div class="form-tip">
-                <icon-info-circle />
-                不选择时将使用主机配置的默认用户
-              </div>
-            </a-form-item>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="执行账号">
+                  <a-select
+                    v-model="selectedAccountId"
+                    placeholder="选择服务器账号（可选）"
+                    allow-clear
+                    :loading="accountLoading"
+                  >
+                    <a-option
+                      v-for="account in serverAccounts"
+                      :key="account.id"
+                      :value="account.id"
+                    >
+                      {{ account.name }} ({{ account.username }})
+                    </a-option>
+                  </a-select>
+                  <div class="form-tip">
+                    <icon-info-circle />
+                    不选择时将使用主机配置的默认用户
+                  </div>
+                </a-form-item>
+              </a-col>
+            </a-row>
 
             <!-- 通配符和变量使用说明 -->
             <a-alert
