@@ -66,7 +66,7 @@
             <a-option value="other">其他</a-option>
           </a-select>
         </a-col>
-        <a-col :span="3">
+        <a-col :span="4">
           <a-select
             v-model="searchForm.tags"
             placeholder="标签"
@@ -139,7 +139,7 @@
             </div>
           </div>
         </a-col>
-        <a-col :span="5">
+        <a-col :span="4">
           <div class="search-actions">
             <a-space>
               <a-button type="primary" @click="handleSearch">
@@ -158,6 +158,11 @@
           </div>
         </a-col>
       </a-row>
+      <ActiveFiltersBar
+        :items="activeFilterItems"
+        @clear="handleClearFilter"
+        @clear-all="handleReset"
+      />
     </a-card>
 
     <!-- 模板列表 -->
@@ -341,6 +346,8 @@ import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useFavoritesStore } from '@/stores/favorites'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
+import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
+import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 import { useAuthStore } from '@/stores/auth'
 
 const permissionsStore = usePermissionsStore()
@@ -358,8 +365,7 @@ const syncModalVisible = ref(false)
 const syncTemplateId = ref<number>()
 const syncTemplateName = ref<string>()
 
-// 搜索表单
-const searchForm = reactive({
+const defaultSearchForm = () => ({
   search: '',
   category: '',
   tags: [] as string[],
@@ -368,6 +374,9 @@ const searchForm = reactive({
   created_by: undefined as number | undefined,
   updated_by: undefined as number | undefined
 })
+
+// 搜索表单
+const searchForm = reactive(defaultSearchForm())
 
 // 收藏相关方法
 const isFavorite = (id: number) => favoritesStore.isFavorite('job_template', id)
@@ -394,6 +403,9 @@ const filteredCreators = ref<Array<{id: number, username: string, name: string}>
 // 更新者搜索过滤结果
 const filteredUpdaters = ref<Array<{id: number, username: string, name: string}>>([])
 
+// 排序
+const ordering = ref('')
+
 // 分页配置
 const pagination = reactive({
   current: 1,
@@ -404,6 +416,66 @@ const pagination = reactive({
   pageSizeOptions: ['10', '20', '50', '100']
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  ordering,
+  fields: [
+    { key: 'search' },
+    { key: 'category' },
+    {
+      key: 'tags',
+      toQuery: (value: string[]) => (value && value.length ? value.join(',') : undefined),
+      fromQuery: (value) => parseStringArrayQuery(value)
+    },
+    {
+      key: 'favorites_only',
+      toQuery: (value: boolean) => toBooleanQuery(value),
+      fromQuery: (value) => parseBooleanQuery(value) ?? false
+    },
+    {
+      key: 'my_templates_only',
+      toQuery: (value: boolean) => toBooleanQuery(value),
+      fromQuery: (value) => parseBooleanQuery(value) ?? false
+    },
+    {
+      key: 'created_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    },
+    {
+      key: 'updated_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    }
+  ]
+})
+
+const resolveUserName = (id?: number) => {
+  if (!id) return ''
+  return availableUsers.value.find(user => user.id === id)?.name || String(id)
+}
+
+const activeFilterItems = computed(() => [
+  { key: 'search', label: '模板名称', display: searchForm.search },
+  { key: 'category', label: '分类', display: searchForm.category ? getCategoryText(searchForm.category) : '' },
+  { key: 'tags', label: '标签', display: searchForm.tags.length ? searchForm.tags.join('、') : '' },
+  { key: 'created_by', label: '创建者', display: searchForm.my_templates_only ? '' : resolveUserName(searchForm.created_by) },
+  { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) },
+  { key: 'favorites_only', label: '收藏', display: searchForm.favorites_only ? '仅收藏' : '' },
+  { key: 'my_templates_only', label: '我的作业', display: searchForm.my_templates_only ? '仅我的' : '' }
+])
+
+const handleClearFilter = (key: string) => {
+  const defaults = defaultSearchForm()
+  if (key in defaults) {
+    ;(searchForm as any)[key] = (defaults as any)[key]
+  }
+  pagination.current = 1
+  syncToQuery()
+  fetchTemplates()
+}
+
 // 表格列配置
 const columns = [
   {
@@ -411,7 +483,9 @@ const columns = [
     dataIndex: 'name',
     key: 'name',
     slotName: 'name',
-    width: 220
+    width: 220,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '分类',
@@ -540,6 +614,7 @@ const fetchTemplates = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
+      ordering: ordering.value || undefined,
       search: searchForm.search || undefined,
       category: searchForm.category || undefined,
       tags: searchForm.tags.length > 0 ? searchForm.tags.join(',') : undefined,
@@ -591,34 +666,32 @@ const fetchTemplates = async () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchTemplates()
 }
 
 // 重置搜索
 const handleReset = () => {
-  searchForm.search = ''
-  searchForm.category = ''
-  searchForm.tags = []
-  searchForm.favorites_only = false
-  searchForm.my_templates_only = false
-  searchForm.created_by = undefined
-  searchForm.updated_by = undefined
+  Object.assign(searchForm, defaultSearchForm())
   // 重置创建者/更新者过滤
   filteredCreators.value = [...availableUsers.value]
   filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
+  syncToQuery()
   fetchTemplates()
 }
 
 // 分页处理
 const handlePageChange = (page: number) => {
   pagination.current = page
+  syncToQuery()
   fetchTemplates()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  syncToQuery()
   fetchTemplates()
 }
 
@@ -898,6 +971,7 @@ const canDeleteTemplate = (templateId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
+  initFromQuery()
   fetchTemplates()
 })
 </script>

@@ -171,6 +171,11 @@
           </div>
         </a-col>
       </a-row>
+      <ActiveFiltersBar
+        :items="activeFilterItems"
+        @clear="handleClearFilter"
+        @clear-all="handleReset"
+      />
     </a-card>
 
     <!-- 执行方案列表 -->
@@ -180,6 +185,7 @@
         :data="plans"
         :loading="loading"
         :pagination="pagination"
+        :scroll="{ x: 1300 }"
         :row-selection="rowSelection"
         @selection-change="handleSelectionChange"
         @page-change="handlePageChange"
@@ -267,29 +273,6 @@
               </template>
               编辑
             </a-button>
-            <a-button
-              type="text"
-              size="small"
-              status="success"
-              @click="handleExecute(record)"
-              v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: record.id }"
-            >
-              <template #icon>
-                <icon-play-arrow />
-              </template>
-              执行
-            </a-button>
-            <a-button
-              type="text"
-              size="small"
-              @click="handleSchedule(record)"
-              v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: record.id }"
-            >
-              <template #icon>
-                <icon-schedule />
-              </template>
-              定时执行
-            </a-button>
             <a-dropdown>
               <a-button type="text" size="small">
                 <template #icon>
@@ -297,7 +280,24 @@
                 </template>
               </a-button>
               <template #content>
-
+                <a-doption
+                  :class="{ 'disabled-option': !canExecutePlan(record.id) }"
+                  @click="handleClickExecute(record)"
+                >
+                  <template #icon>
+                    <icon-play-arrow />
+                  </template>
+                  执行
+                </a-doption>
+                <a-doption
+                  :class="{ 'disabled-option': !canExecutePlan(record.id) }"
+                  @click="handleClickSchedule(record)"
+                >
+                  <template #icon>
+                    <icon-schedule />
+                  </template>
+                  定时执行
+                </a-doption>
                 <a-doption
                   value="delete"
                   :class="['text-red-500', { 'disabled-option': !canDeletePlan(record.id) }]"
@@ -376,7 +376,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, h } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { executionPlanApi, jobTemplateApi } from '@/api/ops'
 import { scheduledJobApi } from '@/api/scheduler'
@@ -386,6 +386,8 @@ import { useFavoritesStore } from '@/stores/favorites'
 import { useAuthStore } from '@/stores/auth'
 import { defineAsyncComponent } from 'vue'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
+import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
+import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 // @ts-ignore - some editors/tsserver may not immediately include newly added .vue files in project file list
 const BatchSyncPreviewModal = defineAsyncComponent(() => import('./components/BatchSyncPreviewModal.vue'))
 
@@ -394,7 +396,6 @@ const favoritesStore = useFavoritesStore()
 const authStore = useAuthStore()
 
 const router = useRouter()
-const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
@@ -428,8 +429,7 @@ const rowSelection = reactive({
 const batchSyncModalVisible = ref(false)
 let batchSyncPlanIds: number[] = []
 
-// 搜索表单
-const searchForm = reactive({
+const defaultSearchForm = () => ({
   search: '',
   template_id: undefined as number | undefined,
   favorites_only: false,
@@ -437,6 +437,9 @@ const searchForm = reactive({
   created_by: undefined as number | undefined,
   updated_by: undefined as number | undefined
 })
+
+// 搜索表单
+const searchForm = reactive(defaultSearchForm())
 
 // 收藏相关方法
 const isFavorite = (id: number) => favoritesStore.isFavorite('execution_plan', id)
@@ -451,6 +454,9 @@ const toggleFavorite = async (id: number) => {
   }
 }
 
+// 排序
+const ordering = ref('')
+
 // 分页配置
 const pagination = reactive({
   current: 1,
@@ -461,19 +467,86 @@ const pagination = reactive({
   pageSizeOptions: ['10', '20', '50', '100']
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  ordering,
+  fields: [
+    { key: 'search' },
+    {
+      key: 'template_id',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    },
+    {
+      key: 'favorites_only',
+      toQuery: (value: boolean) => toBooleanQuery(value),
+      fromQuery: (value) => parseBooleanQuery(value) ?? false
+    },
+    {
+      key: 'my_plans_only',
+      toQuery: (value: boolean) => toBooleanQuery(value),
+      fromQuery: (value) => parseBooleanQuery(value) ?? false
+    },
+    {
+      key: 'created_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    },
+    {
+      key: 'updated_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    }
+  ]
+})
+
+const resolveUserName = (id?: number) => {
+  if (!id) return ''
+  return availableUsers.value.find(user => user.id === id)?.name || String(id)
+}
+
+const resolveTemplateName = (id?: number) => {
+  if (!id) return ''
+  return templates.value.find(template => template.id === id)?.name || String(id)
+}
+
+const activeFilterItems = computed(() => [
+  { key: 'search', label: '方案名称', display: searchForm.search },
+  { key: 'template_id', label: '所属模板', display: resolveTemplateName(searchForm.template_id) },
+  { key: 'created_by', label: '创建者', display: searchForm.my_plans_only ? '' : resolveUserName(searchForm.created_by) },
+  { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) },
+  { key: 'favorites_only', label: '收藏', display: searchForm.favorites_only ? '仅收藏' : '' },
+  { key: 'my_plans_only', label: '我的方案', display: searchForm.my_plans_only ? '仅我的' : '' }
+])
+
+const handleClearFilter = (key: string) => {
+  const defaults = defaultSearchForm()
+  if (key in defaults) {
+    ;(searchForm as any)[key] = (defaults as any)[key]
+  }
+  pagination.current = 1
+  syncToQuery()
+  fetchPlans()
+}
+
 // 表格列配置
 const columns = [
   {
     title: '方案名称',
     dataIndex: 'name',
     slotName: 'name',
-    width: 250
+    width: 250,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '所属模板',
     dataIndex: 'template_name',
     slotName: 'template',
-    width: 200
+    width: 200,
+    ellipsis: true,
+    tooltip: true
   },
 
   {
@@ -494,7 +567,7 @@ const columns = [
   {
     title: '操作',
     slotName: 'actions',
-    width: 150,
+    width: 260,
     fixed: 'right'
   }
 ]
@@ -544,6 +617,7 @@ const fetchPlans = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
+      ordering: ordering.value || undefined,
       search: searchForm.search || undefined,
       template: searchForm.template_id || undefined,
       // 如果启用“我的方案”，把创建者传给后端以便服务器端过滤
@@ -643,21 +717,18 @@ const fetchTemplates = async () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchPlans()
 }
 
 // 重置搜索
 const handleReset = () => {
-  searchForm.search = ''
-  searchForm.template_id = undefined
-  searchForm.favorites_only = false
-  searchForm.my_plans_only = false
-  searchForm.created_by = undefined
-  searchForm.updated_by = undefined
+  Object.assign(searchForm, defaultSearchForm())
   // 重置创建者/更新者过滤
   filteredCreators.value = [...availableUsers.value]
   filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
+  syncToQuery()
   fetchPlans()
 }
 
@@ -670,6 +741,7 @@ const handleRefresh = () => {
 const handlePageChange = (page: number) => {
   pagination.current = page
   selectedRowKeys.value = [] // 清空选择
+  syncToQuery()
   fetchPlans()
 }
 
@@ -677,6 +749,7 @@ const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
   selectedRowKeys.value = [] // 清空选择
+  syncToQuery()
   fetchPlans()
 }
 
@@ -759,6 +832,30 @@ const handleExecute = (plan: ExecutionPlan) => {
 
 const handleSchedule = (plan: ExecutionPlan) => {
   router.push(`/scheduled-tasks/create?plan_id=${plan.id}`)
+}
+
+const canExecutePlan = (planId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('executionplan', 'execute', planId) ||
+    permissionsStore.hasPermission('executionplan', 'execute')
+  )
+}
+
+const handleClickExecute = (plan: ExecutionPlan) => {
+  if (!canExecutePlan(plan.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleExecute(plan)
+}
+
+const handleClickSchedule = (plan: ExecutionPlan) => {
+  if (!canExecutePlan(plan.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleSchedule(plan)
 }
 
 // 更多操作
@@ -892,12 +989,7 @@ const canDeletePlan = (planId: number): boolean => {
 
 // 生命周期
 onMounted(() => {
-  // 检查URL参数，如果有template_id则设置过滤条件
-  const templateId = route.query.template_id
-  if (templateId) {
-    searchForm.template_id = Number(templateId)
-  }
-
+  initFromQuery()
   fetchPlans()
   fetchTemplates()
 })

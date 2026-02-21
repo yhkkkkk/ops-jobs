@@ -83,6 +83,11 @@
           </div>
         </a-col>
       </a-row>
+      <ActiveFiltersBar
+        :items="activeFilterItems"
+        @clear="handleClearFilter"
+        @clear-all="handleReset"
+      />
     </a-card>
 
     <!-- 账号列表 -->
@@ -163,6 +168,8 @@ import { useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { accountApi, type ServerAccount } from '@/api/account'
 import AccountForm from './components/AccountForm.vue'
+import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
+import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import { usePermissionsStore } from '@/stores/permissions'
 
 // 响应式数据
@@ -177,11 +184,16 @@ const isOpsPlatform = computed(() => {
 })
 const isReadOnly = computed(() => !isOpsPlatform.value)
 
-// 搜索表单
-const searchForm = reactive({
+const defaultSearchForm = () => ({
   search: '',
   auth_type: ''
 })
+
+// 搜索表单
+const searchForm = reactive(defaultSearchForm())
+
+// 排序
+const ordering = ref('')
 
 // 分页配置
 const pagination = reactive({
@@ -193,13 +205,49 @@ const pagination = reactive({
   pageSizeOptions: ['10', '20', '50', '100']
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  ordering,
+  fields: [
+    { key: 'search' },
+    { key: 'auth_type' }
+  ]
+})
+
+const resolveAuthType = (value: string) => {
+  if (!value) return ''
+  const map: Record<string, string> = {
+    password: '密码认证',
+    key: '密钥认证'
+  }
+  return map[value] || value
+}
+
+const activeFilterItems = computed(() => [
+  { key: 'search', label: '账号名称/用户名', display: searchForm.search },
+  { key: 'auth_type', label: '认证方式', display: resolveAuthType(searchForm.auth_type) }
+])
+
+const handleClearFilter = (key: string) => {
+  const defaults = defaultSearchForm()
+  if (key in defaults) {
+    ;(searchForm as any)[key] = (defaults as any)[key]
+  }
+  pagination.current = 1
+  syncToQuery()
+  fetchAccounts()
+}
+
 // 表格列配置
 const columns = [
   {
     title: '账号信息',
     dataIndex: 'name',
     slotName: 'name',
-    width: 220
+    width: 220,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '认证方式',
@@ -231,6 +279,7 @@ const fetchAccounts = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
+      ordering: ordering.value || undefined,
       ...searchForm
     }
 
@@ -254,26 +303,29 @@ const fetchAccounts = async () => {
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
+  syncToQuery()
   fetchAccounts()
 }
 
 // 重置
 const handleReset = () => {
-  searchForm.search = ''
-  searchForm.auth_type = ''
+  Object.assign(searchForm, defaultSearchForm())
   pagination.current = 1
+  syncToQuery()
   fetchAccounts()
 }
 
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
+  syncToQuery()
   fetchAccounts()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  syncToQuery()
   fetchAccounts()
 }
 
@@ -325,6 +377,7 @@ const handleFormSuccess = () => {
 
 // 页面加载时获取数据
 onMounted(() => {
+  initFromQuery()
   fetchAccounts()
 })
 </script>

@@ -130,6 +130,11 @@
           </div>
         </a-col>
       </a-row>
+      <ActiveFiltersBar
+        :items="activeFilterItems"
+        @clear="handleClearFilter"
+        @clear-all="handleReset"
+      />
     </a-card>
 
     <!-- 任务列表 -->
@@ -341,7 +346,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
   IconRefresh,
@@ -361,6 +366,8 @@ import { executionRecordApi } from '@/api/ops'
 import { usePermissionsStore } from '@/stores/permissions'
 import type { ScheduledJob } from '@/types'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
+import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
+import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 
 const router = useRouter()
 const loading = ref(false)
@@ -387,14 +394,16 @@ const historyFilters = reactive({
 })
 const currentHistoryJob = ref<ScheduledJob | null>(null)
 
-// 搜索表单
-const searchForm = reactive({
+const defaultSearchForm = () => ({
   name: '',
   plan_name: '',
-  is_active: undefined,
+  is_active: undefined as boolean | undefined,
   created_by: undefined as number | undefined,
   updated_by: undefined as number | undefined
 })
+
+// 搜索表单
+const searchForm = reactive(defaultSearchForm())
 
 // 可用用户列表（创建者）
 const availableUsers = ref<Array<{id: number, username: string, name: string}>>([])
@@ -405,6 +414,9 @@ const filteredCreators = ref<Array<{id: number, username: string, name: string}>
 // 更新者搜索过滤结果
 const filteredUpdaters = ref<Array<{id: number, username: string, name: string}>>([])
 
+// 排序
+const ordering = ref('')
+
 // 分页配置
 const pagination = reactive({
   current: 1,
@@ -414,6 +426,60 @@ const pagination = reactive({
   showPageSize: true,
   pageSizeOptions: ['10', '20', '50', '100']
 })
+
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  ordering,
+  fields: [
+    { key: 'name' },
+    { key: 'plan_name' },
+    {
+      key: 'is_active',
+      toQuery: (value?: boolean) => toBooleanQuery(value, true),
+      fromQuery: (value) => parseBooleanQuery(value)
+    },
+    {
+      key: 'created_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    },
+    {
+      key: 'updated_by',
+      toQuery: (value?: number) => (value ? String(value) : undefined),
+      fromQuery: (value) => parseNumberQuery(value)
+    }
+  ]
+})
+
+const resolveUserName = (id?: number) => {
+  if (!id) return ''
+  return availableUsers.value.find(user => user.id === id)?.name || String(id)
+}
+
+const resolveStatusText = (value?: boolean) => {
+  if (value === true) return '启用'
+  if (value === false) return '禁用'
+  return ''
+}
+
+const activeFilterItems = computed(() => [
+  { key: 'name', label: '任务名称', display: searchForm.name },
+  { key: 'plan_name', label: '执行方案', display: searchForm.plan_name },
+  { key: 'is_active', label: '状态', display: resolveStatusText(searchForm.is_active) },
+  { key: 'created_by', label: '创建者', display: resolveUserName(searchForm.created_by) },
+  { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) }
+])
+
+const handleClearFilter = (key: string) => {
+  const defaults = defaultSearchForm()
+  if (key in defaults) {
+    ;(searchForm as any)[key] = (defaults as any)[key]
+  }
+  pagination.current = 1
+  syncToQuery()
+  fetchTasks()
+}
 
 // 表格列配置
 const columns = [
@@ -547,9 +613,10 @@ const fetchTasks = async () => {
     const params = {
       page: pagination.current,
       page_size: pagination.pageSize,
+      ordering: ordering.value || undefined,
       name: searchForm.name || undefined,
       plan_name: searchForm.plan_name || undefined,
-      is_active: searchForm.is_active || undefined,
+      is_active: searchForm.is_active === undefined ? undefined : searchForm.is_active,
       created_by: searchForm.created_by || undefined,
       updated_by: searchForm.updated_by || undefined,
     }
@@ -579,18 +646,18 @@ const fetchTasks = async () => {
 // 搜索
 const handleSearch = (): void => {
   pagination.current = 1
+  syncToQuery()
   fetchTasks()
 }
 
 // 重置搜索
 const handleReset = (): void => {
-  Object.keys(searchForm).forEach(key => {
-    searchForm[key] = key === 'is_active' || key === 'created_by' || key === 'updated_by' ? undefined : ''
-  })
+  Object.assign(searchForm, defaultSearchForm())
   // 重置创建者/更新者过滤
   filteredCreators.value = [...availableUsers.value]
   filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
+  syncToQuery()
   fetchTasks()
 }
 
@@ -602,12 +669,14 @@ const handleRefresh = (): void => {
 // 分页处理
 const handlePageChange = (page: number): void => {
   pagination.current = page
+  syncToQuery()
   fetchTasks()
 }
 
 const handlePageSizeChange = (pageSize: number): void => {
   pagination.pageSize = pageSize
   pagination.current = 1
+  syncToQuery()
   fetchTasks()
 }
 
@@ -879,6 +948,7 @@ const historyTableColumns = [
 
 // 生命周期
 onMounted(() => {
+  initFromQuery()
   fetchTasks()
 })
 </script>
