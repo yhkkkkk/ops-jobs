@@ -44,7 +44,7 @@ type PendingTaskStore struct {
 // NewPendingTaskStore 创建 PendingTaskStore
 func NewPendingTaskStore(rdb *redis.Client) *PendingTaskStore {
 	if rdb == nil {
-		logger.GetLogger().Warn("Redis client not provided, PendingTaskStore will work in memory-only mode")
+		logger.GetLogger().Warn("redis client not provided, PendingTaskStore will work in memory-only mode")
 		return &PendingTaskStore{
 			pending:  make(map[string]*PendingTask),
 			localTTL: 5 * time.Minute,

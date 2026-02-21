@@ -15,6 +15,7 @@ from .services import HostService, HostGroupService
 from .cloud_sync_service import CloudSyncService
 from .serializers import (
     HostSerializer,
+    HostListSerializer,
     HostGroupSerializer,
     HostGroupTreeSerializer,
     HostGroupSimpleSerializer,
@@ -36,6 +37,11 @@ class HostViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = Host.objects.all()
     serializer_class = HostSerializer
     permission_classes = [HostManagementPermission]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return HostListSerializer
+        return HostSerializer
     pagination_class = HostPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = HostFilter

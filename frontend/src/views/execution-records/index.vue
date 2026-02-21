@@ -71,7 +71,9 @@
             placeholder="执行用户"
             allow-clear
             allow-search
+            filter-option="false"
             :options="executedByOptions"
+            @search="handleExecutedBySearch"
             @change="handleSearch"
           />
         </a-col>
@@ -409,15 +411,21 @@ const retryHistoryVisible = ref(false)
 const retryHistoryLoading = ref(false)
 const retryHistory = ref<RetryHistoryItem[]>([])
 const currentRecord = ref<ExecutionRecordRow | null>(null)
-const executedByOptions = computed(() =>
-  Array.from(
+const executedByKeyword = ref('')
+const executedByOptions = computed(() => {
+  const options = Array.from(
     new Set(
       tableData.value
         .map(item => item.executed_by_name)
         .filter((name): name is string => !!name)
     )
   ).map(name => ({ label: name, value: name }))
-)
+
+  const keyword = executedByKeyword.value.trim().toLowerCase()
+  if (!keyword) return options
+
+  return options.filter(option => option.label.toLowerCase().includes(keyword))
+})
 
 // 搜索表单
 const searchForm = reactive<SearchForm>({
@@ -600,6 +608,7 @@ const handleReset = () => {
       searchForm[key] = ''
     }
   })
+  executedByKeyword.value = ''
   pagination.current = 1
   syncToQuery()
   fetchRecords()
@@ -622,6 +631,10 @@ const handlePageSizeChange = (pageSize: number | string) => {
   pagination.current = 1
   syncToQuery()
   fetchRecords()
+}
+
+const handleExecutedBySearch = (value: string) => {
+  executedByKeyword.value = value
 }
 
 // 查看详情

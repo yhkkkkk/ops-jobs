@@ -169,7 +169,7 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { accountApi, type ServerAccount } from '@/api/account'
 import AccountForm from './components/AccountForm.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
-import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
+import { useFilterQuerySync, parseNumberQuery } from '@/composables/useFilterQuerySync'
 import { usePermissionsStore } from '@/stores/permissions'
 
 // 响应式数据
@@ -186,11 +186,17 @@ const isReadOnly = computed(() => !isOpsPlatform.value)
 
 const defaultSearchForm = () => ({
   search: '',
-  auth_type: ''
+  auth_type: '',
+  created_by: undefined as number | undefined,
+  updated_by: undefined as number | undefined
 })
 
 // 搜索表单
 const searchForm = reactive(defaultSearchForm())
+
+const availableUsers = ref<Array<{ id: number; username: string; name: string }>>([])
+const filteredCreators = ref<Array<{ id: number; username: string; name: string }>>([])
+const filteredUpdaters = ref<Array<{ id: number; username: string; name: string }>>([])
 
 // 排序
 const ordering = ref('')
@@ -211,7 +217,9 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   ordering,
   fields: [
     { key: 'search' },
-    { key: 'auth_type' }
+    { key: 'auth_type' },
+    { key: 'created_by', fromQuery: (value) => parseNumberQuery(value) },
+    { key: 'updated_by', fromQuery: (value) => parseNumberQuery(value) }
   ]
 })
 
@@ -224,9 +232,17 @@ const resolveAuthType = (value: string) => {
   return map[value] || value
 }
 
+const resolveUserName = (userId?: number) => {
+  if (!userId) return ''
+  const user = availableUsers.value.find(item => item.id === userId)
+  return user?.name || String(userId)
+}
+
 const activeFilterItems = computed(() => [
   { key: 'search', label: '账号名称/用户名', display: searchForm.search },
-  { key: 'auth_type', label: '认证方式', display: resolveAuthType(searchForm.auth_type) }
+  { key: 'auth_type', label: '认证方式', display: resolveAuthType(searchForm.auth_type) },
+  { key: 'created_by', label: '创建者', display: resolveUserName(searchForm.created_by) },
+  { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) }
 ])
 
 const handleClearFilter = (key: string) => {
@@ -237,6 +253,42 @@ const handleClearFilter = (key: string) => {
   pagination.current = 1
   syncToQuery()
   fetchAccounts()
+}
+
+const filterUsers = (searchValue: string) => {
+  if (!searchValue.trim()) {
+    return [...availableUsers.value]
+  }
+  const keyword = searchValue.toLowerCase().trim()
+  return availableUsers.value.filter(user =>
+    user.name.toLowerCase().includes(keyword) ||
+    user.username.toLowerCase().includes(keyword)
+  )
+}
+
+const handleCreatorSearch = (value: string) => {
+  filteredCreators.value = filterUsers(value)
+}
+
+const handleUpdaterSearch = (value: string) => {
+  filteredUpdaters.value = filterUsers(value)
+}
+
+const fetchAvailableUsers = () => {
+  const userMap = new Map<number, { id: number; username: string; name: string }>()
+  const appendUser = (id?: number, name?: string) => {
+    if (!id || !name) return
+    userMap.set(id, { id, username: name, name })
+  }
+
+  accounts.value.forEach(account => {
+    appendUser(account.created_by, account.created_by_name)
+    appendUser(account.updated_by, account.updated_by_name)
+  })
+
+  availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+  filteredCreators.value = [...availableUsers.value]
+  filteredUpdaters.value = [...availableUsers.value]
 }
 
 // 表格列配置
@@ -293,6 +345,7 @@ const fetchAccounts = async () => {
     const response = await accountApi.getAccounts(params)
     accounts.value = response.results
     pagination.total = response.total
+    fetchAvailableUsers()
   } catch (error) {
     console.error('获取账号列表失败:', error)
   } finally {
@@ -310,6 +363,8 @@ const handleSearch = () => {
 // 重置
 const handleReset = () => {
   Object.assign(searchForm, defaultSearchForm())
+  filteredCreators.value = [...availableUsers.value]
+  filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
   syncToQuery()
   fetchAccounts()

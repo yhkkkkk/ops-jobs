@@ -78,7 +78,7 @@ func New(cfg *config.Config) (*Server, error) {
 		poolMgr := redisPkg.NewPoolManager(&cfg.Redis)
 		client, err := poolMgr.GetClient()
 		if err != nil {
-			logger.GetLogger().WithError(err).Warn("Failed to create Redis connection pool, AckStore will be disabled")
+			logger.GetLogger().WithError(err).Warn("failed to create redis connection pool, ackstore will be disabled")
 		} else {
 			redisClient = client
 		}

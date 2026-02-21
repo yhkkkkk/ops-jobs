@@ -121,6 +121,14 @@ class HostGroupSimpleSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'full_path', 'level', 'parent']
 
 
+class HostGroupLiteSerializer(serializers.ModelSerializer):
+    """主机分组轻量序列化器（用于列表展示）"""
+
+    class Meta:
+        model = HostGroup
+        fields = ['id', 'name']
+
+
 class HostSerializer(serializers.ModelSerializer):
     """主机序列化器"""
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
@@ -211,6 +219,14 @@ class HostSerializer(serializers.ModelSerializer):
         except:
             # 如果没有关联的Agent，返回None
             return None
+
+
+class HostListSerializer(HostSerializer):
+    """主机列表序列化器"""
+    groups_info = HostGroupLiteSerializer(source='groups', many=True, read_only=True)
+
+    class Meta(HostSerializer.Meta):
+        pass
 
 
 class HostSimpleSerializer(serializers.ModelSerializer):

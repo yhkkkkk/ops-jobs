@@ -56,6 +56,7 @@ class HostFilter(django_filters.FilterSet):
         label='主机分组ID'
     )
 
+
     # CPU核心数范围过滤器
     cpu_cores_min = django_filters.NumberFilter(
         field_name='cpu_cores',

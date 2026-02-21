@@ -10,6 +10,9 @@ export interface ServerAccount {
   password?: string
   private_key?: string
   description?: string
+  auth_type?: 'password' | 'key' | 'both' | 'none'
+  has_password?: boolean
+  has_private_key?: boolean
 }
 
 export interface AccountListResponse {

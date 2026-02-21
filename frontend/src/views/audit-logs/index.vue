@@ -162,7 +162,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="描述" data-index="description" min-width="280" width="400">
+          <a-table-column title="描述" data-index="description" min-width="240" width="320">
             <template #cell="{ record }">
               <div class="description-cell">
                 <a-tooltip :content="record.description" position="top">
@@ -182,7 +182,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="时间" data-index="created_at" width="200">
+          <a-table-column title="时间" data-index="created_at" width="240">
             <template #cell="{ record }">
               <span>{{ formatDateTime(record.created_at) }}</span>
             </template>
@@ -596,7 +596,7 @@ onMounted(() => {
 }
 
 .description-cell {
-  max-width: 200px;
+  max-width: 260px;
 }
 
 .description-text {
