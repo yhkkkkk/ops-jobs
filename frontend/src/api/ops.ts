@@ -444,6 +444,7 @@ export const quickExecuteApi = {
     target_host_ids: number[]
     script_content: string
     script_type: string
+    agent_server_id: number
     timeout?: number
     ignore_error?: boolean
     use_fabric?: boolean
@@ -460,6 +461,7 @@ export const quickExecuteApi = {
   transferFile(data: {
     name?: string
     remote_path: string
+    agent_server_id: number
     overwrite_policy?: 'overwrite' | 'skip' | 'backup' | 'fail'
     timeout?: number
     bandwidth_limit?: number | null

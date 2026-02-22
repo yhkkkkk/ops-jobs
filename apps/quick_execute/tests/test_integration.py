@@ -26,7 +26,7 @@ def test_parameter_unification_script_execution(user):
         "timeout": 300,
         "global_variables": {"account_id": 123},
         "target_host_ids": [1, 2, 3],
-        "agent_server_url": "ws://localhost:8080",
+        "agent_server_id": 1,
     }
 
     # 提取参数
@@ -75,7 +75,7 @@ def test_parameter_unification_file_transfer():
         "timeout": 600,
         "bandwidth_limit": 2,
         "target_host_ids": [1, 2],
-        "agent_server_url": "ws://localhost:8080",
+        "agent_server_id": 1,
         "sources": [
             {
                 "type": "local",
@@ -113,6 +113,7 @@ def test_agent_architecture_consistency(user):
                 "script_content": 'echo "test"',
                 "script_type": "shell",
                 "target_host_ids": [1],
+                "agent_server_id": 1,
             }
 
             with patch("apps.quick_execute.services.ExecutionRecordService.create_execution_record") as mock_create:
@@ -208,6 +209,7 @@ def test_retry_parameter_handling(user):
         "script_type": "shell",
         "target_host_ids": [1, 2],
         "timeout": 300,
+        "agent_server_id": 1,
     }
 
     # 测试基于IP的重试

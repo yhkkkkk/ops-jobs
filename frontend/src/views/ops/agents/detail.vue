@@ -14,6 +14,12 @@
             </template>
             返回
           </a-button>
+          <a-button v-if="agentDetail" @click="handleEditAgentServer">
+            <template #icon>
+              <icon-edit />
+            </template>
+            编辑
+          </a-button>
           <a-button
             type="primary"
             @click="handleIssueToken"
@@ -85,6 +91,10 @@
           <div class="info-item">
             <span class="label">接入点：</span>
             <span class="value">{{ agentDetail.endpoint || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Agent-Server：</span>
+            <span class="value">{{ agentServerLabel }}</span>
           </div>
           <div class="info-item">
             <span class="label">最后心跳：</span>
@@ -252,14 +262,47 @@
         </a-space>
       </template>
     </a-modal>
+
+    <!-- 编辑 Agent 关联的 Agent-Server -->
+    <a-modal
+      v-model:visible="agentServerEditVisible"
+      title="编辑 Agent"
+      @ok="handleAgentServerEditConfirm"
+      @cancel="handleAgentServerEditCancel"
+    >
+      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+        仅更新控制面记录，不会自动下发/重装
+      </a-alert>
+      <a-form :model="agentServerEditForm" layout="vertical">
+        <a-form-item label="关联 Agent-Server">
+          <a-select
+            v-model="agentServerEditForm.agent_server_id"
+            placeholder="请选择 Agent-Server"
+            allow-clear
+            allow-search
+            :filter-option="filterAgentServerOption"
+          >
+            <a-option
+              v-for="server in agentServers"
+              :key="server.id"
+              :value="server.id"
+              :label="formatAgentServerLabel(server)"
+            >
+              {{ formatAgentServerLabel(server) }}
+            </a-option>
+          </a-select>
+          <div class="form-help">留空表示解除绑定（仅控制面记录）</div>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { agentsApi, type AgentDetail, type AgentToken } from '@/api/agents'
+import { agentsApi, agentServerApi, type AgentDetail, type AgentToken, type AgentServer } from '@/api/agents'
 import AgentTaskStatsCard from './components/AgentTaskStatsCard.vue'
 import dayjs from 'dayjs'
 
@@ -271,6 +314,12 @@ const loading = ref(false)
 const agentDetail = ref<AgentDetail | null>(null)
 const tokenModalVisible = ref(false)
 const tokenFormRef = ref()
+
+const agentServers = ref<AgentServer[]>([])
+const agentServerEditVisible = ref(false)
+const agentServerEditForm = reactive({
+  agent_server_id: null as number | null
+})
 
 // Token 表单
 const tokenForm = reactive({
@@ -351,6 +400,33 @@ const formatTime = (time: string) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 }
 
+const formatAgentServerLabel = (server: AgentServer) => {
+  const suffix = server.shared_secret_last4 ? ` - 密钥尾号 ${server.shared_secret_last4}` : ''
+  return `${server.name} (${server.base_url})${suffix}`
+}
+
+const filterAgentServerOption = (inputValue: string, option: any) => {
+  const label = (option?.label || '').toString().toLowerCase()
+  return label.includes(inputValue.toLowerCase())
+}
+
+const agentServerLabel = computed(() => {
+  if (!agentDetail.value?.agent_server_id) return '-'
+  const server = agentServers.value.find(s => s.id === agentDetail.value?.agent_server_id)
+  return server ? formatAgentServerLabel(server) : `ID: ${agentDetail.value.agent_server_id}`
+})
+
+const fetchAgentServers = async () => {
+  try {
+    const response = await agentServerApi.getAgentServers({ page_size: 200 })
+    agentServers.value = response.results || []
+  } catch (error: any) {
+    console.error('获取 Agent-Server 列表失败:', error)
+    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    agentServers.value = []
+  }
+}
+
 // 获取 Agent 详情
 const fetchAgentDetail = async () => {
   const id = Number(route.params.id)
@@ -429,6 +505,33 @@ const handleTokenModalCancel = () => {
   tokenForm.confirmed = false
 }
 
+const handleEditAgentServer = () => {
+  if (!agentDetail.value) return
+  agentServerEditForm.agent_server_id = agentDetail.value.agent_server_id ?? null
+  agentServerEditVisible.value = true
+}
+
+const handleAgentServerEditCancel = () => {
+  agentServerEditVisible.value = false
+  agentServerEditForm.agent_server_id = null
+}
+
+const handleAgentServerEditConfirm = async () => {
+  if (!agentDetail.value) return
+  try {
+    await agentsApi.updateAgentServer(agentDetail.value.id, {
+      agent_server_id: agentServerEditForm.agent_server_id
+    })
+    Message.success('更新 Agent 成功')
+    agentServerEditVisible.value = false
+    fetchAgentDetail()
+  } catch (error: any) {
+    console.error('更新 Agent 失败:', error)
+    const errorMsg = error?.response?.data?.message || error?.message || '更新 Agent 失败'
+    Message.error(errorMsg)
+  }
+}
+
 // 禁用 Agent
 const handleDisable = () => {
   if (!agentDetail.value) return
@@ -489,6 +592,7 @@ const handleRevokeToken = (token: AgentToken) => {
 
 // 初始化
 onMounted(() => {
+  fetchAgentServers()
   fetchAgentDetail()
 })
 </script>

@@ -15,7 +15,7 @@ from django.db import transaction, DatabaseError
 from apps.executor.models import ExecutionRecord, ExecutionStep
 from apps.executor.services import ExecutionRecordService
 from apps.hosts.models import Host
-from apps.agents.models import Agent
+from apps.agents.models import Agent, AgentServer
 from utils.realtime_logs import realtime_log_service
 from apps.system_config.models import ConfigManager
 from apps.agents.storage_service import StorageService
@@ -227,7 +227,7 @@ class AgentExecutionService:
     def push_task_to_agent(
         agent: Agent,
         task_spec: Dict[str, Any],
-        agent_server_url: str = None,
+        agent_server_id: int = None,
     ) -> Dict[str, Any]:
         """
         推送任务到Agent（通过Agent-Server WebSocket模式）
@@ -235,53 +235,43 @@ class AgentExecutionService:
         Args:
             agent: Agent对象
             task_spec: 任务规范
-            agent_server_url: Agent-Server地址（可选，优先级最高）
+            agent_server_id: Agent-Server ID（必填）
 
         Returns:
             Dict: 推送结果
         """
         try:
-            import requests
             from django.conf import settings
 
-            # 优先判断是否走 Agent-Server 模式（有显式 agent_server_url / endpoint / 全局配置）
-            server_url = None
-            if agent_server_url:
-                server_url = agent_server_url
-            elif agent.endpoint:
-                server_url = agent.endpoint
-            else:
-                server_url = getattr(settings, 'AGENT_SERVER_URL', None)
-
-            if not server_url:
-                # Agent-Server URL 未配置，无法推送任务
-                logger.error(f"Agent-Server URL 未配置，无法推送任务到 Agent {agent.host_id}")
+            if not agent_server_id:
+                logger.error(f"Agent-Server ID 未配置，无法推送任务到 Agent {agent.host_id}")
                 return {
                     'success': False,
-                    'error': 'Agent-Server URL 未配置，请在 Agent 配置或全局设置中指定 AGENT_SERVER_URL'
+                    'error': '请先选择 Agent-Server'
                 }
 
-            # === Agent-Server 模式：调用 Agent-Server 的 /api/agents/{id}/tasks ===
-            if server_url.startswith('ws://') or server_url.startswith('wss://'):
-                server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
+            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
+            if not server:
+                return {
+                    'success': False,
+                    'error': 'Agent-Server 未注册或已禁用'
+                }
+            if not server.shared_secret:
+                return {
+                    'success': False,
+                    'error': 'Agent-Server 未配置 shared_secret'
+                }
 
-            # 移除路径部分，只保留基础URL
-            if '://' in server_url:
-                scheme_end = server_url.find('://') + 3
-                slash_idx = server_url.find('/', scheme_end)
-                if slash_idx != -1:
-                    server_url = server_url[:slash_idx]
-
-            # 支持在设置中提供覆盖的 agent_server_id（测试/单实例场景）
+            # 支持在设置中提供覆盖的 agent_id（测试/单实例场景）
             override_agent_id = getattr(settings, "AGENT_ID_OVERRIDE", None)
             agent_identifier = override_agent_id or agent.host_id
 
-            api_url = f"{server_url}/api/agents/{agent_identifier}/tasks"
+            api_url = f"{server.base_url}/api/agents/{agent_identifier}/tasks"
 
             # 构造带 HMAC 签名的请求
             from utils.agent_server_client import AgentServerClient
 
-            client = AgentServerClient.from_settings()
+            client = AgentServerClient(shared_secret=server.shared_secret)
             response = client.post(api_url, json=task_spec)
 
             if response.status_code == 200:
@@ -317,7 +307,7 @@ class AgentExecutionService:
         timeout: int = 300,
         global_variables: Dict[str, Any] = None,
         step_id: str = None,
-        agent_server_url: str = None,
+        agent_server_id: int = None,
         account_id: int = None,  # 执行账号ID
         file_sources: List[Dict[str, Any]] = None,  # server 源需先 HTTP 拉取入库
         execution_mode: str = 'parallel',  # 执行模式: parallel/serial/rolling
@@ -336,7 +326,7 @@ class AgentExecutionService:
             timeout: 超时时间
             global_variables: 全局变量
             step_id: 步骤ID（如果是工作流）
-            agent_server_url: Agent-Server地址
+            agent_server_id: Agent-Server ID
             account_id: 执行账号ID
             file_sources: 文件源列表
             execution_mode: 执行模式 (parallel/serial/rolling)
@@ -384,7 +374,7 @@ class AgentExecutionService:
                 return AgentExecutionService.push_task_to_agent(
                     agent=agent,
                     task_spec=task_spec,
-                    agent_server_url=agent_server_url,
+                    agent_server_id=agent_server_id,
                 )
 
             # 获取执行策略
@@ -446,7 +436,7 @@ class AgentExecutionService:
         size: int = None,
         auth_headers: Dict[str, str] = None,
         step_id: str = None,
-        agent_server_url: str = None,
+        agent_server_id: int = None,
         account_id: int = None,  # 执行账号ID
         file_sources: List[Dict[str, Any]] = None,  # server 源需先 HTTP 拉取入库
         execution_mode: str = 'parallel',  # 执行模式: parallel/serial/rolling
@@ -468,7 +458,7 @@ class AgentExecutionService:
             size: 文件大小（可选）
             auth_headers: 下载需要的认证头（可选）
             step_id: 步骤ID（如果是工作流）
-            agent_server_url: Agent-Server地址
+            agent_server_id: Agent-Server ID
             file_sources: 可选，包含 server 源，需先 HTTP 拉取入库后再下发
             execution_mode: 执行模式 (parallel/serial/rolling)
             rolling_batch_size: 滚动执行批次大小
@@ -523,7 +513,7 @@ class AgentExecutionService:
                 return AgentExecutionService.push_task_to_agent(
                     agent=agent,
                     task_spec=task_spec,
-                    agent_server_url=agent_server_url,
+                    agent_server_id=agent_server_id,
                 )
 
             # 获取执行策略
@@ -630,7 +620,7 @@ class AgentExecutionService:
         rolling_batch_size: int = 1,
         rolling_batch_delay: int = 0,
         start_step_order: int = 1,
-        agent_server_url: str = None,
+        agent_server_id: int = None,
     ) -> Dict[str, Any]:
         """
         通过Agent执行工作流
@@ -644,7 +634,7 @@ class AgentExecutionService:
             rolling_batch_size: 滚动批次大小
             rolling_batch_delay: 滚动批次延迟
             start_step_order: 起始步骤顺序
-            agent_server_url: Agent-Server地址
+            agent_server_id: Agent-Server ID
         
         Returns:
             Dict: 执行结果
@@ -753,7 +743,7 @@ class AgentExecutionService:
                         timeout=step_data.get('timeout', 300),
                         global_variables=step_global_variables,
                         step_id=str(step.id),
-                        agent_server_url=agent_server_url,
+                        agent_server_id=agent_server_id,
                         account_id=step_data.get('account_id'),  # 传递执行账号ID
                         execution_mode=execution_mode,  # 传递执行模式
                         rolling_batch_size=rolling_batch_size,  # 传递滚动批次大小
@@ -832,7 +822,7 @@ class AgentExecutionService:
                                 size=src.get('size'),
                                 auth_headers=src.get('auth_headers') or {},
                                 step_id=str(step.id),
-                                agent_server_url=agent_server_url,
+                                agent_server_id=agent_server_id,
                                 account_id=step_data.get('account_id'),  # 传递执行账号ID
                                 file_sources=[src],  # server 源将先落库
                             )
@@ -1123,7 +1113,7 @@ class AgentExecutionService:
         retry_type: str = 'full',  # full: 完整重试, step: 步骤重试
         step_id: str = None,
         failed_only: bool = True,
-        agent_server_url: str = None,
+        agent_server_id: int = None,
         ip_list: List[str] = None,  # 基于IP的重试支持
     ) -> Dict[str, Any]:
         """
@@ -1135,7 +1125,7 @@ class AgentExecutionService:
             retry_type: 重试类型（full/step）
             step_id: 步骤ID（如果是步骤重试）
             failed_only: 是否只重试失败的主机
-            agent_server_url: Agent-Server地址
+            agent_server_id: Agent-Server ID
             ip_list: 指定IP列表进行重试（可选）
         
         Returns:
@@ -1145,6 +1135,13 @@ class AgentExecutionService:
             from apps.job_templates.services import ExecutionPlanService
             from django.db import transaction
             from apps.system_config.models import ConfigManager
+
+            agent_server_id = agent_server_id or (execution_record.execution_parameters or {}).get('agent_server_id')
+            if not agent_server_id:
+                return {
+                    'success': False,
+                    'error': '请先选择Agent-Server'
+                }
 
             if retry_type == 'full':
                 # 完整重试：创建新的ExecutionRecord
@@ -1192,7 +1189,7 @@ class AgentExecutionService:
                             description=f"重试执行记录 {root_execution.execution_id}",
                             execution_parameters=execution_record.execution_parameters,
                             execution_mode='agent',  # 使用Agent方式
-                            agent_server_url=agent_server_url,
+                            agent_server_id=agent_server_id,
                         )
 
                         if result['success']:
@@ -1240,7 +1237,7 @@ class AgentExecutionService:
                         'target_host_ids': params.get('target_host_ids', []),
                         'global_variables': params.get('global_variables', {}),
                         'positional_args': params.get('positional_args', []),
-                        'agent_server_url': agent_server_url,
+                        'agent_server_id': agent_server_id,
                     }
 
                     # 在事务中进行并发检查
@@ -1309,7 +1306,7 @@ class AgentExecutionService:
                         'rolling_batch_delay': params.get('rolling_batch_delay', 0),
                         'overwrite_policy': params.get('overwrite_policy', 'overwrite'),
                         'target_host_ids': params.get('target_host_ids', []),
-                        'agent_server_url': agent_server_url,
+                        'agent_server_id': agent_server_id,
                         'bandwidth_limit': params.get('bandwidth_limit', 0),
                         'account_id': params.get('account_id'),
                     }
@@ -1481,7 +1478,7 @@ class AgentExecutionService:
                         timeout=step_params.get('timeout', 300),
                         global_variables=execution_record.execution_parameters.get('global_variables', {}),
                         step_id=str(step.id),
-                        agent_server_url=agent_server_url,
+                        agent_server_id=agent_server_id,
                         account_id=step_params.get('account_id'),  # 传递执行账号ID
                     )
                 elif step_type == 'file_transfer':
@@ -1502,7 +1499,7 @@ class AgentExecutionService:
                         size=src.get('size'),
                         auth_headers=src.get('auth_headers') or {},
                         step_id=str(step.id),
-                        agent_server_url=agent_server_url,
+                        agent_server_id=agent_server_id,
                         account_id=step_params.get('account_id'),  # 传递执行账号ID
                         file_sources=file_sources,
                     )
@@ -1537,14 +1534,14 @@ class AgentExecutionService:
     @staticmethod
     def cancel_task_via_agent(
         execution_record: ExecutionRecord,
-        agent_server_url: str = None,
+        agent_server_id: int = None,
     ) -> Dict[str, Any]:
         """
         通过Agent取消任务（支持直连和Agent-Server两种模式）
         
         Args:
             execution_record: 执行记录
-            agent_server_url: Agent-Server地址（如果使用Agent-Server模式）
+            agent_server_id: Agent-Server ID
         
         Returns:
             Dict: 取消结果
@@ -1589,15 +1586,15 @@ class AgentExecutionService:
                 }
             
             # Agent-Server模式（唯一支持的模式）
-            server_url = agent_server_url or execution_record.execution_parameters.get('agent_server_url')
-            if not server_url:
+            server_id = agent_server_id or (execution_record.execution_parameters or {}).get('agent_server_id')
+            if not server_id:
                 return {
                     'success': False,
-                    'error': 'Agent-Server URL 未配置'
+                    'error': '请先选择Agent-Server'
                 }
             return AgentExecutionService._cancel_tasks_via_agent_server(
                 agent_task_map=agent_task_map,
-                server_url=server_url,
+                agent_server_id=server_id,
             )
         
         except Exception as e:
@@ -1610,14 +1607,14 @@ class AgentExecutionService:
     @staticmethod
     def _cancel_tasks_via_agent_server(
         agent_task_map: Dict[int, Dict],
-        server_url: str,
+        agent_server_id: int,
     ) -> Dict[str, Any]:
         """
         通过Agent-Server取消任务
         
         Args:
             agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
-            server_url: Agent-Server地址
+            agent_server_id: Agent-Server ID
         
         Returns:
             Dict: 取消结果
@@ -1625,13 +1622,17 @@ class AgentExecutionService:
         try:
             from django.conf import settings
             
-            # 确保URL格式正确
-            if server_url.startswith('ws://') or server_url.startswith('wss://'):
-                server_url = server_url.replace('ws://', 'http://').replace('wss://', 'https://')
-            
-            # 移除路径部分，只保留基础URL
-            if '/' in server_url[8:]:  # 跳过 http:// 或 https://
-                server_url = server_url[:server_url.find('/', 8)]
+            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
+            if not server:
+                return {
+                    'success': False,
+                    'error': 'Agent-Server 未注册或已禁用'
+                }
+            if not server.shared_secret:
+                return {
+                    'success': False,
+                    'error': 'Agent-Server 未配置 shared_secret'
+                }
             
             # 获取Agent-Server的认证Token（如果需要）
             agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
@@ -1656,13 +1657,13 @@ class AgentExecutionService:
                     host_id = task_info['host_id']
                     
                     # 调用Agent-Server的取消任务API
-                    api_url = f"{server_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
+                    api_url = f"{server.base_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
                     
                     try:
                         # 使用 HMAC 客户端发起请求
                         from utils.agent_server_client import AgentServerClient
 
-                        client = AgentServerClient.from_settings()
+                        client = AgentServerClient(shared_secret=server.shared_secret)
                         response = client.post(api_url, json=None, headers=headers_base)
                         
                         if response.status_code == 200:

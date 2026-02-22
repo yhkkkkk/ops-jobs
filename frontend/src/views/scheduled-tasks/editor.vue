@@ -92,6 +92,26 @@
           </a-select>
         </a-form-item>
 
+        <a-form-item label="Agent-Server" required>
+          <a-select
+            v-model="selectedAgentServerId"
+            placeholder="请选择 Agent-Server"
+            allow-clear
+            allow-search
+            :loading="agentServerLoading"
+            :filter-option="filterAgentServerOption"
+          >
+            <a-option
+              v-for="server in agentServers"
+              :key="server.id"
+              :value="server.id"
+              :label="`${server.name} (${server.base_url})`"
+            >
+              {{ server.name }} ({{ server.base_url }})
+            </a-option>
+          </a-select>
+        </a-form-item>
+
         <!-- 全局变量覆盖 -->
         <a-form-item v-if="form.execution_plan && globalParameters.length > 0" label="全局变量覆盖（可选）">
           <div class="global-parameters-override">
@@ -259,6 +279,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi, executionPlanApi, cronApi } from '@/api/scheduler'
 import { hostApi, hostGroupApi } from '@/api/ops'
+import { agentServerApi } from '@/api/agents'
 import HostSelector from '@/components/HostSelector.vue'
 import CronBuilder from './components/CronBuilder.vue'
 
@@ -290,6 +311,10 @@ const cronError = ref('')
 const nextRuns = ref([])
 const showCronHelper = ref(false)
 const tempCronExpression = ref('')
+
+const agentServers = ref<any[]>([])
+const selectedAgentServerId = ref<number | null>(null)
+const agentServerLoading = ref(false)
 
 // 判断是否为编辑模式
 const isEdit = computed(() => !!route.params.id)
@@ -352,6 +377,24 @@ const rules = {
 }
 
 
+
+const fetchAgentServers = async () => {
+  try {
+    agentServerLoading.value = true
+    const response = await agentServerApi.getAgentServers({ page_size: 200, is_active: true })
+    agentServers.value = response?.results || []
+  } catch (error) {
+    console.error('获取Agent-Server列表失败:', error)
+    agentServers.value = []
+  } finally {
+    agentServerLoading.value = false
+  }
+}
+
+const filterAgentServerOption = (inputValue: string, option: any) => {
+  const label = option?.label || ''
+  return label.toLowerCase().includes((inputValue || '').toLowerCase())
+}
 
 // 获取执行方案列表
 const fetchExecutionPlans = async (search = '') => {
@@ -589,6 +632,11 @@ const handleSave = async () => {
     // ArcoDesign的validate方法：成功时resolve undefined，失败时reject错误
     await formRef.value.validate()
 
+    if (!selectedAgentServerId.value) {
+      Message.error('请选择 Agent-Server')
+      return
+    }
+
     // 构建执行参数覆盖（只包含有覆盖值的参数）
     const executionParameters: Record<string, any> = {}
     globalParameters.value.forEach(param => {
@@ -603,6 +651,7 @@ const handleSave = async () => {
         executionParameters[param.key] = value
       }
     })
+    executionParameters.agent_server_id = selectedAgentServerId.value
     form.execution_parameters = Object.keys(executionParameters).length > 0 ? executionParameters : {}
 
     saving.value = true
@@ -654,6 +703,8 @@ const loadTask = async () => {
       execution_parameters: task.execution_parameters || {}
     })
 
+    selectedAgentServerId.value = task.execution_parameters?.agent_server_id ?? null
+
     // 加载执行方案的全局变量
     if (task.execution_plan) {
       await handleExecutionPlanChange(task.execution_plan)
@@ -689,6 +740,7 @@ watch(showCronHelper, (visible) => {
 
 // 生命周期
 onMounted(() => {
+  fetchAgentServers()
   fetchExecutionPlans().finally(async () => {
     // 新建页支持通过查询参数预填执行方案
     if (!isEdit.value && presetPlanId.value) {

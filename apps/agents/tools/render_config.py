@@ -93,6 +93,9 @@ def parse_args():
     p.add_argument("--ws-enable-compression", help="ws enable compression (true/false)", default=None)
     p.add_argument("--ws-allowed-origins", help="ws allowed origins (comma-separated)", default=None)
     p.add_argument("--max-concurrent-tasks", help="max concurrent tasks", default=None)
+    # agent-server auth 配置
+    p.add_argument("--auth-shared-secret", help="agent-server auth shared secret", default=None)
+    p.add_argument("--auth-require-signature", help="agent-server auth require signature (true/false)", default=None)
     return p.parse_args()
 
 
@@ -117,6 +120,9 @@ def render_config_yaml(
     ws_allowed_origins: list = None,
     # 最大并发任务数
     max_concurrent_tasks: int = None,
+    # agent-server auth 配置
+    auth_shared_secret: str = None,
+    auth_require_signature: bool = None,
     base_config_path: str = None,
 ) -> str:
     """
@@ -125,14 +131,15 @@ def render_config_yaml(
     Args:
         install_type: 安装类型 ('agent' 或 'agent-server')
         agent_token: Agent Token
-        agent_server_url: Agent Server URL
+        agent_server_url: Agent 连接 Agent-Server 的 WS 地址（仅 agent 安装使用）
         control_plane_url: Control Plane URL（仅 agent-server 安装使用）
         ws_backoff_initial: WebSocket 初始退避时间（毫秒）
         ws_backoff_max: WebSocket 最大退避时间（毫秒）
         ws_max_retries: WebSocket 最大重试次数
-        agent_server_listen_addr: Agent Server 监听地址
+        agent_server_listen_addr: Agent-Server 服务监听地址（仅 agent-server 安装使用）
         max_connections: 最大连接数
         heartbeat_timeout: 心跳超时（秒）
+        auth_shared_secret/auth_require_signature: 控制面调用 agent-server 的 HMAC 配置（仅 agent-server 安装写入）
         base_config_path: 基础配置文件路径（可选）
 
     Returns:
@@ -225,6 +232,14 @@ def render_config_yaml(
 
         overrides["agent"] = agent_config
 
+        auth_config: Dict[str, Any] = {}
+        if auth_shared_secret is not None:
+            auth_config["shared_secret"] = auth_shared_secret
+        if auth_require_signature is not None:
+            auth_config["require_signature"] = bool(auth_require_signature)
+        if auth_config:
+            overrides["auth"] = auth_config
+
     base_path = base_config_path
 
     # Try ruamel.yaml first (preserves comments and formatting)
@@ -293,6 +308,10 @@ def main():
     if args.ws_allowed_origins is not None and args.ws_allowed_origins.strip():
         ws_allowed_origins = [o.strip() for o in args.ws_allowed_origins.split(',') if o.strip()]
 
+    auth_require_signature = None
+    if args.auth_require_signature is not None:
+        auth_require_signature = args.auth_require_signature.lower() in ('true', '1', 'yes')
+
     result = render_config_yaml(
         install_type=args.install_type,
         agent_token=args.agent_token,
@@ -313,6 +332,8 @@ def main():
         ws_enable_compression=ws_enable_compression,
         ws_allowed_origins=ws_allowed_origins,
         max_concurrent_tasks=int(args.max_concurrent_tasks) if args.max_concurrent_tasks else None,
+        auth_shared_secret=args.auth_shared_secret,
+        auth_require_signature=auth_require_signature,
         base_config_path=args.config,
     )
     print(result)

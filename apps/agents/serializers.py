@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from apps.hosts.serializers import HostSerializer, HostSimpleSerializer
 from apps.system_config.models import ConfigManager
-from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage, AgentTaskStats
+from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage, AgentTaskStats, AgentServer
 from .status import get_cached_agent_status
 
 
@@ -54,6 +54,7 @@ class AgentSerializer(serializers.ModelSerializer):
             'is_version_outdated',
             'expected_min_version',
             'endpoint',
+            'agent_server_id',
             'last_heartbeat_at',
             'last_error_code',
             'created_at',
@@ -200,6 +201,7 @@ class AgentDetailSerializer(serializers.ModelSerializer):
             'is_version_outdated',
             'expected_min_version',
             'endpoint',
+            'agent_server_id',
             'last_heartbeat_at',
             'last_error_code',
             'tags',
@@ -277,12 +279,17 @@ class AgentEnableSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
 
+class AgentUpdateServerSerializer(serializers.Serializer):
+    agent_server_id = serializers.IntegerField(required=False, allow_null=True)
+
+
 class BatchOperationSerializer(serializers.Serializer):
     agent_ids = serializers.ListField(
         child=serializers.IntegerField(),
         help_text="Agent ID 列表"
     )
     confirmed = serializers.BooleanField(required=True, help_text="批量高危操作二次确认")
+    agent_server_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent-Server ID")
 
 
 class AgentInstallRecordSerializer(serializers.ModelSerializer):
@@ -502,6 +509,67 @@ class AgentUninstallRecordSerializer(serializers.ModelSerializer):
         ]
 
 
+class AgentServerSerializer(serializers.ModelSerializer):
+    shared_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_secret = serializers.SerializerMethodField()
+    shared_secret_last4 = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AgentServer
+        fields = [
+            'id',
+            'name',
+            'base_url',
+            'shared_secret',
+            'require_signature',
+            'has_secret',
+            'shared_secret_last4',
+            'is_active',
+            'description',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'has_secret', 'shared_secret_last4', 'created_at', 'updated_at']
+
+    def get_has_secret(self, obj: AgentServer) -> bool:
+        return bool(obj.shared_secret)
+
+    def get_shared_secret_last4(self, obj: AgentServer) -> str:
+        if not obj.shared_secret:
+            return ''
+        return obj.shared_secret[-4:]
+
+    def validate(self, attrs):
+        if 'base_url' in attrs:
+            from apps.agents.utils import normalize_agent_server_base_url
+
+            normalized = normalize_agent_server_base_url(attrs.get('base_url'))
+            if not normalized:
+                raise serializers.ValidationError({'base_url': ['无效的 Agent-Server 地址']})
+            attrs['base_url'] = normalized
+
+        if self.instance is None and not attrs.get('shared_secret'):
+            raise serializers.ValidationError({'shared_secret': ['shared_secret 不能为空']})
+
+        require_signature = attrs.get(
+            'require_signature',
+            getattr(self.instance, 'require_signature', False) if self.instance else False
+        )
+        if require_signature:
+            has_secret = bool(attrs.get('shared_secret'))
+            if not has_secret and self.instance:
+                has_secret = bool(self.instance.shared_secret)
+            if not has_secret:
+                raise serializers.ValidationError({'shared_secret': ['启用签名校验必须提供 shared_secret']})
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        if 'shared_secret' not in validated_data:
+            validated_data.pop('shared_secret', None)
+        return super().update(instance, validated_data)
+
+
 class BatchUninstallSerializer(serializers.Serializer):
     agent_ids = serializers.ListField(
         child=serializers.IntegerField(),
@@ -646,11 +714,17 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         required=False,
         help_text="安装类型：agent/agent-server"
     )
+    agent_server_base_url = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text="控制面访问 Agent-Server 的地址(base_url)，安装 agent-server 时需要"
+    )
     agent_server_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="agent-server地址（agent-server模式需要）"
+        help_text="Agent 连接 Agent-Server 的 WS 地址（仅安装agent时需要）"
     )
     agent_server_backup_url = serializers.CharField(
         required=False,
@@ -684,7 +758,7 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=100,
         default='0.0.0.0:8080',
-        help_text="agent-server监听地址（agent-server安装需要）"
+        help_text="Agent-Server 服务监听地址（写入agent-server配置）"
     )
     max_connections = serializers.IntegerField(
         required=False,
@@ -709,6 +783,17 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         allow_null=True,
         help_text="最大并发任务数（可选，1~20）"
     )
+    auth_shared_secret = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text="agent-server HMAC shared secret（可选）"
+    )
+    auth_require_signature = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="agent-server 是否强制签名校验（可选）"
+    )
 
     def validate(self, attrs):
         install_type = attrs.get('install_type', 'agent')
@@ -721,6 +806,14 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
             control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
             if not control_plane_url:
                 raise serializers.ValidationError({'non_field_errors': ['控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server']})
+            base_url = attrs.get('agent_server_base_url') or attrs.get('agent_server_listen_addr') or ''
+            from apps.agents.utils import normalize_agent_server_base_url
+            normalized = normalize_agent_server_base_url(base_url)
+            if not normalized:
+                raise serializers.ValidationError({'agent_server_base_url': ['安装 Agent-Server 需要控制面访问地址']})
+            attrs['agent_server_base_url'] = normalized
+            if attrs.get('auth_require_signature') and not attrs.get('auth_shared_secret'):
+                raise serializers.ValidationError({'auth_shared_secret': ['启用签名校验必须提供 shared_secret']})
         return attrs
 
 
@@ -740,11 +833,17 @@ class BatchInstallSerializer(serializers.Serializer):
         required=False,
         help_text="安装类型：agent/agent-server"
     )
+    agent_server_base_url = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text="控制面访问 Agent-Server 的地址(base_url)，安装 agent-server 时需要"
+    )
     agent_server_url = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=500,
-        help_text="agent-server地址（agent-server模式需要）"
+        help_text="Agent 连接 Agent-Server 的 WS 地址（仅安装agent时需要）"
     )
     agent_server_backup_url = serializers.CharField(
         required=False,
@@ -778,7 +877,7 @@ class BatchInstallSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=100,
         default='0.0.0.0:8080',
-        help_text="agent-server监听地址（agent-server安装需要）"
+        help_text="Agent-Server 服务监听地址（写入agent-server配置）"
     )
     max_connections = serializers.IntegerField(
         required=False,
@@ -808,6 +907,17 @@ class BatchInstallSerializer(serializers.Serializer):
     )
     package_id = serializers.IntegerField(required=False, allow_null=True, help_text="Agent package ID（可选）")
     package_version = serializers.CharField(required=False, allow_blank=True, max_length=50, help_text="Agent package version（可选）")
+    auth_shared_secret = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text="agent-server HMAC shared secret（可选）"
+    )
+    auth_require_signature = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="agent-server 是否强制签名校验（可选）"
+    )
     confirmed = serializers.BooleanField(
         required=True,
         help_text="批量安装高危操作二次确认"
@@ -823,6 +933,14 @@ class BatchInstallSerializer(serializers.Serializer):
             control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
             if not control_plane_url:
                 raise serializers.ValidationError({'non_field_errors': ['控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server']})
+            base_url = attrs.get('agent_server_base_url') or attrs.get('agent_server_listen_addr') or ''
+            from apps.agents.utils import normalize_agent_server_base_url
+            normalized = normalize_agent_server_base_url(base_url)
+            if not normalized:
+                raise serializers.ValidationError({'agent_server_base_url': ['安装 Agent-Server 需要控制面访问地址']})
+            attrs['agent_server_base_url'] = normalized
+            if attrs.get('auth_require_signature') and not attrs.get('auth_shared_secret'):
+                raise serializers.ValidationError({'auth_shared_secret': ['启用签名校验必须提供 shared_secret']})
         return attrs
 
 

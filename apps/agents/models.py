@@ -25,6 +25,14 @@ class Agent(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="状态")
     version = models.CharField(max_length=50, blank=True, verbose_name="Agent版本")
     endpoint = models.CharField(max_length=255, blank=True, verbose_name="接入点/上报地址")
+    agent_server = models.ForeignKey(
+        'AgentServer',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agents',
+        verbose_name="关联Agent-Server"
+    )
     last_heartbeat_at = models.DateTimeField(null=True, blank=True, verbose_name="最后心跳时间")
     last_error_code = models.CharField(max_length=100, blank=True, verbose_name="最近错误码")
     active_token_hash = models.CharField(max_length=128, blank=True, verbose_name="当前token哈希")
@@ -179,6 +187,31 @@ class AgentUninstallRecord(models.Model):
 
     def __str__(self):
         return f"卸载记录({self.host_id})-{self.get_status_display()}"
+
+
+class AgentServer(models.Model):
+    """Agent-Server 配置"""
+
+    name = models.CharField(max_length=100, verbose_name="名称")
+    base_url = models.CharField(max_length=255, unique=True, verbose_name="基础URL")
+    shared_secret = models.CharField(max_length=255, blank=True, verbose_name="HMAC共享密钥")
+    require_signature = models.BooleanField(default=False, verbose_name="是否强制签名校验")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    description = models.TextField(blank=True, verbose_name="描述")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "Agent-Server"
+        verbose_name_plural = "Agent-Server"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['base_url']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f"Agent-Server({self.name})"
 
 
 def agent_package_upload_path(instance, filename):

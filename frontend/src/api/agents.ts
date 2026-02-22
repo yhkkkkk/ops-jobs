@@ -19,6 +19,7 @@ export interface Agent {
   agent_type_display?: string
   version: string
   endpoint: string
+  agent_server_id?: number | null
   last_heartbeat_at: string | null
   last_error_code: string
   tags?: string[]
@@ -53,6 +54,19 @@ export interface AgentTaskStats {
   last_updated?: string
 }
 
+export interface AgentServer {
+  id: number
+  name: string
+  base_url: string
+  is_active: boolean
+  description?: string
+  has_secret?: boolean
+  shared_secret_last4?: string
+  require_signature?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 export interface AgentDetail extends Agent {
   host: {
     id: number
@@ -80,6 +94,7 @@ export interface IssueTokenParams {
 export interface BatchOperationParams {
   agent_ids: number[]
   confirmed: boolean
+  agent_server_id?: number
 }
 
 export interface PaginatedResponse<T> {
@@ -100,6 +115,7 @@ export const agentsApi = {
     service_role?: string
     group?: number
     group_id?: number
+    agent_server_id?: number
   }): Promise<PaginatedResponse<Agent>> {
     return http.get('/agents/', { params })
   },
@@ -133,8 +149,13 @@ export const agentsApi = {
     return http.post(`/agents/${id}/disable/`, data)
   },
 
+  // 更新 Agent 关联的 Agent-Server（仅控制面记录）
+  updateAgentServer(id: number, data: { agent_server_id: number | null }): Promise<{ id: number; agent_server_id: number | null }> {
+    return http.post(`/agents/${id}/update_agent_server/`, data)
+  },
+
   // 控制 Agent（重启/启动/停止）
-  controlAgent(id: number, data: { action: 'start' | 'stop' | 'restart'; reason?: string }): Promise<{
+  controlAgent(id: number, data: { action: 'start' | 'stop' | 'restart'; reason?: string; agent_server_id?: number }): Promise<{
     message: string
     status: string
   }> {
@@ -146,6 +167,7 @@ export const agentsApi = {
     target_version?: string
     package_id?: number
     confirmed: boolean
+    agent_server_id?: number
   }): Promise<{
     message: string
   }> {
@@ -218,10 +240,13 @@ export const agentsApi = {
     ws_backoff_max_ms?: number
     ws_max_retries?: number
     agent_server_listen_addr?: string
+    agent_server_base_url?: string
     max_connections?: number
     heartbeat_timeout?: number
     package_id?: number
     package_version?: string
+    auth_shared_secret?: string
+    auth_require_signature?: boolean
   }): Promise<{
     scripts: Record<string, Array<{
       host_id: number
@@ -249,12 +274,15 @@ export const agentsApi = {
     ws_backoff_max_ms?: number
     ws_max_retries?: number
     agent_server_listen_addr?: string
+    agent_server_base_url?: string
     max_connections?: number
     heartbeat_timeout?: number
     ssh_timeout?: number
     allow_reinstall?: boolean
     package_id?: number
     package_version?: string
+    auth_shared_secret?: string
+    auth_require_signature?: boolean
     confirmed: boolean
   }): Promise<{
     results: Array<{
@@ -359,6 +387,31 @@ export const agentsApi = {
   }> {
     return http.get('/agents/host_agent_status/')
   },
+}
+
+export const agentServerApi = {
+  // 获取 Agent-Server 列表
+  getAgentServers(params?: {
+    page?: number
+    page_size?: number
+    search?: string
+    is_active?: boolean
+    require_signature?: boolean
+  }): Promise<PaginatedResponse<AgentServer>> {
+    return http.get('/agents/agent_servers/', { params })
+  },
+
+  // 更新 Agent-Server（仅控制面记录）
+  updateAgentServer(id: number, data: {
+    name?: string
+    base_url?: string
+    require_signature?: boolean
+    shared_secret?: string
+    is_active?: boolean
+    description?: string
+  }): Promise<AgentServer> {
+    return http.patch(`/agents/agent_servers/${id}/`, data)
+  }
 }
 
 // Agent 安装包管理 API

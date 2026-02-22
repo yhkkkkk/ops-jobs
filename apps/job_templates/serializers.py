@@ -776,6 +776,11 @@ class ExecutionPlanExecuteSerializer(serializers.Serializer):
         help_text="执行参数，用于覆盖步骤中的变量"
     )
 
+    agent_server_id = serializers.IntegerField(
+        required=True,
+        help_text="Agent-Server ID"
+    )
+
     # 执行配置
     execution_mode = serializers.ChoiceField(
         choices=[

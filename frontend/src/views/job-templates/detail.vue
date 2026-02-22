@@ -39,6 +39,24 @@
             </template>
             复制
           </a-button>
+          <a-select
+            v-model="selectedAgentServerId"
+            class="agent-server-select"
+            placeholder="请选择 Agent-Server"
+            allow-clear
+            allow-search
+            :loading="agentServerLoading"
+            :filter-option="filterAgentServerOption"
+          >
+            <a-option
+              v-for="server in agentServers"
+              :key="server.id"
+              :value="server.id"
+              :label="`${server.name} (${server.base_url})`"
+            >
+              {{ server.name }} ({{ server.base_url }})
+            </a-option>
+          </a-select>
           <a-button
             type="primary"
             @click="handleDebugExecute"
@@ -162,6 +180,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconEdit, IconCopy, IconPlayArrow, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { jobTemplateApi } from '@/api/ops'
+import { agentServerApi } from '@/api/agents'
 import type { JobTemplate } from '@/types'
 import StepCard from '@/components/StepCard.vue'
 import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
@@ -176,6 +195,10 @@ const drawerVisible = ref(false)
 const drawerStep = ref<any | null>(null)
 const drawerIndex = ref(0)
 
+const agentServers = ref<any[]>([])
+const selectedAgentServerId = ref<number | null>(null)
+const agentServerLoading = ref(false)
+
 // 获取模板详情
 const fetchTemplate = async () => {
   try {
@@ -189,6 +212,24 @@ const fetchTemplate = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const fetchAgentServers = async () => {
+  try {
+    agentServerLoading.value = true
+    const response = await agentServerApi.getAgentServers({ page_size: 200, is_active: true })
+    agentServers.value = response?.results || []
+  } catch (error) {
+    console.error('获取Agent-Server列表失败:', error)
+    agentServers.value = []
+  } finally {
+    agentServerLoading.value = false
+  }
+}
+
+const filterAgentServerOption = (inputValue: string, option: any) => {
+  const label = option?.label || ''
+  return label.toLowerCase().includes((inputValue || '').toLowerCase())
 }
 
 const openStepDrawer = (step: any, index: number) => {
@@ -243,6 +284,10 @@ const handleCopy = () => {
 
 const handleDebugExecute = async () => {
   if (!template.value) return
+  if (!selectedAgentServerId.value) {
+    Message.error('请选择 Agent-Server')
+    return
+  }
 
   try {
 
@@ -250,7 +295,8 @@ const handleDebugExecute = async () => {
       execution_parameters: {},
       execution_mode: 'parallel',
       rolling_batch_size: 1,
-      rolling_batch_delay: 0
+      rolling_batch_delay: 0,
+      agent_server_id: selectedAgentServerId.value
     })
     Message.success('调试执行已启动！')
 
@@ -271,12 +317,17 @@ const handleRefresh = () => {
 // 生命周期
 onMounted(() => {
   fetchTemplate()
+  fetchAgentServers()
 })
 </script>
 
 <style scoped>
 .template-detail {
   padding: 0;
+}
+
+.agent-server-select {
+  width: 260px;
 }
 
 .detail-content {

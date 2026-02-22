@@ -36,13 +36,15 @@ def execute_scheduled_job(scheduled_job_id):
         logger.info(f"开始执行定时作业: {scheduled_job.name}")
 
         # 使用ExecutionPlanService执行ExecutionPlan
+        execution_parameters = scheduled_job.execution_parameters or {}
         result = ExecutionPlanService.execute_plan(
             execution_plan=scheduled_job.execution_plan,
             user=scheduled_job.created_by,
             trigger_type='scheduled',
             name=f"定时作业: {scheduled_job.name}",
             description=f"由定时作业 {scheduled_job.name} 自动创建",
-            execution_parameters=scheduled_job.execution_parameters or {}
+            execution_parameters=execution_parameters,
+            agent_server_id=execution_parameters.get('agent_server_id')
         )
 
         # 更新定时作业统计

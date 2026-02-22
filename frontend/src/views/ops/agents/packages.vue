@@ -488,7 +488,7 @@ const columns = ref([
   {
     title: '版本号',
     dataIndex: 'version',
-    width: 120,
+    width: 100,
   },
   {
     title: '操作系统',
@@ -498,7 +498,7 @@ const columns = ref([
   {
     title: '架构',
     dataIndex: 'arch_display',
-    width: 100,
+    width: 150,
   },
   {
     title: '存储方式',

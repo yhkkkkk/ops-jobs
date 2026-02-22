@@ -149,7 +149,7 @@ class QuickFileTransferView(APIView):
             "name", "sources", "global_variables", "overwrite_policy",
             "target_host_ids", "dynamic_ips", "timeout", "bandwidth_limit",
             "execution_mode", "rolling_strategy", "rolling_batch_size",
-            "rolling_batch_delay", "agent_server_url", "account_id"
+            "rolling_batch_delay", "agent_server_id", "account_id"
         }
         serializer_data = {}
         for key in serializer_fields:

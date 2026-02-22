@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage
+from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentPackage, AgentServer
 
 
 @admin.register(Agent)
@@ -39,4 +39,12 @@ class AgentPackageAdmin(admin.ModelAdmin):
     list_display = ['version', 'os_type', 'arch', 'file_size', 'is_default', 'is_active', 'created_by', 'created_at']
     list_filter = ['os_type', 'arch', 'is_default', 'is_active', 'created_at']
     search_fields = ['version', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(AgentServer)
+class AgentServerAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'base_url', 'is_active', 'created_at']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['name', 'base_url']
     readonly_fields = ['created_at', 'updated_at']

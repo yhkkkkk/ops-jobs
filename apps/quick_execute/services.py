@@ -128,12 +128,12 @@ class QuickExecuteService:
             )
 
             # 只支持Agent方式执行
-            agent_server_url = script_data.get('agent_server_url')
+            agent_server_id = script_data.get('agent_server_id')
 
             # 更新执行参数，添加执行方式标识
             execution_record.execution_parameters.update({
                 'execution_mode': 'agent',
-                'agent_server_url': agent_server_url,
+                'agent_server_id': agent_server_id,
             })
             execution_record.save()
 
@@ -146,7 +146,7 @@ class QuickExecuteService:
                 timeout=execution_params['timeout'],  # 使用统一提取的timeout
                 global_variables=global_variables,
                 step_id=None,  # 快速执行没有步骤ID
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
                 account_id=account_id,
             )
 
@@ -253,12 +253,12 @@ class QuickExecuteService:
             )
 
             # 只支持Agent方式执行
-            agent_server_url = transfer_data.get('agent_server_url')
+            agent_server_id = transfer_data.get('agent_server_id')
 
             # 更新执行参数，添加执行方式标识
             execution_record.execution_parameters.update({
                 'execution_mode': 'agent',
-                'agent_server_url': agent_server_url,
+                'agent_server_id': agent_server_id,
             })
             execution_record.save()
 
@@ -390,7 +390,7 @@ class QuickExecuteService:
                             size=item.get('size'),
                             auth_headers=item.get('auth_headers') or {},
                             step_id=None,
-                            agent_server_url=agent_server_url,
+                            agent_server_id=agent_server_id,
                             account_id=account_id,
                             file_sources=[item],
                         )

@@ -14,7 +14,7 @@ from django.conf import settings
 from utils.audit_service import AuditLogService
 from apps.hosts.models import Host
 from apps.hosts.fabric_ssh_manager import fabric_ssh_manager
-from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord
+from .models import Agent, AgentToken, AgentInstallRecord, AgentUninstallRecord, AgentServer
 from utils.realtime_logs import realtime_log_service
 import uuid
 import base64
@@ -212,7 +212,10 @@ class AgentService:
                                 ws_read_buffer_size: int = None,
                                 ws_write_buffer_size: int = None,
                                 ws_enable_compression: bool = True,
-                                ws_allowed_origins: list = None) -> Dict[str, str]:
+                                ws_allowed_origins: list = None,
+                                # agent-server auth 配置
+                                auth_shared_secret: str = None,
+                                auth_require_signature: bool = None) -> Dict[str, str]:
         """
         生成 Agent 或 Agent-Server 安装脚本
         Args:
@@ -220,10 +223,11 @@ class AgentService:
             agent_token: Agent Token（用于 Agent 认证）
             install_type: 安装类型 ('agent' 或 'agent-server')
             install_mode: 安装模式 ('agent-server')
-            agent_server_url: Agent-Server 地址（agent 安装需要）
-            agent_server_listen_addr: Agent-Server 监听地址（agent-server 安装需要）
+            agent_server_url: Agent 连接 Agent-Server 的 WS 地址（仅 agent 安装需要）
+            agent_server_listen_addr: Agent-Server 服务监听地址（仅 agent-server 安装需要）
             max_connections: 最大连接数（agent-server 安装需要）
             heartbeat_timeout: 心跳超时（agent-server 安装需要）
+            auth_shared_secret/auth_require_signature: 控制面调用 agent-server 的 HMAC 配置（仅 agent-server 安装写入）
             download_url: Agent 二进制下载地址
         Returns:
             Dict[str, str]: 包含不同操作系统的安装脚本
@@ -317,6 +321,8 @@ exit 1
                 ws_write_buffer_size=ws_write_buffer_size,
                 ws_enable_compression=ws_enable_compression,
                 ws_allowed_origins=ws_allowed_origins,
+                auth_shared_secret=auth_shared_secret,
+                auth_require_signature=auth_require_signature,
                 base_config_path=str(base_config_path),
             )
             # base64 encode for safe insertion into shell script
@@ -526,7 +532,10 @@ exit 1
                              ws_read_buffer_size: int = None,
                              ws_write_buffer_size: int = None,
                              ws_enable_compression: bool = True,
-                             ws_allowed_origins: list = None) -> Dict[str, Any]:
+                             ws_allowed_origins: list = None,
+                             # agent-server auth 配置
+                             auth_shared_secret: str = None,
+                             auth_require_signature: bool = None) -> Dict[str, Any]:
         """
         批量安装 Agent（通过 SSH）
         
@@ -696,6 +705,8 @@ exit 1
                     ws_write_buffer_size=ws_write_buffer_size,
                     ws_enable_compression=ws_enable_compression,
                     ws_allowed_origins=ws_allowed_origins,
+                    auth_shared_secret=auth_shared_secret,
+                    auth_require_signature=auth_require_signature,
                 )
                 
                 # 根据操作系统选择脚本
@@ -1129,7 +1140,7 @@ exit 1
         }
 
     @classmethod
-    def batch_restart_agents(cls, agent_ids: list, user, batch_task_id: str = None) -> Dict[str, Any]:
+    def batch_restart_agents(cls, agent_ids: list, user, batch_task_id: str = None, agent_server_id: int = None) -> Dict[str, Any]:
         """
         批量重启 Agent
 
@@ -1143,6 +1154,9 @@ exit 1
         """
         if not batch_task_id:
             batch_task_id = str(uuid.uuid4())
+
+        if not agent_server_id:
+            raise ValueError("请先选择Agent-Server")
 
         results = []
         total = len(agent_ids)
@@ -1181,7 +1195,7 @@ exit 1
 
             try:
                 # 执行重启操作
-                cls.control_agent(agent, 'restart', user)
+                cls.control_agent(agent, 'restart', user, agent_server_id)
 
                 success_count += 1
                 results.append({
@@ -1524,7 +1538,7 @@ exit 1
         }
 
     @staticmethod
-    def control_agent(agent: Agent, action: str, user) -> None:
+    def control_agent(agent: Agent, action: str, user, agent_server_id: int) -> None:
         """
         控制单个 Agent（重启等）
 
@@ -1532,55 +1546,36 @@ exit 1
             agent: Agent实例
             action: 控制动作 ('restart')
             user: 执行用户
+            agent_server_id: Agent-Server ID（必填）
         """
         from utils.agent_server_client import AgentServerClient
-        from .execution_service import AgentExecutionService
+
+        if not agent_server_id:
+            raise ValueError("请先选择Agent-Server")
+
+        server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
+        if not server:
+            raise ValueError("Agent-Server 未注册或已禁用")
+        if not server.shared_secret:
+            raise ValueError("Agent-Server 未配置 shared_secret")
 
         agent_type = agent.agent_type or 'agent'
 
         if agent_type == 'agent':
             # Agent 控制：通过 agent-server 下发控制指令
-            server_base = agent.endpoint
-            if not server_base:
-                raise ValueError(f"Agent {agent.id} 未配置 agent-server 地址")
-
-            # 如果 endpoint 只是地址，需要构建完整 URL
-            if not server_base.startswith('http'):
-                server_base = f"http://{server_base}"
-
-            api_url = f"{server_base}/api/agents/{agent.host_id}/control"
-            client = AgentServerClient.from_settings()
-
-            payload = {
-                "action": action,
-                "reason": f"用户 {user.username} 手动{action}"
-            }
-
-            resp = client.post(api_url, json=payload, timeout=5)
-            if resp.status_code != 200:
-                raise ValueError(f"Agent控制失败: HTTP {resp.status_code}")
-
+            api_url = f"{server.base_url}/api/agents/{agent.host_id}/control"
         elif agent_type == 'agent-server':
             # Agent-Server 控制：调用 agent-server 自身的控制接口
-            agent_server_url = agent.endpoint
-            if not agent_server_url:
-                raise ValueError(f"Agent-Server {agent.id} 未配置 endpoint")
-
-            # 如果 endpoint 只是地址，需要构建完整 URL
-            if not agent_server_url.startswith('http'):
-                agent_server_url = f"http://{agent_server_url}"
-
-            api_url = f"{agent_server_url}/api/self/control"
-            client = AgentServerClient.from_settings()
-
-            payload = {
-                "action": action,
-                "reason": f"用户 {user.username} 手动{action}"
-            }
-
-            resp = client.post(api_url, json=payload, headers={}, timeout=5)
-            if resp.status_code != 200:
-                raise ValueError(f"Agent-Server控制失败: HTTP {resp.status_code}")
-
+            api_url = f"{server.base_url}/api/self/control"
         else:
             raise ValueError(f"不支持的 agent_type: {agent_type}")
+
+        client = AgentServerClient(shared_secret=server.shared_secret)
+        payload = {
+            "action": action,
+            "reason": f"用户 {user.username} 手动{action}"
+        }
+
+        resp = client.post(api_url, json=payload, timeout=5)
+        if resp.status_code != 200:
+            raise ValueError(f"Agent控制失败: HTTP {resp.status_code}")

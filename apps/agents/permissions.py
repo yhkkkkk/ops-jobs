@@ -41,9 +41,38 @@ class AgentPermission(BasePermissionMixin):
         if action == "disable_agent":
             allowed = user.has_perm("agents.disable_agent", obj) or user.is_superuser
             return self.ensure_permission(allowed, request, view, "agents.disable_agent", obj=obj)
+        if action == "update_agent_server":
+            allowed = user.has_perm("agents.change_agent", obj) or user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.change_agent", obj=obj)
 
         # 其他情况默认按查看权限处理
         allowed = user.has_perm("agents.view_agent", obj) or user.is_superuser
         return self.ensure_permission(allowed, request, view, "agents.view_agent", obj=obj)
 
+
+class AgentServerPermission(BasePermissionMixin):
+    """Agent-Server 配置权限"""
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+
+        action = getattr(view, "action", None)
+        if action in ["list", "retrieve"]:
+            allowed = request.user.has_perm("agents.view_agentserver") or request.user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.view_agentserver")
+        if action in ["create"]:
+            allowed = request.user.has_perm("agents.add_agentserver") or request.user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.add_agentserver")
+        if action in ["update", "partial_update"]:
+            allowed = request.user.has_perm("agents.change_agentserver") or request.user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.change_agentserver")
+        if action in ["destroy"]:
+            allowed = request.user.has_perm("agents.delete_agentserver") or request.user.is_superuser
+            return self.ensure_permission(allowed, request, view, "agents.delete_agentserver")
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        # 对象级校验与 model 权限一致
+        return self.has_permission(request, view)
 

@@ -16,7 +16,7 @@ from apps.agents.execution_service import AgentExecutionService
 from apps.agents.status_reconciliation_service import status_reconciliation_service
 from .filters import AgentFilter, InstallRecordFilter, UninstallRecordFilter
 from .mixins import BatchOperationMixin
-from .models import Agent, AgentInstallRecord, AgentToken, AgentUninstallRecord
+from .models import Agent, AgentInstallRecord, AgentToken, AgentUninstallRecord, AgentServer
 from .pagination import AgentPagination
 from .permissions import AgentPermission
 from .serializers import (
@@ -27,6 +27,7 @@ from .serializers import (
     AgentSerializer,
     AgentTokenSerializer,
     AgentUpgradeSerializer,
+    AgentUpdateServerSerializer,
     BatchInstallSerializer,
     BatchOperationSerializer,
     BatchUninstallSerializer,
@@ -36,6 +37,7 @@ from .serializers import (
 )
 from .services import AgentService
 from .status import set_agent_status_cache, invalidate_agent_status_cache
+from .utils import build_agent_server_netloc_map, resolve_agent_server_from_url, normalize_agent_server_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -198,37 +200,95 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             pass
         return SycResponse.success(message="禁用agent成功")
 
-    # 辅助方法：构造Agent-Server基url
-    def _normalize_server_url(self, raw_url: str) -> str:
-        if not raw_url:
-            return ""
-        url = raw_url.replace("ws://", "http://").replace("wss://", "https://")
-        if "://" in url:
-            scheme_end = url.find("://") + 3
-            slash_idx = url.find("/", scheme_end)
-            if slash_idx != -1:
-                url = url[:slash_idx]
-        return url.rstrip("/")
+    @action(detail=True, methods=["post"], url_path="update_agent_server")
+    def update_agent_server(self, request, pk=None):
+        agent = self.get_object()
+        serializer = AgentUpdateServerSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
 
-    def _get_agent_server_base(self, agent, override_url: str = "") -> str:
-        if override_url:
-            return self._normalize_server_url(override_url)
-        if agent.endpoint:
-            return self._normalize_server_url(agent.endpoint)
-        return ""
+        agent_server_id = serializer.validated_data.get("agent_server_id")
+        if agent_server_id is None:
+            server = None
+        else:
+            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
+            if not server:
+                return SycResponse.error(message="Agent-Server不存在或已禁用", code=404)
+
+        old_agent_server_id = agent.agent_server_id
+        new_agent_server_id = server.id if server else None
+        if old_agent_server_id == new_agent_server_id:
+            return SycResponse.success(
+                content={"id": agent.id, "agent_server_id": old_agent_server_id},
+                message="Agent-Server 未发生变更"
+            )
+
+        agent.agent_server = server
+        agent.save(update_fields=["agent_server", "updated_at"])
+        AgentService.audit(
+            request.user,
+            "update_agent_server",
+            agent,
+            request=request,
+            extra={"old_agent_server_id": old_agent_server_id, "new_agent_server_id": new_agent_server_id}
+        )
+        return SycResponse.success(
+            content={"id": agent.id, "agent_server_id": new_agent_server_id},
+            message="更新Agent关联Agent-Server成功"
+        )
+
+    def _resolve_agent_server(self, request):
+        server_id = request.data.get("agent_server_id") or request.query_params.get("agent_server_id")
+        if not server_id:
+            return None, "请先选择Agent-Server"
+        server = AgentServer.objects.filter(id=server_id, is_active=True).first()
+        if not server:
+            return None, "Agent-Server不存在或已禁用"
+        return server, ""
+
+    def _upsert_agent_server_from_base_url(self, base_url: str, auth_shared_secret: str = '', auth_require_signature: bool | None = None):
+        normalized = normalize_agent_server_base_url(base_url)
+        if not normalized:
+            return None
+        from urllib.parse import urlparse
+        netloc = urlparse(normalized).netloc
+        display_name = netloc or normalized
+
+        server = AgentServer.objects.filter(base_url=normalized).first()
+        if not server:
+            return AgentServer.objects.create(
+                name=display_name,
+                base_url=normalized,
+                shared_secret=auth_shared_secret or '',
+                require_signature=bool(auth_require_signature)
+            )
+
+        update_fields = []
+        if auth_shared_secret:
+            server.shared_secret = auth_shared_secret
+            update_fields.append('shared_secret')
+        if auth_require_signature is not None and server.require_signature != bool(auth_require_signature):
+            server.require_signature = bool(auth_require_signature)
+            update_fields.append('require_signature')
+        if not server.name:
+            server.name = display_name
+            update_fields.append('name')
+        if update_fields:
+            server.save(update_fields=update_fields)
+        return server
 
     @action(detail=True, methods=["get"], url_path="status")
     def status(self, request, pk=None):
         """获取agent运行状态，只返回agent-server实时数据（经 HMAC 客户端）"""
         agent = self.get_object()
-        server_base = self._get_agent_server_base(agent, request.query_params.get("agent_server_url", ""))
+        server, err = self._resolve_agent_server(request)
+        if not server:
+            return SycResponse.error(message=err)
+        if not server.shared_secret:
+            return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-        if not server_base:
-            return SycResponse.error(message="未配置agent-server，无法查询实时状态")
-
-        api_url = f"{server_base}/api/agents/{agent.host_id}"
-        # 使用统一的 Agent-Server HMAC 客户端
-        client = AgentServerClient.from_settings()
+        api_url = f"{server.base_url}/api/agents/{agent.host_id}"
+        client = AgentServerClient(shared_secret=server.shared_secret)
 
         try:
             resp = client.get(api_url, timeout=5)
@@ -255,12 +315,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         # 根据 agent_type 选择不同的控制方式
         if agent_type == 'agent':
             # Agent 控制：通过 agent-server 下发控制指令
-            server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
-            if not server_base:
-                return SycResponse.error(message="未配置agent-server，无法下发控制指令")
+            server, err = self._resolve_agent_server(request)
+            if not server:
+                return SycResponse.error(message=err)
+            if not server.shared_secret:
+                return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-            api_url = f"{server_base}/api/agents/{agent.host_id}/control"
-            client = AgentServerClient.from_settings()
+            api_url = f"{server.base_url}/api/agents/{agent.host_id}/control"
+            client = AgentServerClient(shared_secret=server.shared_secret)
 
             payload = {
                 "action": action,
@@ -280,16 +342,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
         elif agent_type == 'agent-server':
             # Agent-Server 控制：调用 agent-server 自身的控制接口
-            agent_server_url = agent.endpoint
-            if not agent_server_url:
-                return SycResponse.error(message="Agent-Server 未配置 endpoint，无法下发控制指令")
+            server, err = self._resolve_agent_server(request)
+            if not server:
+                return SycResponse.error(message=err or "Agent-Server 未配置 endpoint，无法下发控制指令")
+            if not server.shared_secret:
+                return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-            # 如果 endpoint 只是地址，需要构建完整 URL
-            if not agent_server_url.startswith('http'):
-                agent_server_url = f"http://{agent_server_url}"
-
-            api_url = f"{agent_server_url}/api/self/control"
-            client = AgentServerClient.from_settings()
+            api_url = f"{server.base_url}/api/self/control"
+            client = AgentServerClient(shared_secret=server.shared_secret)
 
             payload = {
                 "action": action,
@@ -368,12 +428,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             # 根据 agent_type 选择不同的升级方式
             if package_type == 'agent':
                 # Agent 升级：通过 agent-server 下发升级指令
-                server_base = self._get_agent_server_base(agent, request.data.get("agent_server_url", ""))
-                if not server_base:
-                    return SycResponse.error(message="未配置 agent-server，无法下发升级指令")
+                server, err = self._resolve_agent_server(request)
+                if not server:
+                    return SycResponse.error(message=err)
+                if not server.shared_secret:
+                    return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-                api_url = f"{server_base}/api/agents/{agent.host_id}/upgrade"
-                client = AgentServerClient.from_settings()
+                api_url = f"{server.base_url}/api/agents/{agent.host_id}/upgrade"
+                client = AgentServerClient(shared_secret=server.shared_secret)
 
                 payload = {
                     "target_version": package.version,
@@ -400,17 +462,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
             elif package_type == 'agent-server':
                 # Agent-Server 升级：直接调用 agent-server 自身的升级接口
-                # Agent-Server 的 endpoint 字段存储的是它的监听地址
-                agent_server_url = agent.endpoint
-                if not agent_server_url:
-                    return SycResponse.error(message="Agent-Server 未配置 endpoint，无法下发升级指令")
+                server, err = self._resolve_agent_server(request)
+                if not server:
+                    return SycResponse.error(message=err or "Agent-Server 未配置 endpoint，无法下发升级指令")
+                if not server.shared_secret:
+                    return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-                # 如果 endpoint 只是地址，需要构建完整 URL
-                if not agent_server_url.startswith('http'):
-                    agent_server_url = f"http://{agent_server_url}"
-
-                api_url = f"{agent_server_url}/api/self/upgrade"
-                client = AgentServerClient.from_settings()
+                api_url = f"{server.base_url}/api/self/upgrade"
+                client = AgentServerClient(shared_secret=server.shared_secret)
 
                 payload = {
                     "target_version": package.version,
@@ -579,6 +638,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         data = serializer.validated_data
         agent_ids = data['agent_ids']
         confirmed = data.get('confirmed', False)
+        agent_server_id = data.get('agent_server_id')
+        if not agent_server_id:
+            return SycResponse.error(message="请先选择Agent-Server", code=400)
 
         # 使用统一的批量操作校验
         is_valid, error_msg, agents = self.validate_batch_operation_with_agents(
@@ -601,7 +663,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 result = AgentService.batch_restart_agents(
                     agent_ids=[a.id for a in agents],
                     user=user,
-                    batch_task_id=batch_task_id
+                    batch_task_id=batch_task_id,
+                    agent_server_id=agent_server_id,
                 )
 
                 # 记录审计日志
@@ -841,6 +904,11 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         agent_server_backup_url = ""
         if install_type == 'agent' and not agent_server_url:
             return SycResponse.error(message="未配置 agent_server_url，无法重新生成安装脚本", code=400)
+        if install_type == 'agent' and agent_server_url:
+            resolved_server = resolve_agent_server_from_url(agent_server_url)
+            if resolved_server and agent.agent_server_id != resolved_server.id:
+                agent.agent_server_id = resolved_server.id
+                agent.save(update_fields=['agent_server_id', 'updated_at'])
 
         # 生成安装脚本
         try:
@@ -920,6 +988,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_write_buffer_size = data.get('ws_write_buffer_size', 4096)
         ws_enable_compression = data.get('ws_enable_compression', True)
         ws_allowed_origins = data.get('ws_allowed_origins', [])
+        agent_server_base_url = data.get('agent_server_base_url', '')
+        auth_shared_secret = data.get('auth_shared_secret')
+        auth_require_signature = data.get('auth_require_signature')
         max_concurrent_tasks = data.get('max_concurrent_tasks')
         control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""
 
@@ -931,6 +1002,13 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         if install_type == 'agent-server' and not control_plane_url:
             return SycResponse.error(message="控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server", code=400)
 
+        if install_type == 'agent-server':
+            self._upsert_agent_server_from_base_url(
+                agent_server_base_url,
+                auth_shared_secret=auth_shared_secret or '',
+                auth_require_signature=auth_require_signature,
+            )
+
         # 获取主机列表
         from apps.hosts.models import Host
         hosts = Host.objects.filter(id__in=host_ids)
@@ -940,6 +1018,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
 
         scripts = {}
         errors = []
+        agent_server_netloc_map = build_agent_server_netloc_map() if install_type == 'agent' else {}
+        resolved_agent_server = resolve_agent_server_from_url(agent_server_url, agent_server_netloc_map) if install_type == 'agent' else None
+        resolved_agent_server_id = resolved_agent_server.id if resolved_agent_server else None
 
         for host in hosts:
             try:
@@ -963,6 +1044,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         'agent_type': install_type,
                         'status': 'pending',
                         'endpoint': agent_server_url if install_type == 'agent' else agent_server_listen_addr or '',
+                        'agent_server_id': resolved_agent_server_id if install_type == 'agent' else None,
                     }
                 )
                 try:
@@ -977,7 +1059,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         agent.agent_type = install_type
                     agent.status = 'pending'
                     agent.endpoint = agent_server_url if install_type == 'agent' else agent_server_listen_addr or ''
-                    agent.save(update_fields=['agent_type', 'status', 'endpoint', 'updated_at'])
+                    update_fields = ['agent_type', 'status', 'endpoint', 'updated_at']
+                    if install_type == 'agent' and resolved_agent_server_id:
+                        agent.agent_server_id = resolved_agent_server_id
+                        update_fields.append('agent_server_id')
+                    elif install_type != 'agent' and agent.agent_server_id is not None:
+                        agent.agent_server_id = None
+                        update_fields.append('agent_server_id')
+                    agent.save(update_fields=update_fields)
 
                 now = timezone.now()
                 active_token = AgentToken.objects.filter(
@@ -1059,6 +1148,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         ws_write_buffer_size=ws_write_buffer_size,
                         ws_enable_compression=ws_enable_compression,
                         ws_allowed_origins=ws_allowed_origins,
+                        auth_shared_secret=auth_shared_secret,
+                        auth_require_signature=auth_require_signature,
                     )
                 except Exception as e:
                     logger.error(
@@ -1149,6 +1240,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         ws_write_buffer_size = data.get('ws_write_buffer_size', 4096)
         ws_enable_compression = data.get('ws_enable_compression', True)
         ws_allowed_origins = data.get('ws_allowed_origins', [])
+        agent_server_base_url = data.get('agent_server_base_url', '')
+        auth_shared_secret = data.get('auth_shared_secret')
+        auth_require_signature = data.get('auth_require_signature')
         ssh_timeout = data.get('ssh_timeout', 300)
         allow_reinstall = data.get('allow_reinstall', False)
         max_concurrent_tasks = data.get('max_concurrent_tasks')
@@ -1160,6 +1254,13 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             return SycResponse.error(message="agent_server_listen_addr 不能为空（安装 Agent-Server 需要）", code=400)
         if install_type == 'agent-server' and not control_plane_url:
             return SycResponse.error(message="控制面未配置 CONTROL_PLANE_URL，无法安装 Agent-Server", code=400)
+
+        if install_type == 'agent-server':
+            self._upsert_agent_server_from_base_url(
+                agent_server_base_url,
+                auth_shared_secret=auth_shared_secret or '',
+                auth_require_signature=auth_require_signature,
+            )
 
         # 使用统一的批量操作校验
         is_valid, error_msg, hosts = self.validate_batch_operation_with_hosts(
@@ -1184,6 +1285,9 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         from apps.hosts.models import Host
         hosts = Host.objects.filter(id__in=host_ids)
         initial_install_records = []
+        agent_server_netloc_map = build_agent_server_netloc_map() if install_type == 'agent' else {}
+        resolved_agent_server = resolve_agent_server_from_url(agent_server_url, agent_server_netloc_map) if install_type == 'agent' else None
+        resolved_agent_server_id = resolved_agent_server.id if resolved_agent_server else None
 
         for host in hosts:
             # 创建或获取 Agent（status='pending'）
@@ -1193,6 +1297,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     'agent_type': install_type,
                     'status': 'pending',
                     'endpoint': agent_server_url if install_type == 'agent' else agent_server_listen_addr or '',
+                    'agent_server_id': resolved_agent_server_id if install_type == 'agent' else None,
                 }
             )
             if not agent_created:
@@ -1201,7 +1306,14 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     agent.agent_type = install_type
                 agent.status = 'pending'
                 agent.endpoint = agent_server_url if install_type == 'agent' else agent_server_listen_addr or ''
-                agent.save(update_fields=['agent_type', 'status', 'endpoint', 'updated_at'])
+                update_fields = ['agent_type', 'status', 'endpoint', 'updated_at']
+                if install_type == 'agent' and resolved_agent_server_id:
+                    agent.agent_server_id = resolved_agent_server_id
+                    update_fields.append('agent_server_id')
+                elif install_type != 'agent' and agent.agent_server_id is not None:
+                    agent.agent_server_id = None
+                    update_fields.append('agent_server_id')
+                agent.save(update_fields=update_fields)
 
             # 创建初始安装记录
             from .models import AgentInstallRecord
@@ -1278,6 +1390,8 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     ws_write_buffer_size=ws_write_buffer_size,
                     ws_enable_compression=ws_enable_compression,
                     ws_allowed_origins=ws_allowed_origins,
+                    auth_shared_secret=auth_shared_secret,
+                    auth_require_signature=auth_require_signature,
                 )
 
                 # 记录审日志

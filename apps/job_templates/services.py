@@ -117,13 +117,18 @@ class ExecutionPlanService:
                 serializable_template_steps.append(step_data)
 
             # 使用 Agent-Server 异步执行调试工作流（与 execute_plan 路径对齐）
-            agent_server_url = kwargs.get('agent_server_url')
+            agent_server_id = kwargs.get('agent_server_id')
+            if not agent_server_id:
+                return {
+                    'success': False,
+                    'error': '请先选择Agent-Server'
+                }
             execution_mode = kwargs.get('execution_mode', 'parallel')
 
             # 更新执行参数，添加执行方式标识
             execution_record.execution_parameters.update({
                 'execution_mode': execution_mode,
-                'agent_server_url': agent_server_url,
+                'agent_server_id': agent_server_id,
             })
             execution_record.save()
 
@@ -140,7 +145,7 @@ class ExecutionPlanService:
                         rolling_batch_size=kwargs.get('rolling_batch_size', 1),
                         rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
                         start_step_order=1,
-                        agent_server_url=agent_server_url,
+                        agent_server_id=agent_server_id,
                     )
                     return result
                 except Exception as e:
@@ -290,13 +295,18 @@ class ExecutionPlanService:
                 serializable_plan_steps.append(step_data)
 
                 # 只支持Agent方式执行
-                agent_server_url = kwargs.get('agent_server_url')
+                agent_server_id = kwargs.get('agent_server_id')
+                if not agent_server_id:
+                    return {
+                        'success': False,
+                        'error': '请先选择Agent-Server'
+                    }
                 execution_mode = kwargs.get('execution_mode', 'agent')
 
                 # 更新执行参数，添加执行方式标识
                 execution_record.execution_parameters.update({
                     'execution_mode': execution_mode,
-                    'agent_server_url': agent_server_url,
+                    'agent_server_id': agent_server_id,
                 })
                 execution_record.save()
 
@@ -316,7 +326,7 @@ class ExecutionPlanService:
                             rolling_batch_size=kwargs.get('rolling_batch_size', 1),
                             rolling_batch_delay=kwargs.get('rolling_batch_delay', 0),
                             start_step_order=kwargs.get('start_step_order', 1),
-                            agent_server_url=agent_server_url,
+                            agent_server_id=agent_server_id,
                         )
                         return result
                     except Exception as e:

@@ -18,6 +18,7 @@ class AgentFilter(django_filters.FilterSet):
     search = django_filters.CharFilter(method='filter_search', label='搜索')
     status = django_filters.CharFilter(method='filter_status', label='状态')
     tags = django_filters.CharFilter(method='filter_tags', label='标签')
+    agent_server_id = django_filters.NumberFilter(field_name='agent_server_id', label='Agent-Server')
     service_role = django_filters.CharFilter(
         field_name='host__service_role',
         lookup_expr='icontains',
@@ -35,7 +36,7 @@ class AgentFilter(django_filters.FilterSet):
 
     class Meta:
         model = Agent
-        fields = ['search', 'status', 'tags', 'service_role', 'group', 'group_id']
+        fields = ['search', 'status', 'tags', 'agent_server_id', 'service_role', 'group', 'group_id']
 
     def filter_search(self, queryset, name, value):
         if not value:
@@ -135,7 +136,6 @@ class AgentFilter(django_filters.FilterSet):
         for part in parts:
             q |= models.Q(host__tags__icontains=part)
         return queryset.filter(q).distinct()
-
 
 class InstallRecordFilter(django_filters.FilterSet):
     """Agent 安装记录过滤器"""

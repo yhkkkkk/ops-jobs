@@ -105,7 +105,9 @@
       </div>
     </div>
 
-    <!-- 搜索栏 -->
+    <a-tabs v-model:active-key="activeTab" type="line" class="agent-tabs">
+      <a-tab-pane key="agent" title="Agent">
+        <!-- 搜索栏 -->
     <a-card class="mb-4">
       <a-form :model="searchForm" layout="inline">
         <a-form-item label="搜索">
@@ -117,6 +119,25 @@
             @clear="handleSearch"
             style="width: 250px"
           />
+        </a-form-item>
+        <a-form-item label="Agent-Server">
+          <a-select
+            v-model="selectedAgentServerId"
+            placeholder="请选择 Agent-Server"
+            allow-clear
+            allow-search
+            :filter-option="filterAgentServerOption"
+            style="width: 280px"
+          >
+            <a-option
+              v-for="server in agentServers"
+              :key="server.id"
+              :value="server.id"
+              :label="formatAgentServerLabel(server)"
+            >
+              {{ formatAgentServerLabel(server) }}
+            </a-option>
+          </a-select>
         </a-form-item>
         <!-- 状态筛选已移除，前端展示使用 computed_status，复杂筛选请使用运维台 Dashboard -->
         <a-form-item>
@@ -204,7 +225,7 @@
             @click="toggleStatusFilter('inactive')"
           >
             <template #icon>
-              <icon-sleep />
+              <icon-moon />
             </template>
             长时间未活跃 ({{ inactiveCount }})
           </a-button>
@@ -249,7 +270,7 @@
         :pagination="pagination"
         row-key="id"
         :row-selection="rowSelection"
-        :scroll="scrollConfig"
+        :scroll="{ x: 'max-content' }"
         :virtual-list-props="virtualListProps"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
@@ -258,7 +279,10 @@
         <template #host="{ record }">
           <div class="host-info">
             <div class="host-name">{{ record.host.name }}</div>
-            <div class="host-ip">{{ record.host.ip_address }}</div>
+            <div class="host-ip">
+              <span class="host-ip-label">IP</span>
+              <span class="host-ip-value">{{ record.host.ip_address }}</span>
+            </div>
           </div>
         </template>
 
@@ -370,7 +394,7 @@
               @click="handleIssueToken(record)"
             >
               <template #icon>
-                <icon-key />
+                <IconLock />
               </template>
               发Token
             </a-button>
@@ -426,6 +450,107 @@
       </a-table>
     </div>
 
+      </a-tab-pane>
+      <a-tab-pane key="agent-server" title="Agent-Server">
+        <a-card class="mb-4">
+          <a-form :model="agentServerSearchForm" layout="inline">
+            <a-form-item label="搜索">
+              <a-input
+                v-model="agentServerSearchForm.search"
+                placeholder="名称/地址"
+                allow-clear
+                @press-enter="handleAgentServerSearch"
+                @clear="handleAgentServerSearch"
+                style="width: 260px"
+              />
+            </a-form-item>
+            <a-form-item label="状态">
+              <a-select
+                v-model="agentServerSearchForm.is_active"
+                placeholder="全部"
+                allow-clear
+                style="width: 120px"
+                @change="handleAgentServerSearch"
+              >
+                <a-option :value="true">启用</a-option>
+                <a-option :value="false">停用</a-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item label="签名校验">
+              <a-select
+                v-model="agentServerSearchForm.require_signature"
+                placeholder="全部"
+                allow-clear
+                style="width: 140px"
+                @change="handleAgentServerSearch"
+              >
+                <a-option :value="true">开启</a-option>
+                <a-option :value="false">关闭</a-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item>
+              <a-button type="primary" @click="handleAgentServerSearch">
+                <template #icon>
+                  <icon-search />
+                </template>
+                搜索
+              </a-button>
+              <a-button @click="handleAgentServerReset" style="margin-left: 8px">
+                <template #icon>
+                  <icon-refresh />
+                </template>
+                重置
+              </a-button>
+            </a-form-item>
+          </a-form>
+        </a-card>
+        <div class="table-container">
+          <a-table
+            :columns="agentServerColumns"
+            :data="filteredAgentServers"
+            :loading="agentServerTableLoading"
+            :pagination="false"
+            row-key="id"
+          >
+            <template #is_active="{ record }">
+              <a-tag :color="record.is_active ? 'green' : 'gray'" size="small">
+                {{ record.is_active ? '启用' : '停用' }}
+              </a-tag>
+            </template>
+            <template #require_signature="{ record }">
+              <a-tag :color="record.require_signature ? 'arcoblue' : 'gray'" size="small">
+                {{ record.require_signature ? '开启' : '关闭' }}
+              </a-tag>
+            </template>
+            <template #shared_secret_last4="{ record }">
+              <span v-if="record.shared_secret_last4" class="text-gray">****{{ record.shared_secret_last4 }}</span>
+              <span v-else class="text-gray">-</span>
+            </template>
+            <template #updated_at="{ record }">
+              <span v-if="record.updated_at">{{ formatTime(record.updated_at) }}</span>
+              <span v-else class="text-gray">-</span>
+            </template>
+            <template #agent_server_actions="{ record }">
+              <a-space>
+                <a-button type="text" size="small" @click="handleEditAgentServer(record)">
+                  <template #icon>
+                    <icon-edit />
+                  </template>
+                  编辑
+                </a-button>
+                <a-button type="text" size="small" @click="copyText(record.base_url)">
+                  <template #icon>
+                    <IconCopy />
+                  </template>
+                  复制地址
+                </a-button>
+              </a-space>
+            </template>
+          </a-table>
+        </div>
+      </a-tab-pane>
+    </a-tabs>
+
     <!-- 发 Token 弹窗 -->
     <a-modal
       v-model:visible="tokenModalVisible"
@@ -475,6 +600,45 @@
       </template>
     </a-modal>
 
+    <!-- 编辑 Agent-Server 弹窗 -->
+    <a-modal
+      v-model:visible="agentServerEditVisible"
+      title="编辑 Agent-Server"
+      @ok="handleAgentServerEditConfirm"
+      @cancel="handleAgentServerEditCancel"
+    >
+      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+        仅更新控制面记录，不会自动下发/重装
+      </a-alert>
+      <a-form :model="agentServerEditForm" layout="vertical">
+        <a-form-item label="名称" required>
+          <a-input v-model="agentServerEditForm.name" placeholder="请输入名称" />
+        </a-form-item>
+        <a-form-item label="基础地址(base_url)" required>
+          <a-input v-model="agentServerEditForm.base_url" placeholder="例如: http://agent-server.example.com:8080" />
+        </a-form-item>
+        <a-form-item label="启用状态">
+          <a-switch v-model="agentServerEditForm.is_active" />
+        </a-form-item>
+        <a-form-item label="签名校验">
+          <a-switch v-model="agentServerEditForm.require_signature" />
+        </a-form-item>
+        <a-form-item label="shared_secret">
+          <a-input
+            v-model="agentServerEditForm.shared_secret"
+            placeholder="留空表示不变"
+            :disabled="!agentServerEditForm.require_signature"
+          />
+          <div v-if="agentServerSecretHint" class="form-help">
+            {{ agentServerSecretHint }}
+          </div>
+        </a-form-item>
+        <a-form-item label="描述">
+          <a-textarea v-model="agentServerEditForm.description" :auto-size="{ minRows: 2, maxRows: 4 }" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
     <!-- 安装 Agent 抽屉 -->
     <a-drawer
       v-model:visible="installModalVisible"
@@ -506,6 +670,7 @@
                   multiple
                   :max-tag-count="3"
                   allow-search
+                  allow-clear
                   :filter-option="filterHostOption"
                   style="width: 100%"
                 >
@@ -528,6 +693,7 @@
                     v-model="installForm.agent_server_url"
                     placeholder="例如: ws://agent-server:8080"
                   />
+                  <div class="form-help">Agent 连接 Agent-Server 的 WS 地址，仅安装 Agent 使用</div>
                 </a-form-item>
                 <a-form-item label="最大并发任务数" field="max_concurrent_tasks">
                   <a-input-number
@@ -564,11 +730,19 @@
                 </a-row>
               </template>
               <template v-if="installForm.install_type === 'agent-server'">
+                <a-form-item label="控制面访问地址">
+                  <a-input
+                    v-model="installForm.agent_server_base_url"
+                    placeholder="例如: http://agent-server.example.com:8080"
+                  />
+                  <div class="form-help">控制面访问 Agent-Server 的地址(base_url)，默认使用监听地址，可按需改为域名或负载均衡地址</div>
+                </a-form-item>
                 <a-form-item label="Agent-Server 监听地址">
                   <a-input
                     v-model="installForm.agent_server_listen_addr"
                     placeholder="例如: 0.0.0.0:8080"
                   />
+                  <div class="form-help">Agent-Server 服务监听地址，写入 agent-server 配置</div>
                 </a-form-item>
                 <a-row :gutter="12">
                   <a-col :span="12">
@@ -617,6 +791,27 @@
                         placeholder="例如: http://example.com,https://app.example.com"
                         @blur="handleOriginsBlur"
                       />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-divider>认证</a-divider>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="启用签名校验">
+                      <a-switch v-model="installForm.auth_require_signature" />
+                      <div class="form-help">开启后控制面请求必须携带签名</div>
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="shared_secret">
+                      <a-input
+                        v-model="installForm.auth_shared_secret"
+                        :disabled="!installForm.auth_require_signature"
+                        placeholder="请输入 shared_secret"
+                      />
+                      <div v-if="getSharedSecretHint()" class="form-help">
+                        {{ getSharedSecretHint() }}
+                      </div>
                     </a-form-item>
                   </a-col>
                 </a-row>
@@ -748,8 +943,8 @@
 import { ref, reactive, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { IconCopy, IconHistory, IconDelete, IconCloseCircle, IconArrowUp, IconExclamationCircle, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { agentsApi, packageApi, type Agent, type AgentPackage } from '@/api/agents'
+import { IconCopy, IconHistory, IconDelete, IconCloseCircle, IconArrowUp, IconExclamationCircle, IconRefresh, IconLock } from '@arco-design/web-vue/es/icon'
+import { agentsApi, packageApi, agentServerApi, type Agent, type AgentPackage, type AgentServer } from '@/api/agents'
 import { useSSEProgress, createProgressState, type ProgressState } from '@/composables/useSSEProgress'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/stores/auth'
@@ -761,12 +956,56 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const router = useRouter()
 const authStore = useAuthStore()
 
+const activeTab = ref('agent')
+
+const getDefaultAgentServerId = () => {
+  if (selectedAgentServerId.value) {
+    return selectedAgentServerId.value
+  }
+  if (agentServers.value.length === 1) {
+    return agentServers.value[0].id
+  }
+  return undefined
+}
+
+const buildAgentServerBaseUrl = (listenAddr: string) => {
+  const raw = (listenAddr || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  return `http://${raw}`
+}
+
+const resolveAgentServerBaseUrl = () => {
+  if (installForm.agent_server_base_url && installForm.agent_server_base_url.trim()) {
+    return installForm.agent_server_base_url.trim()
+  }
+  return buildAgentServerBaseUrl(installForm.agent_server_listen_addr)
+}
+
 // 响应式数据
 const loading = ref(false)
 const agents = ref<Agent[]>([])
+const agentServers = ref<AgentServer[]>([])
+const agentServerTable = ref<AgentServer[]>([])
+const agentServerTableLoading = ref(false)
+const selectedAgentServerId = ref<number | null>(null)
 const tokenModalVisible = ref(false)
 const currentAgent = ref<Agent | null>(null)
 const tokenFormRef = ref()
+
+// Agent-Server 编辑相关
+const agentServerEditVisible = ref(false)
+const agentServerEditing = ref<AgentServer | null>(null)
+const agentServerEditForm = reactive({
+  id: null as number | null,
+  name: '',
+  base_url: '',
+  require_signature: false,
+  shared_secret: '',
+  is_active: true,
+  description: ''
+})
+
 // 安装相关
 const installModalVisible = ref(false)
 const installTab = ref('select')
@@ -785,6 +1024,7 @@ const installForm = reactive({
   max_concurrent_tasks: undefined as number | undefined,
   // Agent-Server 配置
   agent_server_listen_addr: '0.0.0.0:8080',
+  agent_server_base_url: '',
   max_connections: 1000,
   heartbeat_timeout: 60,
   // Agent-Server WebSocket 配置
@@ -792,11 +1032,39 @@ const installForm = reactive({
   ws_read_buffer_size: 4096,
   ws_write_buffer_size: 4096,
   ws_allowed_origins: [] as string[],
+  auth_shared_secret: '',
+  auth_require_signature: false,
   // 通用配置
   ssh_timeout: 300,
   package_id: undefined as number | undefined,
   package_version: undefined as string | undefined,
 })
+const getSharedSecretHint = () => {
+  if (installForm.auth_shared_secret) {
+    const suffix = installForm.auth_shared_secret.slice(-4)
+    return `当前输入尾号 ${suffix}`
+  }
+  return ''
+}
+
+const agentServerSecretHint = computed(() => {
+  if (!agentServerEditForm.require_signature) {
+    return ''
+  }
+  if (agentServerEditForm.shared_secret) {
+    const suffix = agentServerEditForm.shared_secret.slice(-4)
+    return `当前输入尾号 ${suffix}`
+  }
+  if (agentServerEditing.value?.shared_secret_last4) {
+    return `已存在密钥尾号 ${agentServerEditing.value.shared_secret_last4}，留空表示不变`
+  }
+  return '启用签名校验必须提供 shared_secret'
+})
+
+const formatAgentServerLabel = (server: AgentServer) => {
+  const suffix = server.shared_secret_last4 ? ` - 密钥尾号 ${server.shared_secret_last4}` : ''
+  return `${server.name} (${server.base_url})${suffix}`
+}
 const availableHosts = ref<any[]>([])
 const availablePackages = ref<AgentPackage[]>([])
 const loadingPackages = ref(false)
@@ -830,7 +1098,6 @@ const uninstallTab = ref('select')
 const uninstallForm = reactive({
   agent_ids: [] as number[],
 })
-const uninstalling = ref(false)
 
 // 卸载进度 - 使用工厂函数创建
 const uninstallProgress = ref<ProgressState>(createProgressState())
@@ -869,6 +1136,12 @@ const batchOperationDrawerVisible = ref(false)
 const searchForm = reactive({
   search: '',
   status: ''
+})
+
+const agentServerSearchForm = reactive({
+  search: '',
+  is_active: undefined as boolean | undefined,
+  require_signature: undefined as boolean | undefined
 })
 
 // 状态过滤器
@@ -914,12 +1187,6 @@ const rowSelection = reactive({
   onlyCurrent: false,
   selectedRowKeys: selectedAgentIds
 })
-
-// 表格滚动配置（支持虚拟滚动）
-const scrollConfig = computed(() => ({
-  x: 1300,
-  y: 600
-}))
 
 // 虚拟列表配置（数据量大时启用）
 const virtualListProps = computed(() => {
@@ -1044,37 +1311,46 @@ const filteredInactiveCount = computed(() => {
 
 // 过滤后的Agent列表
 const filteredAgents = computed(() => {
-  let filtered = agents.value
+  const source = agents.value
+  const predicates: Array<(agent: Agent) => boolean> = []
 
   if (statusFilters.online) {
-    filtered = filtered.filter(a => (a.computed_status || a.status) === 'online')
+    predicates.push(a => (a.computed_status || a.status) === 'online')
   }
   if (statusFilters.offline) {
-    filtered = filtered.filter(a => (a.computed_status || a.status) === 'offline')
+    predicates.push(a => (a.computed_status || a.status) === 'offline')
   }
   if (statusFilters.pending) {
-    filtered = filtered.filter(a => a.status === 'pending')
+    predicates.push(a => a.status === 'pending')
   }
   if (statusFilters.disabled) {
-    filtered = filtered.filter(a => a.status === 'disabled')
+    predicates.push(a => a.status === 'disabled')
   }
   if (statusFilters.outdated) {
-    filtered = filtered.filter(a => a.is_version_outdated)
+    predicates.push(a => Boolean(a.is_version_outdated))
   }
   if (statusFilters.failed) {
-    filtered = filtered.filter(a => a.last_error_code)
+    predicates.push(a => Boolean(a.last_error_code))
   }
   if (statusFilters.inactive) {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    filtered = filtered.filter(a => {
+    predicates.push(a => {
       if (!a.last_heartbeat_at) return true
       const lastHeartbeat = new Date(a.last_heartbeat_at)
       return lastHeartbeat < sevenDaysAgo
     })
   }
 
-  return filtered
+  if (!predicates.length) {
+    return source
+  }
+
+  return source.filter(agent => predicates.some(check => check(agent)))
+})
+
+const filteredAgentServers = computed(() => {
+  return agentServerTable.value
 })
 
 // Agent 类型显示文本
@@ -1113,13 +1389,13 @@ const columns = [
     title: '最后心跳',
     dataIndex: 'last_heartbeat_at',
     slotName: 'last_heartbeat_at',
-    width: 180
+    width: 120
   },
   {
     title: '任务统计',
     dataIndex: 'task_stats',
     slotName: 'task_stats',
-    width: 150
+    width: 120
   },
   {
     title: '错误码',
@@ -1137,6 +1413,49 @@ const columns = [
     title: '操作',
     slotName: 'actions',
     width: 250,
+    fixed: 'right'
+  }
+]
+
+const agentServerColumns = [
+  {
+    title: '名称',
+    dataIndex: 'name',
+    width: 180
+  },
+  {
+    title: '地址',
+    dataIndex: 'base_url',
+    width: 260
+  },
+  {
+    title: '状态',
+    dataIndex: 'is_active',
+    slotName: 'is_active',
+    width: 100
+  },
+  {
+    title: '签名校验',
+    dataIndex: 'require_signature',
+    slotName: 'require_signature',
+    width: 120
+  },
+  {
+    title: '密钥尾号',
+    dataIndex: 'shared_secret_last4',
+    slotName: 'shared_secret_last4',
+    width: 120
+  },
+  {
+    title: '更新时间',
+    dataIndex: 'updated_at',
+    slotName: 'updated_at',
+    width: 180
+  },
+  {
+    title: '操作',
+    slotName: 'agent_server_actions',
+    width: 140,
     fixed: 'right'
   }
 ]
@@ -1212,6 +1531,7 @@ const fetchAgents = async () => {
     }
     if (searchForm.search) params.search = searchForm.search
     if (searchForm.status) params.status = searchForm.status
+    if (selectedAgentServerId.value) params.agent_server_id = selectedAgentServerId.value
 
     // 过滤空值
     Object.keys(params).forEach(key => {
@@ -1243,6 +1563,45 @@ const fetchAgents = async () => {
   }
 }
 
+const fetchAgentServers = async () => {
+  try {
+    const response = await agentServerApi.getAgentServers({ page_size: 200, is_active: true })
+    agentServers.value = response.results || []
+    if (!selectedAgentServerId.value && agentServers.value.length === 1) {
+      selectedAgentServerId.value = agentServers.value[0].id
+    }
+  } catch (error: any) {
+    console.error('获取 Agent-Server 列表失败:', error)
+    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    agentServers.value = []
+  }
+}
+
+const fetchAgentServerTable = async () => {
+  agentServerTableLoading.value = true
+  try {
+    const params: any = { page_size: 200 }
+    if (agentServerSearchForm.search) {
+      params.search = agentServerSearchForm.search
+    }
+    if (agentServerSearchForm.is_active !== undefined && agentServerSearchForm.is_active !== null) {
+      params.is_active = agentServerSearchForm.is_active
+    }
+    if (agentServerSearchForm.require_signature !== undefined && agentServerSearchForm.require_signature !== null) {
+      params.require_signature = agentServerSearchForm.require_signature
+    }
+
+    const response = await agentServerApi.getAgentServers(params)
+    agentServerTable.value = response.results || []
+  } catch (error: any) {
+    console.error('获取 Agent-Server 列表失败:', error)
+    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    agentServerTable.value = []
+  } finally {
+    agentServerTableLoading.value = false
+  }
+}
+
 // 搜索（带防抖）
 const handleSearch = () => {
   // 清除之前的防抖定时器
@@ -1265,7 +1624,93 @@ const handleReset = () => {
   }
   searchForm.search = ''
   searchForm.status = ''
+  selectedAgentServerId.value = null
   handleSearch()
+}
+
+watch(selectedAgentServerId, () => {
+  pagination.current = 1
+  handleSearch()
+})
+
+const handleAgentServerSearch = () => {
+  fetchAgentServerTable()
+}
+
+const handleAgentServerReset = () => {
+  agentServerSearchForm.search = ''
+  agentServerSearchForm.is_active = undefined
+  agentServerSearchForm.require_signature = undefined
+  fetchAgentServerTable()
+}
+
+const resetAgentServerEditForm = () => {
+  agentServerEditing.value = null
+  agentServerEditForm.id = null
+  agentServerEditForm.name = ''
+  agentServerEditForm.base_url = ''
+  agentServerEditForm.require_signature = false
+  agentServerEditForm.shared_secret = ''
+  agentServerEditForm.is_active = true
+  agentServerEditForm.description = ''
+}
+
+const handleEditAgentServer = (record: AgentServer) => {
+  agentServerEditing.value = record
+  agentServerEditForm.id = record.id
+  agentServerEditForm.name = record.name
+  agentServerEditForm.base_url = record.base_url
+  agentServerEditForm.require_signature = Boolean(record.require_signature)
+  agentServerEditForm.shared_secret = ''
+  agentServerEditForm.is_active = Boolean(record.is_active)
+  agentServerEditForm.description = record.description || ''
+  agentServerEditVisible.value = true
+}
+
+const handleAgentServerEditCancel = () => {
+  agentServerEditVisible.value = false
+  resetAgentServerEditForm()
+}
+
+const handleAgentServerEditConfirm = async () => {
+  if (!agentServerEditForm.id) {
+    Message.error('缺少 Agent-Server ID')
+    return
+  }
+  if (!agentServerEditForm.name.trim()) {
+    Message.error('请输入名称')
+    return
+  }
+  if (!agentServerEditForm.base_url.trim()) {
+    Message.error('请输入基础地址(base_url)')
+    return
+  }
+  if (agentServerEditForm.require_signature && !agentServerEditForm.shared_secret && !agentServerEditing.value?.has_secret) {
+    Message.error('启用签名校验必须提供 shared_secret')
+    return
+  }
+
+  const payload: any = {
+    name: agentServerEditForm.name.trim(),
+    base_url: agentServerEditForm.base_url.trim(),
+    require_signature: agentServerEditForm.require_signature,
+    is_active: agentServerEditForm.is_active,
+    description: agentServerEditForm.description?.trim() || ''
+  }
+  if (agentServerEditForm.shared_secret.trim()) {
+    payload.shared_secret = agentServerEditForm.shared_secret.trim()
+  }
+
+  try {
+    await agentServerApi.updateAgentServer(agentServerEditForm.id, payload)
+    Message.success('更新 Agent-Server 成功')
+    agentServerEditVisible.value = false
+    resetAgentServerEditForm()
+    fetchAgentServerTable()
+    fetchAgentServers()
+  } catch (error: any) {
+    Message.error(error?.response?.data?.message || error?.message || '更新 Agent-Server 失败')
+  }
 }
 
 // 状态过滤器处理
@@ -1402,7 +1847,8 @@ const handleRestartAgent = (agent: Agent) => {
       try {
         await agentsApi.controlAgent(agent.id, {
           action: 'restart',
-          reason: '用户手动重启'
+          reason: '用户手动重启',
+          agent_server_id: selectedAgentServerId.value || undefined
         })
         Message.success('重启指令已下发，Agent 将在几秒内重启')
         // 延迟刷新，等待 Agent 重启完成
@@ -1427,7 +1873,8 @@ const handleUpgradeAgent = (agent: Agent) => {
       try {
         await agentsApi.upgradeAgent(agent.id, {
           target_version: agent.expected_min_version,
-          confirmed: true
+          confirmed: true,
+          agent_server_id: selectedAgentServerId.value || undefined
         })
         Message.success('升级指令已下发，Agent 将在几秒内完成升级')
         setTimeout(() => fetchAgents(), 5000)
@@ -1488,6 +1935,11 @@ const filterAgentOption = (inputValue: string, option: any) => {
   return label.toLowerCase().includes(inputValue.toLowerCase())
 }
 
+const filterAgentServerOption = (inputValue: string, option: any) => {
+  const label = option.label || ''
+  return label.toLowerCase().includes(inputValue.toLowerCase())
+}
+
 // 连接 SSE 查看卸载进度
 const uninstallSse = useSSEProgress({
   endpoint: 'agent-uninstall',
@@ -1517,6 +1969,7 @@ const handleInstallAgent = () => {
   installForm.ws_backoff_max_ms = 30000
   installForm.ws_max_retries = 6
   installForm.agent_server_listen_addr = '0.0.0.0:8080'
+  installForm.agent_server_base_url = buildAgentServerBaseUrl(installForm.agent_server_listen_addr)
   installForm.max_connections = 1000
   installForm.heartbeat_timeout = 60
   installForm.ws_handshake_timeout = '10s'
@@ -1524,6 +1977,8 @@ const handleInstallAgent = () => {
   installForm.ws_write_buffer_size = 4096
   installForm.ws_enable_compression = true
   installForm.ws_allowed_origins = []
+  installForm.auth_shared_secret = ''
+  installForm.auth_require_signature = false
   ws_allowed_origins_input.value = ''
   installForm.ssh_timeout = 300
   installForm.package_id = undefined
@@ -1571,6 +2026,13 @@ const handleInstallTypeChange = () => {
   // 切换安装类型时重置包选择，并刷新可用主机/包
   installForm.package_id = undefined
   installForm.package_version = undefined
+  if (installForm.install_type === 'agent-server') {
+    if (!installForm.agent_server_base_url) {
+      installForm.agent_server_base_url = buildAgentServerBaseUrl(installForm.agent_server_listen_addr)
+    }
+  } else {
+    installForm.agent_server_base_url = ''
+  }
   fetchAvailableHosts()
   fetchAvailablePackages()
 }
@@ -1637,6 +2099,18 @@ const handleGenerateScript = async () => {
     Message.warning('安装 Agent-Server 需要填写监听地址')
     return
   }
+  if (installForm.install_type === 'agent-server' && !resolveAgentServerBaseUrl()) {
+    Message.warning('安装 Agent-Server 需要填写控制面访问地址')
+    return
+  }
+  if (
+    installForm.install_type === 'agent-server' &&
+    installForm.auth_require_signature &&
+    !installForm.auth_shared_secret
+  ) {
+    Message.warning('启用签名校验需要填写 shared_secret')
+    return
+  }
 
   generatingScript.value = true
   try {
@@ -1657,6 +2131,7 @@ const handleGenerateScript = async () => {
       params.ws_enable_compression = installForm.ws_enable_compression
     } else if (installForm.install_type === 'agent-server') {
       params.agent_server_listen_addr = installForm.agent_server_listen_addr
+      params.agent_server_base_url = resolveAgentServerBaseUrl()
       params.max_connections = installForm.max_connections
       params.heartbeat_timeout = installForm.heartbeat_timeout
       // WebSocket 配置
@@ -1665,6 +2140,8 @@ const handleGenerateScript = async () => {
       params.ws_write_buffer_size = installForm.ws_write_buffer_size
       params.ws_enable_compression = installForm.ws_enable_compression
       params.ws_allowed_origins = installForm.ws_allowed_origins
+      params.auth_shared_secret = installForm.auth_shared_secret
+      params.auth_require_signature = installForm.auth_require_signature
     }
 
     const response = await agentsApi.generateInstallScript(params)
@@ -1722,6 +2199,18 @@ const handleBatchInstall = async () => {
     Message.warning('安装 Agent-Server 需要填写监听地址')
     return
   }
+  if (installForm.install_type === 'agent-server' && !resolveAgentServerBaseUrl()) {
+    Message.warning('安装 Agent-Server 需要填写控制面访问地址')
+    return
+  }
+  if (
+    installForm.install_type === 'agent-server' &&
+    installForm.auth_require_signature &&
+    !installForm.auth_shared_secret
+  ) {
+    Message.warning('启用签名校验需要填写 shared_secret')
+    return
+  }
 
   // 检查是否有需要覆盖的Agent
   const hostsToReinstall = availableHosts.value.filter((host: any) =>
@@ -1776,6 +2265,7 @@ const performInstall = async (allowReinstall: boolean) => {
       params.ws_max_retries = installForm.ws_max_retries
     } else if (installForm.install_type === 'agent-server') {
       params.agent_server_listen_addr = installForm.agent_server_listen_addr
+      params.agent_server_base_url = resolveAgentServerBaseUrl()
       params.max_connections = installForm.max_connections
       params.heartbeat_timeout = installForm.heartbeat_timeout
       // WebSocket 配置
@@ -1784,6 +2274,8 @@ const performInstall = async (allowReinstall: boolean) => {
       params.ws_write_buffer_size = installForm.ws_write_buffer_size
       params.ws_enable_compression = installForm.ws_enable_compression
       params.ws_allowed_origins = installForm.ws_allowed_origins
+      params.auth_shared_secret = installForm.auth_shared_secret
+      params.auth_require_signature = installForm.auth_require_signature
     }
 
     const response = await agentsApi.batchInstall(params)
@@ -1866,7 +2358,7 @@ const handleSelectionChange = (rowKeys: (string | number)[]) => {
 // 查看安装脚本（用于 pending 状态的 Agent）
 const handleRegenerateScript = async (agent: any) => {
   try {
-    await Modal.confirm({
+    Modal.confirm({
       title: '重新生成安装脚本',
       content: '将为该 Agent 签发新 token 并生成新的安装脚本，旧 token 将失效，确认继续？',
       okText: '重新生成',
@@ -1990,7 +2482,7 @@ const handleBatchDisable = async () => {
   }
 
   try {
-    await Modal.confirm({
+    Modal.confirm({
       title: '确认批量禁用',
       content: `确定要禁用选中的 ${disableableAgents.length} 个 Agent 吗？禁用后这些 Agent 将不再接收新任务。`,
       onOk: async () => {
@@ -2046,7 +2538,7 @@ const handleBatchEnable = async () => {
   }
 
   try {
-    await Modal.confirm({
+    Modal.confirm({
       title: '确认批量启用',
       content: `确定要启用选中的 ${enableableAgents.length} 个 Agent 吗？启用后这些 Agent 将恢复接收新任务。`,
       onOk: async () => {
@@ -2075,16 +2567,21 @@ const handleBatchRestart = async () => {
     Message.warning('请先选择要重启的 Agent')
     return
   }
+  if (!selectedAgentServerId.value) {
+    Message.warning('请先选择 Agent-Server')
+    return
+  }
 
   try {
-    await Modal.confirm({
+    Modal.confirm({
       title: '确认批量重启',
       content: `确定要重启选中的 ${selectedAgentIds.value.length} 个 Agent 吗？重启期间这些 Agent 将短暂离线。`,
       onOk: async () => {
         try {
           const result = await agentsApi.batchRestart({
             agent_ids: selectedAgentIds.value,
-            confirmed: true
+            confirmed: true,
+            agent_server_id: selectedAgentServerId.value
           })
 
           // 如果有 batch_task_id，连接 SSE 查看实时进度
@@ -2189,6 +2686,8 @@ watch(installModalVisible, (visible, wasVisible) => {
 
 // 初始化
 onMounted(() => {
+  fetchAgentServers()
+  fetchAgentServerTable()
   fetchAgents()
 })
 
@@ -2219,6 +2718,19 @@ onBeforeUnmount(() => {
 <style scoped>
 .agents-page {
   padding: 0;
+}
+
+.agent-tabs {
+  margin: 0 0 16px 0;
+}
+
+.agent-tabs :deep(.arco-tabs-nav) {
+  margin: 0 0 12px 0;
+  padding: 0 24px;
+}
+
+.agent-tabs :deep(.arco-tabs-content) {
+  padding-top: 0;
 }
 
 .page-header {
@@ -2273,6 +2785,19 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
 }
 
+.agent-tabs {
+  margin: 0 0 16px 0;
+}
+
+.agent-tabs :deep(.arco-tabs-nav) {
+  margin: 0;
+  padding: 0 24px;
+}
+
+.agent-tabs :deep(.arco-tabs-content) {
+  padding-top: 12px;
+}
+
 .filter-section {
   display: flex;
   align-items: center;
@@ -2289,7 +2814,9 @@ onBeforeUnmount(() => {
 .table-container {
   background: white;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: auto;
+  padding-bottom: 20px;
+  box-sizing: border-box;
 }
 
 .install-step-scripts {
@@ -2355,9 +2882,24 @@ onBeforeUnmount(() => {
 }
 
 .host-ip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--color-text-3);
   font-family: 'Courier New', monospace;
+}
+
+.host-ip-label {
+  font-size: 11px;
+  color: #86909c;
+  background: #f2f3f5;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.host-ip-value {
+  color: var(--color-text-2);
 }
 
 .text-gray {
@@ -2386,20 +2928,25 @@ onBeforeUnmount(() => {
 
   /* 固定列样式 */
   .arco-table-col-fixed-right {
-    background-color: transparent !important;
+    background-color: #fff !important;
   }
 
-  .arco-table-col-fixed-right .arco-table-td {
-    background-color: inherit !important;
-  }
-
+  .arco-table-th.arco-table-col-fixed-right,
+  .arco-table-td.arco-table-col-fixed-right,
+  .arco-table-col-fixed-right .arco-table-td,
+  .arco-table-col-fixed-right .arco-table-th,
   .arco-table-col-fixed-right .arco-table-cell {
-    background-color: inherit !important;
+    background-color: #fff !important;
   }
 
   .arco-table-col-fixed-right::before {
     background-color: transparent !important;
     box-shadow: none !important;
+  }
+
+  /* 操作列按钮间距 */
+  .arco-space-item {
+    margin-right: 8px;
   }
 }
 
