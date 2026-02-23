@@ -117,12 +117,13 @@
         </a-form-item>
         <a-form-item label="Agent-Server">
           <a-select
-            v-model="selectedAgentServerId"
+            v-model="searchForm.agent_server_id"
             placeholder="请选择 Agent-Server"
             allow-clear
             allow-search
             :filter-option="filterAgentServerOption"
             style="width: 280px"
+            @change="handleSearch"
           >
             <a-option
               v-for="server in agentServers"
@@ -968,11 +969,12 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { IconCopy, IconHistory, IconDelete, IconCloseCircle, IconArrowUp, IconExclamationCircle, IconRefresh, IconLock } from '@arco-design/web-vue/es/icon'
 import { agentsApi, packageApi, agentServerApi, type Agent, type AgentPackage, type AgentServer } from '@/api/agents'
 import { useSSEProgress, createProgressState, type ProgressState } from '@/composables/useSSEProgress'
+import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/stores/auth'
 import ProgressDrawer from '@/components/ProgressDrawer.vue'
@@ -981,13 +983,30 @@ import ProgressDrawer from '@/components/ProgressDrawer.vue'
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
-const activeTab = ref('agent')
+const resolveTabKey = (value: unknown) => {
+  return value === 'agent-server' ? 'agent-server' : 'agent'
+}
+
+const activeTab = ref<'agent' | 'agent-server'>('agent')
+
+const syncTabToQuery = (tab: string) => {
+  const normalized = resolveTabKey(tab)
+  const current = resolveTabKey(route.query.tab)
+  if (current === normalized) return
+  router.replace({
+    query: {
+      ...route.query,
+      tab: normalized
+    }
+  })
+}
 
 const getDefaultAgentServerId = () => {
-  if (selectedAgentServerId.value) {
-    return selectedAgentServerId.value
+  if (searchForm.agent_server_id) {
+    return searchForm.agent_server_id
   }
   if (agentServers.value.length === 1) {
     return agentServers.value[0].id
@@ -1015,7 +1034,6 @@ const agents = ref<Agent[]>([])
 const agentServers = ref<AgentServer[]>([])
 const agentServerTable = ref<AgentServer[]>([])
 const agentServerTableLoading = ref(false)
-const selectedAgentServerId = ref<number | null>(null)
 const tokenModalVisible = ref(false)
 const currentAgent = ref<Agent | null>(null)
 const tokenFormRef = ref()
@@ -1165,13 +1183,24 @@ const batchOperationDrawerVisible = ref(false)
 // 搜索表单
 const searchForm = reactive({
   search: '',
-  status: ''
+  status: '',
+  agent_server_id: undefined as number | undefined,
+  quick_status: [] as string[]
 })
 
 const agentServerSearchForm = reactive({
   search: '',
   is_active: undefined as boolean | undefined,
   require_signature: undefined as boolean | undefined
+})
+
+const { initFromQuery: initAgentServerFromQuery, syncToQuery: syncAgentServerToQuery } = useFilterQuerySync({
+  searchForm: agentServerSearchForm,
+  fields: [
+    { key: 'search', queryKey: 'as_search' },
+    { key: 'is_active', queryKey: 'as_is_active', fromQuery: parseBooleanQuery },
+    { key: 'require_signature', queryKey: 'as_require_signature', fromQuery: parseBooleanQuery }
+  ]
 })
 
 // 状态过滤器
@@ -1184,6 +1213,26 @@ const statusFilters = reactive({
   failed: false,
   inactive: false
 })
+
+const statusFilterKeys = Object.keys(statusFilters) as Array<keyof typeof statusFilters>
+
+const syncStatusFiltersFromList = (list: string[]) => {
+  statusFilterKeys.forEach(key => {
+    statusFilters[key] = list.includes(key)
+  })
+}
+
+const updateQuickStatusFromFilters = () => {
+  searchForm.quick_status = statusFilterKeys.filter(key => statusFilters[key])
+}
+
+watch(
+  () => searchForm.quick_status,
+  (value) => {
+    syncStatusFiltersFromList(value || [])
+  },
+  { deep: true, immediate: true }
+)
 
 // Token 表单
 const tokenForm = reactive({
@@ -1199,6 +1248,17 @@ const pagination = reactive({
   total: 0,
   showTotal: true,
   showPageSize: true
+})
+
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'search' },
+    { key: 'status' },
+    { key: 'agent_server_id', fromQuery: parseNumberQuery },
+    { key: 'quick_status', fromQuery: parseStringArrayQuery }
+  ]
 })
 
 // 统计信息
@@ -1561,7 +1621,7 @@ const fetchAgents = async () => {
     }
     if (searchForm.search) params.search = searchForm.search
     if (searchForm.status) params.status = searchForm.status
-    if (selectedAgentServerId.value) params.agent_server_id = selectedAgentServerId.value
+    if (searchForm.agent_server_id) params.agent_server_id = searchForm.agent_server_id
 
     // 过滤空值
     Object.keys(params).forEach(key => {
@@ -1597,8 +1657,8 @@ const fetchAgentServers = async () => {
   try {
     const response = await agentServerApi.getAgentServers({ page_size: 200, is_active: true })
     agentServers.value = response.results || []
-    if (!selectedAgentServerId.value && agentServers.value.length === 1) {
-      selectedAgentServerId.value = agentServers.value[0].id
+    if (!searchForm.agent_server_id && agentServers.value.length === 1) {
+      searchForm.agent_server_id = agentServers.value[0].id
     }
   } catch (error: any) {
     console.error('获取 Agent-Server 列表失败:', error)
@@ -1632,6 +1692,24 @@ const fetchAgentServerTable = async () => {
   }
 }
 
+watch(
+  () => route.query,
+  () => {
+    const tab = resolveTabKey(route.query.tab)
+    if (activeTab.value !== tab) {
+      activeTab.value = tab
+    }
+    if (tab === 'agent') {
+      initFromQuery()
+      fetchAgents()
+    } else {
+      initAgentServerFromQuery()
+      fetchAgentServerTable()
+    }
+  },
+  { immediate: true }
+)
+
 // 搜索（带防抖）
 const handleSearch = () => {
   // 清除之前的防抖定时器
@@ -1640,8 +1718,8 @@ const handleSearch = () => {
   }
   // 设置新的防抖定时器（300ms）
   searchDebounceTimer = setTimeout(() => {
-  pagination.current = 1
-  fetchAgents()
+    pagination.current = 1
+    syncToQuery()
   }, 300)
 }
 
@@ -1654,30 +1732,35 @@ const handleReset = () => {
   }
   searchForm.search = ''
   searchForm.status = ''
-  selectedAgentServerId.value = null
-  handleSearch()
-}
-
-watch(selectedAgentServerId, () => {
+  searchForm.agent_server_id = undefined
+  searchForm.quick_status = []
+  statusFilters.online = false
+  statusFilters.offline = false
+  statusFilters.pending = false
+  statusFilters.disabled = false
+  statusFilters.outdated = false
+  statusFilters.failed = false
+  statusFilters.inactive = false
   pagination.current = 1
-  handleSearch()
-})
+  syncToQuery()
+}
 
 watch(activeTab, (tab) => {
   if (tab !== 'agent' && selectedAgentIds.value.length) {
     selectedAgentIds.value = []
   }
+  syncTabToQuery(tab)
 })
 
 const handleAgentServerSearch = () => {
-  fetchAgentServerTable()
+  syncAgentServerToQuery()
 }
 
 const handleAgentServerReset = () => {
   agentServerSearchForm.search = ''
   agentServerSearchForm.is_active = undefined
   agentServerSearchForm.require_signature = undefined
-  fetchAgentServerTable()
+  syncAgentServerToQuery()
 }
 
 const resetAgentServerEditForm = () => {
@@ -1754,6 +1837,8 @@ const toggleStatusFilter = (filterType: keyof typeof statusFilters) => {
   statusFilters[filterType] = !statusFilters[filterType]
   // 过滤器改变时重置分页
   pagination.current = 1
+  updateQuickStatusFromFilters()
+  syncToQuery()
 }
 
 const clearAllFilters = () => {
@@ -1765,18 +1850,20 @@ const clearAllFilters = () => {
   statusFilters.failed = false
   statusFilters.inactive = false
   pagination.current = 1
+  updateQuickStatusFromFilters()
+  syncToQuery()
 }
 
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
-  fetchAgents()
+  syncToQuery()
 }
 
 const handlePageSizeChange = (size: number) => {
   pagination.pageSize = size
   pagination.current = 1
-  fetchAgents()
+  syncToQuery()
 }
 
 // 查看详情
@@ -1884,7 +1971,7 @@ const handleRestartAgent = (agent: Agent) => {
         await agentsApi.controlAgent(agent.id, {
           action: 'restart',
           reason: '用户手动重启',
-          agent_server_id: selectedAgentServerId.value || undefined
+          agent_server_id: searchForm.agent_server_id || undefined
         })
         Message.success('重启指令已下发，Agent 将在几秒内重启')
         // 延迟刷新，等待 Agent 重启完成
@@ -1910,7 +1997,7 @@ const handleUpgradeAgent = (agent: Agent) => {
         await agentsApi.upgradeAgent(agent.id, {
           target_version: agent.expected_min_version,
           confirmed: true,
-          agent_server_id: selectedAgentServerId.value || undefined
+          agent_server_id: searchForm.agent_server_id || undefined
         })
         Message.success('升级指令已下发，Agent 将在几秒内完成升级')
         setTimeout(() => fetchAgents(), 5000)
@@ -2757,7 +2844,6 @@ watch(installModalVisible, (visible, wasVisible) => {
 onMounted(() => {
   fetchAgentServers()
   fetchAgentServerTable()
-  fetchAgents()
 })
 
 // 清理安装 SSE 连接
