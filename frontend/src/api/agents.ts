@@ -94,7 +94,7 @@ export interface IssueTokenParams {
 export interface BatchOperationParams {
   agent_ids: number[]
   confirmed: boolean
-  agent_server_id?: number
+  agent_server_id?: number | null
 }
 
 export interface PaginatedResponse<T> {
@@ -182,6 +182,22 @@ export const agentsApi = {
   // 批量启用 Agent
   batchEnable(data: BatchOperationParams): Promise<{ count: number }> {
     return http.post('/agents/batch_enable/', data)
+  },
+
+  // 批量更新 Agent 关联的 Agent-Server（仅控制面记录）
+  batchUpdateAgentServer(data: BatchOperationParams): Promise<{
+    results: Array<{
+      agent_id: number
+      host_id: number
+      host_name: string
+      success: boolean
+      message: string
+    }>
+    total: number
+    success_count: number
+    failed_count: number
+  }> {
+    return http.post('/agents/batch_update_agent_server/', data)
   },
 
   // 批量重启 Agent（带SSE进度监控）

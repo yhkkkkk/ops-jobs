@@ -17,71 +17,66 @@
             </a-button>
             <!-- 使用 CSS 过渡动画替代 v-if，避免选择时按钮闪烁和布局抖动 -->
             <div class="batch-actions" :class="{ 'batch-actions-visible': selectedAgentIds.length > 0 }">
-              <a-space :size="8">
-            <a-button 
-                  v-show="selectedAgentIds.length > 0"
-              type="primary" 
-              status="warning"
-              @click="handleBatchRegenerateScript"
-            >
-              <template #icon>
-                <IconCopy />
-              </template>
-              批量重新生成脚本 ({{ selectedAgentIds.length }})
-            </a-button>
-            <a-button 
-                  v-show="hasPendingAgents"
-              type="primary" 
-              status="danger"
-              @click="handleBatchDeletePending"
-            >
-              <template #icon>
-                <icon-delete />
-              </template>
-              批量删除待激活 ({{ selectedPendingCount }})
-            </a-button>
-            <a-button 
-                  v-show="hasDisableableAgents"
-              type="primary" 
-              status="warning"
-              @click="handleBatchDisable"
-            >
-              <template #icon>
-                <icon-close-circle />
-              </template>
-              批量禁用 ({{ selectedDisableableCount }})
-            </a-button>
-            <a-button
-                  v-show="hasEnableableAgents"
-              type="primary"
-              status="success"
-              @click="handleBatchEnable"
-            >
-              <template #icon>
-                <icon-check-circle />
-              </template>
-              批量启用 ({{ selectedEnableableCount }})
-            </a-button>
-            <a-button
-                  v-show="selectedAgentIds.length > 0"
-              type="primary"
-              status="warning"
-              @click="handleBatchRestart"
-            >
-              <template #icon>
-                <icon-refresh />
-              </template>
-              批量重启 ({{ selectedAgentIds.length }})
-            </a-button>
-              </a-space>
+              <a-dropdown trigger="click">
+                <a-button type="primary" :disabled="selectedAgentIds.length === 0">
+                  <template #icon>
+                    <icon-more />
+                  </template>
+                  批量操作 ({{ selectedAgentIds.length }})
+                  <icon-down style="margin-left: 6px" />
+                </a-button>
+                <template #content>
+                  <a-doption
+                    :disabled="selectedAgentIds.length === 0"
+                    @click="handleBatchRegenerateScript"
+                  >
+                    重新生成脚本 ({{ selectedAgentIds.length }})
+                  </a-doption>
+                  <a-doption
+                    :disabled="selectedAgentIds.length === 0"
+                    @click="handleBatchUpdateAgentServer"
+                  >
+                    编辑 Agent-Server ({{ selectedAgentIds.length }})
+                  </a-doption>
+                  <a-doption
+                    :disabled="!hasEnableableAgents"
+                    @click="handleBatchEnable"
+                  >
+                    启用 ({{ selectedEnableableCount }})
+                  </a-doption>
+                  <a-doption
+                    :disabled="!hasDisableableAgents"
+                    @click="handleBatchDisable"
+                  >
+                    禁用 ({{ selectedDisableableCount }})
+                  </a-doption>
+                  <a-doption
+                    :disabled="selectedAgentIds.length === 0"
+                    @click="handleBatchRestart"
+                  >
+                    重启 ({{ selectedAgentIds.length }})
+                  </a-doption>
+                  <a-divider class="dropdown-divider" />
+                  <a-doption
+                    class="danger-option"
+                    :style="{ color: '#f53f3f' }"
+                    :disabled="!hasPendingAgents"
+                    @click="handleBatchDeletePending"
+                  >
+                    <span class="danger-text">删除待激活 ({{ selectedPendingCount }})</span>
+                  </a-doption>
+                  <a-doption
+                    class="danger-option"
+                    :style="{ color: '#f53f3f' }"
+                    :disabled="selectedAgentIds.length === 0"
+                    @click="handleUninstallAgent"
+                  >
+                    <span class="danger-text">卸载 ({{ selectedAgentIds.length }})</span>
+                  </a-doption>
+                </template>
+              </a-dropdown>
             </div>
             <a-divider direction="vertical" style="height: 32px; margin: 0" />
-            <a-button type="primary" status="danger" @click="handleUninstallAgent">
-              <template #icon>
-                <icon-delete />
-              </template>
-              批量卸载
-            </a-button>
             <a-button @click="handleViewInstallRecords">
               <template #icon>
                 <IconHistory />
@@ -639,6 +634,39 @@
       </a-form>
     </a-modal>
 
+    <!-- 批量编辑 Agent-Server 弹窗 -->
+    <a-modal
+      v-model:visible="batchUpdateAgentServerVisible"
+      title="批量编辑 Agent-Server"
+      @ok="handleBatchUpdateAgentServerConfirm"
+      @cancel="handleBatchUpdateAgentServerCancel"
+    >
+      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+        仅更新控制面记录，不会自动下发/重装
+      </a-alert>
+      <a-form :model="batchUpdateAgentServerForm" layout="vertical">
+        <a-form-item label="关联 Agent-Server">
+          <a-select
+            v-model="batchUpdateAgentServerForm.agent_server_id"
+            placeholder="请选择 Agent-Server"
+            allow-clear
+            allow-search
+            :filter-option="filterAgentServerOption"
+          >
+            <a-option
+              v-for="server in agentServers"
+              :key="server.id"
+              :value="server.id"
+              :label="formatAgentServerLabel(server)"
+            >
+              {{ formatAgentServerLabel(server) }}
+            </a-option>
+          </a-select>
+          <div class="form-help">留空表示解除绑定（仅控制面记录）</div>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
     <!-- 安装 Agent 抽屉 -->
     <a-drawer
       v-model:visible="installModalVisible"
@@ -647,9 +675,8 @@
       :footer="false"
       placement="right"
     >
-      <a-tabs v-model:active-key="installTab">
-        <a-tab-pane key="select" title="选择主机">
-          <div class="install-step">
+      <div class="install-content">
+        <div class="install-step">
             <a-form :model="installForm" layout="vertical">
               <a-form-item label="安装类型">
             <a-radio-group v-model="installForm.install_type" @change="handleInstallTypeChange">
@@ -858,10 +885,10 @@
               </a-form-item>
             </a-form>
           </div>
-        </a-tab-pane>
 
-        <!-- 安装进度面板已移除，改用独立的 ProgressDrawer 组件 -->
-        <a-tab-pane key="script" title="安装脚本" v-if="installScripts">
+          <!-- 安装进度面板已移除，改用独立的 ProgressDrawer 组件 -->
+          <div v-if="installScripts">
+          <a-divider>安装脚本</a-divider>
           <div class="install-step install-step-scripts">
             <div class="install-script-tip">
               <p class="install-script-tip-title">
@@ -909,8 +936,8 @@
               </div>
             </div>
           </div>
-        </a-tab-pane>
-      </a-tabs>
+        </div>
+      </div>
     </a-drawer>
 
     <!-- 卸载进度抽屉 -->
@@ -1006,9 +1033,13 @@ const agentServerEditForm = reactive({
   description: ''
 })
 
+const batchUpdateAgentServerVisible = ref(false)
+const batchUpdateAgentServerForm = reactive({
+  agent_server_id: null as number | null
+})
+
 // 安装相关
 const installModalVisible = ref(false)
-const installTab = ref('select')
 const installDrawerVisible = ref(false)  // 安装进度抽屉
 const installForm = reactive({
   host_ids: [] as number[],
@@ -1094,7 +1125,6 @@ const handleOriginsBlur = () => {
 
 // 卸载相关
 const uninstallDrawerVisible = ref(false)
-const uninstallTab = ref('select')
 const uninstallForm = reactive({
   agent_ids: [] as number[],
 })
@@ -1633,6 +1663,12 @@ watch(selectedAgentServerId, () => {
   handleSearch()
 })
 
+watch(activeTab, (tab) => {
+  if (tab !== 'agent' && selectedAgentIds.value.length) {
+    selectedAgentIds.value = []
+  }
+})
+
 const handleAgentServerSearch = () => {
   fetchAgentServerTable()
 }
@@ -1900,7 +1936,6 @@ const handleViewUninstallRecords = () => {
 // 卸载 Agent
 const handleUninstallAgent = () => {
   uninstallDrawerVisible.value = true
-  uninstallTab.value = 'select'
   uninstallForm.agent_ids = []
   // 重置进度
   uninstallProgress.value = createProgressState()
@@ -1960,7 +1995,6 @@ const connectUninstallProgressSSE = (uninstallTaskId: string) => {
 // 安装 Agent
 const handleInstallAgent = () => {
   installModalVisible.value = true
-  installTab.value = 'select'
   installForm.host_ids = []
   installForm.install_type = 'agent'
   installForm.install_mode = 'agent-server'
@@ -2157,7 +2191,6 @@ const handleGenerateScript = async () => {
       Message.warning(`部分主机生成脚本失败: ${response.errors.join('; ')}`)
     }
     
-    installTab.value = 'script'
     Message.success('安装脚本生成成功')
   } catch (error: any) {
     console.error('生成安装脚本失败:', error)
@@ -2367,7 +2400,6 @@ const handleRegenerateScript = async (agent: any) => {
           const response = await agentsApi.regenerateScript(agent.id)
           installScripts.value = response.scripts
           installModalVisible.value = true
-          installTab.value = 'script'
 
           if (response.notice) {
             Message.warning(response.notice)
@@ -2434,7 +2466,6 @@ const handleBatchRegenerateScript = async () => {
         if (successCount > 0) {
           installScripts.value = scripts
           installModalVisible.value = true
-          installTab.value = 'script'
           Message.success(`成功为 ${successCount} 个 Agent 重新生成脚本${failCount > 0 ? `，${failCount} 个失败` : ''}`)
         } else {
           Message.error('批量生成脚本失败')
@@ -2602,6 +2633,44 @@ const handleBatchRestart = async () => {
     })
   } catch (error) {
     // 用户取消
+  }
+}
+
+const handleBatchUpdateAgentServer = () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请先选择要更新的 Agent')
+    return
+  }
+  batchUpdateAgentServerForm.agent_server_id = selectedAgentServerId.value ?? null
+  batchUpdateAgentServerVisible.value = true
+}
+
+const handleBatchUpdateAgentServerCancel = () => {
+  batchUpdateAgentServerVisible.value = false
+  batchUpdateAgentServerForm.agent_server_id = null
+}
+
+const handleBatchUpdateAgentServerConfirm = async () => {
+  if (selectedAgentIds.value.length === 0) {
+    Message.warning('请先选择要更新的 Agent')
+    return
+  }
+
+  try {
+    const result = await agentsApi.batchUpdateAgentServer({
+      agent_ids: selectedAgentIds.value,
+      agent_server_id: batchUpdateAgentServerForm.agent_server_id,
+      confirmed: true
+    })
+    Message.success(`批量更新完成：成功 ${result.success_count} 个，失败 ${result.failed_count} 个`)
+    batchUpdateAgentServerVisible.value = false
+    batchUpdateAgentServerForm.agent_server_id = null
+    selectedAgentIds.value = []
+    fetchAgents()
+  } catch (error: any) {
+    console.error('批量更新 Agent-Server 失败:', error)
+    const errorMsg = error?.response?.data?.message || error?.message || '批量更新 Agent-Server 失败'
+    Message.error(errorMsg)
   }
 }
 
@@ -2974,5 +3043,37 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--color-text-3);
   font-weight: 500;
+}
+
+:deep(.dropdown-divider) {
+  margin: 4px 0;
+}
+
+:deep(.arco-dropdown-option.danger-option),
+:deep(.danger-option) {
+  color: #f53f3f;
+}
+
+:deep(.arco-dropdown-option.danger-option:hover),
+:deep(.danger-option:hover) {
+  background-color: #fff1f0;
+  color: #f53f3f;
+}
+
+:deep(.arco-dropdown-option:hover .danger-text) {
+  color: #f53f3f;
+}
+
+:deep(.danger-text) {
+  color: inherit;
+}
+
+:deep(.arco-dropdown-option.danger-option.arco-dropdown-option-disabled),
+:deep(.danger-option.arco-dropdown-option-disabled) {
+  color: #fcbfbe;
+}
+
+:deep(.danger-option .arco-dropdown-option-content) {
+  color: inherit;
 }
 </style>

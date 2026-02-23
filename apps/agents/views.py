@@ -1437,6 +1437,98 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             message=f"批量安装已启动，正在后台执行，可通过install_task_id连接sse查看实时进度"
         )
 
+    @action(detail=False, methods=["post"], url_path="batch_update_agent_server")
+    def batch_update_agent_server(self, request):
+        """批量更新 Agent 关联的 Agent-Server（仅控制面记录）"""
+        serializer = BatchOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+
+        data = serializer.validated_data
+        agent_ids = data['agent_ids']
+        confirmed = data.get('confirmed', False)
+        agent_server_id = data.get('agent_server_id')
+
+        # 权限过滤
+        allowed_agents = self.get_queryset().filter(id__in=agent_ids).select_related('host')
+        if allowed_agents.count() != len(agent_ids):
+            return SycResponse.error(message="部分agent无权限操作", code=403)
+
+        # 使用统一的批量操作校验
+        is_valid, error_msg, _ = self.validate_batch_operation_with_agents(
+            request=request,
+            agent_ids=agent_ids,
+            confirmed=confirmed,
+        )
+        if not is_valid:
+            return SycResponse.error(message=error_msg, code=400)
+
+        server = None
+        if agent_server_id is not None:
+            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
+            if not server:
+                return SycResponse.error(message="Agent-Server不存在或已禁用", code=404)
+
+        results = []
+        success_count = 0
+        failed_count = 0
+
+        for agent in allowed_agents:
+            try:
+                old_agent_server_id = agent.agent_server_id
+                new_agent_server_id = server.id if server else None
+                if old_agent_server_id == new_agent_server_id:
+                    results.append({
+                        'agent_id': agent.id,
+                        'host_id': agent.host_id,
+                        'host_name': agent.host.name if agent.host else '',
+                        'success': True,
+                        'message': 'Agent-Server 未发生变更'
+                    })
+                    success_count += 1
+                    continue
+
+                agent.agent_server = server
+                agent.save(update_fields=['agent_server', 'updated_at'])
+                AgentService.audit(
+                    request.user,
+                    "update_agent_server",
+                    agent,
+                    request=request,
+                    extra={
+                        'batch': True,
+                        'old_agent_server_id': old_agent_server_id,
+                        'new_agent_server_id': new_agent_server_id
+                    }
+                )
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host_id,
+                    'host_name': agent.host.name if agent.host else '',
+                    'success': True,
+                    'message': '更新成功'
+                })
+                success_count += 1
+            except Exception as exc:
+                failed_count += 1
+                results.append({
+                    'agent_id': agent.id,
+                    'host_id': agent.host_id,
+                    'host_name': agent.host.name if agent.host else '',
+                    'success': False,
+                    'message': str(exc)
+                })
+
+        return SycResponse.success(
+            content={
+                'results': results,
+                'total': len(agent_ids),
+                'success_count': success_count,
+                'failed_count': failed_count,
+            },
+            message="批量更新Agent-Server完成"
+        )
+
     @action(detail=False, methods=["post"], url_path="batch_uninstall")
     def batch_uninstall(self, request):
         """批量卸载 Agent（通过 SSH）"""
