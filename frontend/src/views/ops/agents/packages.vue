@@ -391,7 +391,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import {
   IconPlus,
@@ -403,11 +403,15 @@ import {
   IconLock, IconInfoCircle,
 } from '@arco-design/web-vue/es/icon'
 import { packageApi, type AgentPackage } from '@/api/agents'
+import { useFilterQuerySync, parseBooleanQuery } from '@/composables/useFilterQuerySync'
 import type { FileItem } from '@arco-design/web-vue/es/upload'
 import { formatFileSize, formatDateTime } from '@/utils/date'
+import { useRoute } from 'vue-router'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
@@ -478,12 +482,25 @@ const pagination = reactive({
   showPageSize: true,
 })
 
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'search' },
+    { key: 'os_type' },
+    { key: 'arch' },
+    { key: 'package_type' },
+    { key: 'storage_type' },
+    { key: 'is_active', fromQuery: parseBooleanQuery }
+  ]
+})
+
 // 表格列定义
 const columns = ref([
   {
     title: '类型',
     dataIndex: 'package_type_display',
-    width: 120,
+    width: 130,
   },
   {
     title: '版本号',
@@ -587,6 +604,15 @@ const fetchPackages = async () => {
   }
 }
 
+watch(
+  () => route.query,
+  () => {
+    initFromQuery()
+    fetchPackages()
+  },
+  { immediate: true }
+)
+
 // 搜索（带防抖）
 const handleSearch = () => {
   // 清除之前的防抖定时器
@@ -595,8 +621,8 @@ const handleSearch = () => {
   }
   // 设置新的防抖定时器（300ms）
   searchDebounceTimer = setTimeout(() => {
-  pagination.current = 1
-  fetchPackages()
+    pagination.current = 1
+    syncToQuery()
   }, 300)
 }
 
@@ -613,19 +639,20 @@ const handleReset = () => {
   searchForm.package_type = ''
   searchForm.storage_type = ''
   searchForm.is_active = undefined
-  handleSearch()
+  pagination.current = 1
+  syncToQuery()
 }
 
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
-  fetchPackages()
+  syncToQuery()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
-  fetchPackages()
+  syncToQuery()
 }
 
 // 创建安装包
@@ -798,9 +825,6 @@ const handleConfirmDelete = async () => {
   }
 }
 
-onMounted(() => {
-  fetchPackages()
-})
 const getOsTypeDisplay = (osType?: string): string => {
   const typeMap: Record<string, string> = {
     linux: 'Linux',
@@ -844,9 +868,6 @@ const getStorageTypeColor = (storageType: string): string => {
   return colorMap[storageType] || 'gray'
 }
 
-onMounted(() => {
-  fetchPackages()
-})
 </script>
 
 <style scoped>

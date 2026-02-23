@@ -255,8 +255,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
   IconSearch,
@@ -265,12 +265,14 @@ import {
   IconRight,
 } from '@arco-design/web-vue/es/icon'
 import { agentsApi } from '@/api/agents'
+import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const router = useRouter()
+const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
@@ -293,6 +295,15 @@ const pagination = reactive({
   showJumper: true,
   showPageSize: true,
   pageSizeOptions: [10, 20, 50, 100],
+})
+
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'search' },
+    { key: 'status' }
+  ]
 })
 
 // 表格列配置
@@ -371,6 +382,15 @@ const fetchRecords = async () => {
   }
 }
 
+watch(
+  () => route.query,
+  () => {
+    initFromQuery()
+    fetchRecords()
+  },
+  { immediate: true }
+)
+
 // 搜索（带防抖）
 const handleSearch = () => {
   // 清除之前的防抖定时器
@@ -379,8 +399,8 @@ const handleSearch = () => {
   }
   // 设置新的防抖定时器（300ms）
   searchDebounceTimer = setTimeout(() => {
-  pagination.current = 1
-  fetchRecords()
+    pagination.current = 1
+    syncToQuery()
   }, 300)
 }
 
@@ -394,7 +414,7 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.status = ''
   pagination.current = 1
-  fetchRecords()
+  syncToQuery()
 }
 
 // 刷新
@@ -405,13 +425,13 @@ const handleRefresh = () => {
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
-  fetchRecords()
+  syncToQuery()
 }
 
 const handlePageSizeChange = (size: number) => {
   pagination.pageSize = size
   pagination.current = 1
-  fetchRecords()
+  syncToQuery()
 }
 
 // 获取状态颜色
@@ -523,10 +543,6 @@ const handleRetryInstall = async (record: any) => {
   }
 }
 
-// 初始化
-onMounted(() => {
-  fetchRecords()
-})
 </script>
 
 <style scoped>

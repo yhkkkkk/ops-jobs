@@ -201,8 +201,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import {
   IconRefresh,
@@ -210,10 +210,13 @@ import {
   IconEye,
 } from '@arco-design/web-vue/es/icon'
 import { agentsApi } from '@/api/agents'
+import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import { formatDateTime } from '@/utils/date'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const route = useRoute()
 
 // 类型定义
 interface UninstallRecord {
@@ -261,6 +264,15 @@ const pagination = reactive({
   showSizeChanger: true,
   showQuickJumper: true,
   pageSizeOptions: ['10', '20', '50', '100']
+})
+
+const { initFromQuery, syncToQuery } = useFilterQuerySync({
+  searchForm,
+  pagination,
+  fields: [
+    { key: 'search' },
+    { key: 'status' }
+  ]
 })
 
 // 表格列配置
@@ -353,6 +365,15 @@ const loadData = async () => {
   }
 }
 
+watch(
+  () => route.query,
+  () => {
+    initFromQuery()
+    loadData()
+  },
+  { immediate: true }
+)
+
 // 搜索（带防抖）
 const handleSearch = () => {
   // 清除之前的防抖定时器
@@ -362,7 +383,7 @@ const handleSearch = () => {
   // 设置新的防抖定时器（300ms）
   searchDebounceTimer = setTimeout(() => {
     pagination.current = 1
-    loadData()
+    syncToQuery()
   }, 300)
 }
 
@@ -377,7 +398,8 @@ const handleReset = () => {
     search: '',
     status: undefined
   })
-  handleSearch()
+  pagination.current = 1
+  syncToQuery()
 }
 
 // 刷新
@@ -388,13 +410,13 @@ const handleRefresh = () => {
 // 分页变化
 const handlePageChange = (page: number) => {
   pagination.current = page
-  loadData()
+  syncToQuery()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.pageSize = pageSize
   pagination.current = 1
-  loadData()
+  syncToQuery()
 }
 
 // 查看详情
@@ -403,10 +425,6 @@ const handleViewDetail = (record: UninstallRecord) => {
   detailVisible.value = true
 }
 
-// 组件挂载时加载数据
-onMounted(() => {
-  loadData()
-})
 </script>
 
 <style scoped>
