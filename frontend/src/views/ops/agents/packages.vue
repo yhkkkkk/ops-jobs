@@ -28,66 +28,73 @@
 
     <!-- 搜索栏 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="搜索">
-          <a-input
-            v-model="searchForm.search"
-            placeholder="版本号、描述"
+      <a-row :gutter="16">
+        <a-col :span="3">
+          <a-select
+            v-model="searchForm.version"
+            placeholder="版本号"
             allow-clear
-            @press-enter="handleSearch"
+            allow-search
+            filter-option="false"
+            @search="handleVersionSearch"
+            @change="handleSearch"
             @clear="handleSearch"
-            style="width: 250px"
-          />
-        </a-form-item>
-        <a-form-item label="操作系统">
+            style="width: 100%"
+          >
+            <a-option v-for="version in versionOptions" :key="version" :value="version">
+              {{ version }}
+            </a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="2">
           <a-select
             v-model="searchForm.os_type"
-            placeholder="请选择操作系统"
+            placeholder="操作系统"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option value="linux">Linux</a-option>
             <a-option value="windows">Windows</a-option>
             <a-option value="darwin">macOS</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="架构">
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.arch"
-            placeholder="请选择架构"
+            placeholder="架构"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option value="amd64">AMD64</a-option>
             <a-option value="arm64">ARM64</a-option>
             <a-option value="386">i386</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="包类型">
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.package_type"
-            placeholder="请选择类型"
+            placeholder="包类型"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 140px"
+            style="width: 100%"
           >
             <a-option value="agent">Agent</a-option>
             <a-option value="agent-server">Agent-Server</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="存储方式">
+        </a-col>
+        <a-col :span="4">
           <a-select
             v-model="searchForm.storage_type"
-            placeholder="请选择存储方式"
+            placeholder="存储方式"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option value="oss">阿里云OSS</a-option>
             <a-option value="s3">AWS S3</a-option>
@@ -95,35 +102,39 @@
             <a-option value="minio">MinIO</a-option>
             <a-option value="rustfs">RustFS</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="状态">
+        </a-col>
+        <a-col :span="3">
           <a-select
             v-model="searchForm.is_active"
-            placeholder="请选择状态"
+            placeholder="状态"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
+            style="width: 100%"
           >
             <a-option :value="true">启用</a-option>
             <a-option :value="false">禁用</a-option>
           </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            <template #icon>
-              <IconSearch />
-            </template>
-            搜索
-          </a-button>
-          <a-button @click="handleReset" style="margin-left: 8px">
-            <template #icon>
-              <IconRefresh />
-            </template>
-            重置
-          </a-button>
-        </a-form-item>
-      </a-form>
+        </a-col>
+        <a-col :span="6">
+          <div class="search-actions">
+            <a-space>
+              <a-button type="primary" @click="handleSearch">
+                <template #icon>
+                  <IconSearch />
+                </template>
+                搜索
+              </a-button>
+              <a-button @click="handleReset">
+                <template #icon>
+                  <IconRefresh />
+                </template>
+                重置
+              </a-button>
+            </a-space>
+          </div>
+        </a-col>
+      </a-row>
     </a-card>
 
     <!-- 安装包列表 -->
@@ -391,7 +402,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import {
   IconPlus,
@@ -416,8 +427,11 @@ const route = useRoute()
 // 响应式数据
 const loading = ref(false)
 const packages = ref<AgentPackage[]>([])
+const versionOptions = ref<string[]>([])
+const availableVersions = ref<string[]>([])
+
 const searchForm = reactive({
-  search: '',
+  version: '',
   os_type: '',
   arch: '',
   package_type: '',
@@ -486,7 +500,7 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   searchForm,
   pagination,
   fields: [
-    { key: 'search' },
+    { key: 'version' },
     { key: 'os_type' },
     { key: 'arch' },
     { key: 'package_type' },
@@ -575,8 +589,8 @@ const fetchPackages = async () => {
       page: pagination.current,
       page_size: pagination.pageSize,
     }
-  if (searchForm.search) {
-    params.search = searchForm.search
+  if (searchForm.version) {
+    params.version = searchForm.version
   }
   if (searchForm.package_type) {
     params.package_type = searchForm.package_type
@@ -597,11 +611,39 @@ const fetchPackages = async () => {
     const response = await packageApi.getPackages(params)
     packages.value = response.results
     pagination.total = response.total
+    buildAvailableVersions()
   } catch (error: any) {
     Message.error(error.message || '获取安装包列表失败')
   } finally {
     loading.value = false
   }
+}
+
+const buildAvailableVersions = () => {
+  const set = new Set<string>()
+  packages.value.forEach((pkg) => {
+    if (pkg.version) {
+      set.add(pkg.version)
+    }
+  })
+  const list = Array.from(set)
+  list.sort((a, b) => b.localeCompare(a))
+  availableVersions.value = list
+  versionOptions.value = [...list]
+}
+
+const filterVersions = (searchValue: string) => {
+  if (!searchValue.trim()) {
+    return [...availableVersions.value]
+  }
+  const searchTerm = searchValue.toLowerCase().trim()
+  return availableVersions.value.filter(version =>
+    version.toLowerCase().includes(searchTerm)
+  )
+}
+
+const handleVersionSearch = (value: string) => {
+  versionOptions.value = filterVersions(value)
 }
 
 watch(
@@ -633,7 +675,7 @@ const handleReset = () => {
     clearTimeout(searchDebounceTimer)
     searchDebounceTimer = null
   }
-  searchForm.search = ''
+  searchForm.version = ''
   searchForm.os_type = ''
   searchForm.arch = ''
   searchForm.package_type = ''
@@ -654,6 +696,13 @@ const handlePageSizeChange = (pageSize: number) => {
   pagination.current = 1
   syncToQuery()
 }
+
+onBeforeUnmount(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
+})
 
 // 创建安装包
 const handleCreatePackage = () => {
@@ -904,6 +953,13 @@ const getStorageTypeColor = (storageType: string): string => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.search-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
 }
 
 .table-container {

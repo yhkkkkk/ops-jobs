@@ -732,7 +732,9 @@
                     v-model="installForm.agent_server_url"
                     placeholder="例如: ws://agent-server:8080"
                   />
-                  <div class="form-help">Agent 连接 Agent-Server 的 WS 地址，仅安装 Agent 使用</div>
+                  <template #extra>
+                    <div class="form-help">Agent 连接 Agent-Server 的 WS 地址，仅安装 Agent 使用</div>
+                  </template>
                 </a-form-item>
                 <a-form-item label="最大并发任务数" field="max_concurrent_tasks">
                   <a-input-number
@@ -742,7 +744,9 @@
                     placeholder="留空使用默认值 (5)"
                     style="width: 100%"
                   />
-                  <div class="form-help">控制该 Agent 同时执行的任务数量，留空则使用默认值 5</div>
+                  <template #extra>
+                    <div class="form-help">控制该 Agent 同时执行的任务数量，留空则使用默认值 5</div>
+                  </template>
                 </a-form-item>
                 <a-row :gutter="12">
                   <a-col :span="8">
@@ -773,15 +777,21 @@
                   <a-input
                     v-model="installForm.agent_server_base_url"
                     placeholder="例如: http://agent-server.example.com:8080"
+                    style="width: 100%"
                   />
-                  <div class="form-help">控制面访问 Agent-Server 的地址(base_url)，默认使用监听地址，可按需改为域名或负载均衡地址</div>
+                  <template #extra>
+                    <div class="form-help">控制面访问 Agent-Server 的地址(base_url)，默认使用监听地址，可按需改为域名或负载均衡地址</div>
+                  </template>
                 </a-form-item>
                 <a-form-item label="Agent-Server 监听地址">
                   <a-input
                     v-model="installForm.agent_server_listen_addr"
                     placeholder="例如: 0.0.0.0:8080"
+                    style="width: 100%"
                   />
-                  <div class="form-help">Agent-Server 服务监听地址，写入 agent-server 配置</div>
+                  <template #extra>
+                    <div class="form-help">Agent-Server 服务监听地址，写入 agent-server 配置</div>
+                  </template>
                 </a-form-item>
                 <a-row :gutter="12">
                   <a-col :span="12">
@@ -856,7 +866,7 @@
                 </a-row>
               </template>
               <a-row :gutter="12">
-                <a-col :span="12">
+                <a-col :span="8">
                   <a-form-item label="SSH 超时(秒)">
                     <a-input-number v-model="installForm.ssh_timeout" :min="60" :max="900" style="width: 100%" />
                   </a-form-item>

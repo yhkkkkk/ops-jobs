@@ -467,14 +467,20 @@ export const packageApi = {
   getPackages(params?: {
     page?: number
     page_size?: number
-    search?: string
+    version?: string
     package_type?: string
     os_type?: string
     arch?: string
+    storage_type?: string
     is_active?: boolean
     is_default?: boolean
   }): Promise<PaginatedResponse<AgentPackage>> {
     return http.get('/agents/packages/', { params })
+  },
+
+  // 获取安装包版本列表
+  getPackageVersions(params?: { package_type?: string; search?: string }): Promise<string[]> {
+    return http.get('/agents/packages/versions/', { params })
   },
 
   // 获取单个安装包

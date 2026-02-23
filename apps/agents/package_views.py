@@ -14,7 +14,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db import transaction
+from django.db import transaction, models
 from django.conf import settings
 from django.http import FileResponse, Http404
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -454,10 +454,21 @@ class AgentPackageViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def versions(self, request):
         """获取所有版本列表（去重）"""
-        qs = AgentPackage.objects.filter(is_active=True)
+        qs = AgentPackage.objects.all()
         package_type = request.query_params.get('package_type')
         if package_type:
             qs = qs.filter(package_type=package_type)
+
+        search = (request.query_params.get('search') or '').strip()
+        qs = qs.exclude(version__isnull=True).exclude(version='')
+        if search:
+            terms = [t.strip() for t in search.replace(',', ' ').split() if t.strip()]
+            if terms:
+                q = models.Q()
+                for term in terms:
+                    q |= models.Q(version__icontains=term)
+                qs = qs.filter(q)
+
         versions = qs.values_list('version', flat=True).distinct().order_by('-version')
         return SycResponse.success(content=list(versions))
 
