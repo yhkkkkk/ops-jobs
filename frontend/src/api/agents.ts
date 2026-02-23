@@ -111,6 +111,7 @@ export const agentsApi = {
     page_size?: number
     search?: string
     status?: string
+    last_error_code?: string
     tags?: string
     service_role?: string
     group?: number
@@ -118,6 +119,11 @@ export const agentsApi = {
     agent_server_id?: number
   }): Promise<PaginatedResponse<Agent>> {
     return http.get('/agents/', { params })
+  },
+
+  // 获取错误码候选列表
+  getErrorCodes(params?: { search?: string }): Promise<{ items: string[] }> {
+    return http.get('/agents/error_codes/', { params })
   },
 
   // 获取 Agent 详情

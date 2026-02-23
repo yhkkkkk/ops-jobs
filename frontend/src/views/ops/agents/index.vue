@@ -108,12 +108,32 @@
         <a-form-item label="搜索">
           <a-input
             v-model="searchForm.search"
-            placeholder="主机名、IP、版本、错误码"
+            placeholder="主机名、IP、版本"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
             style="width: 250px"
           />
+        </a-form-item>
+        <a-form-item label="错误码">
+          <a-select
+            v-model="searchForm.last_error_code"
+            placeholder="输入错误码"
+            allow-clear
+            allow-search
+            allow-create
+            filter-option="false"
+            :loading="errorCodeLoading"
+            @search="handleErrorCodeSearch"
+            @change="handleSearch"
+            @clear="handleSearch"
+            @dropdown-visible-change="handleErrorCodeDropdown"
+            style="width: 200px"
+          >
+            <a-option v-for="code in errorCodeOptions" :key="code" :value="code">
+              {{ code }}
+            </a-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="Agent-Server">
           <a-select
@@ -216,15 +236,6 @@
             </template>
             最近失败 ({{ failedCount }})
           </a-button>
-          <a-button
-            :type="statusFilters.inactive ? 'primary' : 'outline'"
-            @click="toggleStatusFilter('inactive')"
-          >
-            <template #icon>
-              <icon-moon />
-            </template>
-            长时间未活跃 ({{ inactiveCount }})
-          </a-button>
           <!-- 清除筛选按钮 -->
           <a-button
             v-if="hasActiveFilters"
@@ -240,18 +251,18 @@
         </a-space>
 
         <!-- 筛选统计信息 -->
-        <div v-if="hasActiveFilters" class="filter-stats">
+        <div v-if="hasFilterSummary" class="filter-stats">
           <a-space>
             <span class="stats-text">
               当前显示: {{ filteredAgents.length }} / 总计: {{ agents.length }} 个Agent
             </span>
+            <a-tag v-if="errorCodeFilterLabel" color="red">错误码: {{ errorCodeFilterLabel }}</a-tag>
             <a-tag v-if="statusFilters.online" color="green">在线: {{ filteredOnlineCount }}</a-tag>
             <a-tag v-if="statusFilters.offline" color="red">离线: {{ filteredOfflineCount }}</a-tag>
             <a-tag v-if="statusFilters.pending" color="orange">待激活: {{ filteredPendingCount }}</a-tag>
             <a-tag v-if="statusFilters.disabled" color="gray">已禁用: {{ filteredDisabledCount }}</a-tag>
             <a-tag v-if="statusFilters.outdated" color="purple">版本落后: {{ filteredOutdatedCount }}</a-tag>
             <a-tag v-if="statusFilters.failed" color="red">最近失败: {{ filteredFailedCount }}</a-tag>
-            <a-tag v-if="statusFilters.inactive" color="arcoblue">未活跃: {{ filteredInactiveCount }}</a-tag>
           </a-space>
         </div>
       </div>
@@ -1037,6 +1048,10 @@ const agentServerTableLoading = ref(false)
 const tokenModalVisible = ref(false)
 const currentAgent = ref<Agent | null>(null)
 const tokenFormRef = ref()
+const errorCodeOptions = ref<string[]>([])
+const errorCodeLoading = ref(false)
+
+let errorCodeSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 // Agent-Server 编辑相关
 const agentServerEditVisible = ref(false)
@@ -1184,6 +1199,7 @@ const batchOperationDrawerVisible = ref(false)
 const searchForm = reactive({
   search: '',
   status: '',
+  last_error_code: '',
   agent_server_id: undefined as number | undefined,
   quick_status: [] as string[]
 })
@@ -1210,11 +1226,15 @@ const statusFilters = reactive({
   pending: false,
   disabled: false,
   outdated: false,
-  failed: false,
-  inactive: false
+  failed: false
 })
 
 const statusFilterKeys = Object.keys(statusFilters) as Array<keyof typeof statusFilters>
+
+const normalizeQuickStatusList = (list: string[] = []) => {
+  const allowed = new Set(statusFilterKeys.map(key => String(key)))
+  return list.filter(item => allowed.has(String(item)))
+}
 
 const syncStatusFiltersFromList = (list: string[]) => {
   statusFilterKeys.forEach(key => {
@@ -1229,7 +1249,12 @@ const updateQuickStatusFromFilters = () => {
 watch(
   () => searchForm.quick_status,
   (value) => {
-    syncStatusFiltersFromList(value || [])
+    const normalized = normalizeQuickStatusList(value || [])
+    if (normalized.length !== (value || []).length) {
+      searchForm.quick_status = normalized
+      return
+    }
+    syncStatusFiltersFromList(normalized)
   },
   { deep: true, immediate: true }
 )
@@ -1255,6 +1280,7 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   pagination,
   fields: [
     { key: 'search' },
+    { key: 'last_error_code' },
     { key: 'status' },
     { key: 'agent_server_id', fromQuery: parseNumberQuery },
     { key: 'quick_status', fromQuery: parseStringArrayQuery }
@@ -1348,21 +1374,77 @@ const failedCount = computed(() => {
   return agents.value.filter(a => a.last_error_code).length
 })
 
-const inactiveCount = computed(() => {
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  return agents.value.filter(a => {
-    if (!a.last_heartbeat_at) return true
-    const lastHeartbeat = new Date(a.last_heartbeat_at)
-    return lastHeartbeat < sevenDaysAgo
-  }).length
-})
-
 const hasActiveFilters = computed(() => {
   return statusFilters.online || statusFilters.offline || statusFilters.pending ||
-         statusFilters.disabled || statusFilters.outdated || statusFilters.failed ||
-         statusFilters.inactive
+         statusFilters.disabled || statusFilters.outdated || statusFilters.failed
 })
+
+const normalizeFilterValue = (value: string) => {
+  if (!value) return ''
+  return value
+    .replace(/,/g, ' ')
+    .split(' ')
+    .map(v => v.trim())
+    .filter(Boolean)
+    .join(',')
+}
+
+const errorCodeFilterLabel = computed(() => normalizeFilterValue(searchForm.last_error_code))
+
+const hasFilterSummary = computed(() => {
+  return hasActiveFilters.value || Boolean(errorCodeFilterLabel.value)
+})
+
+const normalizeErrorCodes = (items: string[]) => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  items.forEach(item => {
+    const value = String(item || '').trim()
+    if (!value || seen.has(value)) return
+    seen.add(value)
+    result.push(value)
+  })
+  return result
+}
+
+const ensureErrorCodeOption = (value?: string) => {
+  const normalized = (value || '').trim()
+  if (!normalized) return
+  if (!errorCodeOptions.value.includes(normalized)) {
+    errorCodeOptions.value = [normalized, ...errorCodeOptions.value]
+  }
+}
+
+const fetchErrorCodes = async (searchValue?: string) => {
+  errorCodeLoading.value = true
+  try {
+    const params = searchValue ? { search: searchValue } : undefined
+    const response = await agentsApi.getErrorCodes(params)
+    const items = Array.isArray(response?.items) ? response.items : []
+    errorCodeOptions.value = normalizeErrorCodes(items)
+    ensureErrorCodeOption(searchForm.last_error_code)
+  } catch (error) {
+    console.error('获取错误码列表失败:', error)
+    errorCodeOptions.value = []
+  } finally {
+    errorCodeLoading.value = false
+  }
+}
+
+const handleErrorCodeSearch = (value: string) => {
+  if (errorCodeSearchTimer) {
+    clearTimeout(errorCodeSearchTimer)
+  }
+  errorCodeSearchTimer = setTimeout(() => {
+    fetchErrorCodes(value)
+  }, 200)
+}
+
+const handleErrorCodeDropdown = (visible: boolean) => {
+  if (visible && errorCodeOptions.value.length === 0) {
+    fetchErrorCodes()
+  }
+}
 
 // 筛选统计信息
 const filteredOnlineCount = computed(() => {
@@ -1389,16 +1471,6 @@ const filteredFailedCount = computed(() => {
   return filteredAgents.value.filter(a => a.last_error_code).length
 })
 
-const filteredInactiveCount = computed(() => {
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  return filteredAgents.value.filter(a => {
-    if (!a.last_heartbeat_at) return true
-    const lastHeartbeat = new Date(a.last_heartbeat_at)
-    return lastHeartbeat < sevenDaysAgo
-  }).length
-})
-
 // 过滤后的Agent列表
 const filteredAgents = computed(() => {
   const source = agents.value
@@ -1421,15 +1493,6 @@ const filteredAgents = computed(() => {
   }
   if (statusFilters.failed) {
     predicates.push(a => Boolean(a.last_error_code))
-  }
-  if (statusFilters.inactive) {
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    predicates.push(a => {
-      if (!a.last_heartbeat_at) return true
-      const lastHeartbeat = new Date(a.last_heartbeat_at)
-      return lastHeartbeat < sevenDaysAgo
-    })
   }
 
   if (!predicates.length) {
@@ -1620,6 +1683,7 @@ const fetchAgents = async () => {
       page_size: pagination.pageSize
     }
     if (searchForm.search) params.search = searchForm.search
+    if (searchForm.last_error_code) params.last_error_code = searchForm.last_error_code
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.agent_server_id) params.agent_server_id = searchForm.agent_server_id
 
@@ -1701,6 +1765,8 @@ watch(
     }
     if (tab === 'agent') {
       initFromQuery()
+      searchForm.quick_status = normalizeQuickStatusList(searchForm.quick_status || [])
+      ensureErrorCodeOption(searchForm.last_error_code)
       fetchAgents()
     } else {
       initAgentServerFromQuery()
@@ -1732,6 +1798,7 @@ const handleReset = () => {
   }
   searchForm.search = ''
   searchForm.status = ''
+  searchForm.last_error_code = ''
   searchForm.agent_server_id = undefined
   searchForm.quick_status = []
   statusFilters.online = false
@@ -1740,7 +1807,6 @@ const handleReset = () => {
   statusFilters.disabled = false
   statusFilters.outdated = false
   statusFilters.failed = false
-  statusFilters.inactive = false
   pagination.current = 1
   syncToQuery()
 }
@@ -1848,7 +1914,6 @@ const clearAllFilters = () => {
   statusFilters.disabled = false
   statusFilters.outdated = false
   statusFilters.failed = false
-  statusFilters.inactive = false
   pagination.current = 1
   updateQuickStatusFromFilters()
   syncToQuery()
@@ -2867,6 +2932,10 @@ onBeforeUnmount(() => {
   cleanupSSE()
   cleanupUninstallSSE()
   cleanupBatchOperationSSE()
+  if (errorCodeSearchTimer) {
+    clearTimeout(errorCodeSearchTimer)
+    errorCodeSearchTimer = null
+  }
 })
 </script>
 
@@ -3121,6 +3190,8 @@ onBeforeUnmount(() => {
 }
 
 .filter-stats {
+  width: 100%;
+  flex-basis: 100%;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-2);
 }

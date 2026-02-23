@@ -1743,6 +1743,45 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         # 调用batch_install方法
         return self.batch_install(retry_request)
 
+    @action(detail=False, methods=["get"], url_path="error_codes")
+    def error_codes(self, request):
+        """获取错误码候选列表（去重）"""
+        user = request.user
+        queryset = Agent.objects.all()
+
+        # 权限过滤（与列表一致，但不做多余预取）
+        if not user.is_superuser and not user.has_perm('agents.view_agent'):
+            from apps.hosts.models import Host
+            allowed_hosts = get_objects_for_user(
+                user,
+                'view_host',
+                klass=Host,
+                accept_global_perms=False
+            )
+            queryset = queryset.filter(host__in=allowed_hosts)
+
+        search = (request.query_params.get('search') or '').strip()
+        queryset = queryset.exclude(last_error_code__isnull=True).exclude(last_error_code='')
+
+        if search:
+            terms = [t.strip() for t in search.replace(',', ' ').split() if t.strip()]
+            if terms:
+                q = models.Q()
+                for term in terms:
+                    q |= models.Q(last_error_code__icontains=term)
+                queryset = queryset.filter(q)
+
+        codes = list(
+            queryset.values_list('last_error_code', flat=True)
+            .distinct()
+            .order_by('last_error_code')
+        )
+
+        return SycResponse.success(
+            content={"items": codes},
+            message="获取错误码列表成功"
+        )
+
     @action(detail=False, methods=["get"], url_path="host_agent_status")
     def host_agent_status(self, request):
         """获取主机Agent状态，用于安装时显示主机列表"""
