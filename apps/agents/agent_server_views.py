@@ -52,6 +52,15 @@ class AgentServerViewSet(viewsets.ModelViewSet):
         if require_signature is not None:
             queryset = queryset.filter(require_signature=require_signature)
 
+        version = (request.query_params.get('version') or '').strip()
+        if version:
+            terms = [t.strip() for t in version.replace(',', ' ').split() if t.strip()]
+            if terms:
+                q = Q()
+                for term in terms:
+                    q |= Q(agents__agent_type='agent-server', agents__version__icontains=term)
+                queryset = queryset.filter(q).distinct()
+
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)

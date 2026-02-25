@@ -1,6 +1,7 @@
 import logging
 from django.conf import settings
 from django.utils import timezone
+from django.db import models
 from django_filters.rest_framework import DjangoFilterBackend
 from guardian.shortcuts import get_objects_for_user
 from rest_framework import viewsets
@@ -1780,6 +1781,49 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         return SycResponse.success(
             content={"items": codes},
             message="获取错误码列表成功"
+        )
+
+    @action(detail=False, methods=["get"], url_path="versions")
+    def versions(self, request):
+        """获取版本候选列表（去重）"""
+        user = request.user
+        queryset = Agent.objects.all()
+
+        # 权限过滤（与列表一致，但不做多余预取）
+        if not user.is_superuser and not user.has_perm('agents.view_agent'):
+            from apps.hosts.models import Host
+            allowed_hosts = get_objects_for_user(
+                user,
+                'view_host',
+                klass=Host,
+                accept_global_perms=False
+            )
+            queryset = queryset.filter(host__in=allowed_hosts)
+
+        agent_type = (request.query_params.get('agent_type') or '').strip()
+        if agent_type:
+            queryset = queryset.filter(agent_type=agent_type)
+
+        search = (request.query_params.get('search') or '').strip()
+        queryset = queryset.exclude(version__isnull=True).exclude(version='')
+
+        if search:
+            terms = [t.strip() for t in search.replace(',', ' ').split() if t.strip()]
+            if terms:
+                q = models.Q()
+                for term in terms:
+                    q |= models.Q(version__icontains=term)
+                queryset = queryset.filter(q)
+
+        versions = list(
+            queryset.values_list('version', flat=True)
+            .distinct()
+            .order_by('version')
+        )
+
+        return SycResponse.success(
+            content={"items": versions},
+            message="获取版本列表成功"
         )
 
     @action(detail=False, methods=["get"], url_path="host_agent_status")
