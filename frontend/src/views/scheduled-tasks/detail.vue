@@ -65,7 +65,20 @@
                 <span v-else>-</span>
               </a-descriptions-item>
               <a-descriptions-item label="Cron表达式">
-                <code>{{ task.cron_expression }}</code>
+                <div class="cron-row">
+                  <code>{{ task.cron_expression }}</code>
+                  <a-tooltip content="复制">
+                    <a-button
+                      type="text"
+                      size="mini"
+                      class="cron-copy-btn"
+                      :disabled="!task.cron_expression"
+                      @click="handleCopyCron"
+                    >
+                      <template #icon><IconCopy /></template>
+                    </a-button>
+                  </a-tooltip>
+                </div>
               </a-descriptions-item>
               <a-descriptions-item label="时区">
                 {{ task.timezone }}
@@ -79,11 +92,14 @@
               <a-descriptions-item label="更新时间">
                 {{ formatDateTime(task.updated_at) }}
               </a-descriptions-item>
-              <a-descriptions-item label="下次执行时间">
-                <span v-if="task.next_run_time">
-                  {{ formatDateTime(task.next_run_time) }}
-                </span>
-                <span v-else style="color: #86909c">-</span>
+              <a-descriptions-item label="最近执行结果">
+                <a-tag
+                  v-if="task.last_execution_status"
+                  :color="getExecutionStatusColor(task.last_execution_status)"
+                >
+                  {{ getExecutionStatusText(task.last_execution_status) }}
+                </a-tag>
+                <span v-else style="color: #86909c">暂无</span>
               </a-descriptions-item>
             </a-descriptions>
             
@@ -128,9 +144,9 @@
               />
             </div>
             
-            <div v-if="task.last_run_time" style="margin-top: 16px">
+            <div v-if="task.last_execution_at" style="margin-top: 16px">
               <h4>最后执行时间</h4>
-              <p>{{ formatDateTime(task.last_run_time) }}</p>
+              <p>{{ formatDateTime(task.last_execution_at) }}</p>
             </div>
           </a-card>
         </a-col>
@@ -148,7 +164,8 @@ import {
   IconRefresh,
   IconEdit,
   IconPause,
-  IconPlayArrow
+  IconPlayArrow,
+  IconCopy
 } from '@arco-design/web-vue/es/icon'
 import { scheduledJobApi } from '@/api/scheduler'
 import ExecutionVariablesPanel from '@/components/ExecutionVariablesPanel.vue'
@@ -159,7 +176,6 @@ type ScheduledJob = {
   is_active: boolean
   cron_expression: string
   timezone: string
-  next_run_time?: string
   description?: string
   total_runs?: number
   success_runs?: number
@@ -173,7 +189,8 @@ type ScheduledJob = {
   created_by_name?: string
   created_at?: string
   updated_at?: string
-  last_run_time?: string
+  last_execution_status?: string
+  last_execution_at?: string
   [k: string]: any
 }
 
@@ -272,10 +289,63 @@ const handleViewTemplate = () => {
   window.open(routeUrl.href, '_blank')
 }
 
+const handleCopyCron = async () => {
+  const cron = task.value?.cron_expression
+  if (!cron) {
+    Message.warning('Cron 表达式为空')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(cron)
+    Message.success('已复制')
+  } catch (error) {
+    try {
+      const input = document.createElement('input')
+      input.value = cron
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+      Message.success('已复制')
+    } catch (fallbackError) {
+      console.error('复制失败:', fallbackError)
+      Message.error('复制失败')
+    }
+  }
+}
+
 // 工具函数
 const formatDateTime = (dateTime) => {
   if (!dateTime) return '-'
   return new Date(dateTime).toLocaleString('zh-CN')
+}
+
+const getExecutionStatusText = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: '等待中',
+    running: '执行中',
+    success: '成功',
+    failed: '失败',
+    cancelled: '已取消',
+    timeout: '超时',
+    paused: '已暂停',
+    retrying: '重试中'
+  }
+  return status ? (map[status] || status) : '暂无'
+}
+
+const getExecutionStatusColor = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: 'gray',
+    running: 'blue',
+    success: 'green',
+    failed: 'red',
+    cancelled: 'orange',
+    timeout: 'red',
+    paused: 'orange',
+    retrying: 'purple'
+  }
+  return status ? (map[status] || 'gray') : 'gray'
 }
 
 const formatDuration = (seconds) => {
@@ -337,6 +407,17 @@ onMounted(() => {
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.cron-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cron-copy-btn {
+  padding: 0 4px;
+  height: 22px;
 }
 
 .stat-item {

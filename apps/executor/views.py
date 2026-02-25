@@ -725,9 +725,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                     'name',
                     'is_active',
                     'cron_expression',
-                    'timezone',
-                    'last_run_time',
-                    'next_run_time'
+                    'timezone'
                 )
                 scheduled_jobs = [
                     {
@@ -736,8 +734,6 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                         'is_active': job.is_active,
                         'cron_expression': job.cron_expression,
                         'timezone': job.timezone,
-                        'last_run_time': job.last_run_time,
-                        'next_run_time': job.next_run_time,
                     }
                     for job in jobs
                 ]

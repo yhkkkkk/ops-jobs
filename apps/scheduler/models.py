@@ -65,8 +65,6 @@ class ScheduledJob(models.Model):
     total_runs = models.IntegerField(default=0, verbose_name="总执行次数")
     success_runs = models.IntegerField(default=0, verbose_name="成功次数")
     failed_runs = models.IntegerField(default=0, verbose_name="失败次数")
-    last_run_time = models.DateTimeField(null=True, blank=True, verbose_name="最后执行时间")
-    next_run_time = models.DateTimeField(null=True, blank=True, verbose_name="下次执行时间")
 
     class Meta:
         verbose_name = "定时作业"

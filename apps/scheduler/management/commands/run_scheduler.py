@@ -1,6 +1,5 @@
 import logging
 import pytz
-from datetime import datetime
 
 from django.conf import settings
 from django.core.management import call_command
@@ -46,8 +45,7 @@ def _run_job(job_id: int):
         job.success_runs += 1
     else:
         job.failed_runs += 1
-    job.last_run_time = datetime.now(tz=pytz.timezone(job.timezone))
-    job.save(update_fields=["total_runs", "success_runs", "failed_runs", "last_run_time", "updated_at"])
+    job.save(update_fields=["total_runs", "success_runs", "failed_runs", "updated_at"])
 
 
 def _load_jobs(scheduler: BlockingScheduler):

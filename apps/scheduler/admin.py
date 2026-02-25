@@ -28,13 +28,13 @@ class PermissionActionsMixin:
 class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
     list_display = [
         'name', 'execution_plan', 'template_name', 'plan_name', 'cron_expression',
-        'is_active', 'success_rate', 'total_runs', 'last_run_time', 'permission_actions'
+        'is_active', 'success_rate', 'total_runs', 'permission_actions'
     ]
     list_filter = ['is_active', 'created_at']
     search_fields = ['name', 'description', 'execution_plan__name', 'execution_plan__template__name']
     readonly_fields = [
         'created_at', 'updated_at', 'total_runs', 'success_runs',
-        'failed_runs', 'last_run_time', 'next_run_time'
+        'failed_runs'
     ]
 
     fieldsets = (
@@ -47,8 +47,7 @@ class ScheduledJobAdmin(PermissionActionsMixin, GuardedModelAdmin):
         }),
         ('统计信息', {
             'fields': (
-                'total_runs', 'success_runs', 'failed_runs',
-                'last_run_time', 'next_run_time'
+                'total_runs', 'success_runs', 'failed_runs'
             ),
             'classes': ('collapse',)
         }),

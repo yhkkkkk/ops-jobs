@@ -429,8 +429,6 @@ export interface ScheduledJob {
   total_runs: number
   success_runs: number
   failed_runs: number
-  last_run_time?: string | null
-  next_run_time?: string | null
   last_execution_status?: string | null
   last_execution_at?: string | null
   success_rate: number

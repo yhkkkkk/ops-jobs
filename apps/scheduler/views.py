@@ -29,7 +29,7 @@ class ScheduledJobViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ScheduledJobFilter
-    ordering_fields = ['created_at', 'updated_at', 'name', 'last_run_time', 'next_run_time']
+    ordering_fields = ['created_at', 'updated_at', 'name']
     ordering = ['-created_at']
 
     def get_serializer_class(self):

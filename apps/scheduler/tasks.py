@@ -53,7 +53,6 @@ def execute_scheduled_job(scheduled_job_id):
             scheduled_job.success_runs += 1
         else:
             scheduled_job.failed_runs += 1
-        scheduled_job.last_run_time = timezone.now()
         scheduled_job.save()
 
         return result
@@ -64,7 +63,6 @@ def execute_scheduled_job(scheduled_job_id):
         # 更新统计
         scheduled_job.total_runs += 1
         scheduled_job.failed_runs += 1
-        scheduled_job.last_run_time = timezone.now()
         scheduled_job.save()
 
         return {

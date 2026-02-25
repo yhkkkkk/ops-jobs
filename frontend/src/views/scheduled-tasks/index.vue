@@ -179,13 +179,13 @@
 
         <template #last_execution="{ record }">
           <div>
-            <template v-if="record.last_execution_status || record.last_execution_at || record.last_run_time">
+            <template v-if="record.last_execution_status || record.last_execution_at">
               <a-tag v-if="record.last_execution_status" :color="getExecutionStatusColor(record.last_execution_status)">
                 {{ getExecutionStatusText(record.last_execution_status) }}
               </a-tag>
               <span v-else style="color: #86909c">状态未知</span>
-              <div v-if="record.last_execution_at || record.last_run_time" class="meta-line">
-                {{ record.last_execution_at ? formatDateTime(record.last_execution_at) : formatDateTime(record.last_run_time) }}
+              <div v-if="record.last_execution_at" class="meta-line">
+                {{ formatDateTime(record.last_execution_at) }}
               </div>
             </template>
             <span v-else style="color: #86909c">暂无</span>

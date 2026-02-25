@@ -26,13 +26,13 @@ class ScheduledJobSerializer(serializers.ModelSerializer):
             'template_name', 'plan_name',
             'cron_expression', 'timezone', 'is_active', 'execution_parameters',
             'total_runs', 'success_runs', 'failed_runs', 'success_rate',
-            'last_run_time', 'next_run_time', 'last_execution_status', 'last_execution_at',
+            'last_execution_status', 'last_execution_at',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'total_runs', 'success_runs', 'failed_runs', 'last_run_time',
-            'next_run_time', 'created_by', 'updated_by', 'created_at', 'updated_at'
+            'total_runs', 'success_runs', 'failed_runs',
+            'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
 
 
