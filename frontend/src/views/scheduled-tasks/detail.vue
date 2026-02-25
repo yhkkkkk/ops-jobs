@@ -160,6 +160,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
+import type { TableColumnData } from '@arco-design/web-vue'
 import {
   IconRefresh,
   IconEdit,

@@ -771,7 +771,7 @@ const handleDelete = async (record: JobTemplate) => {
 
   Modal.confirm({
     title: hasRefs ? '无法删除' : '确认删除',
-    content,
+    content: () => content,
     okButtonProps: { status: 'danger', disabled: hasRefs },
     onOk: async () => {
       if (hasRefs) return
@@ -845,7 +845,7 @@ const handleViewReferences = async (record: JobTemplate) => {
 
   const modal = Modal.info({
     title: '引用关系',
-    content,
+    content: () => content,
     okText: '关闭'
   })
   modalClose = modal?.close

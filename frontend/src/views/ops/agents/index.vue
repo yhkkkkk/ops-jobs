@@ -104,72 +104,98 @@
       <a-tab-pane key="agent" title="Agent">
         <!-- 搜索栏 -->
     <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="搜索">
-          <a-input
-            v-model="searchForm.search"
-            placeholder="主机名、IP、版本"
-            allow-clear
-            @press-enter="handleSearch"
-            @clear="handleSearch"
-            style="width: 250px"
-          />
-        </a-form-item>
-        <a-form-item label="错误码">
-          <a-select
-            v-model="searchForm.last_error_code"
-            placeholder="输入错误码"
-            allow-clear
-            allow-search
-            allow-create
-            filter-option="false"
-            :loading="errorCodeLoading"
-            @search="handleErrorCodeSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-            @dropdown-visible-change="handleErrorCodeDropdown"
-            style="width: 200px"
-          >
-            <a-option v-for="code in errorCodeOptions" :key="code" :value="code">
-              {{ code }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="Agent-Server">
-          <a-select
-            v-model="searchForm.agent_server_id"
-            placeholder="请选择 Agent-Server"
-            allow-clear
-            allow-search
-            :filter-option="filterAgentServerOption"
-            style="width: 280px"
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="server in agentServers"
-              :key="server.id"
-              :value="server.id"
-              :label="formatAgentServerLabel(server)"
+      <a-form :model="searchForm">
+        <a-row :gutter="16">
+          <a-col :span="4">
+            <a-input
+              v-model="searchForm.search"
+              placeholder="主机名、IP"
+              allow-clear
+              @press-enter="handleSearch"
+              @clear="handleSearch"
+              style="width: 100%"
+            />
+          </a-col>
+          <a-col :span="3">
+            <a-select
+              v-model="searchForm.last_error_code"
+              placeholder="输入错误码"
+              allow-clear
+              allow-search
+              allow-create
+              filter-option="false"
+              :loading="errorCodeLoading"
+              @search="handleErrorCodeSearch"
+              @change="handleSearch"
+              @clear="handleSearch"
+              @dropdown-visible-change="handleErrorCodeDropdown"
+              style="width: 100%"
             >
-              {{ formatAgentServerLabel(server) }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-        <!-- 状态筛选已移除，前端展示使用 computed_status，复杂筛选请使用运维台 Dashboard -->
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            <template #icon>
-              <icon-search />
-            </template>
-            搜索
-          </a-button>
-          <a-button @click="handleReset" style="margin-left: 8px">
-            <template #icon>
-              <icon-refresh />
-            </template>
-            重置
-          </a-button>
-        </a-form-item>
+              <a-option v-for="code in errorCodeOptions" :key="code" :value="code">
+                {{ code }}
+              </a-option>
+            </a-select>
+          </a-col>
+          <a-col :span="3">
+            <a-select
+              v-model="searchForm.version"
+              placeholder="输入版本"
+              allow-clear
+              allow-search
+              filter-option="false"
+              :loading="versionLoading"
+              @search="handleVersionSearch"
+              @change="handleSearch"
+              @clear="handleSearch"
+              @dropdown-visible-change="handleVersionDropdown"
+              style="width: 100%"
+            >
+              <a-option v-for="version in versionOptions" :key="version" :value="version">
+                {{ version }}
+              </a-option>
+            </a-select>
+          </a-col>
+          <a-col :span="5">
+            <a-select
+              v-model="searchForm.agent_server_id"
+              placeholder="请选择 Agent-Server"
+              allow-clear
+              allow-search
+              :filter-option="filterAgentServerOption"
+              style="width: 100%"
+              @change="handleSearch"
+            >
+              <a-option
+                v-for="server in agentServers"
+                :key="server.id"
+                :value="server.id"
+                :label="formatAgentServerLabel(server)"
+              >
+                {{ formatAgentServerLabel(server) }}
+              </a-option>
+            </a-select>
+          </a-col>
+          <a-col :span="4" />
+          <!-- 状态筛选已移除，前端展示使用 computed_status，复杂筛选请使用运维台 Dashboard -->
+          <a-col :span="5">
+            <div style="display: flex; justify-content: flex-end;">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <template #icon>
+                    <icon-search />
+                  </template>
+                  搜索
+                </a-button>
+                <a-button @click="handleReset">
+                  <template #icon>
+                    <icon-refresh />
+                  </template>
+                  重置
+                </a-button>
+              </a-space>
+            </div>
+          </a-col>
+        </a-row>
       </a-form>
     </a-card>
 
@@ -460,55 +486,85 @@
       </a-tab-pane>
       <a-tab-pane key="agent-server" title="Agent-Server">
         <a-card class="mb-4">
-          <a-form :model="agentServerSearchForm" layout="inline">
-            <a-form-item label="搜索">
-              <a-input
-                v-model="agentServerSearchForm.search"
-                placeholder="名称/地址"
-                allow-clear
-                @press-enter="handleAgentServerSearch"
-                @clear="handleAgentServerSearch"
-                style="width: 260px"
-              />
-            </a-form-item>
-            <a-form-item label="状态">
-              <a-select
-                v-model="agentServerSearchForm.is_active"
-                placeholder="全部"
-                allow-clear
-                style="width: 120px"
-                @change="handleAgentServerSearch"
-              >
-                <a-option :value="true">启用</a-option>
-                <a-option :value="false">停用</a-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item label="签名校验">
-              <a-select
-                v-model="agentServerSearchForm.require_signature"
-                placeholder="全部"
-                allow-clear
-                style="width: 140px"
-                @change="handleAgentServerSearch"
-              >
-                <a-option :value="true">开启</a-option>
-                <a-option :value="false">关闭</a-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item>
-              <a-button type="primary" @click="handleAgentServerSearch">
-                <template #icon>
-                  <icon-search />
-                </template>
-                搜索
-              </a-button>
-              <a-button @click="handleAgentServerReset" style="margin-left: 8px">
-                <template #icon>
-                  <icon-refresh />
-                </template>
-                重置
-              </a-button>
-            </a-form-item>
+          <a-form :model="agentServerSearchForm">
+            <a-row :gutter="16">
+              <a-col :span="5">
+                <a-input
+                  v-model="agentServerSearchForm.search"
+                  placeholder="名称/地址"
+                  allow-clear
+                  @press-enter="handleAgentServerSearch"
+                  @clear="handleAgentServerSearch"
+                  style="width: 100%"
+                />
+              </a-col>
+              <a-col :span="4">
+                <a-select
+                  v-model="agentServerSearchForm.version"
+                  placeholder="输入版本"
+                  allow-clear
+                  allow-search
+                  filter-option="false"
+                  :loading="agentServerVersionLoading"
+                  @search="handleAgentServerVersionSearch"
+                  @change="handleAgentServerSearch"
+                  @clear="handleAgentServerSearch"
+                  @dropdown-visible-change="handleAgentServerVersionDropdown"
+                  style="width: 100%"
+                >
+                  <a-option
+                    v-for="version in agentServerVersionOptions"
+                    :key="version"
+                    :value="version"
+                  >
+                    {{ version }}
+                  </a-option>
+                </a-select>
+              </a-col>
+              <a-col :span="3">
+                <a-select
+                  v-model="agentServerSearchForm.is_active"
+                  placeholder="状态"
+                  allow-clear
+                  style="width: 100%"
+                  @change="handleAgentServerSearch"
+                >
+                  <a-option :value="true">启用</a-option>
+                  <a-option :value="false">停用</a-option>
+                </a-select>
+              </a-col>
+              <a-col :span="3">
+                <a-select
+                  v-model="agentServerSearchForm.require_signature"
+                  placeholder="签名校验"
+                  allow-clear
+                  style="width: 100%"
+                  @change="handleAgentServerSearch"
+                >
+                  <a-option :value="true">开启</a-option>
+                  <a-option :value="false">关闭</a-option>
+                </a-select>
+              </a-col>
+              <a-col :span="4" />
+              <a-col :span="5">
+                <div style="display: flex; justify-content: flex-end;">
+                  <a-space>
+                    <a-button type="primary" @click="handleAgentServerSearch">
+                      <template #icon>
+                        <icon-search />
+                      </template>
+                      搜索
+                    </a-button>
+                    <a-button @click="handleAgentServerReset">
+                      <template #icon>
+                        <icon-refresh />
+                      </template>
+                      重置
+                    </a-button>
+                  </a-space>
+                </div>
+              </a-col>
+            </a-row>
           </a-form>
         </a-card>
         <div class="table-container">
@@ -1060,8 +1116,14 @@ const currentAgent = ref<Agent | null>(null)
 const tokenFormRef = ref()
 const errorCodeOptions = ref<string[]>([])
 const errorCodeLoading = ref(false)
+const versionOptions = ref<string[]>([])
+const versionLoading = ref(false)
+const agentServerVersionOptions = ref<string[]>([])
+const agentServerVersionLoading = ref(false)
 
 let errorCodeSearchTimer: ReturnType<typeof setTimeout> | null = null
+let versionSearchTimer: ReturnType<typeof setTimeout> | null = null
+let agentServerVersionSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 // Agent-Server 编辑相关
 const agentServerEditVisible = ref(false)
@@ -1210,12 +1272,14 @@ const searchForm = reactive({
   search: '',
   status: '',
   last_error_code: '',
+  version: '',
   agent_server_id: undefined as number | undefined,
   quick_status: [] as string[]
 })
 
 const agentServerSearchForm = reactive({
   search: '',
+  version: '',
   is_active: undefined as boolean | undefined,
   require_signature: undefined as boolean | undefined
 })
@@ -1224,6 +1288,7 @@ const { initFromQuery: initAgentServerFromQuery, syncToQuery: syncAgentServerToQ
   searchForm: agentServerSearchForm,
   fields: [
     { key: 'search', queryKey: 'as_search' },
+    { key: 'version', queryKey: 'as_version' },
     { key: 'is_active', queryKey: 'as_is_active', fromQuery: parseBooleanQuery },
     { key: 'require_signature', queryKey: 'as_require_signature', fromQuery: parseBooleanQuery }
   ]
@@ -1291,6 +1356,7 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   fields: [
     { key: 'search' },
     { key: 'last_error_code' },
+    { key: 'version' },
     { key: 'status' },
     { key: 'agent_server_id', fromQuery: parseNumberQuery },
     { key: 'quick_status', fromQuery: parseStringArrayQuery }
@@ -1312,6 +1378,19 @@ const rowSelection = reactive({
   showCheckedAll: true,
   onlyCurrent: false,
   selectedRowKeys: selectedAgentIds
+})
+
+const selectedAgentServerId = computed(() => {
+  if (searchForm.agent_server_id) {
+    return searchForm.agent_server_id
+  }
+  const selectedAgents = agents.value.filter(agent => selectedAgentIds.value.includes(agent.id))
+  const serverIds = Array.from(new Set(
+    selectedAgents
+      .map(agent => agent.agent_server_id)
+      .filter((id): id is number => id !== undefined && id !== null)
+  ))
+  return serverIds.length === 1 ? serverIds[0] : null
 })
 
 // 虚拟列表配置（数据量大时启用）
@@ -1453,6 +1532,99 @@ const handleErrorCodeSearch = (value: string) => {
 const handleErrorCodeDropdown = (visible: boolean) => {
   if (visible && errorCodeOptions.value.length === 0) {
     fetchErrorCodes()
+  }
+}
+
+const normalizeVersionOptions = (items: string[]) => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  items.forEach(item => {
+    const value = String(item || '').trim()
+    if (!value || seen.has(value)) return
+    seen.add(value)
+    result.push(value)
+  })
+  return result
+}
+
+const ensureVersionOption = (value?: string) => {
+  const normalized = (value || '').trim()
+  if (!normalized) return
+  if (!versionOptions.value.includes(normalized)) {
+    versionOptions.value = [normalized, ...versionOptions.value]
+  }
+}
+
+const ensureAgentServerVersionOption = (value?: string) => {
+  const normalized = (value || '').trim()
+  if (!normalized) return
+  if (!agentServerVersionOptions.value.includes(normalized)) {
+    agentServerVersionOptions.value = [normalized, ...agentServerVersionOptions.value]
+  }
+}
+
+const fetchAgentVersions = async (searchValue?: string) => {
+  versionLoading.value = true
+  try {
+    const params = searchValue ? { search: searchValue } : undefined
+    const response = await agentsApi.getAgentVersions(params)
+    const items = Array.isArray(response?.items) ? response.items : []
+    versionOptions.value = normalizeVersionOptions(items)
+    ensureVersionOption(searchForm.version)
+  } catch (error) {
+    console.error('获取版本列表失败:', error)
+    versionOptions.value = []
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+const fetchAgentServerVersions = async (searchValue?: string) => {
+  agentServerVersionLoading.value = true
+  try {
+    const params: any = { agent_type: 'agent-server' }
+    if (searchValue) {
+      params.search = searchValue
+    }
+    const response = await agentsApi.getAgentVersions(params)
+    const items = Array.isArray(response?.items) ? response.items : []
+    agentServerVersionOptions.value = normalizeVersionOptions(items)
+    ensureAgentServerVersionOption(agentServerSearchForm.version)
+  } catch (error) {
+    console.error('获取Agent-Server版本列表失败:', error)
+    agentServerVersionOptions.value = []
+  } finally {
+    agentServerVersionLoading.value = false
+  }
+}
+
+const handleVersionSearch = (value: string) => {
+  if (versionSearchTimer) {
+    clearTimeout(versionSearchTimer)
+  }
+  versionSearchTimer = setTimeout(() => {
+    fetchAgentVersions(value)
+  }, 200)
+}
+
+const handleVersionDropdown = (visible: boolean) => {
+  if (visible && versionOptions.value.length === 0) {
+    fetchAgentVersions()
+  }
+}
+
+const handleAgentServerVersionSearch = (value: string) => {
+  if (agentServerVersionSearchTimer) {
+    clearTimeout(agentServerVersionSearchTimer)
+  }
+  agentServerVersionSearchTimer = setTimeout(() => {
+    fetchAgentServerVersions(value)
+  }, 200)
+}
+
+const handleAgentServerVersionDropdown = (visible: boolean) => {
+  if (visible && agentServerVersionOptions.value.length === 0) {
+    fetchAgentServerVersions()
   }
 }
 
@@ -1694,6 +1866,7 @@ const fetchAgents = async () => {
     }
     if (searchForm.search) params.search = searchForm.search
     if (searchForm.last_error_code) params.last_error_code = searchForm.last_error_code
+    if (searchForm.version) params.version = searchForm.version
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.agent_server_id) params.agent_server_id = searchForm.agent_server_id
 
@@ -1748,6 +1921,9 @@ const fetchAgentServerTable = async () => {
     if (agentServerSearchForm.search) {
       params.search = agentServerSearchForm.search
     }
+    if (agentServerSearchForm.version) {
+      params.version = agentServerSearchForm.version
+    }
     if (agentServerSearchForm.is_active !== undefined && agentServerSearchForm.is_active !== null) {
       params.is_active = agentServerSearchForm.is_active
     }
@@ -1777,9 +1953,11 @@ watch(
       initFromQuery()
       searchForm.quick_status = normalizeQuickStatusList(searchForm.quick_status || [])
       ensureErrorCodeOption(searchForm.last_error_code)
+      ensureVersionOption(searchForm.version)
       fetchAgents()
     } else {
       initAgentServerFromQuery()
+      ensureAgentServerVersionOption(agentServerSearchForm.version)
       fetchAgentServerTable()
     }
   },
@@ -1809,6 +1987,7 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.status = ''
   searchForm.last_error_code = ''
+  searchForm.version = ''
   searchForm.agent_server_id = undefined
   searchForm.quick_status = []
   statusFilters.online = false
@@ -1834,6 +2013,7 @@ const handleAgentServerSearch = () => {
 
 const handleAgentServerReset = () => {
   agentServerSearchForm.search = ''
+  agentServerSearchForm.version = ''
   agentServerSearchForm.is_active = undefined
   agentServerSearchForm.require_signature = undefined
   syncAgentServerToQuery()
@@ -2945,6 +3125,14 @@ onBeforeUnmount(() => {
   if (errorCodeSearchTimer) {
     clearTimeout(errorCodeSearchTimer)
     errorCodeSearchTimer = null
+  }
+  if (versionSearchTimer) {
+    clearTimeout(versionSearchTimer)
+    versionSearchTimer = null
+  }
+  if (agentServerVersionSearchTimer) {
+    clearTimeout(agentServerVersionSearchTimer)
+    agentServerVersionSearchTimer = null
   }
 })
 </script>

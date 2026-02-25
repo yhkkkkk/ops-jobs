@@ -13,6 +13,12 @@ export interface ServerAccount {
   auth_type?: 'password' | 'key' | 'both' | 'none'
   has_password?: boolean
   has_private_key?: boolean
+  created_by?: number
+  created_by_name?: string
+  updated_by?: number
+  updated_by_name?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AccountListResponse {

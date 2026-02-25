@@ -193,6 +193,12 @@ export interface ServerAccount {
   auth_type?: 'password' | 'key' | 'both' | 'none'
   has_password?: boolean
   has_private_key?: boolean
+  created_by?: number
+  created_by_name?: string
+  updated_by?: number
+  updated_by_name?: string
+  created_at?: string
+  updated_at?: string
 }
 
 // 脚本模板类型
@@ -389,6 +395,7 @@ export interface ExecutionRecord {
   executed_by_name: string
   execution_parameters: any
   execution_results: any
+  steps?: any[]
   error_message: string
   created_at: string
   started_at?: string

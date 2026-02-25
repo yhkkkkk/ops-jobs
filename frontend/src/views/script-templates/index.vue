@@ -735,7 +735,7 @@ const handleDelete = async (record: ScriptTemplate) => {
 
   Modal.confirm({
     title: hasRefs ? '无法删除' : '确认删除',
-    content,
+    content: () => content,
     okButtonProps: { disabled: hasRefs },
     onOk: async () => {
       if (hasRefs) return
@@ -809,7 +809,7 @@ const handleViewReferences = async (record: ScriptTemplate) => {
 
   const modal = Modal.info({
     title: '引用关系',
-    content,
+    content: () => content,
     okText: '关闭'
   })
   modalClose = modal?.close

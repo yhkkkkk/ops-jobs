@@ -108,12 +108,11 @@
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.execution_parameters"
             size="small"
             type="outline"
-            status="primary"
             @click="openGlobalVarDrawer"
           >
             <IconSettings /> 全局变量
           </a-button>
-          <a-button size="small" type="outline" status="primary" @click="openOperationDrawer">
+          <a-button size="small" type="outline" @click="openOperationDrawer">
             <template #icon><IconEye /></template>
             查看操作记录
           </a-button>
@@ -1794,7 +1793,7 @@ const fetchExecutionDetail = async (options = { refreshSelected: false }) => {
 const refreshLogs = async () => {
   await fetchExecutionDetail({ refreshSelected: true })
   if (selectedStepId.value && selectedHostId.value) {
-    await loadHostLogs(selectedStepId.value, selectedHostId.value, { force: true })
+    await loadHostLogs(selectedStepId.value, selectedHostId.value, { append: false, force: true })
   }
 }
 
@@ -2026,7 +2025,7 @@ const handleHostTabChange = (hostId) => {
   if (hostId !== undefined && hostId !== null) {
     selectedHostId.value = String(hostId)
     if (selectedStepKey.value) {
-      loadHostLogs(selectedStepKey.value, hostId, { force: false })
+      loadHostLogs(selectedStepKey.value, hostId, { append: false, force: false })
     }
   }
   scrollLogToBottom()
@@ -2106,7 +2105,7 @@ const selectStep = async (stepId: string | number) => {
           selectedHostIds.value[sid] = hostIds[0]
         }
         selectedHostId.value = String(selectedHostIds.value[sid])
-        await loadHostLogs(sid, selectedHostIds.value[sid], { force: false })
+        await loadHostLogs(sid, selectedHostIds.value[sid], { append: false, force: false })
       }
     }
   }
@@ -2210,7 +2209,7 @@ const exportHostLog = async (stepId, hostLog) => {
     return
   }
   if (!getHostLogText(stepId, hostId)) {
-    await loadHostLogs(stepId, hostId, { force: true })
+    await loadHostLogs(stepId, hostId, { append: false, force: true })
   }
   const merged = getMergedLogs(hostLog, stepId)
   if (!merged) {

@@ -960,7 +960,7 @@ const handleViewReferences = async (plan: ExecutionPlan) => {
 
   const modal = Modal.info({
     title: '引用关系',
-    content,
+    content: () => content,
     okText: '关闭'
   })
   modalClose = modal?.close

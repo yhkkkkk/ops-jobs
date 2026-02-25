@@ -112,6 +112,7 @@ export const agentsApi = {
     search?: string
     status?: string
     last_error_code?: string
+    version?: string
     tags?: string
     service_role?: string
     group?: number
@@ -124,6 +125,11 @@ export const agentsApi = {
   // 获取错误码候选列表
   getErrorCodes(params?: { search?: string }): Promise<{ items: string[] }> {
     return http.get('/agents/error_codes/', { params })
+  },
+
+  // 获取版本候选列表
+  getAgentVersions(params?: { search?: string; agent_type?: string }): Promise<{ items: string[] }> {
+    return http.get('/agents/versions/', { params })
   },
 
   // 获取 Agent 详情
@@ -419,6 +425,7 @@ export const agentServerApi = {
     search?: string
     is_active?: boolean
     require_signature?: boolean
+    version?: string
   }): Promise<PaginatedResponse<AgentServer>> {
     return http.get('/agents/agent_servers/', { params })
   },
