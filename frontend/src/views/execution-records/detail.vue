@@ -486,6 +486,14 @@
                           >
                             SSH 模式
                           </a-tag>
+                          <a-tooltip
+                            v-if="getHostAgentServerTooltip(hostLog)"
+                            :content="getHostAgentServerTooltip(hostLog)"
+                          >
+                            <a-tag color="cyan" size="small">
+                              {{ getHostAgentServerBadge(hostLog) }}
+                            </a-tag>
+                          </a-tooltip>
                           <a-button
                             size="small"
                             type="text"
@@ -1521,6 +1529,8 @@ const mapStepLogsToSteps = (stepLogsMap: Record<string, any> = {}) => {
         status: hostData.status || 'unknown',
         stdout: mergeLogValue(hostData.stdout || hostData.logs),
         stderr: mergeLogValue(hostData.stderr || hostData.error_logs),
+        agent_server_id: hostData.agent_server_id,
+        agent_server_base_url: hostData.agent_server_base_url,
       })
     })
 
@@ -1569,6 +1579,8 @@ const applyExecutionResults = (results: any) => {
         host_name: host.name || host.host_name || `Host-${hostId}`,
         host_ip: host.ip || host.host_ip || '',
         status: host.status || 'unknown',
+        agent_server_id: host.agent_server_id,
+        agent_server_base_url: host.agent_server_base_url,
         stdout,
         stderr,
         logs: stdout,
@@ -1649,6 +1661,8 @@ const loadStepResult = async (stepId, options = { force: false }) => {
         exit_code: host.exit_code,
         started_at: host.started_at,
         finished_at: host.finished_at,
+        agent_server_id: host.agent_server_id,
+        agent_server_base_url: host.agent_server_base_url,
       }
     })
 
@@ -2914,6 +2928,48 @@ const getHostDisplayName = (hostLog: any) => {
 // 获取主机IP
 const getHostIP = (hostLog: any) => {
   return hostLog.host_ip || hostLog.ip || '未知IP'
+}
+
+const getHostAgentServerId = (hostLog: any): number | null => {
+  const recordParams = executionInfo.value?.execution_parameters || {}
+  const raw =
+    hostLog?.agent_server_id ??
+    hostLog?.agentServerId ??
+    recordParams?.agent_server_id
+  if (raw === undefined || raw === null || raw === '') return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const getHostAgentServerBaseUrl = (hostLog: any): string => {
+  const recordParams = executionInfo.value?.execution_parameters || {}
+  return String(
+    hostLog?.agent_server_base_url ??
+    hostLog?.agentServerBaseUrl ??
+    recordParams?.agent_server_url ??
+    ''
+  ).trim()
+}
+
+const getHostAgentServerBadge = (hostLog: any): string => {
+  const serverId = getHostAgentServerId(hostLog)
+  if (serverId !== null) {
+    return `命中 Agent-Server #${serverId}`
+  }
+  return '命中 Agent-Server'
+}
+
+const getHostAgentServerTooltip = (hostLog: any): string => {
+  const serverId = getHostAgentServerId(hostLog)
+  const baseUrl = getHostAgentServerBaseUrl(hostLog)
+  if (serverId === null && !baseUrl) return ''
+  if (serverId !== null && baseUrl) {
+    return `实际下发节点: Agent-Server #${serverId} (${baseUrl})`
+  }
+  if (serverId !== null) {
+    return `实际下发节点: Agent-Server #${serverId}`
+  }
+  return `实际下发节点: ${baseUrl}`
 }
 
 // 复制步骤中指定状态的主机IP

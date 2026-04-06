@@ -280,6 +280,10 @@
                   {{ server.name }} ({{ server.base_url }})
                 </a-option>
               </a-select>
+              <div class="form-tip">
+                <icon-info-circle />
+                控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server
+              </div>
             </a-form-item>
 
             <a-form-item label="执行账号">
@@ -744,6 +748,10 @@
                       {{ server.name }} ({{ server.base_url }})
                     </a-option>
                   </a-select>
+                  <div class="form-tip">
+                    <icon-info-circle />
+                    控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server
+                  </div>
                 </a-form-item>
               </a-col>
               <a-col :span="12">

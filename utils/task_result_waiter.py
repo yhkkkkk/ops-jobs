@@ -6,7 +6,7 @@
 """
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set, Callable
+from typing import Any, Dict, List, Optional, Set, Callable, Tuple
 
 import redis
 from django.conf import settings
@@ -88,6 +88,88 @@ class TaskResultWaiter:
             logger.warning(f"Redis 连接不可用: {e}")
             return False
 
+    @staticmethod
+    def _parse_stream_id(stream_id: str) -> Tuple[int, int]:
+        """解析 Redis Stream ID (毫秒-序号)。"""
+        try:
+            ms, seq = str(stream_id).split('-', 1)
+            return int(ms), int(seq)
+        except Exception:
+            return 0, 0
+
+    @classmethod
+    def _stream_id_le(cls, left: str, right: str) -> bool:
+        """判断 left <= right。"""
+        return cls._parse_stream_id(left) <= cls._parse_stream_id(right)
+
+    def _get_stream_tail_id(self) -> str:
+        """获取当前流尾 ID，作为本次等待的起始快照。"""
+        try:
+            latest = self.redis_client.xrevrange(self.stream_key, max='+', min='-', count=1)
+            if latest:
+                return latest[0][0]
+        except Exception as e:
+            logger.debug(f"获取结果流尾 ID 失败，使用默认起点: {e}")
+        return '0-0'
+
+    def _prefetch_recent_results(
+        self,
+        pending_tasks: Set[str],
+        start_time: float,
+        max_stream_id: str,
+        default_window_seconds: int = 10,
+        default_scan_count: int = 1000,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        预扫描近期结果，覆盖“结果比 wait 启动更早到达”的场景。
+
+        仅扫描 [start_time-window, max_stream_id] 范围，避免命中过旧历史消息。
+        """
+        if not pending_tasks:
+            return {}
+
+        window_seconds = default_window_seconds
+        scan_count = default_scan_count
+        try:
+            from apps.system_config.models import ConfigManager
+            window_seconds = int(ConfigManager.get('result_stream.recent_window_seconds', window_seconds) or window_seconds)
+            scan_count = int(ConfigManager.get('result_stream.recent_scan_count', scan_count) or scan_count)
+        except Exception:
+            pass
+
+        window_seconds = max(1, window_seconds)
+        scan_count = max(100, scan_count)
+
+        min_ms = max(0, int((start_time - window_seconds) * 1000))
+        min_id = f"{min_ms}-0"
+
+        try:
+            messages = self.redis_client.xrevrange(
+                self.stream_key,
+                max=max_stream_id,
+                min=min_id,
+                count=scan_count,
+            )
+        except Exception as e:
+            logger.debug(f"预扫描近期任务结果失败: {e}")
+            return {}
+
+        if not messages:
+            return {}
+
+        collected: Dict[str, Dict[str, Any]] = {}
+        # xrevrange 返回倒序，这里反转保证同 task_id 取到最新结果
+        for message_id, data in reversed(messages):
+            if not self._stream_id_le(message_id, max_stream_id):
+                continue
+            task_id = data.get('task_id')
+            if task_id and task_id in pending_tasks:
+                collected[task_id] = self._parse_result(data)
+
+        if collected:
+            logger.debug(f"预扫描命中 {len(collected)} 个近期任务结果")
+        return collected
+
     def wait_for_result(
         self,
         task_id: str,
@@ -155,7 +237,9 @@ class TaskResultWaiter:
         pending_tasks: Set[str] = set(task_ids)
         results: Dict[str, Dict[str, Any]] = {}
         start_time = time.time()
-        last_id = '0'  # 从流的开头开始读取
+
+        # 以当前流尾为快照起点，避免重放历史结果
+        last_id = self._get_stream_tail_id()
 
         # 获取轮询间隔配置
         try:
@@ -163,6 +247,16 @@ class TaskResultWaiter:
             poll_interval = ConfigManager.get('result_stream.poll_interval', poll_interval)
         except Exception:
             pass
+
+        # 先扫描一个近期窗口，防止任务结果比 wait 调用更早到达
+        prefetched = self._prefetch_recent_results(
+            pending_tasks=pending_tasks,
+            start_time=start_time,
+            max_stream_id=last_id,
+        )
+        for task_id, result in prefetched.items():
+            results[task_id] = result
+            pending_tasks.discard(task_id)
 
         logger.info(f"开始等待 {len(task_ids)} 个任务结果: {task_ids[:5]}{'...' if len(task_ids) > 5 else ''}")
 
@@ -299,7 +393,22 @@ class TaskResultWaiter:
 
         pending_tasks = set(task_ids)
         start_time = time.time()
-        last_id = '0'
+
+        # 以当前流尾为快照起点，避免回调命中过旧历史结果
+        last_id = self._get_stream_tail_id()
+
+        # 先扫描近期结果，避免 subscribe 启动前瞬时完成的任务丢失
+        prefetched = self._prefetch_recent_results(
+            pending_tasks=pending_tasks,
+            start_time=start_time,
+            max_stream_id=last_id,
+        )
+        for task_id, result in prefetched.items():
+            pending_tasks.discard(task_id)
+            try:
+                callback(task_id, result)
+            except Exception as e:
+                logger.error(f"结果回调执行失败: task_id={task_id}, error={e}")
 
         while pending_tasks and (time.time() - start_time) < timeout:
             try:

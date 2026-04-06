@@ -5,6 +5,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import ExecutionRecord, ExecutionStep
 from apps.permissions.models import AuditLog
+from apps.agents.models import AgentServer
 
 
 class ExecutionRecordSerializer(serializers.ModelSerializer):
@@ -276,6 +277,21 @@ class ExecutionStepResultSerializer(serializers.ModelSerializer):
     def get_hosts(self, obj):
         host_results = _extract_step_host_results(obj)
 
+        fallback_agent_server_id = None
+        fallback_agent_server_base_url = ''
+        exec_params = obj.execution_record.execution_parameters or {}
+        if isinstance(exec_params, dict):
+            fallback_agent_server_id = exec_params.get('agent_server_id')
+            fallback_agent_server_base_url = exec_params.get('agent_server_url') or ''
+
+        if fallback_agent_server_id and not fallback_agent_server_base_url:
+            try:
+                server = AgentServer.objects.filter(id=fallback_agent_server_id).only('base_url').first()
+                if server:
+                    fallback_agent_server_base_url = server.base_url
+            except Exception:
+                fallback_agent_server_base_url = ''
+
         results = []
         for item in host_results:
             if not isinstance(item, dict):
@@ -289,6 +305,8 @@ class ExecutionStepResultSerializer(serializers.ModelSerializer):
                 'exit_code': item.get('exit_code'),
                 'started_at': item.get('started_at') or item.get('start_time'),
                 'finished_at': item.get('finished_at') or item.get('end_time'),
+                'agent_server_id': item.get('agent_server_id') or fallback_agent_server_id,
+                'agent_server_base_url': item.get('agent_server_base_url') or fallback_agent_server_base_url,
             })
         return results
 

@@ -63,6 +63,9 @@
                     {{ server.name }} ({{ server.base_url }})
                   </a-option>
                 </a-select>
+                <div class="agent-server-tip">
+                  控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server。
+                </div>
               </a-form-item>
 
               <a-form-item label="执行模式">
@@ -408,6 +411,13 @@ onMounted(() => {
   padding: 12px;
   background: var(--color-bg-1);
   border-radius: 6px;
+}
+
+.agent-server-tip {
+  margin-top: 6px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .parameters-section {

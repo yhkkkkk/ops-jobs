@@ -27,6 +27,8 @@ class HostResult:
     error: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    agent_server_id: Optional[int] = None
+    agent_server_base_url: Optional[str] = None
 
 
 @dataclass
@@ -107,6 +109,7 @@ class ParallelExecutionStrategy(ExecutionStrategy):
 
         results: List[HostResult] = []
         task_id_to_host: Dict[str, Host] = {}
+        task_id_to_dispatch_meta: Dict[str, Dict[str, Any]] = {}
         push_futures: Dict[Future, Host] = {}
 
         # 并发推送任务
@@ -155,7 +158,12 @@ class ParallelExecutionStrategy(ExecutionStrategy):
                 push_result = future.result()
                 if push_result.get('success'):
                     task_id = push_result.get('task_id')
-                    pushed_task_ids.append(task_id)
+                    if task_id:
+                        pushed_task_ids.append(task_id)
+                        task_id_to_dispatch_meta[task_id] = {
+                            'agent_server_id': push_result.get('agent_server_id'),
+                            'agent_server_base_url': push_result.get('agent_server_base_url'),
+                        }
                     logger.debug(f"任务推送成功: host={host.name}, task_id={task_id}")
                 else:
                     results.append(HostResult(
@@ -163,7 +171,9 @@ class ParallelExecutionStrategy(ExecutionStrategy):
                         host_name=host.name,
                         task_id=push_result.get('task_id', ''),
                         success=False,
-                        error=push_result.get('error', '推送失败')
+                        error=push_result.get('error', '推送失败'),
+                        agent_server_id=push_result.get('agent_server_id'),
+                        agent_server_base_url=push_result.get('agent_server_base_url'),
                     ))
             except Exception as e:
                 logger.error(f"任务推送异常: host={host.name}, error={e}")
@@ -182,6 +192,7 @@ class ParallelExecutionStrategy(ExecutionStrategy):
             for task_id, result in task_results.items():
                 host = task_id_to_host.get(task_id)
                 if host:
+                    dispatch_meta = task_id_to_dispatch_meta.get(task_id, {})
                     host_result = HostResult(
                         host_id=host.id,
                         host_name=host.name,
@@ -190,7 +201,9 @@ class ParallelExecutionStrategy(ExecutionStrategy):
                         exit_code=result.get('exit_code'),
                         error=result.get('error_msg'),
                         started_at=result.get('started_at'),
-                        finished_at=result.get('finished_at')
+                        finished_at=result.get('finished_at'),
+                        agent_server_id=dispatch_meta.get('agent_server_id'),
+                        agent_server_base_url=dispatch_meta.get('agent_server_base_url'),
                     )
                     results.append(host_result)
 
@@ -288,7 +301,9 @@ class SerialExecutionStrategy(ExecutionStrategy):
                         host_name=host.name,
                         task_id=push_result.get('task_id', ''),
                         success=False,
-                        error=push_result.get('error', '推送失败')
+                        error=push_result.get('error', '推送失败'),
+                        agent_server_id=push_result.get('agent_server_id'),
+                        agent_server_base_url=push_result.get('agent_server_base_url'),
                     )
                     results.append(host_result)
 
@@ -298,6 +313,8 @@ class SerialExecutionStrategy(ExecutionStrategy):
                     continue
 
                 task_id = push_result.get('task_id')
+                dispatch_agent_server_id = push_result.get('agent_server_id')
+                dispatch_agent_server_base_url = push_result.get('agent_server_base_url')
 
                 # 等待任务完成
                 result = waiter.wait_for_result(task_id, timeout=timeout)
@@ -310,7 +327,9 @@ class SerialExecutionStrategy(ExecutionStrategy):
                     exit_code=result.get('exit_code'),
                     error=result.get('error_msg'),
                     started_at=result.get('started_at'),
-                    finished_at=result.get('finished_at')
+                    finished_at=result.get('finished_at'),
+                    agent_server_id=dispatch_agent_server_id,
+                    agent_server_base_url=dispatch_agent_server_base_url,
                 )
                 results.append(host_result)
 
@@ -413,6 +432,7 @@ class RollingExecutionStrategy(ExecutionStrategy):
 
             batch_results: List[HostResult] = []
             task_id_to_host: Dict[str, Host] = {}
+            task_id_to_dispatch_meta: Dict[str, Dict[str, Any]] = {}
             push_futures: Dict[Future, Host] = {}
 
             # 并发推送当前批次的任务
@@ -461,14 +481,21 @@ class RollingExecutionStrategy(ExecutionStrategy):
                     push_result = future.result()
                     if push_result.get('success'):
                         task_id = push_result.get('task_id')
-                        pushed_task_ids.append(task_id)
+                        if task_id:
+                            pushed_task_ids.append(task_id)
+                            task_id_to_dispatch_meta[task_id] = {
+                                'agent_server_id': push_result.get('agent_server_id'),
+                                'agent_server_base_url': push_result.get('agent_server_base_url'),
+                            }
                     else:
                         batch_results.append(HostResult(
                             host_id=host.id,
                             host_name=host.name,
                             task_id=push_result.get('task_id', ''),
                             success=False,
-                            error=push_result.get('error', '推送失败')
+                            error=push_result.get('error', '推送失败'),
+                            agent_server_id=push_result.get('agent_server_id'),
+                            agent_server_base_url=push_result.get('agent_server_base_url'),
                         ))
                 except Exception as e:
                     batch_results.append(HostResult(
@@ -486,6 +513,7 @@ class RollingExecutionStrategy(ExecutionStrategy):
                 for task_id, result in task_results.items():
                     host = task_id_to_host.get(task_id)
                     if host:
+                        dispatch_meta = task_id_to_dispatch_meta.get(task_id, {})
                         host_result = HostResult(
                             host_id=host.id,
                             host_name=host.name,
@@ -494,7 +522,9 @@ class RollingExecutionStrategy(ExecutionStrategy):
                             exit_code=result.get('exit_code'),
                             error=result.get('error_msg'),
                             started_at=result.get('started_at'),
-                            finished_at=result.get('finished_at')
+                            finished_at=result.get('finished_at'),
+                            agent_server_id=dispatch_meta.get('agent_server_id'),
+                            agent_server_base_url=dispatch_meta.get('agent_server_base_url'),
                         )
                         batch_results.append(host_result)
 

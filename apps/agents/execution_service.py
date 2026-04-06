@@ -224,6 +224,39 @@ class AgentExecutionService:
         return task_spec
 
     @staticmethod
+    def _get_candidate_agent_servers(
+        agent: Agent,
+        agent_server_id: Optional[int] = None,
+    ) -> List[AgentServer]:
+        """
+        获取任务下发候选 Agent-Server 列表。
+
+        顺序：
+        1. 显式传入的 agent_server_id（如果可用）
+        2. Agent 绑定的 agent_server（如果可用且未重复）
+        3. 其它启用中的 Agent-Server（按 id 升序）
+        """
+        candidates: List[AgentServer] = []
+        seen_ids = set()
+
+        def append_server(server: Optional[AgentServer]) -> None:
+            if not server or server.id in seen_ids:
+                return
+            candidates.append(server)
+            seen_ids.add(server.id)
+
+        if agent_server_id:
+            append_server(AgentServer.objects.filter(id=agent_server_id, is_active=True).first())
+
+        if getattr(agent, "agent_server_id", None):
+            append_server(AgentServer.objects.filter(id=agent.agent_server_id, is_active=True).first())
+
+        for server in AgentServer.objects.filter(is_active=True).exclude(id__in=seen_ids).order_by("id"):
+            append_server(server)
+
+        return candidates
+
+    @staticmethod
     def push_task_to_agent(
         agent: Agent,
         task_spec: Dict[str, Any],
@@ -235,61 +268,87 @@ class AgentExecutionService:
         Args:
             agent: Agent对象
             task_spec: 任务规范
-            agent_server_id: Agent-Server ID（必填）
+            agent_server_id: Agent-Server ID（优先使用）
 
         Returns:
             Dict: 推送结果
         """
         try:
             from django.conf import settings
+            from utils.agent_server_client import AgentServerClient
 
-            if not agent_server_id:
+            if not agent_server_id and not getattr(agent, "agent_server_id", None):
                 logger.error(f"Agent-Server ID 未配置，无法推送任务到 Agent {agent.host_id}")
                 return {
                     'success': False,
                     'error': '请先选择 Agent-Server'
                 }
 
-            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
-            if not server:
-                return {
-                    'success': False,
-                    'error': 'Agent-Server 未注册或已禁用'
-                }
-            if not server.shared_secret:
-                return {
-                    'success': False,
-                    'error': 'Agent-Server 未配置 shared_secret'
-                }
-
             # 支持在设置中提供覆盖的 agent_id（测试/单实例场景）
             override_agent_id = getattr(settings, "AGENT_ID_OVERRIDE", None)
             agent_identifier = override_agent_id or agent.host_id
 
-            api_url = f"{server.base_url}/api/agents/{agent_identifier}/tasks"
-
-            # 构造带 HMAC 签名的请求
-            from utils.agent_server_client import AgentServerClient
-
-            client = AgentServerClient(shared_secret=server.shared_secret)
-            response = client.post(api_url, json=task_spec)
-
-            if response.status_code == 200:
-                result = response.json()
-                logger.info(f"任务已通过 Agent-Server 推送到Agent: {task_spec['id']}, Agent: {agent.host_id}")
-                return {
-                    'success': True,
-                    'task_id': task_spec['id'],
-                    'agent_id': agent.host_id,
-                    'status': result.get('status', 'dispatched')
-                }
-            else:
-                error_msg = response.text or f"HTTP {response.status_code}"
-                logger.error(f"通过 Agent-Server 推送任务到Agent失败: {error_msg}")
+            servers = AgentExecutionService._get_candidate_agent_servers(agent, agent_server_id=agent_server_id)
+            if not servers:
                 return {
                     'success': False,
-                    'error': f'推送任务失败: {error_msg}'
+                    'error': 'Agent-Server 未注册或已禁用'
                 }
+
+            errors: List[str] = []
+
+            for server in servers:
+                if not server.shared_secret:
+                    errors.append(f"{server.base_url}: Agent-Server 未配置 shared_secret")
+                    logger.warning(f"跳过未配置 shared_secret 的 Agent-Server: id={server.id}, url={server.base_url}")
+                    continue
+
+                api_url = f"{server.base_url}/api/agents/{agent_identifier}/tasks"
+                client = AgentServerClient(shared_secret=server.shared_secret)
+
+                try:
+                    response = client.post(api_url, json=task_spec)
+                except Exception as e:
+                    errors.append(f"{server.base_url}: 请求异常: {str(e)}")
+                    logger.warning(
+                        "通过 Agent-Server 推送任务异常，准备尝试下一个节点: "
+                        f"task_id={task_spec.get('id')}, agent={agent.host_id}, "
+                        f"server={server.base_url}, error={str(e)}"
+                    )
+                    continue
+
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(
+                        "任务已通过 Agent-Server 推送到Agent: "
+                        f"task_id={task_spec['id']}, agent={agent.host_id}, server={server.base_url}"
+                    )
+                    return {
+                        'success': True,
+                        'task_id': task_spec['id'],
+                        'agent_id': agent.host_id,
+                        'status': result.get('status', 'dispatched'),
+                        'agent_server_id': server.id,
+                        'agent_server_base_url': server.base_url,
+                    }
+
+                error_msg = response.text or f"HTTP {response.status_code}"
+                errors.append(f"{server.base_url}: {error_msg}")
+                logger.warning(
+                    "通过 Agent-Server 推送任务失败，准备尝试下一个节点: "
+                    f"task_id={task_spec.get('id')}, agent={agent.host_id}, server={server.base_url}, "
+                    f"status_code={response.status_code}, error={error_msg}"
+                )
+
+            error_summary = "; ".join(errors) if errors else "未知错误"
+            logger.error(
+                "通过所有候选 Agent-Server 推送任务均失败: "
+                f"task_id={task_spec.get('id')}, agent={agent.host_id}, errors={error_summary}"
+            )
+            return {
+                'success': False,
+                'error': f'推送任务失败: {error_summary}'
+            }
 
         except Exception as e:
             logger.error(f"推送任务到Agent异常: {str(e)}", exc_info=True)
@@ -407,6 +466,8 @@ class AgentExecutionService:
                     'exit_code': hr.exit_code,
                     'started_at': hr.started_at,
                     'finished_at': hr.finished_at,
+                    'agent_server_id': hr.agent_server_id,
+                    'agent_server_base_url': hr.agent_server_base_url,
                 })
 
             return {
@@ -546,6 +607,8 @@ class AgentExecutionService:
                     'exit_code': hr.exit_code,
                     'started_at': hr.started_at,
                     'finished_at': hr.finished_at,
+                    'agent_server_id': hr.agent_server_id,
+                    'agent_server_base_url': hr.agent_server_base_url,
                 })
 
             return {
@@ -760,6 +823,8 @@ class AgentExecutionService:
                             'task_id': r.get('task_id'),  # 存储task_id用于取消任务
                             'status': 'success' if r.get('success') else 'failed',
                             'error': r.get('error'),
+                            'agent_server_id': r.get('agent_server_id'),
+                            'agent_server_base_url': r.get('agent_server_base_url'),
                         })
 
                     if result['success'] and result.get('failed_count', 0) == 0:
@@ -863,6 +928,8 @@ class AgentExecutionService:
                             'task_id': r.get('task_id'),  # 存储task_id用于取消任务
                             'status': 'success' if r.get('success') else 'failed',
                             'error': r.get('error'),
+                            'agent_server_id': r.get('agent_server_id'),
+                            'agent_server_base_url': r.get('agent_server_base_url'),
                         })
 
                     if result['success'] and result.get('failed_count', 0) == 0:
@@ -1587,7 +1654,11 @@ class AgentExecutionService:
             
             # Agent-Server模式（唯一支持的模式）
             server_id = agent_server_id or (execution_record.execution_parameters or {}).get('agent_server_id')
-            if not server_id:
+            has_bound_server = any(
+                getattr(agent_info.get('agent'), 'agent_server_id', None)
+                for agent_info in agent_task_map.values()
+            )
+            if not server_id and not has_bound_server:
                 return {
                     'success': False,
                     'error': '请先选择Agent-Server'
@@ -1607,80 +1678,99 @@ class AgentExecutionService:
     @staticmethod
     def _cancel_tasks_via_agent_server(
         agent_task_map: Dict[int, Dict],
-        agent_server_id: int,
+        agent_server_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         通过Agent-Server取消任务
         
         Args:
             agent_task_map: Agent和任务映射 {agent_id: {'agent': Agent, 'tasks': [{'task_id': str, 'host_id': int}]}}
-            agent_server_id: Agent-Server ID
+            agent_server_id: Agent-Server ID（优先使用）
         
         Returns:
             Dict: 取消结果
         """
         try:
             from django.conf import settings
-            
-            server = AgentServer.objects.filter(id=agent_server_id, is_active=True).first()
-            if not server:
+            from utils.agent_server_client import AgentServerClient
+
+            if not AgentServer.objects.filter(is_active=True).exists():
                 return {
                     'success': False,
                     'error': 'Agent-Server 未注册或已禁用'
                 }
-            if not server.shared_secret:
-                return {
-                    'success': False,
-                    'error': 'Agent-Server 未配置 shared_secret'
-                }
-            
+
             # 获取Agent-Server的认证Token（如果需要）
             agent_server_token = getattr(settings, 'AGENT_SERVER_TOKEN', None)
-            
+
             headers_base = {
                 'Content-Type': 'application/json',
             }
             if agent_server_token:
                 headers_base['Authorization'] = f'Bearer {agent_server_token}'
-            
+
             cancelled_count = 0
             failed_count = 0
             errors = []
-            
-            # 为每个Agent取消任务
+
+            # 为每个Agent取消任务（支持 failover）
             for agent_id, agent_info in agent_task_map.items():
                 agent = agent_info['agent']
                 tasks = agent_info['tasks']
-                
+                candidate_servers = AgentExecutionService._get_candidate_agent_servers(
+                    agent,
+                    agent_server_id=agent_server_id,
+                )
+
                 for task_info in tasks:
                     task_id = task_info['task_id']
                     host_id = task_info['host_id']
-                    
-                    # 调用Agent-Server的取消任务API
-                    api_url = f"{server.base_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
-                    
-                    try:
-                        # 使用 HMAC 客户端发起请求
-                        from utils.agent_server_client import AgentServerClient
+                    task_cancelled = False
+                    task_errors = []
 
-                        client = AgentServerClient(shared_secret=server.shared_secret)
-                        response = client.post(api_url, json=None, headers=headers_base)
-                        
-                        if response.status_code == 200:
-                            cancelled_count += 1
-                            logger.info(f"成功取消任务: task_id={task_id}, agent_id={agent_id}, host_id={host_id}")
-                        else:
-                            failed_count += 1
+                    for server in candidate_servers:
+                        if not server.shared_secret:
+                            task_errors.append(f"{server.base_url}: Agent-Server 未配置 shared_secret")
+                            continue
+
+                        api_url = f"{server.base_url}/api/agents/{agent_id}/tasks/{task_id}/cancel"
+
+                        try:
+                            client = AgentServerClient(shared_secret=server.shared_secret)
+                            response = client.post(api_url, json=None, headers=headers_base)
+
+                            if response.status_code == 200:
+                                cancelled_count += 1
+                                task_cancelled = True
+                                logger.info(
+                                    f"成功取消任务: task_id={task_id}, agent_id={agent_id}, "
+                                    f"host_id={host_id}, server={server.base_url}"
+                                )
+                                break
+
                             error_msg = response.text or f"HTTP {response.status_code}"
-                            errors.append(f"取消任务失败 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
-                            logger.error(f"取消任务失败: task_id={task_id}, agent_id={agent_id}, 状态码={response.status_code}, 错误={error_msg}")
-                    
-                    except Exception as e:
+                            task_errors.append(f"{server.base_url}: {error_msg}")
+                            logger.warning(
+                                f"取消任务失败，准备尝试下一个节点: task_id={task_id}, "
+                                f"agent_id={agent_id}, status_code={response.status_code}, "
+                                f"server={server.base_url}, error={error_msg}"
+                            )
+
+                        except Exception as e:
+                            task_errors.append(f"{server.base_url}: 请求异常: {str(e)}")
+                            logger.warning(
+                                f"取消任务异常，准备尝试下一个节点: task_id={task_id}, "
+                                f"agent_id={agent_id}, server={server.base_url}, error={str(e)}"
+                            )
+
+                    if not task_cancelled:
                         failed_count += 1
-                        error_msg = f"请求异常: {str(e)}"
-                        errors.append(f"取消任务异常 (task_id={task_id}, agent_id={agent_id}): {error_msg}")
-                        logger.error(f"取消任务异常: task_id={task_id}, agent_id={agent_id}, 错误={str(e)}", exc_info=True)
-            
+                        if not task_errors:
+                            task_errors.append("无可用 Agent-Server")
+                        errors.append(
+                            f"取消任务失败 (task_id={task_id}, agent_id={agent_id}): {'; '.join(task_errors)}"
+                        )
+
             return {
                 'success': cancelled_count > 0,
                 'cancelled_count': cancelled_count,
