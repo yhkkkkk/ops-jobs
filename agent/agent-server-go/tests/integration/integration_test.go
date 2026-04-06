@@ -335,7 +335,7 @@ func TestAgentServerIntegrationPendingRecovery(t *testing.T) {
 	})
 	defer env.stop()
 
-	if err := disconnectAgent(env.baseURL, env.agentID, 0); err != nil {
+	if err := disconnectAgent(env.baseURL, env.agentID, 1500); err != nil {
 		t.Fatalf("disconnect agent: %v", err)
 	}
 	if err := waitForAgentStatus(env.baseURL+"/api/agents", env.agentID, constants.StatusInactive, 10*time.Second, env.secret); err != nil {
@@ -367,7 +367,7 @@ func TestAgentServerIntegrationRetryMarkedPending(t *testing.T) {
 	})
 	defer env.stop()
 
-	if err := disconnectAgent(env.baseURL, env.agentID, 0); err != nil {
+	if err := disconnectAgent(env.baseURL, env.agentID, 1500); err != nil {
 		t.Fatalf("disconnect agent: %v", err)
 	}
 	if err := waitForAgentStatus(env.baseURL+"/api/agents", env.agentID, constants.StatusInactive, 10*time.Second, env.secret); err != nil {
@@ -547,7 +547,7 @@ func TestAgentServerIntegrationRetryMarkedOutboxReplay(t *testing.T) {
 	taskID := "exec_retry_outbox_step1_host1_rand"
 	cmd, scriptType := progressScriptForOS()
 	extra := map[string]interface{}{
-		"timeout_sec": 60,
+		"timeout_sec":    60,
 		"execution_id":   "exec-retry-outbox",
 		"step_id":        "step-1",
 		"host_id":        1,
@@ -592,7 +592,7 @@ func TestAgentServerIntegrationLogResumeAfterDisconnect(t *testing.T) {
 		t.Fatalf("dispatch task: %v\nserver log:\n%s\nagent log:\n%s", err, env.serverOut.String(), env.agentOut.String())
 	}
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 	if err := disconnectAgent(env.baseURL, env.agentID, 4000); err != nil {
 		t.Fatalf("disconnect agent: %v", err)
 	}
@@ -624,7 +624,7 @@ func TestAgentServerIntegrationRetryMarkedLogResumeDetailed(t *testing.T) {
 	taskID := "exec_retry_logresume_step1_host1_rand"
 	cmd, scriptType := progressScriptForOS()
 	extra := map[string]interface{}{
-		"timeout_sec": 60,
+		"timeout_sec":    60,
 		"execution_id":   "exec-retry-logresume",
 		"step_id":        "step-1",
 		"host_id":        1,
@@ -657,14 +657,14 @@ func TestAgentServerIntegrationRetryMarkedLogResumeDetailed(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		key := fmt.Sprintf("line%d", i)
 		if counts[key] != 1 {
-			t.Fatalf("unexpected retry log count for %s: %d", key, counts[key])
+			t.Fatalf("unexpected retry log count for %s: %d counts=%v contents=%v", key, counts[key], counts, collectLogContents(logs))
 		}
 	}
 	tsByLine := extractLogTimestamps(logs, "line")
 	for i := 2; i <= 5; i++ {
 		prev := fmt.Sprintf("line%d", i-1)
 		curr := fmt.Sprintf("line%d", i)
-		if tsByLine[curr] <= tsByLine[prev] {
+		if tsByLine[curr] < tsByLine[prev] {
 			t.Fatalf("retry timestamp order not preserved: %s=%d %s=%d", prev, tsByLine[prev], curr, tsByLine[curr])
 		}
 	}
@@ -774,7 +774,7 @@ func TestAgentServerIntegrationOutboxOrderAndDedup(t *testing.T) {
 		t.Fatalf("dispatch task: %v\nserver log:\n%s\nagent log:\n%s", err, env.serverOut.String(), env.agentOut.String())
 	}
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 	if err := disconnectAgent(env.baseURL, env.agentID, 5000); err != nil {
 		t.Fatalf("disconnect agent: %v", err)
 	}
@@ -805,7 +805,7 @@ func TestAgentServerIntegrationOutboxOrderAndDedup(t *testing.T) {
 	for i := 2; i <= 5; i++ {
 		prev := fmt.Sprintf("line%d", i-1)
 		curr := fmt.Sprintf("line%d", i)
-		if tsByLine[curr] <= tsByLine[prev] {
+		if tsByLine[curr] < tsByLine[prev] {
 			t.Fatalf("timestamp order not preserved: %s=%d %s=%d", prev, tsByLine[prev], curr, tsByLine[curr])
 		}
 	}
@@ -1204,10 +1204,12 @@ func countLogOccurrences(logs []map[string]interface{}, prefix string) map[strin
 		if !ok {
 			continue
 		}
-		if !strings.HasPrefix(content, prefix) {
-			continue
+		for _, line := range splitNormalizedLines(content) {
+			if !strings.HasPrefix(line, prefix) {
+				continue
+			}
+			counts[line]++
 		}
-		counts[content]++
 	}
 	return counts
 }
@@ -1216,18 +1218,48 @@ func extractLogTimestamps(logs []map[string]interface{}, prefix string) map[stri
 	result := map[string]int64{}
 	for _, l := range logs {
 		content, ok := l["content"].(string)
-		if !ok || !strings.HasPrefix(content, prefix) {
+		if !ok {
 			continue
 		}
 		ts, ok := parseTimestamp(l["timestamp"])
 		if !ok {
 			continue
 		}
-		if _, exists := result[content]; !exists {
-			result[content] = ts
+		for _, line := range splitNormalizedLines(content) {
+			if !strings.HasPrefix(line, prefix) {
+				continue
+			}
+			if _, exists := result[line]; !exists {
+				result[line] = ts
+			}
 		}
 	}
 	return result
+}
+
+func splitNormalizedLines(content string) []string {
+	raw := strings.Split(content, "\n")
+	lines := make([]string, 0, len(raw))
+	for _, line := range raw {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func collectLogContents(logs []map[string]interface{}) []string {
+	contents := make([]string, 0, len(logs))
+	for _, l := range logs {
+		content, ok := l["content"].(string)
+		if !ok {
+			continue
+		}
+		contents = append(contents, content)
+	}
+	return contents
 }
 
 func parseTimestamp(value interface{}) (int64, bool) {

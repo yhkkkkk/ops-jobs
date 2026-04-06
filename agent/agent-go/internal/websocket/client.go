@@ -46,6 +46,7 @@ type Client struct {
 	overrideURL string
 	conn        *websocket.Conn
 	connMu      sync.RWMutex
+	writeMu     sync.Mutex
 	connected   bool
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -174,6 +175,7 @@ func (c *Client) Disconnect() error {
 
 	c.cancel()
 
+	c.writeMu.Lock()
 	c.connMu.Lock()
 	if c.conn != nil {
 		c.conn.Close()
@@ -181,6 +183,7 @@ func (c *Client) Disconnect() error {
 	}
 	c.connected = false
 	c.connMu.Unlock()
+	c.writeMu.Unlock()
 
 	c.wg.Wait()
 	return nil
@@ -635,6 +638,9 @@ func (c *Client) writeMessage(msg interface{}) error {
 	if conn == nil {
 		return fmt.Errorf("websocket not connected")
 	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return conn.WriteJSON(msg)

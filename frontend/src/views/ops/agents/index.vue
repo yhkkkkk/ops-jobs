@@ -1081,16 +1081,6 @@ const syncTabToQuery = (tab: string) => {
   })
 }
 
-const getDefaultAgentServerId = () => {
-  if (searchForm.agent_server_id) {
-    return searchForm.agent_server_id
-  }
-  if (agentServers.value.length === 1) {
-    return agentServers.value[0].id
-  }
-  return undefined
-}
-
 const buildAgentServerBaseUrl = (listenAddr: string) => {
   const raw = (listenAddr || '').trim()
   if (!raw) return ''
@@ -1175,6 +1165,7 @@ const installForm = reactive({
   package_id: undefined as number | undefined,
   package_version: undefined as string | undefined,
 })
+
 const getSharedSecretHint = () => {
   if (installForm.auth_shared_secret) {
     const suffix = installForm.auth_shared_secret.slice(-4)

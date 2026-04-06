@@ -70,7 +70,7 @@ def test_host_logs_pointer_returns_next(monkeypatch, admin_client):
     )
     assert resp.status_code == 200
     data = resp.data["content"]
-    assert "logContent" in data
+    assert "log_context" in data
     assert "next_pointer" in data
-    assert "b" in data["logContent"]
+    assert "b" in data["log_context"]
     assert data["next_pointer"].startswith("redis:agent_logs/999@")

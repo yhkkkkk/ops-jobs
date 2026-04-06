@@ -22,6 +22,7 @@ from .filters import ExecutionRecordFilter
 from apps.permissions.permissions import ExecutionRecordPermission
 from apps.executor.services import ExecutionRecordService
 from apps.agents.execution_service import AgentExecutionService
+from apps.agents.models import AgentServer
 from apps.hosts.models import Host
 from apps.permissions.models import AuditLog
 from utils.audit_service import AuditLogService
@@ -305,11 +306,19 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
             retry_type = request.data.get('retry_type', 'full')  # full: 完整重试, step: 步骤重试
             step_id = request.data.get('step_id')
             failed_only = request.data.get('failed_only', True)
+            agent_server_id = request.data.get('agent_server_id')
             agent_server_url = request.data.get('agent_server_url')
+            if not agent_server_id and agent_server_url:
+                server = AgentServer.objects.filter(base_url=agent_server_url, is_active=True).first()
+                if server:
+                    agent_server_id = server.id
+            if not agent_server_id:
+                agent_server_id = execution_record.execution_parameters.get('agent_server_id')
             extra_data = {
                 'retry_type': retry_type,
                 'step_id': step_id,
                 'failed_only': failed_only,
+                'agent_server_id': agent_server_id,
                 'agent_server_url': agent_server_url,
             }
 
@@ -326,7 +335,7 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
                 retry_type=retry_type,
                 step_id=step_id,
                 failed_only=failed_only,
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             logger.info(f"重做结果: {result}")
@@ -398,19 +407,25 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
             
             # 检查执行方式
             execution_mode = execution_record.execution_parameters.get('execution_mode', 'ssh')
+            agent_server_id = request.data.get('agent_server_id') or execution_record.execution_parameters.get('agent_server_id')
             agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            if not agent_server_id and agent_server_url:
+                server = AgentServer.objects.filter(base_url=agent_server_url, is_active=True).first()
+                if server:
+                    agent_server_id = server.id
             extra_data = {
                 'execution_mode': execution_mode,
+                'agent_server_id': agent_server_id,
                 'agent_server_url': agent_server_url,
             }
             
-            if execution_mode == 'agent' or agent_server_url:
+            if execution_mode == 'agent' or agent_server_id:
                 # Agent方式：调用Agent取消服务
                 from apps.agents.execution_service import AgentExecutionService
                 
                 cancel_result = AgentExecutionService.cancel_task_via_agent(
                     execution_record=execution_record,
-                    agent_server_url=agent_server_url,
+                    agent_server_id=agent_server_id,
                 )
                 
                 if cancel_result['success']:

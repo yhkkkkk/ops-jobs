@@ -18,7 +18,7 @@ from apps.agents.management.commands.consume_streams import Command
 
 os.environ.setdefault("E2E_CONTROL_PLANE", "1")
 
-from apps.agents.models import Agent, AgentTaskStats
+from apps.agents.models import Agent, AgentTaskStats, AgentServer
 from apps.agents.services import AgentService
 from apps.hosts.models import Host
 from utils.agent_server_client import AgentServerClient
@@ -92,6 +92,16 @@ def control_plane_env(django_db_blocker):
         settings.REDIS_PASSWORD = redis_password or None
         settings.REDIS_DB_REALTIME = redis_db
 
+        # 为业务侧（quick execute / plan execute）准备可用的 Agent-Server 记录（整型ID）
+        agent_server_model = AgentServer.objects.create(
+            name=f"e2e-server-{uuid.uuid4().hex[:6]}",
+            base_url=server_url,
+            shared_secret=shared_secret,
+            require_signature=True,
+            is_active=True,
+            description="e2e local agent-server",
+        )
+
     # 将二进制输出到仓库的 bin 目录，避免临时目录被清理后无法复用
     server_bin = ROOT_DIR / "agent" / "agent-server-go" / "bin" / ("agent-server-e2e" + (".exe" if os.name == "nt" else ""))
     agent_bin = ROOT_DIR / "agent" / "agent-go" / "bin" / ("agent-e2e" + (".exe" if os.name == "nt" else ""))
@@ -130,7 +140,7 @@ def control_plane_env(django_db_blocker):
     agent2_log = agent2_cfg_dir / "agent2.log"
     _write_agent_config(agent2_cfg_dir / "config.yaml", ws_url, agent2_token, port_offset=1)
     agent2_proc = subprocess.Popen(
-        [str(agent_bin), "start", "--listen-port", "50052"],
+        [str(agent_bin), "start"],
         cwd=str(agent2_cfg_dir),
         env={**os.environ, "AGENT_CONFIG_FILE": str(agent2_cfg_dir / "config.yaml")},
         stdout=agent2_log.open("w", encoding="utf-8"),
@@ -146,12 +156,14 @@ def control_plane_env(django_db_blocker):
     with django_db_blocker.unblock():
         agent.status = "online"
         agent.endpoint = server_url
-        agent.save(update_fields=["status", "endpoint"])
+        agent.agent_server_id = agent_server_model.id
+        agent.save(update_fields=["status", "endpoint", "agent_server_id"])
 
         # 标记 host2 及其 agent 在线
         agent2.status = "online"
         agent2.endpoint = server_url
-        agent2.save(update_fields=["status", "endpoint"])
+        agent2.agent_server_id = agent_server_model.id
+        agent2.save(update_fields=["status", "endpoint", "agent_server_id"])
         host2.status = "online"
         host2.internal_ip = "127.0.0.1"
         host2.save(update_fields=["status", "internal_ip"])
@@ -164,6 +176,7 @@ def control_plane_env(django_db_blocker):
         "server_url": server_url,
         "agent_server_id": agent_server_id,
         "agent_server_id_2": agent2_id,
+        "agent_server_db_id": agent_server_model.id,
         "waiter": waiter,
         "server_proc": server_proc,
         "server_procs": [server_proc],
@@ -279,7 +292,7 @@ def test_control_plane_file_transfer(control_plane_env):
         remote_path = work_dir / "download" / "dest.txt"
 
         exec_id = 4
-        task_id = f"{exec_id}_step1_{host.id}_file"
+        task_id = f"{exec_id}_step1_{host.id}_file_{uuid.uuid4().hex[:8]}"
         spec = _file_transfer_spec(
             task_id,
             download_url,

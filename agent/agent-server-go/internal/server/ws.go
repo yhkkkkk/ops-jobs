@@ -169,11 +169,14 @@ func (s *Server) handleWebSocketMessages(conn *agent.Connection) {
 		logger.GetLogger().WithField("agent_id", conn.ID).Info("websocket disconnected")
 	}()
 
-	// 启动任务队列处理
-	go s.handleTaskQueue(conn)
-
-	// 启动日志缓冲处理
-	go s.handleLogBuffer(conn)
+	// 任务队列与日志缓冲协程按 Connection 维度只启动一次，
+	// 避免重连后重复消费同一通道导致任务/日志分流。
+	conn.EnsureTaskQueueLoopStarted(func() {
+		go s.handleTaskQueue(conn)
+	})
+	conn.EnsureLogBufferLoopStarted(func() {
+		go s.handleLogBuffer(conn)
+	})
 
 	for {
 		var msg api.WebSocketMessage

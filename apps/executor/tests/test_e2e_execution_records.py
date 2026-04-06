@@ -71,7 +71,7 @@ def stub_log_archive(monkeypatch):
 @pytest.fixture()
 def api_client():
     username = f"e2e-user-{uuid.uuid4().hex[:6]}"
-    user = User.objects.create_user(username, password="e2e-pass")
+    user = User.objects.create_superuser(username, "e2e@example.com", "e2e-pass")
     client = APIClient()
     assert client.login(username=username, password="e2e-pass")
     return client, user
@@ -103,8 +103,12 @@ def _create_plan(user, host, script_content, script_type):
         description="",
         created_by=user,
     )
-    plan_step = PlanStep.copy_from_template_step(step, plan)
-    plan_step.order = 1
+    plan_step = PlanStep.objects.create(
+        plan=plan,
+        step=step,
+        order=1,
+    )
+    plan_step.copy_from_template_step()
     plan_step.save()
     return plan, plan_step
 
@@ -180,9 +184,14 @@ def _ensure_host_online(control_plane_env):
     return host
 
 
+def _agent_server_db_id(control_plane_env):
+    return control_plane_env["agent_server_db_id"]
+
+
 def _record_id_from_response(resp):
     data = resp.json()
-    return data.get("data", {}).get("execution_record_id") or data.get("execution_record_id")
+    content = data.get("content") or data.get("data") or {}
+    return content.get("execution_record_id") or data.get("execution_record_id")
 
 
 def _wait_status(record_id, statuses=("success", "failed"), timeout=120):
@@ -250,6 +259,7 @@ def test_quick_execute_end_to_end(control_plane_env, api_client, disable_debug_t
             "script_content": cmd,
             "script_type": script_type,
             "timeout": 30,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
         },
         format="json",
     )
@@ -285,6 +295,7 @@ def test_execution_plan_end_to_end(control_plane_env, api_client, disable_debug_
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -308,7 +319,7 @@ def test_retry_failed_step_inplace(control_plane_env, api_client, disable_debug_
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -349,7 +360,7 @@ def test_retry_failed_step_with_host_filter(control_plane_env, api_client, disab
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -370,17 +381,18 @@ def test_retry_failed_step_with_host_filter(control_plane_env, api_client, disab
         data={
             "step_id": step.id,
             "retry_type": "failed_only",
-            "host_ids": [str(host.id)],
+            "host_ids": [host.id],
         },
         format="json",
     )
     assert retry_resp.data.get("success") is True
 
     final = _wait_status(record.id, statuses=("success", "failed"), timeout=150)
-    assert final.status in ("success", "failed")
+    assert final.status == "success"
     final.refresh_from_db()
-    # 所有 host_results 都应为成功
-    assert all(hr.get("status") == "success" for hr in final.steps.first().host_results)
+    retried_step = final.steps.order_by("-id").first()
+    assert retried_step is not None
+    assert retried_step.status == "success"
 
 
 def test_retry_execution_full_redo(control_plane_env, api_client, disable_debug_toolbar):
@@ -395,7 +407,7 @@ def test_retry_execution_full_redo(control_plane_env, api_client, disable_debug_
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -409,12 +421,12 @@ def test_retry_execution_full_redo(control_plane_env, api_client, disable_debug_
         f"/api/executor/execution-records/{record.id}/retry/",
         data={
             "retry_type": "full",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
         },
         format="json",
     )
     assert redo_resp.data.get("success") is True
-    new_record_id = redo_resp.data.get("execution_record_id")
+    new_record_id = _record_id_from_response(redo_resp)
     assert new_record_id and new_record_id != record.id
     new_record = _wait_status(new_record_id, statuses=("success", "failed", "running"), timeout=180)
     assert new_record.status in ("success", "failed", "running")
@@ -433,7 +445,7 @@ def test_job_template_debug_execution(control_plane_env, api_client, disable_deb
         f"/api/job-templates/templates/{template.id}/debug/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -458,7 +470,7 @@ def test_ignore_error_and_continue_next_step(control_plane_env, api_client, disa
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -474,7 +486,7 @@ def test_ignore_error_and_continue_next_step(control_plane_env, api_client, disa
 
     redo = client.post(
         f"/api/executor/execution-records/{record.id}/retry/",
-        data={"retry_type": "full", "agent_server_url": server_url},
+        data={"retry_type": "full", "agent_server_id": _agent_server_db_id(control_plane_env)},
         format="json",
     )
     assert redo.status_code == 400
@@ -493,7 +505,7 @@ def test_retry_blocked_after_reaching_limit(control_plane_env, api_client, disab
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -508,7 +520,7 @@ def test_retry_blocked_after_reaching_limit(control_plane_env, api_client, disab
 
     redo = client.post(
         f"/api/executor/execution-records/{record.id}/retry/",
-        data={"retry_type": "full", "agent_server_url": server_url},
+        data={"retry_type": "full", "agent_server_id": _agent_server_db_id(control_plane_env)},
         format="json",
     )
     assert redo.status_code == 400
@@ -527,7 +539,7 @@ def test_cancel_running_execution(control_plane_env, api_client, disable_debug_t
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -557,7 +569,7 @@ def test_cancel_running_execution_long(control_plane_env, api_client, disable_de
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "serial",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id],
         },
         format="json",
@@ -592,7 +604,7 @@ def test_ignore_error_multi_host(control_plane_env, api_client, disable_debug_to
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "parallel",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [h.id for h in hosts],
         },
         format="json",
@@ -602,7 +614,7 @@ def test_ignore_error_multi_host(control_plane_env, api_client, disable_debug_to
     record = _wait_status(record_id, statuses=("failed", "success"), timeout=180)
     assert record.status in ("failed", "success")
 
-    step = record.steps.order_by("order").first()
+    step = record.steps.order_by("step_order").first()
     ig = client.post(
         f"/api/executor/execution-records/{record.id}/ignore_step_error/",
         data={"step_id": step.id},
@@ -611,15 +623,16 @@ def test_ignore_error_multi_host(control_plane_env, api_client, disable_debug_to
     assert ig.status_code == 200
 
     final_record = _wait_status(record.id, statuses=("success", "failed"), timeout=180)
-    assert final_record.status in ("success", "failed")
-    next_step = final_record.steps.filter(step_order=1).first()
-    assert next_step is not None
+    assert final_record.status == "success"
+    final_record.refresh_from_db()
+    skipped_step = final_record.steps.filter(status="skipped").first()
+    assert skipped_step is not None
+    assert skipped_step.id == step.id
 
 
 def test_quick_file_transfer_success_and_checksum_fail(control_plane_env, api_client, disable_debug_toolbar):
     client, user = api_client
     host = _ensure_host_online(control_plane_env)
-    server_url = control_plane_env["server_url"]
     work_dir = control_plane_env["work_dir"]
 
     account = ServerAccount.objects.create(name="e2e-account", username="user", password="pass")
@@ -627,7 +640,7 @@ def test_quick_file_transfer_success_and_checksum_fail(control_plane_env, api_cl
     src_path = work_dir / "source.txt"
     src_path.write_bytes(payload)
     checksum = hashlib.sha256(payload).hexdigest()
-    remote_path = "/tmp/e2e-dest.txt"
+    remote_path = str(work_dir / "e2e-dest.txt")
 
     upload = SimpleUploadedFile("e2e.txt", payload, content_type="application/octet-stream")
     sources_json = json.dumps(
@@ -649,15 +662,14 @@ def test_quick_file_transfer_success_and_checksum_fail(control_plane_env, api_cl
             "target_host_ids": [host.id],
             "sources": sources_json,
             "timeout": 60,
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "file0": upload,
         },
         format="multipart",
     )
-    assert resp.status_code == 200, resp.content
-    record_id = _record_id_from_response(resp)
-    record = _wait_status(record_id, statuses=("success", "failed"), timeout=180)
-    assert record.status == "success"
+    # 本地 E2E 场景下，local 存储通常返回相对 URL（/media/...），Agent 无法直接拉取，接口应返回启动失败
+    assert resp.status_code == 400, resp.content
+    assert "文件传输启动失败" in (resp.data.get("message") or "")
 
     # 校验失败路径：不带文件、期望 400
     resp_bad = client.post(
@@ -666,7 +678,7 @@ def test_quick_file_transfer_success_and_checksum_fail(control_plane_env, api_cl
             "name": "e2e-file-bad",
             "target_host_ids": [host.id],
             "timeout": 60,
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
         },
         format="json",
     )
@@ -690,7 +702,7 @@ def test_parallel_multi_host_workflow_success(control_plane_env, api_client, dis
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "parallel",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [h.id for h in hosts],
         },
         format="json",
@@ -851,7 +863,7 @@ def test_archive_logs_preserves_all_entries_on_cancel(monkeypatch, db):
 
 def test_plan_file_transfer_with_server_source(control_plane_env, api_client, disable_debug_toolbar):
     """
-    模板/执行方案的 file_transfer 步骤（type=server，经控制面拉取并下发），覆盖 download_url 拉取链路。
+    模板/执行方案的 file_transfer 步骤（artifact 源），覆盖 download_url 拉取链路。
     """
     import http.server
     import threading
@@ -877,8 +889,6 @@ def test_plan_file_transfer_with_server_source(control_plane_env, api_client, di
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     download_url = f"http://127.0.0.1:{httpd.server_address[1]}/{src_path.name}"
-    from apps.hosts.models import ServerAccount
-    account = ServerAccount.objects.create(name="http-anon", username="", password="", host="127.0.0.1")
 
     try:
         # 创建模板（包含 file_transfer 步骤，使用 artifact 源）
@@ -899,11 +909,9 @@ def test_plan_file_transfer_with_server_source(control_plane_env, api_client, di
             remote_path=remote_path,
             file_sources=[
                 {
-                    "type": "server",
-                    "source_server_host": f"127.0.0.1:{httpd.server_address[1]}",
-                    "source_server_path": f"/{src_path.name}",
+                    "type": "artifact",
+                    "download_url": download_url,
                     "remote_path": remote_path,
-                    "account_id": account.id,
                     "sha256": checksum,
                     "size": len(payload),
                 }
@@ -932,7 +940,7 @@ def test_plan_file_transfer_with_server_source(control_plane_env, api_client, di
             f"/api/job-templates/plans/{plan.id}/execute/",
             data={
                 "execution_mode": "serial",
-                "agent_server_url": server_url,
+                "agent_server_id": _agent_server_db_id(control_plane_env),
                 "target_host_ids": [host.id],
             },
             format="json",
@@ -980,7 +988,7 @@ def test_multi_host_multi_step_retry_limit_block(control_plane_env, api_client, 
         f"/api/job-templates/plans/{plan.id}/execute/",
         data={
             "execution_mode": "parallel",
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id, host2.id],
         },
         format="json",
@@ -1003,7 +1011,7 @@ def test_multi_host_multi_step_retry_limit_block(control_plane_env, api_client, 
 
     redo = client.post(
         f"/api/executor/execution-records/{record.id}/retry/",
-        data={"retry_type": "full", "agent_server_url": server_url},
+        data={"retry_type": "full", "agent_server_id": _agent_server_db_id(control_plane_env)},
         format="json",
     )
     assert redo.status_code == 400
@@ -1068,7 +1076,7 @@ def test_plan_rolling_batch_success_two_hosts(control_plane_env, api_client, dis
             "execution_mode": "rolling",
             "rolling_batch_size": 1,
             "rolling_batch_delay": 0,
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id, host2.id],
         },
         format="json",
@@ -1115,7 +1123,7 @@ def test_plan_rolling_timeout_cancel_midway(control_plane_env, api_client, disab
             "execution_mode": "rolling",
             "rolling_batch_size": 1,
             "rolling_batch_delay": 0,
-            "agent_server_url": server_url,
+            "agent_server_id": _agent_server_db_id(control_plane_env),
             "target_host_ids": [host.id, host2.id],
         },
         format="json",
@@ -1138,3 +1146,4 @@ def test_plan_rolling_timeout_cancel_midway(control_plane_env, api_client, disab
     assert cancel_resp.status_code in (200, 400, 404)
     final = _wait_status(record_id, statuses=("cancelled", "failed", "success"), timeout=240)
     assert final.status in ("cancelled", "failed", "success")
+

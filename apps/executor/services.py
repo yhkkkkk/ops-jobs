@@ -310,23 +310,23 @@ class ExecutionRecordService:
             logger.info(f"开始原地重试步骤: {step.step_name}, 执行记录: {execution_record.execution_id}")
 
             # 只支持Agent方式执行
-            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            agent_server_id = execution_record.execution_parameters.get('agent_server_id')
 
             # 根据执行类型启动原地重试（只支持Agent方式）
             if execution_record.execution_type == 'job_workflow':
                 # 工作流执行 - 从指定步骤开始
                 result = ExecutionRecordService._retry_job_workflow_from_step_inplace_agent(
-                    execution_record, step, target_hosts, user, agent_server_url
+                    execution_record, step, target_hosts, user, agent_server_id
                 )
             elif execution_record.execution_type == 'quick_script':
                 # 快速脚本执行
                 result = ExecutionRecordService._retry_quick_script_step_inplace_agent(
-                    execution_record, step, target_hosts, user, agent_server_url
+                    execution_record, step, target_hosts, user, agent_server_id
                 )
             elif execution_record.execution_type == 'quick_file_transfer':
                 # 快速文件传输
                 result = ExecutionRecordService._retry_file_transfer_step_inplace_agent(
-                    execution_record, step, target_hosts, user, agent_server_url
+                    execution_record, step, target_hosts, user, agent_server_id
                 )
             else:
                 result = {'success': False, 'error': '不支持的执行类型'}
@@ -457,8 +457,8 @@ class ExecutionRecordService:
         try:
             from apps.job_templates.services import ExecutionPlanService
 
-            # 获取Agent-Server地址
-            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            # 获取Agent-Server ID
+            agent_server_id = execution_record.execution_parameters.get('agent_server_id')
 
             # 启动异步工作流执行 - 使用ExecutionPlanService（Agent方式）
             result = ExecutionPlanService.execute_plan(
@@ -468,7 +468,7 @@ class ExecutionRecordService:
                 name=f"重试: {execution_record.name}",
                 description=f"从步骤 {step.step_order} 重试执行",
                 execution_mode='agent',  # 只支持Agent方式
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
                 start_step_order=step.step_order,  # 从指定步骤开始
             )
 
@@ -496,8 +496,8 @@ class ExecutionRecordService:
             # 获取主机对象
             target_hosts = Host.objects.filter(id__in=target_host_ids)
 
-            # 获取Agent-Server地址
-            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            # 获取Agent-Server ID
+            agent_server_id = execution_record.execution_parameters.get('agent_server_id')
 
             # 通过Agent执行脚本
             result = AgentExecutionService.execute_script_via_agent(
@@ -508,7 +508,7 @@ class ExecutionRecordService:
                 timeout=step.step_parameters.get('timeout', 300),
                 global_variables=execution_record.execution_parameters.get('global_variables', {}),
                 step_id=str(step.id),
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             if result['success']:
@@ -538,8 +538,8 @@ class ExecutionRecordService:
             # 获取主机对象
             target_hosts = Host.objects.filter(id__in=target_host_ids)
 
-            # 获取Agent-Server地址
-            agent_server_url = execution_record.execution_parameters.get('agent_server_url')
+            # 获取Agent-Server ID
+            agent_server_id = execution_record.execution_parameters.get('agent_server_id')
 
             # 获取步骤参数（仅 artifact 模式）
             step_params = step.step_parameters or {}
@@ -576,7 +576,7 @@ class ExecutionRecordService:
                 size=src.get('size'),
                 auth_headers=src.get('auth_headers') or {},
                 step_id=str(step.id),
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             if result['success']:
@@ -592,7 +592,7 @@ class ExecutionRecordService:
             return {'success': False, 'error': f'继续文件传输失败: {str(e)}'}
 
     @staticmethod
-    def _retry_job_workflow_from_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+    def _retry_job_workflow_from_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_id):
         """工作流步骤原地重试（Agent方式）"""
         try:
             from apps.agents.execution_service import AgentExecutionService
@@ -630,7 +630,7 @@ class ExecutionRecordService:
                 timeout=timeout,
                 global_variables=global_variables,
                 step_id=str(step.id),
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             return result
@@ -640,7 +640,7 @@ class ExecutionRecordService:
             return {'success': False, 'error': f'工作流步骤重试失败: {str(e)}'}
 
     @staticmethod
-    def _retry_quick_script_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+    def _retry_quick_script_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_id):
         """快速脚本步骤原地重试（Agent方式）"""
         try:
             from apps.agents.execution_service import AgentExecutionService
@@ -669,7 +669,7 @@ class ExecutionRecordService:
                 timeout=timeout,
                 global_variables=global_variables,
                 step_id=str(step.id),
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             return result
@@ -679,7 +679,7 @@ class ExecutionRecordService:
             return {'success': False, 'error': f'快速脚本步骤重试失败: {str(e)}'}
 
     @staticmethod
-    def _retry_file_transfer_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_url):
+    def _retry_file_transfer_step_inplace_agent(execution_record, step, target_hosts, user, agent_server_id):
         """文件传输步骤原地重试（Agent方式）"""
         try:
             from apps.agents.execution_service import AgentExecutionService
@@ -727,7 +727,7 @@ class ExecutionRecordService:
                 size=src.get('size'),
                 auth_headers=src.get('auth_headers') or {},
                 step_id=str(step.id),
-                agent_server_url=agent_server_url,
+                agent_server_id=agent_server_id,
             )
 
             return result

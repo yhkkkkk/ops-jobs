@@ -14,21 +14,23 @@ import (
 
 // Connection Agent 连接封装
 type Connection struct {
-	ID            string
-	Name          string
-	Token         string
-	Conn          *gorillaWs.Conn
-	Status        string // active/inactive
-	LastHeartbeat time.Time
-	Labels        map[string]string
-	System        *api.SystemInfo
-	TaskQueue     chan *api.TaskSpec
-	LogBuffer     chan *api.LogEntry
-	HostID        int // 控制面主机ID，用于建立映射关系
-	runningTasks  map[string]*api.TaskSpec
-	mu            sync.RWMutex
-	ackStore      *websocket.AckStore // 持久化去重存储
-	closed        bool
+	ID                string
+	Name              string
+	Token             string
+	Conn              *gorillaWs.Conn
+	Status            string // active/inactive
+	LastHeartbeat     time.Time
+	Labels            map[string]string
+	System            *api.SystemInfo
+	TaskQueue         chan *api.TaskSpec
+	LogBuffer         chan *api.LogEntry
+	HostID            int // 控制面主机ID，用于建立映射关系
+	runningTasks      map[string]*api.TaskSpec
+	mu                sync.RWMutex
+	ackStore          *websocket.AckStore // 持久化去重存储
+	closed            bool
+	taskQueueLoopOnce sync.Once
+	logBufferLoopOnce sync.Once
 }
 
 // SeenMessage 记录并检查 message_id 幂等，返回是否已见过
@@ -243,4 +245,20 @@ func (c *Connection) MarkDisconnected() {
 	c.Status = constants.StatusInactive
 	c.LastHeartbeat = time.Now()
 	c.Conn = nil
+}
+
+// EnsureTaskQueueLoopStarted 确保任务队列处理协程只启动一次。
+func (c *Connection) EnsureTaskQueueLoopStarted(start func()) {
+	if start == nil {
+		return
+	}
+	c.taskQueueLoopOnce.Do(start)
+}
+
+// EnsureLogBufferLoopStarted 确保日志缓冲处理协程只启动一次。
+func (c *Connection) EnsureLogBufferLoopStarted(start func()) {
+	if start == nil {
+		return
+	}
+	c.logBufferLoopOnce.Do(start)
 }
