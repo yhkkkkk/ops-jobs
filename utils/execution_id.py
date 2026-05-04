@@ -1,6 +1,9 @@
 """
 统一的执行ID生成服务
 """
+import hashlib
+import os
+import socket
 import time
 import threading
 from django.core.cache import cache
@@ -48,22 +51,25 @@ class ExecutionIDGenerator:
     
     def _get_worker_id(self):
         """获取工作节点ID"""
-        # 尝试从配置中获取
-        worker_id = getattr(settings, 'EXECUTION_ID_WORKER_ID', None)
-        if worker_id is not None:
-            return worker_id
-        
-        # 使用缓存生成唯一的worker_id
+        # 默认使用本地派生 worker_id，避免缓存/Redis 不可用时阻塞关键链路。
+        use_cache_coordination = getattr(settings, 'EXECUTION_ID_USE_CACHE_COORDINATION', False)
+        if not use_cache_coordination:
+            return self._build_local_worker_id()
+
+        # 可选：通过缓存协调 worker_id（多实例强一致场景）。
         cache_key = 'execution_id_worker_counter'
         try:
-            # 原子性地获取并递增worker_id
             worker_id = cache.get(cache_key, 0)
             cache.set(cache_key, (worker_id + 1) % (self.MAX_WORKER_ID + 1), timeout=None)
             return worker_id
         except Exception:
-            # 如果缓存不可用，使用进程ID的后10位
-            import os
-            return os.getpid() % (self.MAX_WORKER_ID + 1)
+            return self._build_local_worker_id()
+
+    def _build_local_worker_id(self):
+        """基于主机名+进程号派生稳定本地 worker_id。"""
+        seed = f"{socket.gethostname()}:{os.getpid()}"
+        digest = hashlib.sha1(seed.encode("utf-8")).digest()
+        return int.from_bytes(digest[:2], byteorder="big") % (self.MAX_WORKER_ID + 1)
     
     def generate(self):
         """生成执行ID"""
