@@ -1,153 +1,148 @@
 <template>
   <div
-    class="scheduled-tasks-page"
+    class="app-page scheduled-tasks-page"
     v-page-permissions="{
       resourceType: 'job',
       permissions: ['view', 'add', 'change', 'delete', 'execute'],
       resourceIds: tasks.map(t => t.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>定时任务</h2>
-          <p class="header-desc">创建和管理基于执行方案的定时调度任务</p>
-        </div>
-        <div class="header-right">
+    <PageHeader
+      eyebrow="调度任务"
+      title="定时任务"
+      description="创建和管理基于执行方案的定时调度任务，跟踪最近执行结果和稳定性。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button @click="handleRefresh">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+          <a-button
+            type="primary"
+            @click="handleCreate"
+            v-permission="{ resourceType: 'job', permission: 'add' }"
+          >
+            <template #icon>
+              <icon-plus />
+            </template>
+            新建任务
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
+
+    <DataToolbar
+      title="筛选定时任务"
+      description="按任务、执行方案、状态和维护人定位调度配置。"
+      :active-count="scheduledTaskActiveFilterCount"
+    >
+      <div class="app-filter-grid">
+        <a-input
+          v-model="searchForm.name"
+          placeholder="任务名称"
+          allow-clear
+          @press-enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <a-input
+          v-model="searchForm.plan_name"
+          placeholder="执行方案"
+          allow-clear
+          @press-enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <a-select
+          v-model="searchForm.is_active"
+          placeholder="状态"
+          allow-clear
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <a-option :value="true">启用</a-option>
+          <a-option :value="false">禁用</a-option>
+        </a-select>
+        <a-select
+          v-model="searchForm.created_by"
+          placeholder="创建者"
+          allow-clear
+          allow-search
+          :filter-option="false"
+          @search="handleCreatorSearch"
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <a-option
+            v-for="user in filteredCreators"
+            :key="user.id"
+            :value="user.id"
+          >
+            {{ user.name }}
+          </a-option>
+        </a-select>
+        <a-select
+          v-model="searchForm.updated_by"
+          placeholder="更新者"
+          allow-clear
+          allow-search
+          :filter-option="false"
+          @search="handleUpdaterSearch"
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <a-option
+            v-for="user in filteredUpdaters"
+            :key="user.id"
+            :value="user.id"
+          >
+            {{ user.name }}
+          </a-option>
+        </a-select>
+        <div class="app-filter-grid__actions">
           <a-space>
-            <a-button @click="handleRefresh">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              刷新
+            <a-button type="primary" @click="handleSearch">
+              <template #icon><icon-search /></template>
+              搜索
             </a-button>
-            <a-button
-              type="primary"
-              @click="handleCreate"
-              v-permission="{ resourceType: 'job', permission: 'add' }"
-            >
-              <template #icon>
-                <icon-plus />
-              </template>
-              新建任务
+            <a-button @click="handleReset">
+              <template #icon><icon-refresh /></template>
+              重置
             </a-button>
           </a-space>
         </div>
       </div>
-    </div>
-
-    <!-- 搜索和筛选 -->
-    <a-card class="mb-4">
-      <a-row :gutter="16">
-        <a-col :span="4">
-          <a-input
-            v-model="searchForm.name"
-            placeholder="任务名称"
-            allow-clear
-            @press-enter="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          />
-        </a-col>
-        <a-col :span="4">
-          <a-input
-            v-model="searchForm.plan_name"
-            placeholder="执行方案"
-            allow-clear
-            @press-enter="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          />
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.is_active"
-            placeholder="状态"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option :value="true">启用</a-option>
-            <a-option :value="false">禁用</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.created_by"
-            placeholder="创建者"
-            allow-clear
-            allow-search
-            filter-option="false"
-            @search="handleCreatorSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option
-              v-for="user in filteredCreators"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.updated_by"
-            placeholder="更新者"
-            allow-clear
-            allow-search
-            filter-option="false"
-            @search="handleUpdaterSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option
-              v-for="user in filteredUpdaters"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="7">
-          <div class="search-actions">
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
-                <template #icon><icon-search /></template>
-                搜索
-              </a-button>
-              <a-button @click="handleReset">
-                <template #icon><icon-refresh /></template>
-                重置
-              </a-button>
-            </a-space>
-          </div>
-        </a-col>
-      </a-row>
       <ActiveFiltersBar
         :items="activeFilterItems"
         @clear="handleClearFilter"
         @clear-all="handleReset"
       />
-    </a-card>
+    </DataToolbar>
 
-    <!-- 任务列表 -->
-    <a-card>
+    <DetailPanel
+      title="任务列表"
+      :description="`共 ${pagination.total} 个任务，当前页 ${tasks.length} 个`"
+    >
       <a-table
+        class="schedule-data-table"
         :columns="columns"
         :data="tasks"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1550 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
+        <template #task="{ record }">
+          <div class="task-name-cell">
+            <a-link class="task-name-link" @click="handleView(record)">
+              {{ record.name }}
+            </a-link>
+            <div class="task-context-line">方案：{{ record.plan_name || '-' }}</div>
+            <div class="task-context-line">模板：{{ record.template_name || '-' }}</div>
+          </div>
+        </template>
+
         <template #status="{ record }">
           <a-tag v-if="record.is_active" color="green">启用</a-tag>
           <a-tag v-else color="red">禁用</a-tag>
@@ -200,35 +195,43 @@
         </template>
 
         <template #actions="{ record }">
-          <a-space>
-            <a-button type="text" size="small" @click="handleView(record)">
+          <a-space class="table-row-actions" :size="2">
+            <a-button
+              type="text"
+              size="small"
+              class="scheduled-primary-action"
+              @click="handleView(record)"
+            >
               <template #icon>
                 <icon-eye />
               </template>
               查看
             </a-button>
-            <a-button
-              type="text"
-              size="small"
-              @click="handleEdit(record)"
-              v-permission="{ resourceType: 'job', permission: 'change', resourceId: record.id }"
-            >
-              <template #icon>
-                <icon-edit />
-              </template>
-              编辑
-            </a-button>
-            <a-button type="text" size="small" @click="handleHistory(record)">
-              <template #icon><icon-history /></template>
-              历史
-            </a-button>
             <a-dropdown>
-              <a-button type="text" size="small">
+              <a-button
+                type="text"
+                size="small"
+                class="scheduled-more-action"
+                aria-label="更多操作"
+              >
                 <template #icon>
                   <icon-more />
                 </template>
               </a-button>
               <template #content>
+                <a-doption
+                  :class="{ 'disabled-option': !canChangeTask(record.id) }"
+                  @click="canChangeTask(record.id) ? handleEdit(record) : showNoPermissionMessage()"
+                >
+                  <template #icon>
+                    <icon-edit />
+                  </template>
+                  编辑
+                </a-doption>
+                <a-doption @click="handleHistory(record)">
+                  <template #icon><icon-history /></template>
+                  历史
+                </a-doption>
                 <a-doption
                   v-if="record.is_active"
                   :class="['text-orange-500', { 'disabled-option': !canChangeTask(record.id) }]"
@@ -263,7 +266,7 @@
           </a-space>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
 
     <!-- 历史记录抽屉 -->
       <a-drawer
@@ -368,6 +371,7 @@ import type { ScheduledJob } from '@/types'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
+import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
 
 const router = useRouter()
 const loading = ref(false)
@@ -471,6 +475,8 @@ const activeFilterItems = computed(() => [
   { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) }
 ])
 
+const scheduledTaskActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
+
 const handleClearFilter = (key: string) => {
   const defaults = defaultSearchForm()
   if (key in defaults) {
@@ -484,35 +490,17 @@ const handleClearFilter = (key: string) => {
 // 表格列配置
 const columns = [
   {
-    title: '任务名称',
-    dataIndex: 'name',
-    key: 'name',
-    width: 150,
-    ellipsis: true,
-    tooltip: true
-  },
-  {
-    title: '执行方案',
-    dataIndex: 'plan_name',
-    key: 'plan_name',
-    width: 150,
-    ellipsis: true,
-    tooltip: true
-  },
-  {
-    title: '模板名称',
-    dataIndex: 'template_name',
-    key: 'template_name',
-    width: 150,
-    ellipsis: true,
-    tooltip: true
+    title: '任务',
+    key: 'task',
+    slotName: 'task',
+    width: 260
   },
   {
     title: '状态',
     dataIndex: 'is_active',
     key: 'status',
     slotName: 'status',
-    width: 80,
+    width: 72,
     align: 'center'
   },
   {
@@ -520,20 +508,20 @@ const columns = [
     dataIndex: 'cron_expression',
     key: 'cron_expression',
     slotName: 'cron_expression',
-    width: 150
+    width: 128
   },
   {
     title: '成功率',
     key: 'success_rate',
     slotName: 'success_rate',
-    width: 120,
+    width: 110,
     align: 'center'
   },
   {
     title: '执行统计',
     key: 'execution_stats',
     slotName: 'execution_stats',
-    width: 120,
+    width: 108,
     align: 'center'
   },
   {
@@ -541,21 +529,21 @@ const columns = [
     dataIndex: 'last_execution',
     key: 'last_execution',
     slotName: 'last_execution',
-    width: 190
+    width: 150
   },
   {
     title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 230
+    width: 168
   },
   {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 320,
-    fixed: 'right'
+    width: 108,
+    align: 'center'
   }
 ]
 
@@ -818,7 +806,7 @@ const handleToggleStatus = async (record: ScheduledJob): Promise<void> => {
 
 const handleClickToggleStatus = (record: ScheduledJob): void => {
   if (!canChangeTask(record.id)) {
-    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    showNoPermissionMessage()
     return
   }
   handleToggleStatus(record)
@@ -848,10 +836,14 @@ const handleDelete = async (record: ScheduledJob): Promise<void> => {
 
 const handleClickDeleteTask = (record: ScheduledJob): void => {
   if (!canDeleteTask(record.id)) {
-    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    showNoPermissionMessage()
     return
   }
   handleDelete(record)
+}
+
+const showNoPermissionMessage = () => {
+  Message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 // 工具函数
@@ -943,7 +935,7 @@ const historyTableColumns = [
   { title: '开始时间', dataIndex: 'started_at', width: 160 },
   { title: '结束时间', dataIndex: 'finished_at', width: 160 },
   { title: '耗时', dataIndex: 'duration', slotName: 'duration', width: 100 },
-  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 120, fixed: 'right' }
+  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 120 }
 ]
 
 // 生命周期
@@ -958,43 +950,29 @@ onMounted(() => {
   padding: 0;
 }
 
-.page-header {
-  background: white;
-  border-radius: 6px;
-  margin-bottom: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-}
-
-.header-content {
+.task-name-cell {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text-1);
+.task-name-link {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.header-desc {
-  margin: 0;
-  color: var(--color-text-3);
-  font-size: 14px;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
-}
-
-/* 搜索按钮定位（与作业模板一致） */
-.search-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  width: 100%;
+.task-context-line {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-meta);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stats-cell {
@@ -1031,18 +1009,53 @@ onMounted(() => {
 
 /* 表格样式优化 */
 :deep(.arco-table) {
+  width: 100%;
+  max-width: 100%;
+
+  .arco-table-container,
+  .arco-table-content,
+  .arco-table-body,
+  .arco-table-element {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
   .arco-table-th {
     background-color: #fff;
   }
 
-  /* 隐藏表头的滚动条 */
-  .arco-table-header {
-    overflow-x: hidden !important;
+  .arco-table-td {
+    padding: 12px 10px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* 确保只有表体有滚动条 */
-  .arco-table-body {
-    overflow-x: auto;
+  .arco-space-item {
+    min-width: 0;
   }
+}
+
+:deep(.table-row-actions) {
+  justify-content: center;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+:deep(.scheduled-primary-action) {
+  min-width: 46px;
+  padding-inline: 6px;
+}
+
+:deep(.scheduled-more-action) {
+  width: 28px;
+  min-width: 28px;
+  padding-inline: 0;
 }
 </style>

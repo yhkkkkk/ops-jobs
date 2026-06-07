@@ -35,7 +35,7 @@
             placeholder="版本号"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             @search="handleVersionSearch"
             @change="handleSearch"
             @clear="handleSearch"

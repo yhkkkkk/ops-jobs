@@ -16,6 +16,15 @@ NProgress.configure({
 // 路由配置
 const routes: RouteRecordRaw[] = [
   {
+    path: '/home',
+    name: 'Landing',
+    component: () => import('@/views/Landing.vue'),
+    meta: {
+      title: '首页',
+      requiresAuth: false,
+    },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/Login.vue'),

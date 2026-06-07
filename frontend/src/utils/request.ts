@@ -1,8 +1,10 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import axios, { getAdapter, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiResponse } from '@/types'
-import { API_BASE_URL } from '@/utils/env'
+import { API_BASE_URL, MOCK_API_ENABLED, MOCK_API_STRICT, MOCK_LATENCY_MS } from '@/utils/env'
+import { createMockAxiosAdapter } from '@/mocks/mockAdapter'
+import { mockRoutes } from '@/mocks/routes'
 
 // 全局错误消息去重
 let currentErrorMessages = new Set<string>()
@@ -44,6 +46,14 @@ const request: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+request.defaults.adapter = createMockAxiosAdapter({
+  enabled: MOCK_API_ENABLED,
+  strict: MOCK_API_STRICT,
+  latencyMs: MOCK_LATENCY_MS,
+  fallbackAdapter: getAdapter(request.defaults.adapter),
+  routes: mockRoutes,
 })
 
 // 请求拦截器

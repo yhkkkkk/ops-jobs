@@ -1,34 +1,32 @@
 <template>
   <div 
-    class="execution-records-page"
+    class="app-page execution-records-page"
     v-page-permissions="{ 
       resourceType: 'executionrecord', 
       permissions: ['view'],
       resourceIds: tableData.map(r => r.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>执行记录</h2>
-          <p class="header-desc">查看和管理所有的任务执行记录</p>
-        </div>
-        <div class="header-right">
-          <a-space>
-            <a-button @click="handleRefresh">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              刷新
-            </a-button>
-          </a-space>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      eyebrow="执行审计"
+      title="执行记录"
+      description="按执行类型、状态、发起人和时间窗口追踪平台内所有任务执行。"
+    >
+      <template #actions>
+        <a-button @click="handleRefresh">
+          <template #icon>
+            <icon-refresh />
+          </template>
+          刷新
+        </a-button>
+      </template>
+    </PageHeader>
 
-    <!-- 搜索区域 -->
-    <a-card class="mb-4">
+    <DataToolbar
+      title="筛选执行记录"
+      description="默认展示最近执行，时间快捷项会同步到地址栏，方便复盘和共享。"
+      :active-count="executionActiveFilterCount"
+    >
       <a-row :gutter="16">
         <a-col :span="4">
           <a-input
@@ -71,7 +69,7 @@
             placeholder="执行用户"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             :options="executedByOptions"
             @search="handleExecutedBySearch"
             @change="handleSearch"
@@ -79,8 +77,7 @@
         </a-col>
       </a-row>
       
-      <!-- 第二行：时间范围搜索 -->
-      <a-row :gutter="16" style="margin-top: 16px;">
+      <a-row :gutter="16" class="filter-row">
         <a-col :span="6">
           <a-date-picker
             v-model="searchForm.start_date"
@@ -127,16 +124,17 @@
           </div>
         </a-col>
       </a-row>
-    </a-card>
+    </DataToolbar>
 
-    <!-- 表格区域 -->
-    <a-card>
+    <DetailPanel
+      title="执行明细"
+      :description="`共 ${pagination.total} 条记录，当前页 ${tableData.length} 条`"
+    >
       <a-table
         :columns="columns"
         :data="tableData"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1300 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
         row-key="id"
@@ -165,13 +163,7 @@
 
         <template #status="{ record }">
           <a-space>
-            <a-tag :color="getStatusColor(record.status)">
-              <template #icon>
-                <component :is="getStatusIcon(record.status)" />
-              </template>
-              {{ getStatusText(record.status) }}
-            </a-tag>
-            <!-- 重试次数徽章 -->
+            <StatusBadge :status="record.status" :text="getStatusText(record.status)" />
             <a-tag v-if="record.total_retry_count > 0" color="orange" size="small">
               <template #icon>
                 <icon-refresh />
@@ -194,14 +186,14 @@
         <template #created_at="{ record }">
           <div>
             <div>{{ formatDateTime(record.created_at) }}</div>
-            <div style="color: #86909c; font-size: 12px">
+            <div class="table-meta">
               {{ record.executed_by_name || '-' }}
             </div>
           </div>
         </template>
 
         <template #actions="{ record }">
-          <a-space>
+          <a-space class="table-row-actions">
             <a-button 
               type="text" 
               size="small" 
@@ -213,75 +205,70 @@
               </template>
               查看
             </a-button>
-            <template v-if="record.status === 'running'">
-              <a-button
-                type="text"
-                size="small"
-                status="danger"
-                v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
-                @click="handleCancel(record)"
-              >
+            <a-dropdown>
+              <a-button type="text" size="small" aria-label="更多操作">
                 <template #icon>
-                  <icon-close />
+                  <icon-more />
                 </template>
-                取消
               </a-button>
-            </template>
-            <template v-else>
-              <a-button
-                v-if="record.status === 'failed'"
-                type="text"
-                size="small"
-                :class="{ 'disabled-option': !canExecute(record.id) }"
-                @click="handleClickRetry(record)"
-              >
-                <template #icon>
-                  <icon-refresh />
-                </template>
-                重试
-              </a-button>
-              <a-button
-                v-else-if="record.status === 'pending'"
-                type="text"
-                size="small"
-                status="danger"
-                :class="{ 'disabled-option': !canExecute(record.id) }"
-                @click="handleClickCancel(record)"
-              >
-                <template #icon>
-                  <icon-close />
-                </template>
-                取消
-              </a-button>
-              <a-button
-                v-else-if="record.status === 'success' || record.status === 'cancelled'"
-                type="text"
-                size="small"
-                :class="{ 'disabled-option': !canExecute(record.id) }"
-                @click="handleClickRetry(record)"
-              >
-                <template #icon>
-                  <icon-refresh />
-                </template>
-                重做
-              </a-button>
-              <a-button
-                v-if="record.has_retries"
-                type="text"
-                size="small"
-                :class="{ 'disabled-option': !canView(record.id) }"
-                @click="handleClickShowRetryHistory(record)"
-              >
-                <template #icon>
-                  <icon-history />
-                </template>
-                重试历史 ({{ record.total_retry_count }})
-              </a-button>
-            </template>
+              <template #content>
+                <a-doption
+                  v-if="record.status === 'running'"
+                  class="text-red-500"
+                  v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
+                  @click="handleCancel(record)"
+                >
+                  <template #icon>
+                    <icon-close />
+                  </template>
+                  取消
+                </a-doption>
+                <a-doption
+                  v-else-if="record.status === 'failed'"
+                  :class="{ 'disabled-option': !canExecute(record.id) }"
+                  @click="handleClickRetry(record)"
+                >
+                  <template #icon>
+                    <icon-refresh />
+                  </template>
+                  重试
+                </a-doption>
+                <a-doption
+                  v-else-if="record.status === 'pending'"
+                  :class="['text-red-500', { 'disabled-option': !canExecute(record.id) }]"
+                  @click="handleClickCancel(record)"
+                >
+                  <template #icon>
+                    <icon-close />
+                  </template>
+                  取消
+                </a-doption>
+                <a-doption
+                  v-else-if="record.status === 'success' || record.status === 'cancelled'"
+                  :class="{ 'disabled-option': !canExecute(record.id) }"
+                  @click="handleClickRetry(record)"
+                >
+                  <template #icon>
+                    <icon-refresh />
+                  </template>
+                  重做
+                </a-doption>
+                <a-doption
+                  v-if="record.has_retries"
+                  :class="{ 'disabled-option': !canView(record.id) }"
+                  @click="handleClickShowRetryHistory(record)"
+                >
+                  <template #icon>
+                    <icon-history />
+                  </template>
+                  重试历史
+                </a-doption>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
 
     <!-- 重试历史弹窗 -->
     <a-modal
@@ -349,7 +336,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
@@ -363,6 +350,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import { usePermissionsStore } from '@/stores/permissions'
+import { DataToolbar, DetailPanel, PageHeader, StatusBadge, countActiveFilters } from '@/components/app'
 
 type ExecutionRecordRow = {
   id: number
@@ -436,6 +424,8 @@ const searchForm = reactive<SearchForm>({
   start_date: null,
   end_date: null
 })
+
+const executionActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
 
 // 分页配置
 const pagination = reactive({
@@ -516,8 +506,7 @@ const columns = [
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 200,
-    fixed: 'right'
+    width: 124
   }
 ]
 
@@ -871,35 +860,13 @@ onMounted(() => {
   padding: 0;
 }
 
-.page-header {
-  background: white;
-  border-radius: 6px;
-  margin-bottom: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+.filter-row {
+  margin-top: 16px;
 }
 
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text-1);
-}
-
-.header-desc {
-  margin: 0;
-  color: var(--color-text-3);
-  font-size: 14px;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
+.table-meta {
+  color: var(--app-meta);
+  font-size: 12px;
 }
 
 .time-actions {

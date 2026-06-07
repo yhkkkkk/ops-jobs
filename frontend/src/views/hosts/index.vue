@@ -1,61 +1,73 @@
 <template>
   <div 
-    class="hosts-page"
+    class="app-page hosts-page"
     v-page-permissions="{ 
       resourceType: 'host', 
       permissions: ['view', 'add', 'change', 'delete', 'execute'],
       resourceIds: hosts.map(h => h.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>主机管理</h2>
-          <p class="header-desc">管理主机资源和分组信息</p>
-        </div>
-        <div class="header-right">
-          <a-space>
-            <a-button @click="refreshAll">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              刷新
-            </a-button>
-            <a-button
-              v-permission="{ resourceType: 'host', permission: 'add' }"
-              v-if="!isReadOnly"
-              @click="openImportModal"
-            >
-              <template #icon>
-                <icon-upload />
-              </template>
-              导入主机
-            </a-button>
-            <a-button 
-              v-permission="{ resourceType: 'host', permission: 'add' }"
-              v-if="!isReadOnly"
-              @click="handleCreateGroup"
-            >
-              <template #icon>
-                <icon-folder-add />
-              </template>
-              新增分组
-            </a-button>
-            <a-button 
-              v-permission="{ resourceType: 'host', permission: 'add' }"
-              v-if="!isReadOnly"
-              type="primary" 
-              @click="handleCreate"
-            >
-              <template #icon>
-                <icon-plus />
-              </template>
-              新增主机
-            </a-button>
-          </a-space>
-        </div>
-      </div>
+    <PageHeader
+      eyebrow="资源目录"
+      title="主机管理"
+      description="统一管理执行目标、主机分组、账号配置和连通性状态。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button @click="refreshAll">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+          <a-button
+            v-permission="{ resourceType: 'host', permission: 'add' }"
+            v-if="!isReadOnly"
+            @click="openImportModal"
+          >
+            <template #icon>
+              <icon-upload />
+            </template>
+            导入主机
+          </a-button>
+          <a-button
+            v-permission="{ resourceType: 'host', permission: 'add' }"
+            v-if="!isReadOnly"
+            @click="handleCreateGroup"
+          >
+            <template #icon>
+              <icon-folder-add />
+            </template>
+            新增分组
+          </a-button>
+          <a-button
+            v-permission="{ resourceType: 'host', permission: 'add' }"
+            v-if="!isReadOnly"
+            type="primary"
+            @click="handleCreate"
+          >
+            <template #icon>
+              <icon-plus />
+            </template>
+            新增主机
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
+
+    <div class="app-metric-grid hosts-summary-grid">
+      <MetricCard label="主机总量" :value="totalHostCount" note="按当前权限可见资源统计">
+        <template #icon><icon-desktop /></template>
+      </MetricCard>
+      <MetricCard label="当前页在线" :value="hostSummary.online" note="可直接执行作业的主机" variant="success">
+        <template #icon><icon-wifi /></template>
+      </MetricCard>
+      <MetricCard label="当前页离线" :value="hostSummary.offline" note="需检查 Agent 或网络状态" variant="danger">
+        <template #icon><icon-exclamation-circle /></template>
+      </MetricCard>
+      <MetricCard label="已选择" :value="selectedRowKeys.length" note="用于批量移动、测试和编辑" variant="muted">
+        <template #icon><icon-check-square /></template>
+      </MetricCard>
     </div>
 
     <div class="hosts-content">
@@ -118,8 +130,11 @@
 
       <!-- 右侧主机列表 -->
       <div class="hosts-main">
-        <!-- 搜索筛选 -->
-        <a-card class="mb-4">
+        <DataToolbar
+          title="筛选主机"
+          description="按分组、IP、系统、状态、标签和资产属性定位执行目标。"
+          :active-count="hostActiveFilterCount"
+        >
           <!-- 基础搜索栏 -->
           <div class="search-container">
             <div class="search-form">
@@ -132,7 +147,7 @@
                       placeholder="请输入主机名称"
                       allow-clear
                       @press-enter="handleSearch"
-                      style="width: 200px"
+                      class="filter-control"
                     />
                   </a-form-item>
                   <a-form-item label="IP地址">
@@ -144,7 +159,7 @@
                       @paste="handleIpPaste"
                       @input="handleIpInput"
                       :auto-size="{ minRows: 1, maxRows: 6 }"
-                      style="width: 360px"
+                      class="filter-control filter-control--wide"
                     />
                   </a-form-item>
                 </div>
@@ -157,7 +172,7 @@
                       allow-clear
                       @change="handleSearch"
                       @clear="handleSearch"
-                      style="width: 150px"
+                      class="filter-control"
                     >
                       <a-option value="linux">Linux</a-option>
                       <a-option value="windows">Windows</a-option>
@@ -170,7 +185,7 @@
                       allow-clear
                       @change="handleSearch"
                       @clear="handleSearch"
-                      style="width: 120px"
+                      class="filter-control filter-control--compact"
                     >
                       <a-option value="online">在线</a-option>
                       <a-option value="offline">离线</a-option>
@@ -185,7 +200,7 @@
                     allow-clear
                     allow-search
                     :options="tagOptions"
-                    style="width: 240px"
+                    class="filter-control"
                   />
                   </a-form-item>
                 </div>
@@ -228,7 +243,7 @@
                   allow-clear
                   @change="handleSearch"
                   @clear="handleSearch"
-                  style="width: 140px"
+                  class="filter-control"
                 >
                   <a-option value="aliyun">阿里云</a-option>
                   <a-option value="tencent">腾讯云</a-option>
@@ -251,7 +266,7 @@
                   @paste="handleInternalIpPaste"
                   @input="handleInternalIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 300px"
+                  class="filter-control filter-control--wide"
                 />
               </a-form-item>
               <a-form-item label="外网IP">
@@ -263,7 +278,7 @@
                   @paste="handlePublicIpPaste"
                   @input="handlePublicIpInput"
                   :auto-size="{ minRows: 1, maxRows: 4 }"
-                  style="width: 300px"
+                  class="filter-control filter-control--wide"
                 />
               </a-form-item>
               <a-form-item label="CPU架构">
@@ -274,7 +289,7 @@
                   allow-search
                   @change="handleSearch"
                   @clear="handleSearch"
-                  style="width: 150px"
+                  class="filter-control"
                 >
                   <a-option value="x86_64">x86_64</a-option>
                   <a-option value="arm64">arm64</a-option>
@@ -290,15 +305,15 @@
                   placeholder="最小值"
                   :min="0"
                   @change="handleSearch"
-                  style="width: 110px"
+                  class="filter-control filter-control--number"
                 />
-                <span style="margin: 0 6px;">~</span>
+                <span class="range-separator">~</span>
                 <a-input-number
                   v-model="searchForm.cpu_cores_max"
                   placeholder="最大值"
                   :min="0"
                   @change="handleSearch"
-                  style="width: 110px"
+                  class="filter-control filter-control--number"
                 />
               </a-form-item>
               <a-form-item label="负责人">
@@ -307,7 +322,7 @@
                   placeholder="请输入负责人"
                   allow-clear
                   @press-enter="handleSearch"
-                  style="width: 160px"
+                  class="filter-control"
                 />
               </a-form-item>
               <a-form-item label="所属部门">
@@ -316,7 +331,7 @@
                   placeholder="请输入所属部门"
                   allow-clear
                   @press-enter="handleSearch"
-                  style="width: 160px"
+                  class="filter-control"
                 />
               </a-form-item>
               <a-form-item label="地域">
@@ -325,7 +340,7 @@
                   placeholder="请输入地域"
                   allow-clear
                   @press-enter="handleSearch"
-                  style="width: 140px"
+                  class="filter-control"
                 />
               </a-form-item>
               <a-form-item label="可用区">
@@ -334,7 +349,7 @@
                   placeholder="请输入可用区"
                   allow-clear
                   @press-enter="handleSearch"
-                  style="width: 140px"
+                  class="filter-control"
                 />
               </a-form-item>
             </a-form>
@@ -443,9 +458,12 @@
               </a-space>
             </div>
           </div>
-        </a-card>
+        </DataToolbar>
 
-        <a-card>
+        <DetailPanel
+          title="主机列表"
+          :description="`共 ${pagination.total} 台主机，当前页 ${hosts.length} 台`"
+        >
           <!-- 批量操作区域 -->
           <div class="batch-actions">
             <a-alert
@@ -591,13 +609,13 @@
           <div class="ip-address-cell">
             <div v-if="record.internal_ip" class="ip-display">
               <span class="ip-label">内网:</span>
-              <a-typography-text :copyable="{ text: record.internal_ip }" style="font-size: 12px;">
+              <a-typography-text copyable style="font-size: 12px;">
                 {{ record.internal_ip }}
               </a-typography-text>
             </div>
             <div v-if="record.public_ip" class="ip-display">
               <span class="ip-label">外网:</span>
-              <a-typography-text :copyable="{ text: record.public_ip }" style="font-size: 12px;">
+              <a-typography-text copyable style="font-size: 12px;">
                 {{ record.public_ip }}
               </a-typography-text>
             </div>
@@ -627,23 +645,7 @@
         </template>
 
         <template #status="{ record }">
-          <a-tag
-            :color="
-              record.status === 'online'
-                ? 'green'
-                : record.status === 'offline'
-                  ? 'red'
-                  : 'orange'
-            "
-          >
-            {{
-              record.status === 'online'
-                ? '在线'
-                : record.status === 'offline'
-                  ? '离线'
-                  : '未知'
-            }}
-          </a-tag>
+          <StatusBadge :status="record.status" :text="getHostStatusText(record.status)" />
         </template>
 
         <template #tags="{ record }">
@@ -740,7 +742,7 @@
           </a-space>
         </template>
       </a-table>
-        </a-card>
+        </DetailPanel>
       </div>
     </div>
 
@@ -1000,6 +1002,7 @@ import { useFilterQuerySync, parseStringArrayQuery, parseNumberQuery } from '@/c
 import HostForm from './components/HostForm.vue'
 import HostGroupTree from './components/HostGroupTree.vue'
 import HostGroupForm from './components/HostGroupForm.vue'
+import { DataToolbar, DetailPanel, MetricCard, PageHeader, StatusBadge, countActiveFilters } from '@/components/app'
 
 const router = useRouter()
 const route = useRoute()
@@ -1116,6 +1119,26 @@ const searchForm = reactive({
   zone: '',
   group_id: undefined as number | undefined,
 })
+
+const hostActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
+
+const hostSummary = computed(() => {
+  return hosts.value.reduce(
+    (summary, host) => {
+      if (host.status === 'online') summary.online += 1
+      else if (host.status === 'offline') summary.offline += 1
+      else summary.unknown += 1
+      return summary
+    },
+    { online: 0, offline: 0, unknown: 0 }
+  )
+})
+
+const getHostStatusText = (status?: string | null) => {
+  if (status === 'online') return '在线'
+  if (status === 'offline') return '离线'
+  return '未知'
+}
 
 watch(
   () => searchForm.group_id,
@@ -1300,7 +1323,6 @@ const columns = [
     title: '主机名',
     dataIndex: 'name',
     key: 'name',
-    width: 150,
     ellipsis: true,
     tooltip: true,
   },
@@ -1309,13 +1331,13 @@ const columns = [
     dataIndex: 'ip_address',
     key: 'ip_address',
     slotName: 'ip_address',
-    width: 150,
+    ellipsis: true,
   },
   {
     title: '端口',
     dataIndex: 'port',
     key: 'port',
-    width: 80,
+    width: 72,
     align: 'center',
   },
   {
@@ -1323,7 +1345,7 @@ const columns = [
     dataIndex: 'os_type',
     key: 'os_type',
     slotName: 'os_type',
-    width: 120,
+    width: 96,
     align: 'center',
   },
   {
@@ -1331,7 +1353,6 @@ const columns = [
     dataIndex: 'account_info',
     key: 'account',
     slotName: 'account',
-    width: 120,
     ellipsis: true,
     tooltip: true,
   },
@@ -1340,7 +1361,7 @@ const columns = [
     dataIndex: 'status',
     key: 'status',
     slotName: 'status',
-    width: 100,
+    width: 92,
     align: 'center',
   },
   {
@@ -1348,7 +1369,6 @@ const columns = [
     dataIndex: 'tags',
     key: 'tags',
     slotName: 'tags',
-    width: 180,
     ellipsis: true,
     tooltip: true,
   },
@@ -1357,7 +1377,6 @@ const columns = [
     dataIndex: 'groups_info',
     key: 'groups_info',
     slotName: 'groups',
-    width: 150,
     ellipsis: true,
     tooltip: true,
   },
@@ -1366,15 +1385,14 @@ const columns = [
     dataIndex: 'cloud_provider_display',
     key: 'cloud_provider_display',
     slotName: 'cloud_provider',
-    width: 100,
+    width: 96,
     align: 'center',
   },
   {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 300,
-    fixed: 'right',
+    width: 190,
     align: 'center',
   },
 ]
@@ -2264,51 +2282,27 @@ watch(
   padding: 0;
 }
 
-.page-header {
-  background: white;
-  border-radius: 6px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.header-desc {
-  margin: 0;
-  font-size: 14px;
-  color: #86909c;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
+.hosts-summary-grid {
+  margin-top: -4px;
 }
 
 .hosts-content {
   display: flex;
   gap: 16px;
-  height: calc(100vh - 200px);
+  min-height: min(820px, calc(100vh - 260px));
+  min-width: 0;
 }
 
 .groups-panel {
   width: 280px;
   flex-shrink: 0;
+  max-width: 38vw;
 }
 
 .hosts-main {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .group-list {
@@ -2561,8 +2555,9 @@ watch(
 /* 拖拽分隔条样式 */
 .hosts-content {
   display: flex;
-  height: calc(100vh - 120px);
+  min-height: min(820px, calc(100vh - 260px));
   gap: 0;
+  min-width: 0;
 }
 
 .groups-panel {
@@ -2640,6 +2635,7 @@ watch(
 .hosts-main {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* OS类型标签样式 */
@@ -2661,16 +2657,40 @@ watch(
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  min-width: 0;
 }
 
 .search-form {
   flex: 1;
+  min-width: 0;
 }
 
 .search-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+}
+
+.filter-control {
+  width: clamp(132px, 18vw, 220px);
+  max-width: 100%;
+}
+
+.filter-control--compact {
+  width: clamp(112px, 12vw, 150px);
+}
+
+.filter-control--wide {
+  width: clamp(200px, 28vw, 320px);
+}
+
+.filter-control--number {
+  width: clamp(96px, 10vw, 128px);
+}
+
+.range-separator {
+  margin: 0 6px;
+  color: var(--app-muted);
 }
 
 /* 多IP搜索框样式 */
@@ -2696,7 +2716,8 @@ watch(
 
 /* 确保表单项布局稳定 */
 .search-form .arco-form-item {
-  flex-shrink: 0;
+  flex: 1 1 150px;
+  min-width: 0;
 }
 
 /* 搜索行布局 */
@@ -2705,6 +2726,8 @@ watch(
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .search-row:last-child {
@@ -2722,6 +2745,37 @@ watch(
   padding: 16px;
   border-radius: 6px;
   margin-top: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.advanced-filter :deep(.arco-form) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.advanced-filter :deep(.arco-form-item) {
+  flex: 1 1 150px;
+  min-width: 0;
+  margin-right: 0;
+}
+
+.hosts-main :deep(.arco-table),
+.hosts-main :deep(.arco-table-container),
+.hosts-main :deep(.arco-table-content) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hosts-main :deep(.arco-table-cell) {
+  min-width: 0;
+}
+
+.hosts-main :deep(.arco-table-td-content) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .advanced-filter :deep(.arco-divider) {

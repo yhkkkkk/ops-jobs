@@ -1,73 +1,73 @@
 <template>
   <div
-    class="execution-plans-page"
+    class="app-page execution-plans-page"
     v-page-permissions="{
       resourceType: 'executionplan',
       permissions: ['view', 'add', 'change', 'delete', 'execute'],
       resourceIds: plans.map(p => p.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>执行方案管理</h2>
-          <p class="header-desc">基于作业模板创建和管理具体的执行方案</p>
-        </div>
-        <div class="header-right">
-          <a-space>
-            <a-button @click="handleRefresh">
+    <PageHeader
+      eyebrow="执行编排"
+      title="执行方案管理"
+      description="基于作业模板创建和维护具体执行方案，跟踪步骤、引用和同步状态。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button @click="handleRefresh">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+          <a-dropdown @select="handleCreateAction">
+            <a-button
+              type="primary"
+              v-permission="{ resourceType: 'executionplan', permission: 'add' }"
+            >
               <template #icon>
-                <icon-refresh />
+                <icon-plus />
               </template>
-              刷新
+              创建方案
+              <template #suffix>
+                <icon-down />
+              </template>
             </a-button>
-            <a-dropdown @select="handleCreateAction">
-              <a-button
-                type="primary"
-                v-permission="{ resourceType: 'executionplan', permission: 'add' }"
-              >
+            <template #content>
+              <a-doption value="select-template">
+                <template #icon>
+                  <icon-file />
+                </template>
+                基于作业模板创建
+              </a-doption>
+              <a-doption value="blank">
                 <template #icon>
                   <icon-plus />
                 </template>
-                创建方案
-                <template #suffix>
-                  <icon-down />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption value="select-template">
-                  <template #icon>
-                    <icon-file />
-                  </template>
-                  基于作业模板创建
-                </a-doption>
-                <a-doption value="blank">
-                  <template #icon>
-                    <icon-plus />
-                  </template>
-                  空白方案
-                </a-doption>
-              </template>
-            </a-dropdown>
-            <a-button
-              type="outline"
-              :disabled="selectedRowKeys.length === 0"
-              @click="handleBatchSync"
-              v-permission="{ resourceType: 'executionplan', permission: 'change' }"
-            >
-              <template #icon>
-                <icon-sync />
-              </template>
-              批量同步
-            </a-button>
-          </a-space>
-        </div>
-      </div>
-    </div>
+                空白方案
+              </a-doption>
+            </template>
+          </a-dropdown>
+          <a-button
+            type="outline"
+            :disabled="selectedRowKeys.length === 0"
+            @click="handleBatchSync"
+            v-permission="{ resourceType: 'executionplan', permission: 'change' }"
+          >
+            <template #icon>
+              <icon-sync />
+            </template>
+            批量同步
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
 
-    <!-- 搜索和筛选 -->
-    <a-card class="mb-4">
+    <DataToolbar
+      title="筛选执行方案"
+      description="按方案名称、所属模板、维护人和收藏状态定位执行编排。"
+      :active-count="executionPlanActiveFilterCount"
+    >
       <a-row :gutter="16">
         <a-col :span="4">
           <a-input
@@ -104,7 +104,7 @@
             placeholder="创建者"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
@@ -125,7 +125,7 @@
             placeholder="更新者"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             @search="handleUpdaterSearch"
             @change="handleSearch"
             @clear="handleSearch"
@@ -176,16 +176,17 @@
         @clear="handleClearFilter"
         @clear-all="handleReset"
       />
-    </a-card>
+    </DataToolbar>
 
-    <!-- 执行方案列表 -->
-    <a-card>
+    <DetailPanel
+      title="方案列表"
+      :description="`共 ${pagination.total} 个方案，当前页 ${plans.length} 个`"
+    >
       <a-table
         :columns="columns"
         :data="plans"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1300 }"
         :row-selection="rowSelection"
         @selection-change="handleSelectionChange"
         @page-change="handlePageChange"
@@ -250,7 +251,7 @@
         </template>
 
         <template #actions="{ record }">
-          <a-space>
+          <a-space class="table-row-actions">
             <a-button
               type="text"
               size="small"
@@ -262,24 +263,22 @@
               </template>
               查看
             </a-button>
-            <a-button
-              type="text"
-              size="small"
-              @click="handleEdit(record)"
-              v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: record.id }"
-            >
-              <template #icon>
-                <icon-edit />
-              </template>
-              编辑
-            </a-button>
             <a-dropdown>
-              <a-button type="text" size="small">
+              <a-button type="text" size="small" aria-label="更多操作">
                 <template #icon>
                   <icon-more />
                 </template>
               </a-button>
               <template #content>
+                <a-doption
+                  :class="{ 'disabled-option': !canEditPlan(record.id) }"
+                  @click="handleClickEdit(record)"
+                >
+                  <template #icon>
+                    <icon-edit />
+                  </template>
+                  编辑
+                </a-doption>
                 <a-doption
                   :class="{ 'disabled-option': !canExecutePlan(record.id) }"
                   @click="handleClickExecute(record)"
@@ -313,7 +312,7 @@
           </a-space>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
     <BatchSyncPreviewModal
       v-model="batchSyncModalVisible"
       :plan-ids="batchSyncPlanIds"
@@ -388,6 +387,7 @@ import { defineAsyncComponent } from 'vue'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
+import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
 // @ts-ignore - some editors/tsserver may not immediately include newly added .vue files in project file list
 const BatchSyncPreviewModal = defineAsyncComponent(() => import('./components/BatchSyncPreviewModal.vue'))
 
@@ -520,6 +520,8 @@ const activeFilterItems = computed(() => [
   { key: 'my_plans_only', label: '我的方案', display: searchForm.my_plans_only ? '仅我的' : '' }
 ])
 
+const executionPlanActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
+
 const handleClearFilter = (key: string) => {
   const defaults = defaultSearchForm()
   if (key in defaults) {
@@ -567,8 +569,8 @@ const columns = [
   {
     title: '操作',
     slotName: 'actions',
-    width: 260,
-    fixed: 'right'
+    width: 124,
+    align: 'center'
   }
 ]
 
@@ -823,6 +825,22 @@ const handleView = (plan: ExecutionPlan) => {
 // 编辑方案
 const handleEdit = (plan: ExecutionPlan) => {
   router.push(`/execution-plans/${plan.id}/edit`)
+}
+
+const canEditPlan = (planId: number): boolean => {
+  if (permissionsStore.isSuperUser) return true
+  return (
+    permissionsStore.hasPermission('executionplan', 'change', planId) ||
+    permissionsStore.hasPermission('executionplan', 'change')
+  )
+}
+
+const handleClickEdit = (plan: ExecutionPlan) => {
+  if (!canEditPlan(plan.id)) {
+    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    return
+  }
+  handleEdit(plan)
 }
 
 // 执行方案

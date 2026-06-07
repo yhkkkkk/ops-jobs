@@ -171,6 +171,9 @@ REDIS_DB_REALTIME = 3  # 用于实时日志 (Redis Stream)
 # 控制面 URL（用于生成 Agent-Server 配置）
 CONTROL_PLANE_URL = os.getenv('CONTROL_PLANE_URL', '')
 
+# 可选：测试/单实例场景下覆盖 agent_id
+AGENT_ID_OVERRIDE = os.getenv('AGENT_ID_OVERRIDE', '') or None
+
 # JWT 配置 (SECRET_KEY 将在具体环境中设置)
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=4),
@@ -307,7 +310,7 @@ if LDAP_ENABLED:
 
 
 # 双因子认证（2FA）配置
-TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'False').lower() == 'true'
+TWO_FACTOR_ENABLED = os.getenv('TWO_FACTOR_ENABLED', 'True').lower() == 'true'
 
 # 双因子认证（2FA/TOTP）配置
 if TWO_FACTOR_ENABLED:

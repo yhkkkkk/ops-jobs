@@ -5,11 +5,15 @@
       :width="200"
       :collapsed="collapsed"
       :collapsible="true"
+      :hide-trigger="true"
       @collapse="onCollapse"
     >
       <div class="logo">
-        <span v-if="!collapsed">运维台</span>
-        <span v-else>OP</span>
+        <div class="brand-mark">O</div>
+        <div v-if="!collapsed" class="brand-copy">
+          <span class="brand-title">运维台</span>
+          <span class="brand-subtitle">Ops Console</span>
+        </div>
       </div>
       
       <a-menu
@@ -99,7 +103,7 @@
         <div class="header-right">
           <a-space>
             <!-- 平台切换 -->
-            <a-button type="text" @click="switchToJobPlatform">
+            <a-button class="platform-switch" type="text" @click="switchToJobPlatform">
               <template #icon>
                 <icon-apps />
               </template>
@@ -319,27 +323,65 @@ onBeforeUnmount(() => {
 <style scoped>
 .layout {
   height: 100vh;
+  background: var(--app-bg);
 }
 
 .logo {
-  height: 64px;
+  height: 68px;
   display: flex;
   align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  color: var(--app-fg);
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.brand-mark {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
   justify-content: center;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1d2129;
-  background: #f6f7f9;
-  border-bottom: 1px solid #e5e6eb;
+  flex: 0 0 auto;
+  color: #fff;
+  background: var(--app-fg);
+  border-radius: 10px;
+  font-family: var(--app-mono);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand-title {
+  color: var(--app-fg);
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 650;
+}
+
+.brand-subtitle {
+  color: var(--app-meta);
+  font-family: var(--app-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: white;
-  border-bottom: 1px solid #e5e6eb;
+  min-height: 64px;
+  padding: 0 28px;
+  background: color-mix(in srgb, var(--app-surface) 94%, transparent);
+  border-bottom: 1px solid var(--app-border);
+  backdrop-filter: blur(10px);
 }
 
 .header-left {
@@ -351,26 +393,27 @@ onBeforeUnmount(() => {
 }
 
 .content {
-  padding: 24px;
-  background: #f5f5f5;
+  padding: 28px;
+  background: var(--app-bg);
   overflow-y: auto;
 }
 
 :deep(.arco-layout-sider) {
-  background: #f6f7f9;
-  border-right: 1px solid #e5e6eb;
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-border);
+  box-shadow: 1px 0 0 rgb(15 23 42 / 2%);
 }
 
 :deep(.arco-menu-vertical) {
   background: transparent;
   border-right: none;
+  padding: 10px 8px;
 }
 
-/* 顶级菜单项样式（仪表盘和分组菜单标题） */
 :deep(.arco-menu-vertical > .arco-menu-item),
 :deep(.arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title) {
-  margin: 2px 8px !important;
-  border-radius: 6px !important;
+  margin: 3px 0 !important;
+  border-radius: var(--app-radius-sm) !important;
   font-weight: 500 !important;
   height: 40px !important;
   line-height: 40px !important;
@@ -379,25 +422,22 @@ onBeforeUnmount(() => {
   max-height: 40px !important;
   display: flex !important;
   align-items: center !important;
-  color: #4e5969 !important;
+  color: var(--app-fg-secondary) !important;
   box-sizing: border-box !important;
 }
 
-/* 顶级菜单项悬停状态 */
 :deep(.arco-menu-vertical > .arco-menu-item:hover),
 :deep(.arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title:hover) {
-  background: #e8f4ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
 }
 
-/* 顶级菜单项选中状态（仪表盘） */
 :deep(.arco-menu-vertical > .arco-menu-item.arco-menu-selected) {
-  background: transparent !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
   font-weight: 600 !important;
 }
 
-/* 菜单图标样式 */
 :deep(.arco-menu-item .arco-icon) {
   margin-right: 8px;
   font-size: 16px;
@@ -418,55 +458,87 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 
-/* 子菜单容器样式 */
 :deep(.arco-menu-sub) {
   background: transparent;
 }
 
-/* 子菜单项样式（主机管理、服务器账号等） */
 :deep(.arco-menu-sub .arco-menu-item) {
-  margin: 1px 16px 1px 32px !important;
+  margin: 2px 0 2px 24px !important;
   font-weight: 400 !important;
   font-size: 13px !important;
   height: 36px !important;
   line-height: 36px !important;
   padding: 0 12px !important;
-  border-radius: 6px !important;
-  color: #6b7280 !important;
+  border-radius: var(--app-radius-sm) !important;
+  color: var(--app-muted) !important;
 }
 
-/* 子菜单项悬停状态 */
 :deep(.arco-menu-sub .arco-menu-item:hover) {
-  background: #e8f4ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
 }
 
-/* 子菜单项选中状态 */
 :deep(.arco-menu-sub .arco-menu-item.arco-menu-selected),
 :deep(.arco-sub-menu .arco-menu-item.arco-menu-selected),
 :deep(.arco-menu .arco-sub-menu .arco-menu-item.arco-menu-selected) {
-  background: #f0f8ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
   font-weight: 500 !important;
 }
 
-/* 更强的选择器确保样式生效 */
 :deep(.arco-menu-vertical .arco-sub-menu .arco-menu-item.arco-menu-selected) {
-  background: #f0f8ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
   font-weight: 500 !important;
 }
 
-/* 通用选中状态重置 */
 :deep(.arco-menu .arco-menu-item.arco-menu-selected) {
-  background: #f0f8ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
 }
 
-/* 确保子菜单选中状态 */
 :deep([class*="arco-menu"] [class*="arco-menu-item"][class*="selected"]) {
-  background: #f0f8ff !important;
-  color: #1890ff !important;
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent) !important;
+}
+
+:deep(.arco-layout-sider-collapsed .logo) {
+  justify-content: center;
+  padding: 0;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical) {
+  padding: 10px 8px;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-menu-item),
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title) {
+  justify-content: center;
+  padding: 0 !important;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-item .arco-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-icon) {
+  margin-right: 0 !important;
+}
+
+:deep(.arco-breadcrumb) {
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.platform-switch {
+  color: var(--app-fg-secondary);
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: 18px;
+  }
+
+  .header {
+    padding: 0 18px;
+  }
 }
 </style>
 

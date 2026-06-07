@@ -1,103 +1,96 @@
 <template>
-  <div 
-    class="account-management"
+  <div
+    class="app-page account-management"
     v-page-permissions="{ 
       resourceType: 'serveraccount', 
       permissions: ['view', 'add', 'change', 'delete'],
       resourceIds: accounts.map(a => a.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>服务器账号管理</h2>
-          <p class="header-desc">管理服务器登录账号，用于执行命令和文件传输</p>
-        </div>
-        <div class="header-right">
+    <PageHeader
+      eyebrow="账号凭据"
+      title="服务器账号管理"
+      description="管理服务器登录账号，用于执行命令、文件传输和主机连通性验证。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button @click="fetchAccounts">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+          <a-button
+            v-permission="{ resourceType: 'serveraccount', permission: 'add' }"
+            v-if="!isReadOnly"
+            type="primary"
+            @click="handleCreate"
+          >
+            <template #icon>
+              <icon-plus />
+            </template>
+            新建账号
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
+
+    <DataToolbar
+      title="筛选服务器账号"
+      description="按账号名称、用户名和认证方式快速定位执行凭据。"
+      :active-count="accountActiveFilterCount"
+    >
+      <div class="app-filter-grid">
+        <a-input
+          v-model="searchForm.search"
+          placeholder="账号名称/用户名"
+          allow-clear
+          @press-enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <a-select
+          v-model="searchForm.auth_type"
+          placeholder="认证方式"
+          allow-clear
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <a-option value="password">密码认证</a-option>
+          <a-option value="key">密钥认证</a-option>
+        </a-select>
+        <div class="app-filter-grid__actions">
           <a-space>
-            <a-button @click="fetchAccounts">
+            <a-button type="primary" @click="handleSearch">
+              <template #icon>
+                <icon-search />
+              </template>
+              搜索
+            </a-button>
+            <a-button @click="handleReset">
               <template #icon>
                 <icon-refresh />
               </template>
-              刷新
-            </a-button>
-            <a-button 
-              v-permission="{ resourceType: 'serveraccount', permission: 'add' }"
-              v-if="!isReadOnly"
-              type="primary" 
-              @click="handleCreate"
-            >
-              <template #icon>
-                <icon-plus />
-              </template>
-              新建账号
+              重置
             </a-button>
           </a-space>
         </div>
       </div>
-    </div>
-
-    <!-- 搜索栏（与执行记录间距一致） -->
-    <a-card class="mb-4">
-      <a-row :gutter="16">
-        <a-col :span="4">
-          <a-input
-            v-model="searchForm.search"
-            placeholder="账号名称/用户名"
-            allow-clear
-            @press-enter="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          />
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.auth_type"
-            placeholder="认证方式"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option value="password">密码认证</a-option>
-            <a-option value="key">密钥认证</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="17">
-          <div class="search-actions">
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
-                <template #icon>
-                  <icon-search />
-                </template>
-                搜索
-              </a-button>
-              <a-button @click="handleReset">
-                <template #icon>
-                  <icon-refresh />
-                </template>
-                重置
-              </a-button>
-            </a-space>
-          </div>
-        </a-col>
-      </a-row>
       <ActiveFiltersBar
         :items="activeFilterItems"
         @clear="handleClearFilter"
         @clear-all="handleReset"
       />
-    </a-card>
+    </DataToolbar>
 
-    <!-- 账号列表 -->
-    <a-card>
+    <DetailPanel
+      title="账号列表"
+      :description="`共 ${pagination.total} 个账号，当前页 ${accounts.length} 个`"
+    >
       <a-table
         :columns="columns"
         :data="accounts"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 800 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -151,7 +144,7 @@
           </a-space>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
 
     <!-- 账号表单弹窗 -->
     <AccountForm
@@ -171,6 +164,7 @@ import AccountForm from './components/AccountForm.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseNumberQuery } from '@/composables/useFilterQuerySync'
 import { usePermissionsStore } from '@/stores/permissions'
+import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
 
 // 响应式数据
 const loading = ref(false)
@@ -244,6 +238,8 @@ const activeFilterItems = computed(() => [
   { key: 'created_by', label: '创建者', display: resolveUserName(searchForm.created_by) },
   { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) }
 ])
+
+const accountActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
 
 const handleClearFilter = (key: string) => {
   const defaults = defaultSearchForm()
@@ -441,45 +437,6 @@ onMounted(() => {
 .account-management {
   padding: 0;
 }
-
-.page-header {
-  background: white;
-  border-radius: 6px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.header-desc {
-  margin: 0;
-  font-size: 14px;
-  color: #86909c;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
-}
-
-.search-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  width: 100%;
-}
-
 
 .account-info {
   display: flex;

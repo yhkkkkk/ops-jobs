@@ -1,141 +1,199 @@
 <template>
-  <div class="dashboard">
-    <!-- 统计卡片 -->
-    <a-row :gutter="16" class="stats-row">
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon">
-              <icon-file />
-            </div>
-            <div class="stat-info">
-              <div class="stat-title">作业模板</div>
-              <div class="stat-value clickable-value" @click="navigateToTemplates">{{ debugStats.templates }}</div>
-              <div class="stat-desc">
-                可用模板:{{ debugStats.templates }}
-              </div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon">
-              <icon-settings />
-            </div>
-            <div class="stat-info">
-              <div class="stat-title">执行方案</div>
-              <div class="stat-value clickable-value" @click="navigateToPlans">{{ debugStats.plans }}</div>
-              <div class="stat-desc">
-                可用方案:{{ debugStats.plans }}
-              </div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon">
-              <icon-schedule />
-            </div>
-            <div class="stat-info">
-              <div class="stat-title">定时任务</div>
-              <div class="stat-value clickable-value" @click="navigateToScheduledJobs">{{ debugStats.scheduledJobs }}</div>
-              <div class="stat-desc">
-                活跃:{{ debugStats.activeScheduledJobs }} | 总计:{{ debugStats.scheduledJobs }}
-              </div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon">
-              <icon-computer />
-            </div>
-            <div class="stat-info">
-              <div class="stat-title">主机数量</div>
-              <div class="stat-value clickable-value" @click="navigateToHosts">{{ debugStats.hosts }}</div>
-              <div class="stat-desc">
-                在线:{{ debugStats.onlineHosts }} | 离线:{{ debugStats.offlineHosts }}
-              </div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
+  <div class="dashboard app-page">
+    <div class="app-page-header">
+      <div>
+        <p class="app-page-eyebrow">JOB WORKSPACE</p>
+        <h1 class="app-page-title">作业平台总览</h1>
+        <p class="app-page-desc">
+          聚合作业模板、执行方案、定时任务和主机覆盖情况，帮助值班人员快速判断今天该先处理什么。
+        </p>
+      </div>
+      <a-space>
+        <a-button @click="refreshAllData" :loading="loadingStats || loadingExecutions || loadingFavorites">
+          刷新数据
+        </a-button>
+        <a-button type="primary" @click="() => router.push('/quick-execute')">
+          快速执行
+        </a-button>
+      </a-space>
+    </div>
 
-    <!-- 活动与收藏区域：我的收藏（左） + 最近执行（右） -->
-    <a-row :gutter="24" class="activity-row" style="margin-top:12px;">
-      <a-col :span="14">
-        <a-card class="favorites-card">
-          <template #title>
-            <span class="chart-title">我的收藏</span>
-          </template>
-          <div v-loading="loadingFavorites">
-            <div v-if="myFavorites.length === 0" class="text-gray-400">你还没有收藏任何项目</div>
-            <a-list v-else bordered>
-              <a-list-item v-for="item in myFavorites" :key="item.type + '-' + item.id">
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%">
-                  <a @click="() => router.push(item.url)" style="flex: 1">{{ item.name }}</a>
-                  <a-tag size="small" :color="getFavoriteTypeColor(item.type)">
-                    {{ item.typeDisplay }}
-                  </a-tag>
-                </div>
-              </a-list-item>
-            </a-list>
+    <div class="app-metric-grid">
+      <button
+        v-for="card in metricCards"
+        :key="card.key"
+        class="app-card app-metric-card metric-button"
+        type="button"
+        @click="card.onClick"
+      >
+        <div class="app-metric-top">
+          <div>
+            <p class="app-metric-label">{{ card.title }}</p>
+            <div class="app-metric-value">{{ card.value }}</div>
           </div>
-        </a-card>
-      </a-col>
+          <span class="app-metric-icon">
+            <component :is="card.icon" />
+          </span>
+        </div>
+        <p class="app-metric-note">{{ card.note }}</p>
+      </button>
+    </div>
 
-      <a-col :span="10">
-        <a-card class="activity-card">
-          <template #title>
-            <span class="chart-title">最近操作</span>
-          </template>
-          <div class="execution-list" v-loading="loadingExecutions">
+    <div class="dashboard-grid">
+      <a-card class="workflow-card" :bordered="false">
+        <div class="app-section-title">
+          <div>
+            <h3>作业链路</h3>
+            <p>从模板到执行记录的关键入口。</p>
+          </div>
+        </div>
+
+        <div class="workflow-list">
+          <button class="workflow-item" type="button" @click="navigateToScriptTemplates">
+            <span class="workflow-index">01</span>
+            <div>
+              <strong>脚本模板</strong>
+              <p>维护可复用脚本与版本。</p>
+            </div>
+          </button>
+          <button class="workflow-item" type="button" @click="navigateToTemplates">
+            <span class="workflow-index">02</span>
+            <div>
+              <strong>作业模板</strong>
+              <p>组合脚本、文件分发和变量。</p>
+            </div>
+          </button>
+          <button class="workflow-item" type="button" @click="navigateToPlans">
+            <span class="workflow-index">03</span>
+            <div>
+              <strong>执行方案</strong>
+              <p>绑定目标主机和执行策略。</p>
+            </div>
+          </button>
+          <button class="workflow-item" type="button" @click="() => router.push('/execution-records')">
+            <span class="workflow-index">04</span>
+            <div>
+              <strong>执行记录</strong>
+              <p>审计、重试和结果回溯。</p>
+            </div>
+          </button>
+        </div>
+      </a-card>
+
+      <a-card class="health-card" :bordered="false">
+        <div class="app-section-title">
+          <div>
+            <h3>资源健康</h3>
+            <p>基于当前主机与调度数据的轻量概览。</p>
+          </div>
+        </div>
+
+        <div class="health-panel">
+          <div class="health-number">{{ hostOnlineRate }}%</div>
+          <div>
+            <div class="health-title">主机在线率</div>
+            <div class="health-desc">在线 {{ debugStats.onlineHosts }} 台 / 总计 {{ debugStats.hosts }} 台</div>
+          </div>
+        </div>
+        <div class="health-bars">
+          <div class="health-bar-row">
+            <span>在线主机</span>
+            <div class="bar-track">
+              <div class="bar-fill success" :style="{ width: `${hostOnlineRate}%` }"></div>
+            </div>
+            <strong>{{ debugStats.onlineHosts }}</strong>
+          </div>
+          <div class="health-bar-row">
+            <span>离线主机</span>
+            <div class="bar-track">
+              <div class="bar-fill muted" :style="{ width: `${offlineHostRate}%` }"></div>
+            </div>
+            <strong>{{ debugStats.offlineHosts }}</strong>
+          </div>
+          <div class="health-bar-row">
+            <span>活跃调度</span>
+            <div class="bar-track">
+              <div class="bar-fill accent" :style="{ width: `${activeScheduleRate}%` }"></div>
+            </div>
+            <strong>{{ debugStats.activeScheduledJobs }}</strong>
+          </div>
+        </div>
+      </a-card>
+    </div>
+
+    <div class="activity-grid">
+      <a-card class="favorites-card" :bordered="false">
+        <div class="app-section-title">
+          <div>
+            <h3>我的收藏</h3>
+            <p>常用模板和方案入口。</p>
+          </div>
+        </div>
+        <a-spin :loading="loadingFavorites" class="dashboard-spin">
+          <div v-if="myFavorites.length === 0" class="app-empty">暂无收藏项目</div>
+          <div v-else class="favorite-list">
+            <button
+              v-for="item in myFavorites"
+              :key="item.type + '-' + item.id"
+              class="favorite-item"
+              type="button"
+              @click="() => router.push(item.url)"
+            >
+              <span>{{ item.name }}</span>
+              <a-tag size="small" :color="getFavoriteTypeColor(item.type)">
+                {{ item.typeDisplay }}
+              </a-tag>
+            </button>
+          </div>
+        </a-spin>
+      </a-card>
+
+      <a-card class="activity-card" :bordered="false">
+        <div class="app-section-title">
+          <div>
+            <h3>最近操作</h3>
+            <p>最近执行与系统活动。</p>
+          </div>
+          <a-button type="text" size="small" @click="() => router.push('/execution-records')">
+            查看全部
+          </a-button>
+        </div>
+        <a-spin :loading="loadingExecutions" class="dashboard-spin">
+        <div class="execution-list">
+          <div v-if="recentExecutions.length === 0" class="app-empty">暂无最近操作</div>
+          <template v-else>
             <div
               v-for="item in recentExecutions"
               :key="item.id"
               class="execution-item"
             >
-              <div class="execution-avatar">
-                <a-avatar :style="getStatusStyle(item.status)" size="small">
-                  <icon-check v-if="item.status === 'SUCCESS'" />
-                  <icon-close v-else-if="item.status === 'FAILURE'" />
-                  <icon-loading v-else-if="item.status === 'RUNNING'" />
-                  <icon-schedule v-else-if="item.status === 'PENDING'" />
-                  <icon-settings v-else />
-                </a-avatar>
+              <div class="execution-avatar" :class="getStatusClass(item.status)">
+                <icon-check v-if="item.status === 'SUCCESS'" />
+                <icon-close v-else-if="item.status === 'FAILURE' || item.status === 'ERROR'" />
+                <icon-loading v-else-if="item.status === 'RUNNING'" />
+                <icon-schedule v-else-if="item.status === 'PENDING'" />
+                <icon-settings v-else />
               </div>
               <div class="execution-content">
                 <div class="execution-header">
                   <span class="execution-name">{{ item.job_name }}</span>
-                  <a-tag :color="getStatusColor(item.status)" size="small">
+                  <span class="app-status-pill" :class="getStatusClass(item.status)">
                     {{ getStatusText(item.status) }}
-                  </a-tag>
+                  </span>
                 </div>
-                <div class="execution-time">
-                  {{ formatDateTime(item.start_time) }}
-                </div>
+                <div class="execution-time">{{ formatDateTime(item.start_time) || '-' }}</div>
               </div>
             </div>
-            <div style="text-align:right;margin-top:8px">
-              <a-button type="text" @click="() => router.push('/execution-records')">更多执行记录</a-button>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
-
+          </template>
+        </div>
+        </a-spin>
+      </a-card>
+    </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IconFile,
@@ -150,10 +208,8 @@ import { dashboardApi } from '@/api/dashboard'
 import { favoriteApi } from '@/api/ops'
 import { Message } from '@arco-design/web-vue'
 
-// 路由
 const router = useRouter()
 
-// 响应式数据
 const stats = reactive({
   templates: 0,
   plans: 0,
@@ -163,38 +219,78 @@ const stats = reactive({
   onlineHosts: 0
 })
 
-// 统计数据的计算属性
-const debugStats = computed(() => {
-  return {
-    templates: stats.templates,
-    plans: stats.plans,
-    scheduledJobs: stats.scheduledJobs,
-    activeScheduledJobs: stats.activeScheduledJobs,
-    hosts: stats.hosts,
-    onlineHosts: stats.onlineHosts,
-    offlineHosts: stats.hosts - stats.onlineHosts
-  }
+const debugStats = computed(() => ({
+  templates: stats.templates,
+  plans: stats.plans,
+  scheduledJobs: stats.scheduledJobs,
+  activeScheduledJobs: stats.activeScheduledJobs,
+  hosts: stats.hosts,
+  onlineHosts: stats.onlineHosts,
+  offlineHosts: Math.max(stats.hosts - stats.onlineHosts, 0)
+}))
+
+const hostOnlineRate = computed(() => {
+  if (!debugStats.value.hosts) return 0
+  return Math.round((debugStats.value.onlineHosts / debugStats.value.hosts) * 100)
 })
 
-const recentExecutions = ref([])
+const offlineHostRate = computed(() => Math.max(100 - hostOnlineRate.value, 0))
+
+const activeScheduleRate = computed(() => {
+  if (!debugStats.value.scheduledJobs) return 0
+  return Math.round((debugStats.value.activeScheduledJobs / debugStats.value.scheduledJobs) * 100)
+})
+
+const recentExecutions = ref<any[]>([])
 const loadingExecutions = ref(false)
 const loadingStats = ref(false)
-const executionPlans = ref([])
+const executionPlans = ref<any[]>([])
 const loadingPlans = ref(false)
-
-// 我的收藏列表（展示少量常用收藏）
-const myFavorites = ref([])
+const myFavorites = ref<any[]>([])
 const loadingFavorites = ref(false)
+
+const metricCards = computed(() => [
+  {
+    key: 'templates',
+    title: '作业模板',
+    value: debugStats.value.templates,
+    note: '沉淀为标准化作业入口',
+    icon: IconFile,
+    onClick: navigateToTemplates
+  },
+  {
+    key: 'plans',
+    title: '执行方案',
+    value: debugStats.value.plans,
+    note: '可直接发起或调度的方案',
+    icon: IconSettings,
+    onClick: navigateToPlans
+  },
+  {
+    key: 'scheduled',
+    title: '定时任务',
+    value: debugStats.value.scheduledJobs,
+    note: `活跃 ${debugStats.value.activeScheduledJobs} 个`,
+    icon: IconSchedule,
+    onClick: navigateToScheduledJobs
+  },
+  {
+    key: 'hosts',
+    title: '主机覆盖',
+    value: debugStats.value.hosts,
+    note: `在线 ${debugStats.value.onlineHosts} 台，离线 ${debugStats.value.offlineHosts} 台`,
+    icon: IconComputer,
+    onClick: navigateToHosts
+  }
+])
 
 const fetchFavorites = async () => {
   loadingFavorites.value = true
   try {
-    // 获取所有类型的收藏（限制少量）
-    const response = await favoriteApi.getFavorites({ page_size: 10 })
+    const response: any = await favoriteApi.getFavorites({ page_size: 10 })
     const favItems = response.data?.results || response.data || response.results || response || []
 
-    // 直接使用API返回的数据，包含名称和类型
-    myFavorites.value = favItems.slice(0, 10).map(item => ({
+    myFavorites.value = favItems.slice(0, 10).map((item: any) => ({
       id: item.object_id,
       name: item.object_name || `${item.favorite_type_display} #${item.object_id}`,
       type: item.favorite_type,
@@ -209,7 +305,6 @@ const fetchFavorites = async () => {
   }
 }
 
-// 根据收藏类型生成URL
 const getFavoriteUrl = (favoriteType: string, objectId: number): string => {
   switch (favoriteType) {
     case 'job_template':
@@ -223,44 +318,32 @@ const getFavoriteUrl = (favoriteType: string, objectId: number): string => {
   }
 }
 
-// 获取统计数据
 const fetchStats = async () => {
   loadingStats.value = true
   try {
-    const response = await dashboardApi.getOverview()
+    const response: any = await dashboardApi.getOverview()
     const content = response.data || response
 
-    // 直接赋值，确保响应式更新
-    const newTemplates = content.resources?.job_templates?.total || 0
-    const newPlans = content.resources?.execution_plans?.total || 0
-    const newScheduledJobs = content.scheduled_overview?.total || 0
-    const newActiveScheduledJobs = content.scheduled_overview?.active || 0
-    const newHosts = content.resources?.hosts?.total || 0
-    const newOnlineHosts = content.resources?.hosts?.online || 0
-
-    // 强制更新响应式数据
-    stats.templates = newTemplates
-    stats.plans = newPlans
-    stats.scheduledJobs = newScheduledJobs
-    stats.activeScheduledJobs = newActiveScheduledJobs
-    stats.hosts = newHosts
-    stats.onlineHosts = newOnlineHosts
+    stats.templates = content.resources?.job_templates?.total || 0
+    stats.plans = content.resources?.execution_plans?.total || 0
+    stats.scheduledJobs = content.scheduled_overview?.total || 0
+    stats.activeScheduledJobs = content.scheduled_overview?.active || 0
+    stats.hosts = content.resources?.hosts?.total || 0
+    stats.onlineHosts = content.resources?.hosts?.online || 0
   } catch (error) {
     console.error('获取统计数据失败:', error)
-    Message.error('获取统计数据失败: ' + error.message)
+    Message.error(`获取统计数据失败: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     loadingStats.value = false
   }
 }
 
-// 获取最近执行记录
 const fetchRecentExecutions = async () => {
   loadingExecutions.value = true
   try {
-    const response = await dashboardApi.getRecentActivity()
+    const response: any = await dashboardApi.getRecentActivity()
     const content = response.data || response
 
-    // content can be different shapes: array, { activities: [...] }, { results: [...] }
     let activities: any[] = []
     if (!content) {
       activities = []
@@ -273,14 +356,10 @@ const fetchRecentExecutions = async () => {
     } else if (Array.isArray(content.items)) {
       activities = content.items
     } else {
-      // fallback: try to find any array-valued prop
       const arr = Object.values(content).find(v => Array.isArray(v))
       activities = Array.isArray(arr) ? arr : []
     }
 
-    console.debug('dashboard: recent activities fetched', activities.length)
-
-    // 过滤出执行类型的活动，最多10条
     const executionActivities = activities.filter((activity: any) => activity && activity.type === 'execution').slice(0, 10)
 
     if (executionActivities.length > 0) {
@@ -291,7 +370,6 @@ const fetchRecentExecutions = async () => {
         start_time: activity.created_at || activity.timestamp || activity.time
       }))
     } else {
-      // 如果没有执行记录，显示最近的活动（最多10条）
       recentExecutions.value = activities.slice(0, 10).map((activity: any) => ({
         id: activity.id,
         job_name: activity.description || activity.action || '系统活动',
@@ -301,31 +379,26 @@ const fetchRecentExecutions = async () => {
     }
   } catch (error: any) {
     console.error('获取执行记录失败:', error)
-    const errMsg = error?.message || '获取执行记录失败'
-    Message.error(errMsg)
+    Message.error(error?.message || '获取执行记录失败')
     recentExecutions.value = []
   } finally {
     loadingExecutions.value = false
   }
 }
 
-// 获取执行方案列表
 const fetchExecutionPlans = async () => {
   loadingPlans.value = true
   try {
-    const response = await dashboardApi.getExecutionPlans()
-    const plans = response.data || response
-    executionPlans.value = plans || []
+    const response: any = await dashboardApi.getExecutionPlans()
+    executionPlans.value = response.data || response || []
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
-    Message.error('获取执行方案列表失败: ' + error.message)
+    Message.error(`获取执行方案列表失败: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     loadingPlans.value = false
   }
 }
 
-
-// 刷新所有数据
 const refreshAllData = async () => {
   await Promise.allSettled([
     fetchStats(),
@@ -335,7 +408,6 @@ const refreshAllData = async () => {
   ])
 }
 
-// 导航方法
 const navigateToTemplates = () => {
   router.push('/job-templates')
 }
@@ -356,7 +428,6 @@ const navigateToScriptTemplates = () => {
   router.push('/script-templates')
 }
 
-// Helpers for execution status display
 const getStatusColor = (status: string) => {
   const s = (status || '').toString().toUpperCase()
   if (s === 'SUCCESS') return 'green'
@@ -364,6 +435,14 @@ const getStatusColor = (status: string) => {
   if (s === 'RUNNING') return 'blue'
   if (s === 'PENDING') return 'orange'
   return 'gray'
+}
+
+const getStatusClass = (status: string) => {
+  const s = (status || '').toString().toUpperCase()
+  if (s === 'SUCCESS') return 'app-status-success'
+  if (s === 'FAILURE' || s === 'ERROR') return 'app-status-danger'
+  if (s === 'RUNNING' || s === 'PENDING') return 'app-status-warn'
+  return 'app-status-muted'
 }
 
 const getStatusText = (status: string) => {
@@ -374,42 +453,29 @@ const getStatusText = (status: string) => {
     case 'ERROR': return '失败'
     case 'RUNNING': return '进行中'
     case 'PENDING': return '等待'
+    case 'INFO': return '活动'
     default: return '未知'
-  }
-}
-
-const getStatusStyle = (status: string) => {
-  const color = getStatusColor(status)
-  return {
-    background: color,
-    color: '#fff',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center'
   }
 }
 
 const formatDateTime = (t: string | number | undefined) => {
   if (!t) return ''
   try {
-    const d = new Date(t)
-    return d.toLocaleString()
+    return new Date(t).toLocaleString()
   } catch {
     return String(t)
   }
 }
 
-// 获取收藏类型标签颜色
 const getFavoriteTypeColor = (type: string) => {
-  const colorMap = {
-    'job_template': 'blue',
-    'script_template': 'green',
-    'execution_plan': 'orange'
+  const colorMap: Record<string, string> = {
+    job_template: 'blue',
+    script_template: 'green',
+    execution_plan: 'orange'
   }
   return colorMap[type] || 'gray'
 }
 
-// 生命周期
 onMounted(async () => {
   try {
     await refreshAllData()
@@ -421,224 +487,265 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard {
-  padding: 20px;
+  padding: 0;
 }
 
-.stats-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  border-radius: 4px;
-  border: 1px solid #e8e8e8;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s ease;
-  overflow: hidden;
-  background: white;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  padding: 20px;
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  background: #f5f5f5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  margin-right: 16px;
-  color: #333;
-}
-
-.stat-info {
-  flex: 1;
+.metric-button {
+  width: 100%;
+  border: 1px solid var(--app-border);
   text-align: left;
 }
 
-.stat-title {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 8px;
-  font-weight: 500;
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 20px;
 }
 
-.stat-value {
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1;
-  margin-bottom: 8px;
-  color: #333;
+.workflow-card,
+.health-card,
+.favorites-card,
+.activity-card {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-sm);
 }
 
-.stat-value.clickable-value {
-  color: #1890ff;
+.workflow-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workflow-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  color: var(--app-fg);
+  background: var(--app-surface-soft);
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-sm);
+  text-align: left;
   cursor: pointer;
-  transition: all 0.3s ease;
-  border-radius: 4px;
-  padding: 2px 4px;
-  margin-bottom: 8px;
-  display: inline-block;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
-.stat-value.clickable-value:hover {
-  color: #1890ff;
-  background-color: transparent;
-  transform: none;
+.workflow-item:hover {
+  background: var(--app-accent-soft);
+  border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-border));
 }
 
-.stat-value.clickable-value:active {
-  color: #1890ff;
-  background-color: transparent;
-  transform: none;
-}
-
-.stat-desc {
+.workflow-index {
+  color: var(--app-accent);
+  font-family: var(--app-mono);
   font-size: 12px;
-  color: #999;
+  font-weight: 700;
+}
+
+.workflow-item strong {
+  display: block;
+  font-size: 14px;
   line-height: 1.4;
 }
 
-.stat-trend {
-  display: inline-flex;
+.workflow-item p {
+  margin: 4px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.health-panel {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  font-weight: 500;
+  gap: 16px;
+  padding: 16px;
+  background: var(--app-surface-soft);
+  border-radius: var(--app-radius-sm);
 }
 
-.stat-trend.up {
-  color: rgba(255, 255, 255, 0.9);
+.health-number {
+  color: var(--app-accent);
+  font-family: var(--app-mono);
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 750;
 }
 
-.stat-trend.down {
-  color: rgba(255, 255, 255, 0.7);
+.health-title {
+  color: var(--app-fg);
+  font-size: 14px;
+  font-weight: 650;
 }
 
-.quick-actions-row {
-  margin-bottom: 20px;
+.health-desc {
+  margin-top: 4px;
+  color: var(--app-muted);
+  font-size: 12px;
 }
 
-.quick-actions-card {
-  transition: all 0.3s ease;
+.health-bars {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
 }
 
-.quick-actions-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+.health-bar-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 12px;
+  color: var(--app-muted);
+  font-size: 12px;
 }
 
-.quick-actions {
-  padding: 20px;
-  text-align: center;
+.health-bar-row strong {
+  color: var(--app-fg);
+  font-family: var(--app-mono);
+  text-align: right;
 }
 
-.activity-row {
-  margin-bottom: 20px;
+.bar-track {
+  height: 8px;
+  overflow: hidden;
+  background: var(--app-surface-muted);
+  border-radius: 999px;
 }
 
-.activity-card {
-  height: 550px;
-  transition: all 0.3s ease;
+.bar-fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
 }
 
-.activity-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+.bar-fill.success {
+  background: var(--app-success);
+}
+
+.bar-fill.muted {
+  background: var(--app-meta);
+}
+
+.bar-fill.accent {
+  background: var(--app-accent);
+}
+
+.activity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+  gap: 20px;
+}
+
+.dashboard-spin {
+  display: block;
+  width: 100%;
+}
+
+.favorite-list {
+  display: grid;
+  gap: 8px;
+}
+
+.favorite-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  color: var(--app-fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--app-border);
+  text-align: left;
+  cursor: pointer;
+}
+
+.favorite-item:last-child {
+  border-bottom: 0;
+}
+
+.favorite-item span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .execution-list {
-  padding: 0;
+  display: grid;
 }
 
 .execution-item {
   display: flex;
   align-items: flex-start;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border-2);
   gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--app-border);
 }
 
 .execution-item:last-child {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
 .execution-avatar {
-  flex-shrink: 0;
-  margin-top: 2px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font-size: 14px;
 }
 
 .execution-content {
-  flex: 1;
   min-width: 0;
+  flex: 1;
 }
 
 .execution-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .execution-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-1);
-  flex: 1;
-  white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
+  color: var(--app-fg);
+  font-size: 14px;
+  font-weight: 550;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .execution-time {
+  margin-top: 4px;
+  color: var(--app-meta);
+  font-family: var(--app-mono);
   font-size: 12px;
-  color: var(--color-text-3);
-  line-height: 1.4;
 }
 
-/* 图表头部样式 */
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
+@media (max-width: 1180px) {
+  .dashboard-grid,
+  .activity-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.chart-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-  display: flex;
-  align-items: center;
-}
+@media (max-width: 720px) {
+  .workflow-list {
+    grid-template-columns: 1fr;
+  }
 
-.chart-title::before {
-  content: '';
-  width: 4px;
-  height: 18px;
-  background: linear-gradient(135deg, #1890ff, #36cfc9);
-  border-radius: 2px;
-  margin-right: 10px;
-}
-
-.chart-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chart-filters .arco-select,
-.chart-filters .arco-range-picker {
-  font-size: 12px;
+  .health-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

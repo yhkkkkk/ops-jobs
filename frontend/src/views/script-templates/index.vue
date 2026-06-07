@@ -1,63 +1,61 @@
 <template>
-  <div 
-    class="script-templates-page"
+  <div
+    class="app-page script-templates-page"
     v-page-permissions="{ 
       resourceType: 'scripttemplate', 
       permissions: ['view', 'add', 'change', 'delete'],
       resourceIds: templates.map(t => t.id)
     }"
   >
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>脚本模板</h2>
-          <p class="header-desc">创建和管理可重用的脚本模板</p>
-        </div>
-        <div class="header-right">
-          <a-space>
-            <a-button @click="fetchTemplates">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              刷新
-            </a-button>
-            <a-button 
-              v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
-              type="primary" 
-              @click="handleCreate"
-            >
-              <template #icon>
-                <icon-plus />
-              </template>
-              新建模板
-            </a-button>
-          </a-space>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      eyebrow="脚本资产"
+      title="脚本模板"
+      description="创建和管理可复用的脚本模板，维护分类、标签、引用关系和上线状态。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button @click="fetchTemplates">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+          <a-button
+            v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
+            type="primary"
+            @click="handleCreate"
+          >
+            <template #icon>
+              <icon-plus />
+            </template>
+            新建模板
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
 
-    <!-- 搜索筛选 -->
-    <a-card class="mb-4">
-      <a-row :gutter="16">
-        <a-col :span="4">
+    <DataToolbar
+      title="筛选脚本模板"
+      description="按名称、类型、分类、标签和维护人过滤模板资产。"
+      :active-count="scriptTemplateActiveFilterCount"
+    >
+      <div class="app-filter-grid template-filter-grid">
+        <div>
           <a-input
             v-model="searchForm.name"
             placeholder="模板名称"
             allow-clear
             @press-enter="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           />
-        </a-col>
-        <a-col :span="2">
+        </div>
+        <div>
           <a-select
             v-model="searchForm.script_type"
             placeholder="脚本类型"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           >
             <a-option value="shell">Shell</a-option>
             <a-option value="python">Python</a-option>
@@ -66,15 +64,14 @@
             <a-option value="javascript">JavaScript</a-option>
             <a-option value="go">Go</a-option>
           </a-select>
-        </a-col>
-        <a-col :span="2">
+        </div>
+        <div>
           <a-select
             v-model="searchForm.category"
             placeholder="分类"
             allow-clear
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           >
             <a-option value="deployment">部署</a-option>
             <a-option value="monitoring">监控</a-option>
@@ -83,8 +80,8 @@
             <a-option value="security">安全</a-option>
             <a-option value="other">其他</a-option>
           </a-select>
-        </a-col>
-        <a-col :span="4">
+        </div>
+        <div>
           <a-select
             v-model="searchForm.tags"
             placeholder="标签"
@@ -92,7 +89,6 @@
             multiple
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           >
             <a-option
               v-for="tag in availableTags"
@@ -102,18 +98,17 @@
               {{ tag }}
             </a-option>
           </a-select>
-        </a-col>
-        <a-col :span="3">
+        </div>
+        <div>
           <a-select
             v-model="searchForm.created_by"
             placeholder="创建者"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             @search="handleCreatorSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           >
             <a-option
               v-for="user in filteredCreators"
@@ -123,18 +118,17 @@
               {{ user.name }}
             </a-option>
           </a-select>
-        </a-col>
-        <a-col :span="3">
+        </div>
+        <div>
           <a-select
             v-model="searchForm.updated_by"
             placeholder="更新者"
             allow-clear
             allow-search
-            filter-option="false"
+            :filter-option="false"
             @search="handleUpdaterSearch"
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
           >
             <a-option
               v-for="user in filteredUpdaters"
@@ -144,14 +138,14 @@
               {{ user.name }}
             </a-option>
           </a-select>
-        </a-col>
-        <a-col :span="2">
+        </div>
+        <div>
           <div class="filter-switch">
             <span class="filter-label">收藏</span>
             <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
           </div>
-        </a-col>
-        <a-col :span="4">
+        </div>
+        <div class="app-filter-grid__actions">
           <div class="search-actions">
             <a-space>
               <a-button type="primary" @click="handleSearch">
@@ -168,23 +162,26 @@
               </a-button>
             </a-space>
           </div>
-        </a-col>
-      </a-row>
+        </div>
+      </div>
       <ActiveFiltersBar
         :items="activeFilterItems"
         @clear="handleClearFilter"
         @clear-all="handleReset"
       />
-    </a-card>
+    </DataToolbar>
 
-    <!-- 模板列表 -->
-    <a-card>
+    <DetailPanel
+      class="template-table-panel"
+      title="模板列表"
+      :description="`共 ${pagination.total} 个模板，当前页 ${templates.length} 个`"
+    >
       <a-table
+        class="template-data-table"
         :columns="columns"
         :data="templates"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1700 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
       >
@@ -199,7 +196,10 @@
               <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
               <icon-star v-else class="favorite-icon" />
             </a-button>
-            <a-link @click="handleDetail(record)" class="template-link">{{ record.name }}</a-link>
+            <div class="template-name-main">
+              <a-link @click="handleDetail(record)" class="template-link">{{ record.name }}</a-link>
+              <div class="template-description">{{ record.description || '暂无描述' }}</div>
+            </div>
           </div>
         </template>
 
@@ -255,18 +255,19 @@
         </template>
 
         <template #actions="{ record }">
-          <a-space>
+          <a-space class="table-row-actions">
             <a-button
               v-if="record.is_active"
               v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
               type="text"
               size="small"
+              class="template-primary-action"
               @click="handleExecute(record)"
             >
-              去执行
+              执行
             </a-button>
             <a-dropdown>
-              <a-button type="text" size="small">
+              <a-button type="text" size="small" aria-label="更多操作">
                 <template #icon>
                   <icon-more />
                 </template>
@@ -313,7 +314,7 @@
           </a-space>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
   </div>
 </template>
 
@@ -329,6 +330,7 @@ import { useFavoritesStore } from '@/stores/favorites'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
+import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
 
 const router = useRouter()
 const loading = ref(false)
@@ -433,6 +435,8 @@ const activeFilterItems = computed(() => [
   { key: 'favorites_only', label: '收藏', display: searchForm.favorites_only ? '仅收藏' : '' }
 ])
 
+const scriptTemplateActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
+
 const handleClearFilter = (key: string) => {
   const defaults = defaultSearchForm()
   if (key in defaults) {
@@ -450,7 +454,7 @@ const columns = [
     dataIndex: 'name',
     key: 'name',
     slotName: 'name',
-    width: 280,
+    width: 260,
     ellipsis: true,
     tooltip: true
   },
@@ -459,63 +463,55 @@ const columns = [
     dataIndex: 'script_type',
     key: 'script_type',
     slotName: 'script_type',
-    width: 110,
+    width: 92,
   },
   {
     title: '分类',
     dataIndex: 'category',
     key: 'category',
     slotName: 'category',
-    width: 110,
+    width: 92,
   },
   {
     title: '线上版本',
     dataIndex: 'version',
     key: 'version',
-    width: 100,
+    width: 90,
   },
   {
     title: '状态',
     dataIndex: 'is_active',
     key: 'is_active',
     slotName: 'status',
-    width: 100,
+    width: 76,
   },
   {
     title: '被引用',
     dataIndex: 'references',
     key: 'references',
     slotName: 'references',
-    width: 120,
+    width: 96,
   },
   {
     title: '标签',
     dataIndex: 'tag_list',
     key: 'tag_list',
     slotName: 'tags',
-    width: 200,
-  },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-    tooltip: true,
-    width: 220,
+    width: 140,
   },
   {
     title: '创建/更新',
     dataIndex: 'created_at',
     key: 'created_at',
     slotName: 'created_at',
-    width: 250,
+    width: 180,
   },
   {
     title: '操作',
     key: 'actions',
     slotName: 'actions',
-    width: 250,
-    fixed: 'right',
+    width: 104,
+    align: 'center',
   },
 ]
 
@@ -959,6 +955,18 @@ onMounted(() => {
   padding: 0;
 }
 
+.template-filter-grid :deep(.arco-input-wrapper),
+.template-filter-grid :deep(.arco-select),
+.template-filter-grid :deep(.arco-select-view) {
+  min-width: 0;
+  width: 100%;
+}
+
+.template-table-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .search-actions {
   display: flex;
   justify-content: flex-end;
@@ -978,46 +986,35 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.page-header {
-  background: white;
-  border-radius: 6px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.header-desc {
-  margin: 0;
-  font-size: 14px;
-  color: #86909c;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
-}
-
 /* 模板名称单元格样式 */
 .template-name-cell {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.template-name-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .template-link {
+  display: block;
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-meta);
+  font-size: 12px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1066,19 +1063,49 @@ onMounted(() => {
 
 /* 表格样式优化 */
 :deep(.arco-table) {
+  width: 100%;
+  max-width: 100%;
+
+  .arco-table-container,
+  .arco-table-content,
+  .arco-table-body,
+  .arco-table-element {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
   .arco-table-th {
     background-color: #fff !important;
     font-weight: 600;
   }
 
   .arco-table-td {
-    padding: 12px 16px;
+    padding: 12px 10px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* 操作列按钮间距 */
   .arco-space-item {
-    margin-right: 8px;
+    min-width: 0;
   }
+}
+
+:deep(.table-row-actions) {
+  justify-content: center;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+:deep(.template-primary-action) {
+  min-width: 0;
+  padding-inline: 6px;
 }
 
 /* 标签样式 */

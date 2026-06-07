@@ -425,6 +425,12 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
 // 初始化
 onMounted(() => {
   fetchAuthConfig()
+
+  const queryPlatform = route.query.platform
+  if (queryPlatform === 'ops' || queryPlatform === 'job') {
+    selectedPlatform.value = queryPlatform
+    return
+  }
   
   // 恢复上次选择的平台
   const savedPlatform = localStorage.getItem('selected_platform') || sessionStorage.getItem('selected_platform')

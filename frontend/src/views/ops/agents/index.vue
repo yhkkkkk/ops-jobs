@@ -123,7 +123,7 @@
               allow-clear
               allow-search
               allow-create
-              filter-option="false"
+              :filter-option="false"
               :loading="errorCodeLoading"
               @search="handleErrorCodeSearch"
               @change="handleSearch"
@@ -142,7 +142,7 @@
               placeholder="输入版本"
               allow-clear
               allow-search
-              filter-option="false"
+              :filter-option="false"
               :loading="versionLoading"
               @search="handleVersionSearch"
               @change="handleSearch"
@@ -504,7 +504,7 @@
                   placeholder="输入版本"
                   allow-clear
                   allow-search
-                  filter-option="false"
+                  :filter-option="false"
                   :loading="agentServerVersionLoading"
                   @search="handleAgentServerVersionSearch"
                   @change="handleAgentServerSearch"

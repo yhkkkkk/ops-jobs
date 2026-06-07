@@ -10,6 +10,7 @@ import router from './router'
 import { useAuthStore } from './stores/auth'
 import { setupPermissionDirectives } from './directives/permission'
 import { preloadMonaco } from './utils/monacoFactory'
+import './styles/app.css'
 
 const app = createApp(App)
 const pinia = createPinia()

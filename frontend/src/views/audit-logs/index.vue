@@ -1,43 +1,45 @@
 <template>
-  <div class="audit-logs-page">
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h2>审计日志</h2>
-          <p class="header-desc">查看系统操作审计记录，监控用户行为和系统安全</p>
-        </div>
-        <div class="header-right">
-          <a-space>
-            <a-button type="primary" @click="exportLogs" :loading="exporting">
-              <template #icon>
-                <icon-download />
-              </template>
-              导出日志
-            </a-button>
-            <a-button @click="handleRefresh">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              刷新
-            </a-button>
-          </a-space>
-        </div>
-      </div>
-    </div>
+  <div class="app-page audit-logs-page">
+    <PageHeader
+      eyebrow="审计追踪"
+      title="审计日志"
+      description="集中查看用户操作、资源变更和系统安全事件，便于追踪责任链路。"
+    >
+      <template #actions>
+        <a-space>
+          <a-button type="primary" @click="exportLogs" :loading="exporting">
+            <template #icon>
+              <icon-download />
+            </template>
+            导出日志
+          </a-button>
+          <a-button @click="handleRefresh">
+            <template #icon>
+              <icon-refresh />
+            </template>
+            刷新
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
 
-    <!-- 搜索区域 -->
-    <a-card class="mb-4">
-      <a-row :gutter="16">
-        <a-col :span="4">
+    <DataToolbar
+      title="筛选审计记录"
+      description="按用户、操作类型、状态和日期快速定位关键变更。"
+      :active-count="auditActiveFilterCount"
+    >
+      <div class="audit-filter-grid">
+        <label class="filter-field">
+          <span>关键词</span>
           <a-input
             v-model="searchForm.search"
             placeholder="搜索描述、资源名称等"
             allow-clear
             @press-enter="handleSearch"
           />
-        </a-col>
-        <a-col :span="4">
+        </label>
+        <label class="filter-field">
+          <span>用户</span>
           <a-select
             v-model="searchForm.user_id"
             placeholder="选择用户"
@@ -51,8 +53,9 @@
               :label="user.username"
             />
           </a-select>
-        </a-col>
-        <a-col :span="4">
+        </label>
+        <label class="filter-field">
+          <span>操作类型</span>
           <a-select
             v-model="searchForm.action"
             placeholder="选择操作类型"
@@ -66,8 +69,9 @@
               :label="action.label"
             />
           </a-select>
-        </a-col>
-        <a-col :span="4">
+        </label>
+        <label class="filter-field">
+          <span>状态</span>
           <a-select
             v-model="searchForm.success"
             placeholder="选择状态"
@@ -77,32 +81,28 @@
             <a-option :value="true" label="成功" />
             <a-option :value="false" label="失败" />
           </a-select>
-        </a-col>
-      </a-row>
-      
-      <!-- 第二行：时间范围搜索 -->
-      <a-row :gutter="16" style="margin-top: 16px;">
-        <a-col :span="6">
+        </label>
+        <label class="filter-field">
+          <span>开始日期</span>
           <a-date-picker
             v-model="searchForm.start_date"
             placeholder="开始日期"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
             @change="handleSearch"
           />
-        </a-col>
-        <a-col :span="6">
+        </label>
+        <label class="filter-field">
+          <span>结束日期</span>
           <a-date-picker
             v-model="searchForm.end_date"
             placeholder="结束日期"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
             @change="handleSearch"
           />
-        </a-col>
-        <a-col :span="12">
+        </label>
+        <div class="filter-actions">
           <a-space>
             <a-button type="primary" @click="handleSearch">
               <template #icon><icon-search /></template>
@@ -113,12 +113,14 @@
               重置
             </a-button>
           </a-space>
-        </a-col>
-      </a-row>
-    </a-card>
+        </div>
+      </div>
+    </DataToolbar>
 
-    <!-- 表格区域 -->
-    <a-card>
+    <DetailPanel
+      title="审计明细"
+      :description="`共 ${pagination.total} 条记录，当前页 ${auditLogs.length} 条`"
+    >
       <a-table
         :data="auditLogs"
         :loading="loading"
@@ -126,21 +128,20 @@
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
         row-key="id"
-        :scroll="{ x: 1200 }"
       >
         <template #columns>
-          <a-table-column title="用户" data-index="user_name" width="120">
+          <a-table-column title="用户" data-index="user_name" :width="120">
             <template #cell="{ record }">
               <div class="user-info">
-                <a-avatar :size="24" style="margin-right: 8px">
-                  {{ record.user_name.charAt(0).toUpperCase() }}
+                <a-avatar :size="24" class="user-avatar">
+                  {{ getUserInitial(record) }}
                 </a-avatar>
-                <span>{{ record.user_full_name || record.user_name }}</span>
+                <span>{{ getUserName(record) }}</span>
               </div>
             </template>
           </a-table-column>
 
-          <a-table-column title="操作类型" data-index="action_display" width="120">
+          <a-table-column title="操作类型" data-index="action_display" :width="120">
             <template #cell="{ record }">
               <a-tag :color="getActionColor(record.action)">
                 {{ record.action_display }}
@@ -148,7 +149,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="资源" data-index="resource_name" width="170">
+          <a-table-column title="资源" data-index="resource_name" :width="170">
             <template #cell="{ record }">
               <div v-if="record.resource_name">
                 <div class="resource-info">
@@ -162,7 +163,7 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="描述" data-index="description" min-width="240" width="320">
+          <a-table-column title="描述" data-index="description" :min-width="240" :width="320">
             <template #cell="{ record }">
               <div class="description-cell">
                 <a-tooltip :content="record.description" position="top">
@@ -172,23 +173,24 @@
             </template>
           </a-table-column>
 
-          <a-table-column title="IP地址" data-index="ip_address" width="120" />
+          <a-table-column title="IP地址" data-index="ip_address" :width="120" />
 
-          <a-table-column title="状态" data-index="success" width="80">
+          <a-table-column title="状态" data-index="success" :width="80">
             <template #cell="{ record }">
-              <a-tag :color="record.success ? 'green' : 'red'">
-                {{ record.success ? '成功' : '失败' }}
-              </a-tag>
+              <StatusBadge
+                :status="record.success ? 'success' : 'failed'"
+                :text="record.success ? '成功' : '失败'"
+              />
             </template>
           </a-table-column>
 
-          <a-table-column title="时间" data-index="created_at" width="240">
+          <a-table-column title="时间" data-index="created_at" :width="240">
             <template #cell="{ record }">
               <span>{{ formatDateTime(record.created_at) }}</span>
             </template>
           </a-table-column>
 
-          <a-table-column title="操作" width="100" fixed="right">
+          <a-table-column title="操作" :width="100">
             <template #cell="{ record }">
               <a-button
                 type="text"
@@ -201,7 +203,7 @@
           </a-table-column>
         </template>
       </a-table>
-    </a-card>
+    </DetailPanel>
 
     <!-- 详情弹窗 -->
     <a-modal
@@ -260,6 +262,7 @@ import { authApi } from '@/api/auth'
 import type { AuditLog, AuditLogQueryParams } from '@/types'
 import { formatDateTime } from '@/utils/date'
 import { useFilterQuerySync, parseNumberQuery, parseBooleanQuery } from '@/composables/useFilterQuerySync'
+import { DataToolbar, DetailPanel, PageHeader, StatusBadge, countActiveFilters } from '@/components/app'
 
 // 响应式数据
 const loading = ref(false)
@@ -267,7 +270,6 @@ const exporting = ref(false)
 const auditLogs = ref<AuditLog[]>([])
 const detailVisible = ref(false)
 const currentLog = ref<AuditLog | null>(null)
-const dateRange = ref<[string, string] | null>(null)
 const lastApiStatus = ref<string>('未请求')
 
 // 分页
@@ -294,6 +296,8 @@ const searchForm = reactive<AuditLogQueryParams>({
   start_date: '',
   end_date: '',
 })
+
+const auditActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
 
 const { initFromQuery, syncToQuery } = useFilterQuerySync({
   searchForm,
@@ -392,6 +396,14 @@ const getActionColor = (action: string) => {
   return colorMap[action] || 'default'
 }
 
+const getUserName = (record: AuditLog) => {
+  return record.user_full_name || record.user_name || '未知用户'
+}
+
+const getUserInitial = (record: AuditLog) => {
+  return getUserName(record).charAt(0).toUpperCase()
+}
+
 // 获取审计日志列表
 const fetchAuditLogs = async () => {
   try {
@@ -454,21 +466,9 @@ const resetSearch = () => {
     start_date: '',
     end_date: '',
   })
-  dateRange.value = null
   pagination.current = 1
   syncToQuery()
   fetchAuditLogs()
-}
-
-// 日期变化处理
-const handleDateChange = (dates: [string, string] | null) => {
-  if (dates) {
-    searchForm.start_date = dates[0]
-    searchForm.end_date = dates[1]
-  } else {
-    searchForm.start_date = ''
-    searchForm.end_date = ''
-  }
 }
 
 // 分页变化
@@ -527,57 +527,51 @@ onMounted(() => {
   padding: 0;
 }
 
-.page-header {
-  background: white;
-  border-radius: 6px;
-  margin-bottom: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  align-items: end;
 }
 
-.header-content {
+.filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-field > span {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.filter-field :deep(.arco-picker),
+.filter-field :deep(.arco-select),
+.filter-field :deep(.arco-input-wrapper) {
+  width: 100%;
+}
+
+.filter-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.header-left h2 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text-1);
-}
-
-.header-desc {
-  margin: 0;
-  color: var(--color-text-3);
-  font-size: 14px;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* 表格样式优化 */
 :deep(.arco-table) {
   .arco-table-th {
-    background-color: #fff;
-  }
-
-  /* 隐藏表头的滚动条 */
-  .arco-table-header {
-    overflow-x: hidden !important;
-  }
-
-  /* 确保只有表体有滚动条 */
-  .arco-table-body {
-    overflow-x: auto;
+    background-color: var(--app-surface);
   }
 }
 
 .user-info {
   display: flex;
   align-items: center;
+}
+
+.user-avatar {
+  margin-right: 8px;
 }
 
 .resource-info {
@@ -592,7 +586,7 @@ onMounted(() => {
 
 .resource-type {
   font-size: 12px;
-  color: #86909c;
+  color: var(--app-muted);
 }
 
 .description-cell {
@@ -608,7 +602,7 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #86909c;
+  color: var(--app-muted);
 }
 
 .detail-content {
@@ -617,18 +611,18 @@ onMounted(() => {
 }
 
 .error-message {
-  color: #f53f3f;
-  background: #fff2f0;
+  color: var(--app-danger);
+  background: var(--app-danger-soft);
   padding: 8px;
   border-radius: 4px;
-  border: 1px solid #ffccc7;
+  border: 1px solid var(--app-border);
 }
 
 .extra-data {
-  background: #f7f8fa;
+  background: var(--app-surface-soft);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--app-border);
   font-size: 12px;
   max-height: 200px;
   overflow-y: auto;
