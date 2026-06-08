@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/job-templates/', include('apps.job_templates.urls')),
     path('api/quick/', include('apps.quick_execute.urls')),
     path('api/scheduler/', include('apps.scheduler.urls')),  # 作业调度接口
+    path('api/flows/', include('apps.flows.urls')),  # 流程编排接口
     path('api/executor/', include('apps.executor.urls')),  # 统一执行记录接口
     path('api/script-templates/', include('apps.script_templates.urls')),  # 脚本模板接口
     path('api/permissions/', include('apps.permissions.urls')),  # 权限管理接口

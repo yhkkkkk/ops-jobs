@@ -10,6 +10,13 @@ from .development import *  # noqa: F401,F403
 DEBUG = False
 TESTING = True
 
+INSTALLED_APPS = [app for app in INSTALLED_APPS if app != "debug_toolbar"]
+MIDDLEWARE = [
+    middleware
+    for middleware in MIDDLEWARE
+    if middleware != "debug_toolbar.middleware.DebugToolbarMiddleware"
+]
+
 REDIS_HOST = "127.0.0.1"
 REDIS_PORT = "6379"
 REDIS_PASSWORD = None

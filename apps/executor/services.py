@@ -77,11 +77,8 @@ class ExecutionRecordService:
             completed_statuses = ['success', 'failed', 'cancelled', 'timeout']
 
             with transaction.atomic():
-                previous_status = ExecutionRecord.objects.select_for_update().filter(
-                    pk=execution_record.pk
-                ).values_list('status', flat=True).first()
-                if previous_status is None:
-                    previous_status = execution_record.status
+                execution_record = ExecutionRecord.objects.select_for_update().get(pk=execution_record.pk)
+                previous_status = execution_record.status
                 newly_completed = previous_status not in completed_statuses and status in completed_statuses
 
                 execution_record.status = status
@@ -150,6 +147,17 @@ class ExecutionRecordService:
                         failed_runs=F('failed_runs') + 1,
                         updated_at=timezone.now(),
                     )
+
+            if newly_completed and execution_record.execution_type == 'flow_node':
+                try:
+                    from apps.flows.models import FlowNodeRun
+                    from apps.flows.services import FlowRunner
+
+                    if isinstance(related_object, FlowNodeRun):
+                        FlowRunner.handle_execution_record_finished(execution_record)
+                except Exception as e:
+                    logger.error(f"流程节点完成回调失败: {execution_record.execution_id} - {e}")
+                    raise
 
             logger.info(f"更新执行状态: {execution_record.execution_id} -> {status}")
 
