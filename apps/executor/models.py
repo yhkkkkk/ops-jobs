@@ -17,6 +17,7 @@ class ExecutionRecord(models.Model):
         ('quick_file_transfer', '快速文件传输'),
         ('job_workflow', 'Job工作流执行'),
         ('scheduled_job', '定时作业执行'),
+        ('flow_node', '流程节点执行'),
     ]
 
     STATUS_CHOICES = [

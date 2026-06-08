@@ -4,6 +4,8 @@
 import logging
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
+from django.db.models import F
 from .models import ExecutionRecord, ExecutionStep
 from apps.job_templates.variable_service import build_and_render, mask_secrets, build_builtin_vars, normalize_user_vars, validate_required
 from utils.realtime_logs import realtime_log_service
@@ -72,22 +74,32 @@ class ExecutionRecordService:
                                 error_message=None, execution_results=None):
         """更新执行状态"""
         try:
-            execution_record.status = status
-            
-            if status == 'running' and not execution_record.started_at:
-                execution_record.started_at = timezone.now()
-            
-            if status in ['success', 'failed', 'cancelled', 'timeout']:
-                if not execution_record.finished_at:
-                    execution_record.finished_at = timezone.now()
+            completed_statuses = ['success', 'failed', 'cancelled', 'timeout']
 
-                if error_message:
-                    execution_record.error_message = error_message
+            with transaction.atomic():
+                previous_status = ExecutionRecord.objects.select_for_update().filter(
+                    pk=execution_record.pk
+                ).values_list('status', flat=True).first()
+                if previous_status is None:
+                    previous_status = execution_record.status
+                newly_completed = previous_status not in completed_statuses and status in completed_statuses
 
-                if execution_results:
-                    execution_record.execution_results = execution_results
-            
-            execution_record.save()
+                execution_record.status = status
+
+                if status == 'running' and not execution_record.started_at:
+                    execution_record.started_at = timezone.now()
+
+                if status in completed_statuses:
+                    if not execution_record.finished_at:
+                        execution_record.finished_at = timezone.now()
+
+                    if error_message:
+                        execution_record.error_message = error_message
+
+                    if execution_results:
+                        execution_record.execution_results = execution_results
+
+                execution_record.save()
             
             # 推送状态更新到实时日志（统一使用 execution_id 作为 task_id）
             summary = (execution_record.execution_results or {}).get('summary', {})
@@ -106,7 +118,7 @@ class ExecutionRecordService:
             }, variables=(execution_record.execution_parameters or {}).get('global_parameters'))
 
             # 如果执行完成，立即归档日志（同步执行，确保日志不丢失）
-            if status in ['success', 'failed', 'cancelled', 'timeout']:
+            if status in completed_statuses:
                 try:
                     from utils.log_archive_service import log_archive_service
                     archive_success = log_archive_service.archive_execution_logs(
@@ -118,10 +130,26 @@ class ExecutionRecordService:
                 except Exception as e:
                     logger.error(f"日志归档异常: {execution_record.execution_id} - {e}")
 
-            # 更新ExecutionPlan统计
-            if hasattr(execution_record.related_object, 'success_executions'):
+            # 更新完成态统计。定时作业执行记录关联 ScheduledJob，仍需回写其 ExecutionPlan。
+            related_object = execution_record.related_object
+            if newly_completed and hasattr(related_object, 'success_executions'):
                 from apps.job_templates.services import ExecutionPlanService
-                ExecutionPlanService.update_plan_statistics(execution_record.related_object, status)
+                ExecutionPlanService.update_plan_statistics(related_object, status)
+            elif newly_completed and hasattr(related_object, 'execution_plan_id') and related_object.execution_plan_id:
+                from apps.job_templates.services import ExecutionPlanService
+                ExecutionPlanService.update_plan_statistics(related_object.execution_plan, status)
+
+            if newly_completed and hasattr(related_object, 'success_runs'):
+                if status == 'success':
+                    related_object.__class__.objects.filter(pk=related_object.pk).update(
+                        success_runs=F('success_runs') + 1,
+                        updated_at=timezone.now(),
+                    )
+                elif status in ['failed', 'cancelled', 'timeout']:
+                    related_object.__class__.objects.filter(pk=related_object.pk).update(
+                        failed_runs=F('failed_runs') + 1,
+                        updated_at=timezone.now(),
+                    )
 
             logger.info(f"更新执行状态: {execution_record.execution_id} -> {status}")
 

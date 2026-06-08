@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class FlowsConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.flows"
+    verbose_name = "流程编排"

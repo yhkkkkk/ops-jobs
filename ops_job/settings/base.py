@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'apps.dashboard',       # 仪表盘
     'apps.system_config',   # 系统配置
     'apps.agents',          # Agent 管理
+    'apps.flows',           # 流程编排
 ]
 
 

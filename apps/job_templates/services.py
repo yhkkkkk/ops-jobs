@@ -5,6 +5,7 @@ import logging
 import os
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import F
 from django.conf import settings
 from apps.executor.services import ExecutionRecordService
 from apps.agents.execution_service import AgentExecutionService
@@ -190,7 +191,8 @@ class ExecutionPlanService:
     
     @staticmethod
     def execute_plan(execution_plan, user, trigger_type='manual', execution_parameters=None,
-                    client_ip=None, user_agent=None, **kwargs):
+                    client_ip=None, user_agent=None, execution_type='job_workflow',
+                    related_object=None, **kwargs):
         """执行执行方案 - 创建ExecutionRecord并执行"""
         try:
             # 并发控制已在系统配置中处理，无需额外检查
@@ -234,13 +236,21 @@ class ExecutionPlanService:
                 # 然后用传入的执行参数覆盖（定时任务的execution_parameters会覆盖默认值）
                 global_parameters = {**default_global_parameters, **(execution_parameters or {})}
 
+                # 只支持Agent方式执行。必须先校验，避免失败请求留下 pending 执行记录。
+                agent_server_id = kwargs.get('agent_server_id') or global_parameters.get('agent_server_id')
+                if not agent_server_id:
+                    return {
+                        'success': False,
+                        'error': '请先选择Agent-Server'
+                    }
+
                 # 创建统一的执行记录
                 execution_record = ExecutionRecordService.create_execution_record(
-                    execution_type='job_workflow',
+                    execution_type=execution_type,
                     name=kwargs.get('name', f'执行方案: {execution_plan.name}'),
                     description=kwargs.get('description', f'执行方案 {execution_plan.name}'),
                     executed_by=user,
-                    related_object=execution_plan,
+                    related_object=related_object or execution_plan,
                     trigger_type=trigger_type,
                     execution_parameters=global_parameters,
                     target_hosts=[{
@@ -256,51 +266,44 @@ class ExecutionPlanService:
                 serializable_plan_steps = []
                 for plan_step in plan_steps:
                     step = plan_step.step
-                step_data = {
-                    'id': plan_step.id,
-                    'order': plan_step.order,
-                    'step_id': step.id,
-                    'step_name': step.name,
-                    'step_type': step.step_type,
-                    'step_parameters': step.step_parameters,
-                    'script_content': step.script_content,
-                    'timeout': plan_step.get_effective_timeout(),
-                    'ignore_error': step.ignore_error,
-                    'execution_parameters': plan_step.get_effective_parameters(),
-                    # 支持 file_sources（从模板步骤迁移过来）
-                    'file_sources': getattr(step, 'file_sources', []) or [],
-                    'target_hosts': [{
-                        'id': host.id,
-                        'name': host.name,
-                        'ip_address': host.ip_address
-                    } for host in step.target_hosts.all()],
-                    'target_groups': [{
-                        'id': group.id,
-                        'name': group.name,
-                        'hosts': [{
+                    step_data = {
+                        'id': plan_step.id,
+                        'order': plan_step.order,
+                        'step_id': step.id,
+                        'step_name': step.name,
+                        'step_type': step.step_type,
+                        'step_parameters': step.step_parameters,
+                        'script_content': step.script_content,
+                        'timeout': plan_step.get_effective_timeout(),
+                        'ignore_error': step.ignore_error,
+                        'execution_parameters': plan_step.get_effective_parameters(),
+                        # 支持 file_sources（从模板步骤迁移过来）
+                        'file_sources': getattr(step, 'file_sources', []) or [],
+                        'target_hosts': [{
                             'id': host.id,
                             'name': host.name,
                             'ip_address': host.ip_address
-                        } for host in group.host_set.all()]
-                    } for group in step.target_groups.all()]
-                }
-                # 添加account_id
-                if step.step_type == 'script' and step.account_id:
-                    step_data['account_id'] = step.account_id
-                elif step.step_type == 'file_transfer' and step.account_id:
-                    step_data['account_id'] = step.account_id
-                # 如果使用快照数据，也检查step_account_id
-                if hasattr(plan_step, 'step_account_id') and plan_step.step_account_id:
-                    step_data['account_id'] = plan_step.step_account_id
-                serializable_plan_steps.append(step_data)
-
-                # 只支持Agent方式执行
-                agent_server_id = kwargs.get('agent_server_id')
-                if not agent_server_id:
-                    return {
-                        'success': False,
-                        'error': '请先选择Agent-Server'
+                        } for host in step.target_hosts.all()],
+                        'target_groups': [{
+                            'id': group.id,
+                            'name': group.name,
+                            'hosts': [{
+                                'id': host.id,
+                                'name': host.name,
+                                'ip_address': host.ip_address
+                            } for host in group.host_set.all()]
+                        } for group in step.target_groups.all()]
                     }
+                    # 添加account_id
+                    if step.step_type == 'script' and step.account_id:
+                        step_data['account_id'] = step.account_id
+                    elif step.step_type == 'file_transfer' and step.account_id:
+                        step_data['account_id'] = step.account_id
+                    # 如果使用快照数据，也检查step_account_id
+                    if hasattr(plan_step, 'step_account_id') and plan_step.step_account_id:
+                        step_data['account_id'] = plan_step.step_account_id
+                    serializable_plan_steps.append(step_data)
+
                 execution_mode = kwargs.get('execution_mode', 'agent')
 
                 # 更新执行参数，添加执行方式标识
@@ -380,10 +383,15 @@ class ExecutionPlanService:
         try:
             # 更新执行方案统计
             if status == 'success':
+                execution_plan.__class__.objects.filter(pk=execution_plan.pk).update(
+                    success_executions=F('success_executions') + 1
+                )
                 execution_plan.success_executions += 1
-            elif status == 'failed':
+            elif status in ['failed', 'cancelled', 'timeout']:
+                execution_plan.__class__.objects.filter(pk=execution_plan.pk).update(
+                    failed_executions=F('failed_executions') + 1
+                )
                 execution_plan.failed_executions += 1
-            execution_plan.save()
             
             logger.info(f"执行方案统计更新完成: {execution_plan.name} -> {status}")
             

@@ -4,6 +4,8 @@ import pytz
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
+from django.db.models import F
+from django.utils import timezone
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -29,23 +31,34 @@ def _run_job(job_id: int):
 
     logger.info("ScheduledJob triggering execution", extra={"job_id": job_id, "plan_id": job.execution_plan_id})
 
-    result = ExecutionPlanService.execute_plan(
-        execution_plan=job.execution_plan,
-        user=job.created_by,
-        trigger_type="scheduled",
-        execution_parameters={},
-        name=f"[定时]{job.name}",
-        description=f"定时执行方案 {job.execution_plan}",
-        agent_server_url=None,
-    )
+    try:
+        result = ExecutionPlanService.execute_plan(
+            execution_plan=job.execution_plan,
+            user=job.created_by,
+            trigger_type="scheduled",
+            execution_parameters=job.execution_parameters or {},
+            name=f"[定时]{job.name}",
+            description=f"定时执行方案 {job.execution_plan}",
+            agent_server_id=(job.execution_parameters or {}).get("agent_server_id"),
+            execution_type="scheduled_job",
+            related_object=job,
+        )
+    except Exception:
+        logger.exception("ScheduledJob launch failed", extra={"job_id": job.id})
+        result = {"success": False}
 
-    # 更新统计
-    job.total_runs += 1
-    if result.get("success"):
-        job.success_runs += 1
+    # 这里只统计调度触发次数；最终成功/失败由 ExecutionRecord 完成态回写。
+    if not result.get("success"):
+        ScheduledJob.objects.filter(id=job.id).update(
+            total_runs=F("total_runs") + 1,
+            failed_runs=F("failed_runs") + 1,
+            updated_at=timezone.now(),
+        )
     else:
-        job.failed_runs += 1
-    job.save(update_fields=["total_runs", "success_runs", "failed_runs", "updated_at"])
+        ScheduledJob.objects.filter(id=job.id).update(
+            total_runs=F("total_runs") + 1,
+            updated_at=timezone.now(),
+        )
 
 
 def _load_jobs(scheduler: BlockingScheduler):
@@ -80,4 +93,3 @@ class Command(BaseCommand):
         except KeyboardInterrupt:
             scheduler.shutdown()
             logger.info("Scheduler stopped")
-

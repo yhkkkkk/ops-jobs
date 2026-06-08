@@ -3,6 +3,7 @@
 """
 import logging
 from django.utils import timezone
+from django.db.models import F
 from .models import ScheduledJob
 from apps.executor.services import ExecutionRecordService
 
@@ -44,34 +45,36 @@ def execute_scheduled_job(scheduled_job_id):
             name=f"定时作业: {scheduled_job.name}",
             description=f"由定时作业 {scheduled_job.name} 自动创建",
             execution_parameters=execution_parameters,
-            agent_server_id=execution_parameters.get('agent_server_id')
+            agent_server_id=execution_parameters.get('agent_server_id'),
+            execution_type='scheduled_job',
+            related_object=scheduled_job,
         )
 
-        # 更新定时作业统计
-        scheduled_job.total_runs += 1
-        if result.get('success'):
-            scheduled_job.success_runs += 1
+        # 这里只统计调度触发次数；最终成功/失败由 ExecutionRecord 完成态回写。
+        if not result.get('success'):
+            ScheduledJob.objects.filter(id=scheduled_job.id).update(
+                total_runs=F('total_runs') + 1,
+                failed_runs=F('failed_runs') + 1,
+                updated_at=timezone.now(),
+            )
         else:
-            scheduled_job.failed_runs += 1
-        scheduled_job.save()
+            ScheduledJob.objects.filter(id=scheduled_job.id).update(
+                total_runs=F('total_runs') + 1,
+                updated_at=timezone.now(),
+            )
 
         return result
 
     except Exception as e:
         logger.error(f"执行定时作业失败: {scheduled_job.name} - {e}")
 
-        # 更新统计
-        scheduled_job.total_runs += 1
-        scheduled_job.failed_runs += 1
-        scheduled_job.save()
+        # 启动阶段异常没有执行记录，直接按一次调度失败统计。
+        ScheduledJob.objects.filter(id=scheduled_job.id).update(
+            total_runs=F('total_runs') + 1,
+            failed_runs=F('failed_runs') + 1,
+            updated_at=timezone.now(),
+        )
 
-        return {
-            'success': False,
-            'error': str(e)
-        }
-
-    except Exception as e:
-        logger.error(f"定时作业任务异常: {scheduled_job_id} - {e}")
         return {
             'success': False,
             'error': str(e)
@@ -127,9 +130,13 @@ def update_scheduled_job_stats():
                 object_id=scheduled_job.id
             )
 
-            total_runs = executions.count()
+            execution_total_runs = executions.count()
             success_runs = executions.filter(status='success').count()
-            failed_runs = executions.filter(status='failed').count()
+            failed_runs = executions.filter(status__in=['failed', 'cancelled', 'timeout']).count()
+            launch_failures_without_records = max(scheduled_job.total_runs - execution_total_runs, 0)
+
+            total_runs = max(scheduled_job.total_runs, execution_total_runs)
+            failed_runs += launch_failures_without_records
 
             # 更新统计
             if (scheduled_job.total_runs != total_runs or
