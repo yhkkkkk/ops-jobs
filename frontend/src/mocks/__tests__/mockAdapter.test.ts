@@ -56,6 +56,28 @@ describe('mock route page contracts', () => {
       success: expect.any(Boolean),
     })
   })
+
+  it('returns flow node plugins for the pipeline editor', async () => {
+    const response = await adapter(makeConfig('/flows/nodes/plugins/'))
+
+    expect(response.status).toBe(200)
+    expect(response.data.content.map((plugin: { type: string }) => plugin.type)).toEqual([
+      'script',
+      'file_transfer',
+      'job_plan',
+      'manual',
+      'condition',
+      'parallel',
+      'join',
+      'sub_process',
+    ])
+    expect(response.data.content[0]).toMatchObject({
+      name: expect.any(String),
+      category: expect.any(String),
+      description: expect.any(String),
+      config_schema: expect.any(Object),
+    })
+  })
 })
 
 describe('createMockAxiosAdapter', () => {

@@ -32,6 +32,13 @@ class AuditLog(models.Model):
         ('ignore_error', '忽略错误继续'),
         ('retry_step', '步骤重试'),
         ('retry_failed_hosts', '失败主机重试'),
+
+        # 流程编排
+        ('start_flow', '启动流程'),
+        ('skip_flow_node', '跳过流程节点'),
+        ('retry_flow_node', '重试流程节点'),
+        ('confirm_flow_node', '确认人工节点'),
+        ('cancel_flow', '取消流程'),
         
         # 作业相关
         ('create_job', '创建作业'),

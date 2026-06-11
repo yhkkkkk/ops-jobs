@@ -4,6 +4,7 @@ from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan
 
 from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowTemplate
+from .plugins import validate_flow_node_config
 from .validators import get_execution_plan_resource_permission_error, get_file_source_errors
 
 
@@ -31,13 +32,16 @@ class FlowNodeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        if not request:
-            return attrs
-
         node_type = attrs.get("node_type") or getattr(self.instance, "node_type", None)
         config = attrs.get("config")
         if config is None:
             config = getattr(self.instance, "config", {}) or {}
+        plugin_errors = validate_flow_node_config(node_type, config)
+        if plugin_errors:
+            raise serializers.ValidationError({"config": plugin_errors})
+
+        if not request:
+            return attrs
 
         if node_type in (FlowNode.NodeType.SCRIPT, FlowNode.NodeType.FILE_TRANSFER):
             self._validate_target_hosts(config, request.user)
@@ -45,6 +49,8 @@ class FlowNodeSerializer(serializers.ModelSerializer):
             self._validate_file_sources(config)
         if node_type == FlowNode.NodeType.JOB_PLAN:
             self._validate_execution_plan(config, request.user)
+        if node_type == FlowNode.NodeType.SUB_PROCESS:
+            self._validate_sub_process_template(attrs, config, request.user)
 
         return attrs
 
@@ -90,6 +96,22 @@ class FlowNodeSerializer(serializers.ModelSerializer):
         source_errors = get_file_source_errors(file_sources)
         if source_errors:
             raise serializers.ValidationError({"config": "; ".join(source_errors)})
+
+    def _validate_sub_process_template(self, attrs, config, user):
+        template = attrs.get("template") or getattr(self.instance, "template", None)
+        target_template_id = config.get("template_id")
+        if not target_template_id:
+            return
+
+        target_template = FlowTemplate.objects.filter(id=target_template_id).first()
+        if not target_template:
+            raise serializers.ValidationError({"config": "子流程模板不存在"})
+        if not target_template.is_active:
+            raise serializers.ValidationError({"config": "子流程模板未启用"})
+        if template and target_template.id == template.id:
+            raise serializers.ValidationError({"config": "子流程不能引用当前流程模板"})
+        if not user.is_superuser and target_template.created_by_id != user.id:
+            raise serializers.ValidationError({"config": "无权引用子流程模板"})
 
 
 class FlowEdgeSerializer(serializers.ModelSerializer):

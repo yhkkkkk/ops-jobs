@@ -9,7 +9,13 @@ import type {
   BatchTestResult,
   HostGroup,
   HostImportResult,
-  ScheduledJob
+  ScheduledJob,
+  FlowTemplate,
+  FlowNode,
+  FlowNodePlugin,
+  FlowEdge,
+  FlowRun,
+  FlowAuditLog,
 } from '@/types'
 
 // 主机管理API
@@ -435,6 +441,73 @@ export const scheduledTaskApi = {
   disableTask(id: number): Promise<void> {
     return http.post(`/scheduled-tasks/${id}/disable/`)
   }
+}
+
+// 流程编排API
+export const flowApi = {
+  getTemplates(params?: any): Promise<FlowTemplate[]> {
+    return http.get('/flows/templates/', { params })
+  },
+
+  getTemplate(id: number): Promise<FlowTemplate> {
+    return http.get(`/flows/templates/${id}/`)
+  },
+
+  createTemplate(data: Partial<FlowTemplate>): Promise<FlowTemplate> {
+    return http.post('/flows/templates/', data)
+  },
+
+  updateTemplate(id: number, data: Partial<FlowTemplate>): Promise<FlowTemplate> {
+    return http.put(`/flows/templates/${id}/`, data)
+  },
+
+  deleteTemplate(id: number): Promise<void> {
+    return http.delete(`/flows/templates/${id}/`)
+  },
+
+  startTemplate(id: number, data: { inputs?: Record<string, any>; agent_server_id: number }): Promise<FlowRun> {
+    return http.post(`/flows/templates/${id}/start/`, data)
+  },
+
+  getNodes(params?: any): Promise<FlowNode[]> {
+    return http.get('/flows/nodes/', { params })
+  },
+
+  getNodePlugins(): Promise<FlowNodePlugin[]> {
+    return http.get('/flows/nodes/plugins/')
+  },
+
+  getEdges(params?: any): Promise<FlowEdge[]> {
+    return http.get('/flows/edges/', { params })
+  },
+
+  getRuns(params?: any): Promise<FlowRun[]> {
+    return http.get('/flows/runs/', { params })
+  },
+
+  getRun(id: number): Promise<FlowRun> {
+    return http.get(`/flows/runs/${id}/`)
+  },
+
+  getRunOperationLogs(id: number, params?: { action?: string }): Promise<FlowAuditLog[]> {
+    return http.get(`/flows/runs/${id}/operation_logs/`, { params })
+  },
+
+  skipRunNode(id: number, data: { node_run_id: number; reason?: string }): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/skip_node/`, data)
+  },
+
+  retryRunNode(id: number, data: { node_run_id: number }): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/retry_node/`, data)
+  },
+
+  confirmManualNode(id: number, data: { node_run_id: number; remark?: string }): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/confirm_manual_node/`, data)
+  },
+
+  cancelRun(id: number): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/cancel/`)
+  },
 }
 
 // 快速执行API

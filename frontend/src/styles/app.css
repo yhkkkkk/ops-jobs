@@ -66,7 +66,7 @@ a:hover {
 
 .app-page {
   display: grid;
-  gap: 20px;
+  gap: 12px;
   max-width: 1440px;
   margin: 0 auto;
 }
@@ -74,16 +74,16 @@ a:hover {
 .app-page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 2px 0 4px;
+  align-items: center;
+  gap: 16px;
+  padding: 0;
 }
 
 .app-page-eyebrow {
-  margin: 0 0 6px;
+  margin: 0 0 2px;
   color: var(--app-meta);
   font-family: var(--app-mono);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -92,18 +92,18 @@ a:hover {
 .app-page-title {
   margin: 0;
   color: var(--app-fg);
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.2;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
 .app-page-desc {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   max-width: 760px;
   color: var(--app-muted);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .app-card {

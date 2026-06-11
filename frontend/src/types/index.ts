@@ -462,6 +462,8 @@ export interface AuditLog {
   created_at: string
 }
 
+export type FlowAuditLog = AuditLog
+
 // 审计日志查询参数
 export interface AuditLogQueryParams {
   page?: number
@@ -528,3 +530,95 @@ export type PermissionLevel = 'view' | 'add' | 'change' | 'delete' | 'execute'
 
 // 资源类型
 export type ResourceType = 'host' | 'job' | 'script' | 'executionplan' | 'jobtemplate' | 'scripttemplate' | 'serveraccount' | 'executionrecord'
+
+// 流程编排类型
+export type FlowNodeType = 'script' | 'file_transfer' | 'job_plan' | 'manual' | 'condition' | 'parallel' | 'join' | 'sub_process'
+
+export type FlowRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'paused' | 'cancelled'
+
+export interface FlowNode {
+  id?: number
+  template?: number
+  uuid: string
+  name: string
+  node_type: FlowNodeType
+  config: Record<string, any>
+  position: {
+    x?: number
+    y?: number
+    [key: string]: any
+  }
+  created_at?: string
+  updated_at?: string
+}
+
+export interface FlowNodePlugin {
+  type: FlowNodeType
+  name: string
+  category: string
+  description: string
+  config_schema: {
+    type?: string
+    required?: string[]
+    properties?: Record<string, any>
+    [key: string]: any
+  }
+}
+
+export interface FlowEdge {
+  id?: number
+  template?: number
+  source?: number
+  target?: number
+  source_uuid?: string
+  target_uuid?: string
+  condition?: Record<string, any>
+}
+
+export interface FlowTemplate {
+  id?: number
+  name: string
+  description?: string
+  variables: Record<string, any>
+  is_active: boolean
+  created_by?: number
+  created_by_name?: string
+  created_at?: string
+  updated_at?: string
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+}
+
+export interface FlowNodeRun {
+  id: number
+  node: number
+  node_name: string
+  node_uuid: string
+  node_type: FlowNodeType
+  status: FlowRunStatus
+  inputs: Record<string, any>
+  outputs: Record<string, any>
+  error_message?: string
+  execution_record?: number | null
+  execution_record_id?: number | null
+  started_at?: string | null
+  finished_at?: string | null
+  created_at: string
+}
+
+export interface FlowRun {
+  id: number
+  template: number
+  template_name: string
+  status: FlowRunStatus
+  trigger_type: string
+  started_by: number
+  started_by_name: string
+  inputs: Record<string, any>
+  outputs: Record<string, any>
+  error_message?: string
+  started_at?: string | null
+  finished_at?: string | null
+  created_at: string
+  node_runs: FlowNodeRun[]
+}

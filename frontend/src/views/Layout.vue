@@ -80,6 +80,13 @@
             作业执行方案
           </a-menu-item>
 
+          <a-menu-item key="/flows">
+            <template #icon>
+              <icon-branch />
+            </template>
+            运维流水线
+          </a-menu-item>
+
           <a-menu-item key="/quick-execute">
             <template #icon>
               <icon-thunderbolt />
@@ -176,7 +183,7 @@
       </a-layout-header>
       
       <!-- 内容区域 -->
-      <a-layout-content class="content">
+      <a-layout-content :class="['content', { 'content--workspace': workspaceMode }]">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -196,6 +203,8 @@ const authStore = useAuthStore()
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([])
 const openKeys = ref<string[]>([])
+const workspaceMode = computed(() => route.meta.workspaceMode === true)
+let previousCollapsedState: boolean | null = null
 
 // 菜单配置映射
 const menuConfig = {
@@ -205,6 +214,7 @@ const menuConfig = {
   '/script-templates': { key: '/script-templates', parent: 'job' },
   '/job-templates': { key: '/job-templates', parent: 'job' },
   '/execution-plans': { key: '/execution-plans', parent: 'job' },
+  '/flows': { key: '/flows', parent: 'job' },
   '/quick-execute': { key: '/quick-execute', parent: 'job' },
   '/scheduled-tasks': { key: '/scheduled-tasks', parent: 'schedule' },
   '/execution-records': { key: '/execution-records', parent: 'monitor' },
@@ -256,6 +266,24 @@ watch(
       }
     } catch (error) {
       console.error('更新菜单选中状态失败:', error)
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  workspaceMode,
+  (active) => {
+    if (active) {
+      previousCollapsedState = collapsed.value
+      collapsed.value = true
+      openKeys.value = []
+      return
+    }
+
+    if (previousCollapsedState !== null) {
+      collapsed.value = previousCollapsedState
+      previousCollapsedState = null
     }
   },
   { immediate: true }
@@ -428,6 +456,10 @@ onBeforeUnmount(() => {
   padding: 28px;
   background: var(--app-bg);
   overflow-y: auto;
+}
+
+.content--workspace {
+  padding: 16px;
 }
 
 :deep(.arco-layout-sider) {

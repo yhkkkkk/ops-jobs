@@ -449,6 +449,527 @@ const installRecords = [
   },
 ]
 
+let flowTemplates: any[] = [
+  {
+    id: 801,
+    name: '生产发布前置检查流程',
+    description: '发布前完成 Agent 心跳、配置校验、构件分发和执行方案检查。',
+    variables: {
+      env: 'prod',
+      release_id: 'REL-20260608-01',
+      operator: 'demo-admin',
+    },
+    is_active: true,
+    created_by: 1,
+    created_by_name: '平台工程',
+    created_at: iso(-8, 14),
+    updated_at: iso(0, 9),
+    nodes: [
+      {
+        id: 8101,
+        template: 801,
+        uuid: 'flow-prod-check-script',
+        name: 'Agent 心跳检查',
+        node_type: 'script',
+        config: {
+          script_type: 'shell',
+          script_content: 'systemctl is-active ops-agent && curl -sf http://127.0.0.1:9100/health',
+          target_host_ids: [1, 3],
+          timeout: 180,
+          ignore_error: false,
+        },
+        position: { x: 48, y: 170 },
+        created_at: iso(-8, 14),
+        updated_at: iso(0, 9),
+      },
+      {
+        id: 8102,
+        template: 801,
+        uuid: 'flow-prod-check-files',
+        name: '分发发布包',
+        node_type: 'file_transfer',
+        config: {
+          target_host_ids: [1],
+          timeout: 600,
+          bandwidth_limit: 2048,
+          overwrite_policy: 'backup',
+          file_sources: [
+            {
+              type: 'artifact',
+              download_url: 'https://artifact.local/releases/app.tar.gz',
+              remote_path: '/data/releases/current/app.tar.gz',
+            },
+          ],
+        },
+        position: { x: 298, y: 280 },
+        created_at: iso(-8, 14),
+        updated_at: iso(0, 9),
+      },
+      {
+        id: 8103,
+        template: 801,
+        uuid: 'flow-prod-check-plan',
+        name: '执行发布前检查方案',
+        node_type: 'job_plan',
+        config: {
+          execution_plan_id: 301,
+          execution_parameters: {
+            env: 'prod',
+            check_level: 'strict',
+          },
+          execution_mode: 'rolling',
+          rolling_batch_size: 1,
+          rolling_batch_delay: 30,
+        },
+        position: { x: 548, y: 170 },
+        created_at: iso(-8, 14),
+        updated_at: iso(0, 9),
+      },
+    ],
+    edges: [
+      {
+        id: 8201,
+        template: 801,
+        source: 8101,
+        target: 8102,
+        source_uuid: 'flow-prod-check-script',
+        target_uuid: 'flow-prod-check-files',
+        condition: {},
+      },
+      {
+        id: 8202,
+        template: 801,
+        source: 8102,
+        target: 8103,
+        source_uuid: 'flow-prod-check-files',
+        target_uuid: 'flow-prod-check-plan',
+        condition: {},
+      },
+    ],
+  },
+  {
+    id: 802,
+    name: '夜间日志归档流程',
+    description: '先清理磁盘水位，再执行归档方案，失败时保留节点错误信息。',
+    variables: {
+      env: 'prod',
+      window: 'nightly',
+    },
+    is_active: true,
+    created_by: 1,
+    created_by_name: 'SRE',
+    created_at: iso(-12, 11),
+    updated_at: iso(-1, 18),
+    nodes: [
+      {
+        id: 8111,
+        template: 802,
+        uuid: 'flow-log-clean',
+        name: '磁盘水位清理',
+        node_type: 'script',
+        config: {
+          script_type: 'shell',
+          script_content: 'find /data/logs -type f -mtime +14 -delete',
+          target_host_ids: [1, 2],
+          timeout: 300,
+          ignore_error: true,
+        },
+        position: { x: 48, y: 170 },
+        created_at: iso(-12, 11),
+        updated_at: iso(-1, 18),
+      },
+      {
+        id: 8112,
+        template: 802,
+        uuid: 'flow-log-archive',
+        name: '执行日志归档方案',
+        node_type: 'job_plan',
+        config: {
+          execution_plan_id: 302,
+          execution_parameters: {
+            window: 'nightly',
+            retain_days: 14,
+          },
+          execution_mode: 'serial',
+          rolling_batch_size: 1,
+          rolling_batch_delay: 0,
+        },
+        position: { x: 298, y: 280 },
+        created_at: iso(-12, 11),
+        updated_at: iso(-1, 18),
+      },
+    ],
+    edges: [
+      {
+        id: 8211,
+        template: 802,
+        source: 8111,
+        target: 8112,
+        source_uuid: 'flow-log-clean',
+        target_uuid: 'flow-log-archive',
+        condition: {},
+      },
+    ],
+  },
+  {
+    id: 803,
+    name: '数据库变更灰度流水线',
+    description: '先备份配置，再按滚动批次执行数据库变更方案，job_plan 可暂停等待执行记录完成。',
+    variables: {
+      env: 'staging',
+      change_id: 'DB-20260609-07',
+    },
+    is_active: true,
+    created_by: 1,
+    created_by_name: 'DBA',
+    created_at: iso(-5, 16),
+    updated_at: iso(0, 8),
+    nodes: [
+      {
+        id: 8121,
+        template: 803,
+        uuid: 'flow-db-backup',
+        name: '备份变更配置',
+        node_type: 'file_transfer',
+        config: {
+          target_host_ids: [2, 3],
+          timeout: 480,
+          bandwidth_limit: 128,
+          file_sources: [
+            {
+              download_url: 'https://artifact.local/db/change-rollback.yml',
+              remote_path: '/data/db-change/rollback.yml',
+            },
+          ],
+        },
+        position: { x: 48, y: 170 },
+        created_at: iso(-5, 16),
+        updated_at: iso(0, 8),
+      },
+      {
+        id: 8122,
+        template: 803,
+        uuid: 'flow-db-plan',
+        name: '执行数据库变更方案',
+        node_type: 'job_plan',
+        config: {
+          execution_plan_id: 303,
+          execution_parameters: {
+            change_id: 'DB-20260609-07',
+            dry_run: false,
+          },
+          execution_mode: 'rolling',
+          rolling_batch_size: 1,
+          rolling_batch_delay: 60,
+        },
+        position: { x: 318, y: 170 },
+        created_at: iso(-5, 16),
+        updated_at: iso(0, 8),
+      },
+    ],
+    edges: [
+      {
+        id: 8221,
+        template: 803,
+        source: 8121,
+        target: 8122,
+        source_uuid: 'flow-db-backup',
+        target_uuid: 'flow-db-plan',
+        condition: {},
+      },
+    ],
+  },
+]
+
+const flowNodePlugins = [
+  {
+    type: 'script',
+    name: '脚本执行',
+    category: '作业平台原子',
+    description: '在目标主机执行 Shell、Python 或 PowerShell 脚本。',
+    config_schema: {
+      type: 'object',
+      required: ['script_content'],
+      properties: {
+        script_type: { type: 'string', enum: ['shell', 'python', 'powershell'] },
+        script_content: { type: 'string' },
+        target_host_ids: { type: 'array', items: { type: 'number' } },
+        timeout: { type: 'number', minimum: 1 },
+      },
+    },
+  },
+  {
+    type: 'file_transfer',
+    name: '文件分发',
+    category: '作业平台原子',
+    description: '把构件、配置或文件包分发到目标主机路径。',
+    config_schema: {
+      type: 'object',
+      required: ['file_sources'],
+      properties: {
+        file_sources: { type: 'array' },
+        target_host_ids: { type: 'array', items: { type: 'number' } },
+        timeout: { type: 'number', minimum: 1 },
+        bandwidth_limit: { type: 'number', minimum: 0 },
+      },
+    },
+  },
+  {
+    type: 'job_plan',
+    name: '作业执行方案',
+    category: '作业平台原子',
+    description: '调用当前作业平台执行方案，支持参数覆盖和滚动执行。',
+    config_schema: {
+      type: 'object',
+      required: ['execution_plan_id'],
+      properties: {
+        execution_plan_id: { type: 'number' },
+        execution_parameters: { type: 'object' },
+        execution_mode: { type: 'string', enum: ['parallel', 'serial', 'rolling'] },
+      },
+    },
+  },
+  {
+    type: 'manual',
+    name: '人工确认',
+    category: '流程控制',
+    description: '暂停实例，等待人工确认后继续流转。',
+    config_schema: { type: 'object', properties: { instructions: { type: 'string' } } },
+  },
+  {
+    type: 'condition',
+    name: '条件分支',
+    category: '流程控制',
+    description: '根据输入变量或节点输出选择后续分支。',
+    config_schema: { type: 'object', properties: { description: { type: 'string' } } },
+  },
+  {
+    type: 'parallel',
+    name: '并行网关',
+    category: '流程控制',
+    description: '并行启动所有下游分支。',
+    config_schema: { type: 'object', properties: { description: { type: 'string' } } },
+  },
+  {
+    type: 'join',
+    name: '汇聚网关',
+    category: '流程控制',
+    description: '等待所有活跃上游分支完成。',
+    config_schema: { type: 'object', properties: { description: { type: 'string' } } },
+  },
+  {
+    type: 'sub_process',
+    name: '子流程',
+    category: '流程控制',
+    description: '嵌套执行另一个流水线模板并等待结果。',
+    config_schema: {
+      type: 'object',
+      required: ['template_id'],
+      properties: {
+        template_id: { type: 'number' },
+        inherit_inputs: { type: 'boolean' },
+        inputs: { type: 'object' },
+      },
+    },
+  },
+]
+
+let flowRuns: any[] = [
+  {
+    id: 8801,
+    template: 801,
+    template_name: '生产发布前置检查流程',
+    status: 'running',
+    trigger_type: 'manual',
+    started_by: 1,
+    started_by_name: 'demo-admin',
+    inputs: {
+      env: 'prod',
+      release_id: 'REL-20260608-01',
+    },
+    outputs: {
+      current_node: '执行发布前检查方案',
+    },
+    error_message: '',
+    started_at: iso(0, 10),
+    finished_at: null,
+    created_at: iso(0, 10),
+    node_runs: [
+      {
+        id: 8811,
+        node: 8101,
+        node_name: 'Agent 心跳检查',
+        node_uuid: 'flow-prod-check-script',
+        node_type: 'script',
+        status: 'success',
+        inputs: { host_ids: [1, 3] },
+        outputs: { online: 2 },
+        error_message: '',
+        execution_record: 9001,
+        execution_record_id: 9001,
+        started_at: iso(0, 10),
+        finished_at: iso(0, 10),
+        created_at: iso(0, 10),
+      },
+      {
+        id: 8812,
+        node: 8102,
+        node_name: '分发发布包',
+        node_uuid: 'flow-prod-check-files',
+        node_type: 'file_transfer',
+        status: 'success',
+        inputs: { remote_path: '/data/releases/current/app.tar.gz' },
+        outputs: { transferred: 1 },
+        error_message: '',
+        execution_record: 9001,
+        execution_record_id: 9001,
+        started_at: iso(0, 10),
+        finished_at: iso(0, 10),
+        created_at: iso(0, 10),
+      },
+      {
+        id: 8813,
+        node: 8103,
+        node_name: '执行发布前检查方案',
+        node_uuid: 'flow-prod-check-plan',
+        node_type: 'job_plan',
+        status: 'running',
+        inputs: { execution_plan_id: 301 },
+        outputs: {},
+        error_message: '',
+        execution_record: 9002,
+        execution_record_id: 9002,
+        started_at: iso(0, 10),
+        finished_at: null,
+        created_at: iso(0, 10),
+      },
+    ],
+  },
+  {
+    id: 8803,
+    template: 803,
+    template_name: '数据库变更灰度流水线',
+    status: 'paused',
+    trigger_type: 'manual',
+    started_by: 1,
+    started_by_name: 'dba-ops',
+    inputs: {
+      env: 'staging',
+      change_id: 'DB-20260609-07',
+    },
+    outputs: {
+      waiting_for: 'execution_record_id=9004',
+    },
+    error_message: '',
+    started_at: iso(0, 9),
+    finished_at: null,
+    created_at: iso(0, 9),
+    node_runs: [
+      {
+        id: 8831,
+        node: 8121,
+        node_name: '备份变更配置',
+        node_uuid: 'flow-db-backup',
+        node_type: 'file_transfer',
+        status: 'success',
+        inputs: { remote_path: '/data/db-change/rollback.yml' },
+        outputs: { transferred: 2 },
+        error_message: '',
+        execution_record: 9004,
+        execution_record_id: 9004,
+        started_at: iso(0, 9),
+        finished_at: iso(0, 9),
+        created_at: iso(0, 9),
+      },
+      {
+        id: 8832,
+        node: 8122,
+        node_name: '执行数据库变更方案',
+        node_uuid: 'flow-db-plan',
+        node_type: 'job_plan',
+        status: 'paused',
+        inputs: { execution_plan_id: 303, change_id: 'DB-20260609-07' },
+        outputs: { paused_reason: '等待执行记录完成后推进下一批次' },
+        error_message: '',
+        execution_record: 9004,
+        execution_record_id: 9004,
+        started_at: iso(0, 9),
+        finished_at: null,
+        created_at: iso(0, 9),
+      },
+    ],
+  },
+  {
+    id: 8802,
+    template: 802,
+    template_name: '夜间日志归档流程',
+    status: 'failed',
+    trigger_type: 'scheduled',
+    started_by: 1,
+    started_by_name: 'scheduler',
+    inputs: {
+      env: 'prod',
+      window: 'nightly',
+    },
+    outputs: {},
+    error_message: 'prod-worker-03 Agent 心跳超时',
+    started_at: iso(-1, 1),
+    finished_at: iso(-1, 1),
+    created_at: iso(-1, 1),
+    node_runs: [
+      {
+        id: 8821,
+        node: 8111,
+        node_name: '磁盘水位清理',
+        node_uuid: 'flow-log-clean',
+        node_type: 'script',
+        status: 'failed',
+        inputs: { host_ids: [1, 2] },
+        outputs: {},
+        error_message: 'prod-worker-03 Agent 心跳超时',
+        execution_record: 9003,
+        execution_record_id: 9003,
+        started_at: iso(-1, 1),
+        finished_at: iso(-1, 1),
+        created_at: iso(-1, 1),
+      },
+    ],
+  },
+]
+
+const normalizeFlowTemplate = (data: any, id: number) => {
+  const nodes = (data?.nodes || []).map((node: any, index: number) => ({
+    id: node.id || id * 10 + index + 1,
+    template: id,
+    uuid: node.uuid || `flow-${id}-node-${index + 1}`,
+    created_at: node.created_at || iso(0),
+    updated_at: iso(0),
+    ...node,
+  }))
+  const edges = (data?.edges || []).map((edge: any, index: number) => ({
+    id: edge.id || id * 100 + index + 1,
+    template: id,
+    created_at: edge.created_at || iso(0),
+    updated_at: iso(0),
+    ...edge,
+  }))
+
+  return {
+    id,
+    name: data?.name || '未命名流水线',
+    description: data?.description || '',
+    variables: data?.variables || {},
+    is_active: data?.is_active ?? true,
+    created_by: data?.created_by || 1,
+    created_by_name: data?.created_by_name || 'demo-admin',
+    created_at: data?.created_at || iso(0),
+    updated_at: iso(0),
+    ...data,
+    nodes,
+    edges,
+  }
+}
+
 const paginate = <T>(items: T[], query: Record<string, any>) => {
   const page = Number(query.page || 1)
   const pageSize = Number(query.page_size || query.pageSize || 10)
@@ -1004,6 +1525,141 @@ export const mockRoutes: MockRoute[] = [
     method: 'get',
     pattern: '/job-templates/plans/:id/sync_status_detail/',
     handler: () => ({ synced: true, unsynced_steps: [], last_synced_at: iso(-1) }),
+  },
+  {
+    method: 'get',
+    pattern: '/flows/templates/',
+    handler: ({ query }) => {
+      const search = String(query.search || '').trim().toLowerCase()
+      const status = String(query.status || '')
+      return flowTemplates.filter((item) => {
+        const matchesSearch = !search || item.name.toLowerCase().includes(search) || item.description.toLowerCase().includes(search)
+        const matchesStatus =
+          !status ||
+          (status === 'active' && item.is_active) ||
+          (status === 'inactive' && !item.is_active)
+        return matchesSearch && matchesStatus
+      })
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/templates/',
+    handler: ({ data }) => {
+      const id = Math.max(...flowTemplates.map((item) => item.id), 800) + 1
+      const template = normalizeFlowTemplate(data, id)
+      flowTemplates = [template, ...flowTemplates]
+      return template
+    },
+  },
+  {
+    method: 'get',
+    pattern: '/flows/templates/:id/',
+    handler: ({ params }) => byId(flowTemplates, params.id),
+  },
+  {
+    method: 'put',
+    pattern: '/flows/templates/:id/',
+    handler: ({ params, data }) => {
+      const id = Number(params.id)
+      const current = byId(flowTemplates, params.id)
+      const updated = normalizeFlowTemplate({ ...current, ...data }, id)
+      flowTemplates = flowTemplates.map((item) => item.id === id ? updated : item)
+      return updated
+    },
+  },
+  {
+    method: 'delete',
+    pattern: '/flows/templates/:id/',
+    handler: ({ params }) => {
+      flowTemplates = flowTemplates.filter((item) => item.id !== Number(params.id))
+      return { ok: true }
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/templates/:id/start/',
+    handler: ({ params, data }) => {
+      const template = byId(flowTemplates, params.id)
+      const id = Math.max(...flowRuns.map((item) => item.id), 8800) + 1
+      const nodeRuns = template.nodes.map((node, index) => ({
+        id: id * 10 + index + 1,
+        node: node.id,
+        node_name: node.name,
+        node_uuid: node.uuid,
+        node_type: node.node_type,
+        status: index === 0 ? 'running' : 'pending',
+        inputs: node.config || {},
+        outputs: {},
+        error_message: '',
+        execution_record: index === 0 ? 9002 : null,
+        execution_record_id: index === 0 ? 9002 : null,
+        started_at: index === 0 ? iso(0, 10) : null,
+        finished_at: null,
+        created_at: iso(0, 10),
+      }))
+      const run = {
+        id,
+        template: template.id,
+        template_name: template.name,
+        status: 'running',
+        trigger_type: 'manual',
+        started_by: 1,
+        started_by_name: 'demo-admin',
+        inputs: data?.inputs || {},
+        outputs: {},
+        error_message: '',
+        started_at: iso(0, 10),
+        finished_at: null,
+        created_at: iso(0, 10),
+        node_runs: nodeRuns,
+      }
+      flowRuns = [run, ...flowRuns]
+      return run
+    },
+  },
+  {
+    method: 'get',
+    pattern: '/flows/nodes/',
+    handler: ({ query }) => {
+      const templateId = Number(query.template || query.template_id || 0)
+      return flowTemplates
+        .filter((template) => !templateId || template.id === templateId)
+        .flatMap((template) => template.nodes)
+    },
+  },
+  {
+    method: 'get',
+    pattern: '/flows/nodes/plugins/',
+    handler: () => flowNodePlugins,
+  },
+  {
+    method: 'get',
+    pattern: '/flows/edges/',
+    handler: ({ query }) => {
+      const templateId = Number(query.template || query.template_id || 0)
+      return flowTemplates
+        .filter((template) => !templateId || template.id === templateId)
+        .flatMap((template) => template.edges)
+    },
+  },
+  {
+    method: 'get',
+    pattern: '/flows/runs/',
+    handler: ({ query }) => {
+      const templateId = Number(query.template || query.template_id || 0)
+      const status = String(query.status || '')
+      return flowRuns.filter((run) => {
+        const matchesTemplate = !templateId || run.template === templateId
+        const matchesStatus = !status || run.status === status
+        return matchesTemplate && matchesStatus
+      })
+    },
+  },
+  {
+    method: 'get',
+    pattern: '/flows/runs/:id/',
+    handler: ({ params }) => byId(flowRuns, params.id),
   },
   {
     method: 'get',

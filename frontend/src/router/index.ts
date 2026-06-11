@@ -206,6 +206,44 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/flows',
+        name: 'Flows',
+        component: () => import('@/views/flows/index.vue'),
+        meta: {
+          title: '运维流水线',
+          icon: 'icon-branch',
+        },
+      },
+      {
+        path: '/flows/create',
+        name: 'FlowCreate',
+        component: () => import('@/views/flows/editor.vue'),
+        meta: {
+          title: '创建流水线',
+          hideInMenu: true,
+          workspaceMode: true,
+        },
+      },
+      {
+        path: '/flows/:id/edit',
+        name: 'FlowEdit',
+        component: () => import('@/views/flows/editor.vue'),
+        meta: {
+          title: '编辑流水线',
+          hideInMenu: true,
+          workspaceMode: true,
+        },
+      },
+      {
+        path: '/flows/runs/:id',
+        name: 'FlowRunDetail',
+        component: () => import('@/views/flows/run-detail.vue'),
+        meta: {
+          title: '流水线执行详情',
+          hideInMenu: true,
+        },
+      },
+      {
         path: '/execution-records',
         name: 'ExecutionRecords',
         component: () => import('@/views/execution-records/index.vue'),

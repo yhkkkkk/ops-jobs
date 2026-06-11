@@ -36,6 +36,7 @@ class FlowNode(models.Model):
         CONDITION = "condition", "条件分支"
         PARALLEL = "parallel", "并行网关"
         JOIN = "join", "汇聚网关"
+        SUB_PROCESS = "sub_process", "子流程"
 
     template = models.ForeignKey(
         FlowTemplate,
