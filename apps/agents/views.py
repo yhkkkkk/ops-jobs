@@ -288,7 +288,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         if not server.shared_secret:
             return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-        api_url = f"{server.base_url}/api/agents/{agent.host_id}"
+        api_url = f"{server.base_url}/api/agents/{agent.agent_uid}"
         client = AgentServerClient(shared_secret=server.shared_secret)
 
         try:
@@ -322,7 +322,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             if not server.shared_secret:
                 return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-            api_url = f"{server.base_url}/api/agents/{agent.host_id}/control"
+            api_url = f"{server.base_url}/api/agents/{agent.agent_uid}/control"
             client = AgentServerClient(shared_secret=server.shared_secret)
 
             payload = {
@@ -435,7 +435,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 if not server.shared_secret:
                     return SycResponse.error(message="Agent-Server未配置shared_secret")
 
-                api_url = f"{server.base_url}/api/agents/{agent.host_id}/upgrade"
+                api_url = f"{server.base_url}/api/agents/{agent.agent_uid}/upgrade"
                 client = AgentServerClient(shared_secret=server.shared_secret)
 
                 payload = {
@@ -916,6 +916,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             host_scripts = AgentService.generate_install_script(
                 host=agent.host,
                 agent_token=agent_token,
+                agent_uid=str(agent.agent_uid),
                 install_type=install_type,
                 install_mode=install_record.install_mode,
                 agent_server_url=agent_server_url,
@@ -1130,6 +1131,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     host_scripts = AgentService.generate_install_script(
                         host=host,
                         agent_token=agent_token,
+                        agent_uid=str(agent.agent_uid),
                         install_type=install_type,
                         install_mode=install_mode,
                         agent_server_url=agent_server_url,

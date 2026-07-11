@@ -17,6 +17,7 @@ import (
 	"ops-job-agent-server/internal/task"
 	"ops-job-agent-server/pkg/api"
 
+	"github.com/google/uuid"
 	gorillaWs "github.com/gorilla/websocket"
 )
 
@@ -68,7 +69,7 @@ func TestTaskDispatchLogResultFlow(t *testing.T) {
 	s.statusStream = &fakeStatusStream{}
 
 	// register agent
-	_, agentID, err := agentMgr.Register("a1", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("a1", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestTaskBatchDispatchE2E(t *testing.T) {
 	pending := task.NewPendingTaskStore(nil)
 	s := newTestServerForE2E(cfg, agentMgr, pending)
 
-	_, agentID, err := agentMgr.Register("batch-agent", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("batch-agent", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -257,7 +258,7 @@ func TestPendingTaskRestoreE2E(t *testing.T) {
 	pending := task.NewPendingTaskStore(nil)
 	s := newTestServerForE2E(cfg, agentMgr, pending)
 
-	_, agentID, err := agentMgr.Register("pending-agent", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("pending-agent", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -319,7 +320,7 @@ func TestDuplicateMessageIDDedupE2E(t *testing.T) {
 	logSink := &fakeLogStream{}
 	s.logStream = logSink
 
-	_, agentID, err := agentMgr.Register("dup-agent", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("dup-agent", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -376,7 +377,7 @@ func TestCancelTaskOnlineE2E(t *testing.T) {
 	pending := task.NewPendingTaskStore(nil)
 	s := newTestServerForE2E(cfg, agentMgr, pending)
 
-	_, agentID, err := agentMgr.Register("cancel-agent", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("cancel-agent", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -430,7 +431,7 @@ func TestCancelTaskOfflinePendingE2E(t *testing.T) {
 	pending := task.NewPendingTaskStore(nil)
 	s := newTestServerForE2E(cfg, agentMgr, pending)
 
-	_, agentID, err := agentMgr.Register("pending-cancel-agent", "tok", nil, nil, 0)
+	_, agentID, err := agentMgr.Register("pending-cancel-agent", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

@@ -31,9 +31,9 @@ func (s *Server) pushLogs(ctx context.Context, agentID, taskID string, logs []ap
 	entries := make([]map[string]interface{}, 0, len(logs))
 	for _, log := range logs {
 		entry := map[string]interface{}{
-			"task_id":  taskID,
-			"agent_id": agentID,
-			"content":  log.Content,
+			"task_id":   taskID,
+			"agent_uid": agentID,
+			"content":   log.Content,
 		}
 		if log.TaskID != "" {
 			entry["task_id"] = log.TaskID

@@ -77,6 +77,7 @@ def parse_args():
     p.add_argument("--install-type", help="install type", default="agent")
     p.add_argument("--agent-token", help="agent token", default="")
     p.add_argument("--host-id", help="host id", default=None)
+    p.add_argument("--agent-uid", help="stable agent UUID", default="")
     p.add_argument("--agent-name", help="agent name", default=None)
     p.add_argument("--agent-server-url", help="agent server url", default="")
     p.add_argument("--control-plane-url", help="control plane url", default="")
@@ -103,6 +104,7 @@ def render_config_yaml(
     install_type: str = "agent",
     agent_token: str = "",
     host_id: int = None,
+    agent_uid: str = "",
     agent_name: str = None,
     agent_server_url: str = "",
     control_plane_url: str = "",
@@ -147,6 +149,8 @@ def render_config_yaml(
     """
     overrides: Dict[str, Any] = {}
     if install_type == "agent":
+        if not agent_uid:
+            raise ValueError("agent_uid is required for agent configuration")
         overrides = {
             "connection": {
                 "agent_server_url": agent_server_url,
@@ -154,6 +158,7 @@ def render_config_yaml(
             "identification": {
                 "agent_token": agent_token,
                 "agent_name": agent_name or "",
+                "agent_uid": str(agent_uid),
             },
             "logging": {
                 "log_level": "info",
@@ -316,6 +321,7 @@ def main():
         install_type=args.install_type,
         agent_token=args.agent_token,
         host_id=int(args.host_id) if args.host_id else None,
+        agent_uid=args.agent_uid,
         agent_name=args.agent_name,
         agent_server_url=args.agent_server_url,
         control_plane_url=args.control_plane_url,

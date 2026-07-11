@@ -47,7 +47,7 @@ func (w *ResultStreamWriter) PushResult(ctx context.Context, agentID string, res
 	values := map[string]interface{}{
 		"task_id":      result.TaskID,
 		"execution_id": executionID,
-		"agent_id":     agentID,
+		"agent_uid":    agentID,
 		"host_id":      hostID,
 		"status":       result.Status,
 		"exit_code":    result.ExitCode,

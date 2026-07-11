@@ -66,6 +66,24 @@ def test_push_task_to_agent_failover_to_secondary_server():
     assert mock_post.call_args_list[1].args[0].startswith(secondary.base_url)
 
 
+def test_push_task_to_agent_routes_by_stable_agent_uid():
+    agent = _create_agent()
+    server = _create_server("stable-identity")
+
+    with patch(
+        "utils.agent_server_client.AgentServerClient.post",
+        return_value=_FakeResponse(status_code=200, payload={"status": "queued"}),
+    ) as mock_post:
+        result = AgentExecutionService.push_task_to_agent(
+            agent=agent,
+            task_spec={"id": "task-stable-identity"},
+            agent_server_id=server.id,
+        )
+
+    assert result["success"] is True
+    assert result["agent_uid"] == str(agent.agent_uid)
+    assert mock_post.call_args.args[0] == f"{server.base_url}/api/agents/{agent.agent_uid}/tasks"
+
 def test_push_task_to_agent_uses_other_active_server_when_selected_server_inactive():
     agent = _create_agent()
     primary = _create_server("inactive-primary", is_active=False)
@@ -143,4 +161,4 @@ def test_push_task_to_agent_without_server_selection_returns_original_error():
     )
 
     assert result["success"] is False
-    assert result["error"] == "请先选择 Agent-Server"
+    assert result["error"] == "目标主机 Agent 未绑定 Agent-Server"

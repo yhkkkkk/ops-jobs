@@ -41,7 +41,7 @@ def _create_server(name: str, shared_secret: str = "secret", is_active: bool = T
 
 def _build_task_map(agent: Agent, task_id: str = "task-1"):
     return {
-        agent.host_id: {
+        str(agent.agent_uid): {
             "agent": agent,
             "tasks": [{"task_id": task_id, "host_id": agent.host_id}],
         }
@@ -69,6 +69,19 @@ def test_cancel_tasks_failover_to_secondary_server():
     assert mock_post.call_args_list[0].args[0].startswith(primary.base_url)
     assert mock_post.call_args_list[1].args[0].startswith(secondary.base_url)
 
+
+def test_cancel_tasks_routes_by_stable_agent_uid():
+    agent = _create_agent()
+    server = _create_server("cancel-stable-identity")
+
+    with patch("utils.agent_server_client.AgentServerClient.post", return_value=_FakeResponse(200, "ok")) as mock_post:
+        result = AgentExecutionService._cancel_tasks_via_agent_server(
+            agent_task_map=_build_task_map(agent),
+            agent_server_id=server.id,
+        )
+
+    assert result["success"] is True
+    assert mock_post.call_args.args[0] == f"{server.base_url}/api/agents/{agent.agent_uid}/tasks/task-1/cancel"
 
 def test_cancel_tasks_uses_bound_server_when_selected_without_secret():
     agent = _create_agent()

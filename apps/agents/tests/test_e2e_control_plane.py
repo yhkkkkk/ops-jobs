@@ -117,7 +117,7 @@ def control_plane_env(django_db_blocker):
     agent_cfg_dir.mkdir(parents=True, exist_ok=True)
 
     _write_server_config(server_cfg_dir / "config.yaml", server_port, redis_addr, redis_password, redis_db, shared_secret)
-    _write_agent_config(agent_cfg_dir / "config.yaml", ws_url, agent_token)
+    _write_agent_config(agent_cfg_dir / "config.yaml", ws_url, agent_token, str(agent.agent_uid))
 
     server_log = server_cfg_dir / "server.log"
     agent_log = agent_cfg_dir / "agent.log"
@@ -138,7 +138,7 @@ def control_plane_env(django_db_blocker):
     agent2_cfg_dir = work_dir / "agent2"
     agent2_cfg_dir.mkdir(parents=True, exist_ok=True)
     agent2_log = agent2_cfg_dir / "agent2.log"
-    _write_agent_config(agent2_cfg_dir / "config.yaml", ws_url, agent2_token, port_offset=1)
+    _write_agent_config(agent2_cfg_dir / "config.yaml", ws_url, agent2_token, str(agent2.agent_uid), port_offset=1)
     agent2_proc = subprocess.Popen(
         [str(agent_bin), "start"],
         cwd=str(agent2_cfg_dir),
@@ -147,11 +147,10 @@ def control_plane_env(django_db_blocker):
         stderr=subprocess.STDOUT,
         text=True,
     )
-    agent2_id = _wait_agent_registered(server_url)
+    _wait_agent_registered(server_url)
 
-    agent_server_id = _wait_agent_registered(server_url)
-    # 提供覆盖的 agent_server_id，便于推送任务时使用服务端注册的 ID（而非 host_id）
-    settings.AGENT_ID_OVERRIDE = agent_server_id
+    _wait_agent_registered(server_url)
+    agent_server_id = str(agent.agent_uid)
     # 标记本地 DB 中的 Agent 为在线并更新 endpoint，避免后续执行策略因状态=offline 直接失败
     with django_db_blocker.unblock():
         agent.status = "online"
@@ -175,7 +174,8 @@ def control_plane_env(django_db_blocker):
         "host2": host2,
         "server_url": server_url,
         "agent_server_id": agent_server_id,
-        "agent_server_id_2": agent2_id,
+        "agent_server_id_2": str(agent2.agent_uid),
+        "agent_uid": str(agent.agent_uid),
         "agent_server_db_id": agent_server_model.id,
         "waiter": waiter,
         "server_proc": server_proc,
@@ -364,8 +364,8 @@ def test_task_stats_end_to_end(control_plane_env):
         db=settings.REDIS_DB_REALTIME,
         decode_responses=True,
     )
-    agent_id_str = str(agent_server_id)
-    fields = _poll_task_stats_from_stream(r, agent_id_str, timeout=30)
+    agent_uid = control_plane_env["agent_uid"]
+    fields = _poll_task_stats_from_stream(r, agent_uid, timeout=30)
     if not fields:
         _dump_logs(control_plane_env, tail=400)
         pytest.fail("未读取到 agent_task_stats 流消息，task stats 链路未生效")
@@ -477,7 +477,7 @@ def _write_server_config(path: Path, port: int, redis_addr: str, redis_password:
     path.write_text(cfg, encoding="utf-8")
 
 
-def _write_agent_config(path: Path, ws_url: str, agent_token: str, port_offset: int = 0) -> None:
+def _write_agent_config(path: Path, ws_url: str, agent_token: str, agent_uid: str, port_offset: int = 0) -> None:
     cfg = (
         "connection:\n"
         f"  agent_server_url: \"{ws_url}\"\n"
@@ -485,6 +485,7 @@ def _write_agent_config(path: Path, ws_url: str, agent_token: str, port_offset: 
         "identification:\n"
         "  agent_name: \"e2e-agent\"\n"
         f"  agent_token: \"{agent_token}\"\n"
+        f'  agent_uid: "{agent_uid}"\n'
         "logging:\n"
         "  log_dir: \"\"\n"
         "task:\n"
@@ -558,7 +559,8 @@ def _restart_agent_server(env: dict) -> None:
     env["server_proc"] = _start_agent_server(env["server_bin"], env["server_cfg_dir"], env.get("server_log"))
     env.setdefault("server_procs", []).append(env["server_proc"])
     _wait_server_ready(env["server_url"])
-    env["agent_server_id"] = _wait_agent_registered(env["server_url"])
+    _wait_agent_registered(env["server_url"])
+    env["agent_server_id"] = env["agent_uid"]
 
 
 def _ensure_redis_available(redis_addr: str) -> None:
@@ -579,14 +581,14 @@ def _start_file_server(root: Path):
     return httpd, thread, httpd.server_address[1]
 
 
-def _poll_task_stats_from_stream(r: redis.Redis, agent_id: str, timeout: int = 15) -> dict | None:
+def _poll_task_stats_from_stream(r: redis.Redis, agent_uid: str, timeout: int = 15) -> dict | None:
     """从 agent_task_stats 流读取指定 agent 的最新记录。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         entries = r.xrevrange("agent_task_stats", count=20)
         for _, raw in entries:
             # raw is dict with string values when decode_responses=True
-            if raw.get("agent_id") == agent_id:
+            if raw.get("agent_uid") == agent_uid:
                 return raw
         time.sleep(0.5)
     return None
@@ -625,10 +627,9 @@ def _dump_logs(env: dict, tail: int = 200):
 
 
 def _refresh_agent_id(env: dict) -> str:
-    """读取 server 当前在线 agent 列表，刷新 env 中的 agent_server_id。"""
+    """Wait for reconnection while retaining the control-plane UUID identity."""
     try:
-        new_id = _wait_agent_registered(env["server_url"], timeout=30)
-        env["agent_server_id"] = new_id
-        return new_id
+        _wait_agent_registered(env["server_url"], timeout=30)
     except Exception:
-        return env["agent_server_id"]
+        pass
+    return env["agent_uid"]

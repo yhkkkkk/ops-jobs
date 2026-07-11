@@ -2,13 +2,14 @@ package api
 
 // AgentInfo 是向控制面注册时上报、以及控制面返回的 agent 信息
 type AgentInfo struct {
-	ID      string      `json:"id,omitempty"`
-	Name    string      `json:"name"`
-	Version string      `json:"version,omitempty"`
-	System  *SystemInfo `json:"system"`
-	WSURL   string      `json:"ws_url,omitempty"`
-	Token   string      `json:"token,omitempty"`   // 注册成功后返回的正式 token（首次注册后由控制面签发）
-	HostID  int         `json:"host_id,omitempty"` // 控制面主机ID，用于建立映射关系
+	ID       string      `json:"id,omitempty"`
+	Name     string      `json:"name"`
+	Version  string      `json:"version,omitempty"`
+	System   *SystemInfo `json:"system"`
+	WSURL    string      `json:"ws_url,omitempty"`
+	Token    string      `json:"token,omitempty"`   // 注册成功后返回的正式 token（首次注册后由控制面签发）
+	AgentUID string      `json:"agent_uid"`         // 控制面稳定 Agent UUID
+	HostID   int         `json:"host_id,omitempty"` // 资产关联元数据
 }
 
 // TaskSpec 控制面下发的任务定义

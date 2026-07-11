@@ -971,9 +971,10 @@ func (a *Agent) handleWSAuthError() (string, error) {
 func (a *Agent) register() error {
 	wasRegistered := a.info != nil
 	info := AgentInfo{
-		Name:   a.cfg.Identification.AgentName,
-		System: &a.system,
-		HostID: a.cfg.Identification.HostID,
+		Name:     a.cfg.Identification.AgentName,
+		AgentUID: a.cfg.Identification.AgentUID,
+		System:   &a.system,
+		HostID:   a.cfg.Identification.HostID,
 	}
 
 	// Agent-Server 模式：向 Agent-Server 注册

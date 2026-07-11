@@ -76,11 +76,12 @@ type TaskResult struct {
 
 // RegisterRequest Agent注册请求
 type RegisterRequest struct {
-	Name   string            `json:"name"`
-	Token  string            `json:"token,omitempty"`
-	Labels map[string]string `json:"labels,omitempty"`
-	System *SystemInfo       `json:"system,omitempty"`
-	HostID int               `json:"host_id,omitempty"`
+	AgentUID string            `json:"agent_uid"`
+	Name     string            `json:"name"`
+	Token    string            `json:"token,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+	System   *SystemInfo       `json:"system,omitempty"`
+	HostID   int               `json:"host_id,omitempty"`
 }
 
 // RegisterResponse Agent注册响应

@@ -39,40 +39,44 @@ func NewManager(maxConns int, heartbeatTimeout time.Duration, cfg *config.Config
 	}
 }
 
-// Register 注册 Agent
-func (m *Manager) Register(name, token string, labels map[string]string, system *api.SystemInfo, hostID int) (*Connection, string, error) {
+// Register registers an Agent by the stable UUID issued by the control plane.
+func (m *Manager) Register(name, token string, labels map[string]string, system *api.SystemInfo, hostID int, agentUID string) (*Connection, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 检查连接数限制
-	if len(m.agents) >= m.maxConns {
-		return nil, "", serrors.ErrMaxConnectionsReached
+	parsedUID, err := uuid.Parse(agentUID)
+	if err != nil || parsedUID.Version() != 4 {
+		return nil, "", serrors.ErrInvalidAgentUID
 	}
+	agentID := parsedUID.String()
 
-	// 生成 Agent ID
-	agentID := uuid.New().String()
-
-	// 如果提供了 token，检查是否已存在
 	if token != "" {
 		if conn, exists := m.agentsByToken[token]; exists {
-			// 更新现有连接
+			if conn.ID != agentID {
+				return nil, "", serrors.ErrInvalidAgentUID
+			}
 			conn.mu.Lock()
 			conn.Name = name
 			conn.Labels = labels
 			conn.System = system
-			conn.UpdateHeartbeat()
+			conn.HostID = hostID
+			conn.LastHeartbeat = time.Now()
 			conn.mu.Unlock()
 			return conn, conn.ID, nil
 		}
 	} else {
-		// 生成新的 token
-		token = uuid.New().String()
+		token = uuid.NewString()
+	}
+	if conn, exists := m.agents[agentID]; exists {
+		if conn.Token != token {
+			return nil, "", serrors.ErrInvalidToken
+		}
+		return conn, conn.ID, nil
+	}
+	if len(m.agents) >= m.maxConns {
+		return nil, "", serrors.ErrMaxConnectionsReached
 	}
 
-	// 创建持久化 AckStore
-	ackStore := websocket.NewAckStore(m.redisClient, "agent-server") // 使用Redis客户端
-
-	// 创建新连接（注意：这里还没有 WebSocket 连接，需要后续通过 Connect 方法设置）
 	conn := &Connection{
 		ID:           agentID,
 		Name:         name,
@@ -84,17 +88,15 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 		LogBuffer:    make(chan *api.LogEntry, 1000),
 		HostID:       hostID,
 		runningTasks: make(map[string]*api.TaskSpec),
-		ackStore:     ackStore,
+		ackStore:     websocket.NewAckStore(m.redisClient, "agent-server"),
 	}
-
 	m.agents[agentID] = conn
 	m.agentsByToken[token] = conn
 
 	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id":   agentID,
+		"agent_uid":  agentID,
 		"agent_name": name,
 	}).Info("agent registered")
-
 	return conn, agentID, nil
 }
 

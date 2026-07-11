@@ -63,7 +63,7 @@ func (w *TaskStatsStreamWriter) PushStats(ctx context.Context, stats *TaskStats)
 	}
 
 	fields := map[string]interface{}{
-		"agent_id":        stats.AgentID,
+		"agent_uid":       stats.AgentID,
 		"total":           stats.TotalTasks,
 		"success":         stats.SuccessTasks,
 		"failed":          stats.FailedTasks,

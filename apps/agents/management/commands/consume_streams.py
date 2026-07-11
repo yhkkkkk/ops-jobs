@@ -164,7 +164,7 @@ class Command(BaseCommand):
                 "step_name": fields.get("step_name"),
                 "step_order": _maybe_int(fields.get("step_order")) or 0,
                 "step_id": fields.get("step_id"),
-                "agent_id": fields.get("agent_id"),
+                "agent_uid": fields.get("agent_uid"),
                 "received_at": time.time(),
             }
             _store_log(normalized)
@@ -231,111 +231,72 @@ class Command(BaseCommand):
 
     @staticmethod
     def handle_agent_status(msg_id: str, fields: dict) -> bool:
-        """
-        处理Agent状态流消息（心跳）
-        """
+        """Update an Agent only when the stream carries its stable UUID."""
         try:
-            # 获取Agent ID
-            agent_id = fields.get("agent_id") or fields.get("id")
-            if not agent_id:
-                logger.warning("Agent状态消息缺少agent_id", extra={"msg_id": msg_id, "fields": fields})
-                return True  # 不阻塞处理
+            agent_uid = _parse_agent_uid(fields.get("agent_uid"))
+            if agent_uid is None:
+                logger.warning("Agent status message missing or has invalid agent_uid", extra={"msg_id": msg_id})
+                return False
 
-            # 查找 Agent
             try:
-                agent = Agent.objects.get(id=int(agent_id))
-            except (Agent.DoesNotExist, ValueError):
-                logger.warning("Agent状态更新失败：Agent不存在", extra={"msg_id": msg_id, "agent_id": agent_id})
-                return True
+                agent = Agent.objects.get(agent_uid=agent_uid)
+            except Agent.DoesNotExist:
+                logger.warning("Agent status message references an unknown agent_uid", extra={"msg_id": msg_id, "agent_uid": str(agent_uid)})
+                return False
 
-            # 解析时间戳
             timestamp = fields.get("timestamp") or fields.get("last_heartbeat") or timezone.now()
             if isinstance(timestamp, (int, float)):
                 timestamp = datetime.fromtimestamp(timestamp, tz=timezone.get_current_timezone())
-            elif isinstance(timestamp, str) and timestamp.endswith('Z'):
-                timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            elif isinstance(timestamp, str) and timestamp.endswith("Z"):
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                 if timezone.is_naive(timestamp):
                     timestamp = timezone.make_aware(timestamp)
 
-            # 更新 Agent 状态
             new_status = fields.get("status", "online")
-            if new_status in ['online', 'offline', 'pending', 'disabled']:
+            if new_status in ["online", "offline", "pending", "disabled"]:
                 agent.status = new_status
                 agent.last_heartbeat_at = timestamp
                 agent.last_error_code = fields.get("error_code") or ""
-                agent.save(update_fields=['status', 'last_heartbeat_at', 'last_error_code', 'updated_at'])
-
-            logger.debug("更新Agent状态", extra={
-                "msg_id": msg_id,
-                "agent_id": agent_id,
-                "status": new_status,
-                "timestamp": timestamp.isoformat()
-            })
-
+                agent.save(update_fields=["status", "last_heartbeat_at", "last_error_code", "updated_at"])
             return True
-
         except Exception as exc:
-            logger.exception("处理Agent状态消息失败", extra={"msg_id": msg_id, "error": str(exc)})
+            logger.exception("Failed to process Agent status message", extra={"msg_id": msg_id, "error": str(exc)})
             return False
-
     @staticmethod
     def handle_agent_task_stats(msg_id: str, fields: dict) -> bool:
-        """
-        处理 Agent 任务统计流消息
-
-        消息格式:
-        {
-            'agent_id': str,
-            'total': int,
-            'success': int,
-            'failed': int,
-            'cancelled': int,
-            'avg_duration_ms': float,
-            'success_rate': float,
-            'timestamp': int,  # Unix timestamp in milliseconds
-        }
-        """
+        """Persist Agent task statistics addressed by the stable UUID only."""
         try:
-            agent_id = fields.get('agent_id')
-            if not agent_id:
-                logger.warning("任务统计消息缺少agent_id", extra={"msg_id": msg_id, "fields": fields})
-                return True  # 不阻塞处理
+            agent_uid = _parse_agent_uid(fields.get("agent_uid"))
+            if agent_uid is None:
+                logger.warning("Agent task stats message missing or has invalid agent_uid", extra={"msg_id": msg_id})
+                return False
 
-            # 查找 Agent
             try:
-                agent = Agent.objects.get(id=int(agent_id))
-            except (Agent.DoesNotExist, ValueError):
-                logger.warning(f"Agent {agent_id} not found, skipping task_stats", extra={"msg_id": msg_id})
-                return True  # 返回 True 避免重试
+                agent = Agent.objects.get(agent_uid=agent_uid)
+            except Agent.DoesNotExist:
+                logger.warning("Agent task stats message references an unknown agent_uid", extra={"msg_id": msg_id, "agent_uid": str(agent_uid)})
+                return False
 
-            # 更新或创建统计记录
-            stats, created = AgentTaskStats.objects.update_or_create(
+            AgentTaskStats.objects.update_or_create(
                 agent=agent,
                 defaults={
-                    'total_tasks': int(fields.get('total', 0)),
-                    'success_tasks': int(fields.get('success', 0)),
-                    'failed_tasks': int(fields.get('failed', 0)),
-                    'cancelled_tasks': int(fields.get('cancelled', 0)),
-                    'avg_duration_ms': float(fields.get('avg_duration_ms', 0)),
-                }
+                    "total_tasks": int(fields.get("total", 0)),
+                    "success_tasks": int(fields.get("success", 0)),
+                    "failed_tasks": int(fields.get("failed", 0)),
+                    "cancelled_tasks": int(fields.get("cancelled", 0)),
+                    "avg_duration_ms": float(fields.get("avg_duration_ms", 0)),
+                },
             )
-
-            logger.debug("保存Agent任务统计", extra={
-                "msg_id": msg_id,
-                "agent_id": agent_id,
-                "total": stats.total_tasks,
-                "success": stats.success_tasks,
-                "failed": stats.failed_tasks,
-                "cancelled": stats.cancelled_tasks,
-                "success_rate": stats.success_rate,
-            })
-
             return True
-
         except Exception as exc:
-            logger.exception("处理Agent任务统计消息失败", extra={"msg_id": msg_id, "error": str(exc)})
+            logger.exception("Failed to process Agent task statistics", extra={"msg_id": msg_id, "error": str(exc)})
             return False
-
+def _parse_agent_uid(value):
+    try:
+        parsed = uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return parsed if parsed.version == 4 else None
 
 def _maybe_int(value):
     try:

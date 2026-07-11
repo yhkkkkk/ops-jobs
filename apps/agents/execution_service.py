@@ -284,9 +284,7 @@ class AgentExecutionService:
                     'error': '目标主机 Agent 未绑定 Agent-Server'
                 }
 
-            # 支持在设置中提供覆盖的 agent_id（测试/单实例场景）
-            override_agent_id = getattr(settings, "AGENT_ID_OVERRIDE", None)
-            agent_identifier = override_agent_id or agent.host_id
+            agent_identifier = str(agent.agent_uid)
 
             servers = AgentExecutionService._get_candidate_agent_servers(agent, agent_server_id=agent_server_id)
             if not servers:
@@ -326,7 +324,8 @@ class AgentExecutionService:
                     return {
                         'success': True,
                         'task_id': task_spec['id'],
-                        'agent_id': agent.host_id,
+                        'agent_uid': str(agent.agent_uid),
+                        'host_id': agent.host_id,
                         'status': result.get('status', 'dispatched'),
                         'agent_server_id': server.id,
                         'agent_server_base_url': server.base_url,
@@ -1635,7 +1634,7 @@ class AgentExecutionService:
                         try:
                             host = Host.objects.get(id=host_id)
                             if hasattr(host, 'agent') and host.agent:
-                                agent_id = host.agent.host_id
+                                agent_id = str(host.agent.agent_uid)
                                 if agent_id not in agent_task_map:
                                     agent_task_map[agent_id] = {
                                         'agent': host.agent,
@@ -1717,8 +1716,9 @@ class AgentExecutionService:
             errors = []
 
             # 为每个Agent取消任务（支持 failover）
-            for agent_id, agent_info in agent_task_map.items():
+            for _, agent_info in agent_task_map.items():
                 agent = agent_info['agent']
+                agent_id = str(agent.agent_uid)
                 tasks = agent_info['tasks']
                 candidate_servers = AgentExecutionService._get_candidate_agent_servers(
                     agent,

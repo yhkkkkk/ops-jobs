@@ -37,20 +37,20 @@ func (s *Server) handleRegister(c *gin.Context) {
 		}
 	}
 
-	_, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID)
+	_, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID, req.AgentUID)
 	if err != nil {
 		if errors.Is(err, serrors.ErrMaxConnectionsReached) {
 			writeError(c, http.StatusServiceUnavailable, serrors.ErrCodeInternal, serrors.ErrMaxConnectionsReached.Error())
 			return
 		}
-		writeError(c, http.StatusInternalServerError, serrors.ErrCodeInternal, err.Error())
+		writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 		return
 	}
 
 	// 通知控制面 Agent 已上线（通过状态流）
 	if s.statusStream != nil {
 		statusFields := map[string]interface{}{
-			"agent_id":   agentID,
+			"agent_uid":  agentID,
 			"agent_name": req.Name,
 			"host_id":    req.HostID,
 			"status":     constants.StatusActive,
@@ -132,7 +132,7 @@ func (s *Server) handlePushTask(c *gin.Context) {
 			writeError(c, http.StatusServiceUnavailable, serrors.ErrCodeConnectionFailed, serrors.ErrAgentConnectionClosed.Error())
 			return
 		}
-		writeError(c, http.StatusInternalServerError, serrors.ErrCodeInternal, err.Error())
+		writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 		return
 	}
 
@@ -177,7 +177,7 @@ func (s *Server) handlePushTasksBatch(c *gin.Context) {
 			writeError(c, http.StatusServiceUnavailable, serrors.ErrCodeConnectionFailed, serrors.ErrAgentConnectionClosed.Error())
 			return
 		}
-		writeError(c, http.StatusInternalServerError, serrors.ErrCodeInternal, err.Error())
+		writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 		return
 	}
 
@@ -192,7 +192,7 @@ func (s *Server) handlePushTasksBatch(c *gin.Context) {
 	}
 
 	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id":   agentID,
+		"agent_uid":  agentID,
 		"task_count": len(taskSpecs),
 		"task_ids":   taskIDs,
 	}).Info("batch tasks pushed to agent")
@@ -252,7 +252,7 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 					return
 				}
 			}
-			writeError(c, http.StatusInternalServerError, serrors.ErrCodeInternal, err.Error())
+			writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 			return
 		}
 
@@ -319,7 +319,7 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 	if conn.Status == constants.StatusActive && conn.Conn != nil {
 		if err := conn.SendCancelTasks(req.TaskIDs); err != nil {
 			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
-				"agent_id":   agentID,
+				"agent_uid":  agentID,
 				"task_count": len(req.TaskIDs),
 			}).Error("send cancel tasks batch message failed")
 
@@ -343,7 +343,7 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 					}
 				}
 			} else {
-				writeError(c, http.StatusInternalServerError, serrors.ErrCodeInternal, err.Error())
+				writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 				return
 			}
 		} else {

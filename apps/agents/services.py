@@ -198,7 +198,7 @@ class AgentService:
         return ''
 
     @classmethod
-    def generate_install_script(cls, host: Host, agent_token: str, install_type: str = 'agent',
+    def generate_install_script(cls, host: Host, agent_token: str, agent_uid: str, install_type: str = 'agent',
                                 install_mode: str = 'agent-server', agent_server_url: str = '',
                                 agent_server_backup_url: str = '', download_url: str = '',
                                 ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
@@ -304,6 +304,7 @@ exit 1
                 install_type=install_type,
                 agent_token=agent_token,
                 host_id=host.id,
+                agent_uid=agent_uid,
                 agent_name=host.name,
                 agent_server_url=agent_server_url or "",
                 control_plane_url=control_plane_url or "",
@@ -364,195 +365,6 @@ exit 1
             Dict[str, str]: 包含不同操作系统的卸载脚本
         """
         scripts = {}
-
-        # 根据agent类型生成不同的配置
-        if agent_type == 'agent':
-            service_name = "ops-job-agent"
-            install_dir = "/opt/ops-job-agent"
-            backup_dir = "/opt/ops-job-agent-backup"
-        elif agent_type == 'agent-server':
-            service_name = "ops-job-agent-server"
-            install_dir = "/opt/ops-job-agent-server"
-            backup_dir = "/opt/ops-job-agent-server-backup"
-        else:
-            raise ValueError(f"Unsupported agent_type: {agent_type}")
-
-        # 从模板文件加载 Linux 卸载脚本（模板文件位于 apps/agents/templates/linux_uninstall.sh）
-        import os as __os
-        tpl_path = __os.path.join(__os.path.dirname(__file__), "templates", "linux_uninstall.sh")
-        try:
-            with open(tpl_path, "r", encoding="utf-8") as tpl_f:
-                linux_tpl = tpl_f.read()
-        except Exception:
-            # 如果模板缺失，回退为内联最小脚本（保证不会中断生成）
-            linux_tpl = """#!/bin/bash
-set -e
-echo "卸载脚本模板缺失，请检查完整性"
-exit 1
-"""
-
-        linux_script = string.Template(linux_tpl).safe_substitute(
-            SERVICE_NAME=service_name,
-            INSTALL_DIR=install_dir,
-            BACKUP_DIR=backup_dir,
-        )
-        scripts['linux'] = linux_script
-
-        # 目前仅输出 Linux 卸载脚本（暂不支持 Windows）
-        return scripts
-
-    @staticmethod
-    def _should_fallback_to_public(result: Dict[str, Any]) -> bool:
-        """判断是否应从内网IP回退到外网IP"""
-        if not result or result.get('success'):
-            return False
-
-        msg_blob = f"{result.get('message', '')} {result.get('stderr', '')}".lower()
-        return (
-            result.get('exit_code') == -1
-            or 'ssh连接失败' in msg_blob
-            or 'ssh 连接失败' in msg_blob
-            or 'authentication' in msg_blob
-            or 'timed out' in msg_blob
-            or '超时' in msg_blob
-        )
-
-    @classmethod
-    def _execute_install_with_ip_fallback(
-        cls,
-        *,
-        host: Host,
-        script_content: str,
-        script_type: str,
-        timeout: int,
-        account_id: Optional[int],
-        install_task_id: str,
-        log_stream_key: str,
-        connection_timeout_internal: int = 5,
-        connection_timeout_public: int = 10,
-    ) -> Dict[str, Any]:
-        """先尝试内网IP短连，失败时自动回退到外网IP执行脚本。"""
-        original_internal = host.internal_ip
-        original_public = host.public_ip
-        candidates = []
-        if original_internal:
-            candidates.append(("internal", original_internal, connection_timeout_internal))
-        if original_public and original_public != original_internal:
-            candidates.append(("public", original_public, connection_timeout_public))
-
-        if not candidates:
-            return {
-                "success": False,
-                "host_id": getattr(host, "id", None),
-                "host_name": getattr(host, "name", None),
-                "host_ip": None,
-                "stdout": "",
-                "stderr": "缺少可用的SSH IP（内网/外网）",
-                "exit_code": -1,
-                "message": "缺少可用的SSH IP（内网/外网）",
-            }
-
-        last_result: Dict[str, Any] = {}
-        try:
-            for ip_type, ip, conn_timeout in candidates:
-                # 设置当前尝试的IP
-                if ip_type == "internal":
-                    host.internal_ip = ip
-                    host.public_ip = original_public
-                else:
-                    host.internal_ip = None
-                    host.public_ip = ip
-
-                result = fabric_ssh_manager.execute_script(
-                    host=host,
-                    script_content=script_content,
-                    script_type=script_type,
-                    timeout=timeout,
-                    account_id=account_id,
-                    task_id=install_task_id,
-                    log_stream_key=log_stream_key,
-                    connection_timeout=conn_timeout,
-                )
-
-                result["used_ip"] = ip
-                result["used_ip_type"] = ip_type
-                connection_info = result.get("connection_info", {}) or {}
-                connection_info.update({"ssh_ip": ip, "ssh_ip_type": ip_type})
-                result["connection_info"] = connection_info
-                last_result = result
-
-                if result.get("success"):
-                    return result
-
-                # 内网失败且具备外网时，记录日志并尝试外网
-                if (
-                    ip_type == "internal"
-                    and len(candidates) > 1
-                    and cls._should_fallback_to_public(result)
-                ):
-                    error_msg = result.get("stderr") or result.get("message") or "SSH连接失败"
-                    realtime_log_service.push_log(
-                        install_task_id,
-                        str(host.id),
-                        {
-                            "host_name": host.name,
-                            "host_ip": ip,
-                            "log_type": "warning",
-                            "content": f"内网IP {ip} SSH 连接失败，将尝试外网IP {original_public}: {error_msg}",
-                            "step_name": "安装 Agent",
-                            "step_order": 1,
-                        },
-                        stream_key=log_stream_key,
-                    )
-                    continue
-
-                # 其他失败直接返回，不再尝试后续IP
-                break
-        finally:
-            # 恢复原始IP数据，避免副作用
-            host.internal_ip = original_internal
-            host.public_ip = original_public
-
-        return last_result
-
-    @classmethod
-    def batch_install_agents(cls, host_ids: list, user, account_id: int = None,
-                             install_type: str = 'agent', install_mode: str = 'agent-server',
-                             agent_server_url: str = '', agent_server_backup_url: str = '',
-                             download_url: str = '', install_task_id: str = None,
-                             package_version: str = None, package_id: int = None,
-                             ws_backoff_initial_ms: int = 1000, ws_backoff_max_ms: int = 30000,
-                             ws_max_retries: int = 6, agent_server_listen_addr: str = '0.0.0.0:8080',
-                             max_connections: int = 1000, heartbeat_timeout: int = 60,
-                             ssh_timeout: int = 300, allow_reinstall: bool = False,
-                             # 最大并发任务数
-                             max_concurrent_tasks: int = None,
-                             # agent-server WebSocket 配置
-                             ws_handshake_timeout: str = None,
-                             ws_read_buffer_size: int = None,
-                             ws_write_buffer_size: int = None,
-                             ws_enable_compression: bool = True,
-                             ws_allowed_origins: list = None,
-                             # agent-server auth 配置
-                             auth_shared_secret: str = None,
-                             auth_require_signature: bool = None) -> Dict[str, Any]:
-        """
-        批量安装 Agent（通过 SSH）
-        
-        Args:
-            host_ids: 主机ID列表
-            user: 执行用户
-            account_id: 用于SSH的账号ID（可选）
-            install_mode: 安装模式
-            agent_server_url: Agent-Server 地址
-            download_url: Agent 二进制下载地址
-            install_task_id: 安装任务ID（用于SSE进度推送）
-        
-        Returns:
-            Dict[str, Any]: 安装结果
-        """
-        if not install_task_id:
-            install_task_id = str(uuid.uuid4())
         agent_server_backup_url = ''  # 备地址暂不支持，强制清空
         
         results = []
@@ -585,8 +397,11 @@ exit 1
                 agent = None
                 reinstall_required = False
 
-                # 检查是否已有Agent
-                if hasattr(host, 'agent') and host.agent:
+                # 创建或更新每台主机唯一的 Agent 记录。
+                if not (hasattr(host, 'agent') and host.agent):
+                    endpoint = agent_server_listen_addr or '0.0.0.0:8080' if install_type == 'agent-server' else agent_server_url or ''
+                    agent = Agent.objects.create(host=host, agent_type=install_type, status='pending', endpoint=endpoint)
+                else:
                     if host.agent.agent_type == install_type and host.agent.status == 'online':
                         if not allow_reinstall:
                             results.append({
@@ -685,6 +500,7 @@ exit 1
                 scripts = cls.generate_install_script(
                     host=host,
                     agent_token=agent_token,
+                    agent_uid=str(agent.agent_uid),
                     install_type=install_type,
                     install_mode=install_mode,
                     agent_server_url=agent_server_url,
@@ -1563,7 +1379,7 @@ exit 1
 
         if agent_type == 'agent':
             # Agent 控制：通过 agent-server 下发控制指令
-            api_url = f"{server.base_url}/api/agents/{agent.host_id}/control"
+            api_url = f"{server.base_url}/api/agents/{agent.agent_uid}/control"
         elif agent_type == 'agent-server':
             # Agent-Server 控制：调用 agent-server 自身的控制接口
             api_url = f"{server.base_url}/api/self/control"

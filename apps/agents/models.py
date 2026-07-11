@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 from django.contrib.auth.models import User
 from django.utils import timezone
 
@@ -21,6 +22,7 @@ class Agent(models.Model):
     ]
 
     host = models.OneToOneField(Host, on_delete=models.CASCADE, related_name='agent', verbose_name="关联主机")
+    agent_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True, verbose_name="Agent UUID")
     agent_type = models.CharField(max_length=20, choices=AGENT_TYPE_CHOICES, default='agent', verbose_name="Agent类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="状态")
     version = models.CharField(max_length=50, blank=True, verbose_name="Agent版本")
@@ -53,9 +55,15 @@ class Agent(models.Model):
             models.Index(fields=['last_heartbeat_at']),
         ]
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original_uid = type(self).objects.filter(pk=self.pk).values_list("agent_uid", flat=True).first()
+            if original_uid is not None and self.agent_uid != original_uid:
+                raise ValueError("agent_uid is immutable")
+        return super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Agent({self.host_id})-{self.get_agent_type_display()}-{self.get_status_display()}"
-
 
 class AgentToken(models.Model):
     """Agent Token 记录（仅存哈希，不存明文）"""

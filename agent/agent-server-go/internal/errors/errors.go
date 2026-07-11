@@ -83,6 +83,7 @@ var (
 	ErrPendingTaskNotFoundOnly = errors.New("task not found in pending store")
 	ErrWebSocketUnavailable    = errors.New("websocket temporarily unavailable")
 	ErrInvalidToken            = errors.New("invalid token")
+	ErrInvalidAgentUID         = errors.New("agent_uid must be a UUIDv4")
 	ErrWebSocketUpgradeFailed  = errors.New("websocket upgrade failed")
 	ErrAgentConnectFailed      = errors.New("connect agent failed")
 )

@@ -14,18 +14,19 @@ import (
 
 // ConnectionConfig 连接配置（仅支持 Agent-Server WS 模式）
 type ConnectionConfig struct {
-	AgentServerURL     string `mapstructure:"agent_server_url"`        // Agent-Server 地址
-	AgentServerBackup  string `mapstructure:"agent_server_backup_url"` // 可选备用 WS 地址
-	WSBackoffInitialMs int    `mapstructure:"ws_backoff_initial_ms"`
-	WSBackoffMaxMs     int    `mapstructure:"ws_backoff_max_ms"`
-	WSMaxRetries       int    `mapstructure:"ws_max_retries"`
-	WSOutboxMaxSize    int    `mapstructure:"ws_outbox_max_size"` // WS 断线本地缓冲上限（消息条数）
+	AgentServerURL      string `mapstructure:"agent_server_url"`        // Agent-Server 地址
+	AgentServerBackup   string `mapstructure:"agent_server_backup_url"` // 可选备用 WS 地址
+	WSBackoffInitialMs  int    `mapstructure:"ws_backoff_initial_ms"`
+	WSBackoffMaxMs      int    `mapstructure:"ws_backoff_max_ms"`
+	WSMaxRetries        int    `mapstructure:"ws_max_retries"`
+	WSOutboxMaxSize     int    `mapstructure:"ws_outbox_max_size"`    // WS 断线本地缓冲上限（消息条数）
 	WSEnableCompression bool   `mapstructure:"ws_enable_compression"` // 是否启用 WebSocket 压缩
 }
 
 // IdentificationConfig 身份标识配置
 type IdentificationConfig struct {
 	AgentName  string `mapstructure:"agent_name"`
+	AgentUID   string `mapstructure:"agent_uid"`
 	AgentToken string `mapstructure:"agent_token"`
 	HostID     int    `mapstructure:"host_id"` // 控制面主机ID，用于建立映射关系
 }
@@ -71,11 +72,11 @@ type ResourceAdaptiveConfig struct {
 
 // Config 保存 agent 配置
 type Config struct {
-	Connection     ConnectionConfig     `mapstructure:"connection"`
-	Identification IdentificationConfig `mapstructure:"identification"`
-	Logging        LoggingConfig        `mapstructure:"logging"`
-	Task           TaskConfig           `mapstructure:"task"`
-	ResourceLimit  ResourceLimitConfig  `mapstructure:"resource_limit"`
+	Connection       ConnectionConfig       `mapstructure:"connection"`
+	Identification   IdentificationConfig   `mapstructure:"identification"`
+	Logging          LoggingConfig          `mapstructure:"logging"`
+	Task             TaskConfig             `mapstructure:"task"`
+	ResourceLimit    ResourceLimitConfig    `mapstructure:"resource_limit"`
 	ResourceAdaptive ResourceAdaptiveConfig `mapstructure:"resource_adaptive"`
 }
 

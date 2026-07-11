@@ -8,12 +8,14 @@ import (
 	"ops-job-agent-server/internal/config"
 	"ops-job-agent-server/pkg/api"
 
+	"github.com/google/uuid"
+
 	gorillaWs "github.com/gorilla/websocket"
 )
 
 // helper 创建一个在线的 Agent 连接
 func newOnlineAgent(t *testing.T, mgr *agent.Manager) (*agent.Connection, string) {
-	conn, agentID, err := mgr.Register("agent-test", "tok", nil, nil, 0)
+	conn, agentID, err := mgr.Register("agent-test", "tok", nil, nil, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("register agent: %v", err)
 	}

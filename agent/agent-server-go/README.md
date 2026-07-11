@@ -100,7 +100,7 @@ POST /api/agents/register/
 ### WebSocket 连接
 
 ```
-ws://agent-server:8080/ws/agent/{agent_id}
+ws://agent-server:8080/ws/agent/{agent_uid}
 ```
 
 **认证方式**：使用 `Sec-WebSocket-Protocol` 头部传递 token，格式：`agent-token,{agent_token}`
@@ -119,9 +119,9 @@ conn, _, err := dialer.Dial(wsURL, headers)
 
 Agent-Server 与控制面通过以下 API 交互：
 
-- **任务接收**: `POST /api/agents/{agent_id}/tasks/` - 从控制面接收任务并通过 WebSocket 转发给 Agent
+- **任务接收**: `POST /api/agents/{agent_uid}/tasks/` - 从控制面接收任务并通过 WebSocket 转发给 Agent
 - **结果上报**: 接收 Agent 的执行结果并转发给控制面（通过 Redis Stream `agent_results`）
-- **任务取消**: `POST /api/agents/{agent_id}/tasks/{task_id}/cancel/` - 取消任务
+- **任务取消**: `POST /api/agents/{agent_uid}/tasks/{task_id}/cancel/` - 取消任务
 
 > **注意**: Agent 心跳通过 WebSocket 发送，Agent-Server 内部检测心跳超时并自动清理离线 Agent，无需转发到控制面。
 

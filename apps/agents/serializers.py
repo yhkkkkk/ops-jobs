@@ -43,6 +43,7 @@ class AgentSerializer(serializers.ModelSerializer):
         model = Agent
         fields = [
             'id',
+            'agent_uid',
             'host',
             'agent_type',
             'agent_type_display',
@@ -190,6 +191,7 @@ class AgentDetailSerializer(serializers.ModelSerializer):
         model = Agent
         fields = [
             'id',
+            'agent_uid',
             'host',
             'agent_type',
             'agent_type_display',

@@ -448,7 +448,7 @@ def test_quick_execute_serializers_route_by_target_agent_binding():
 def test_cancel_routes_through_each_target_agent_binding():
     record = MagicMock(execution_id=123456, execution_parameters={})
     step = MagicMock(host_results=[{"task_id": "task-1", "host_id": 7}])
-    agent = MagicMock(host_id="agent-7", agent_server_id=3)
+    agent = MagicMock(host_id=7, agent_uid="00000000-0000-4000-8000-000000000007", agent_server_id=3)
     host = MagicMock(agent=agent)
 
     with patch(
@@ -466,4 +466,4 @@ def test_cancel_routes_through_each_target_agent_binding():
 
     assert result["success"] is True
     assert set(cancel_tasks.call_args.kwargs) == {"agent_task_map"}
-    assert cancel_tasks.call_args.kwargs["agent_task_map"]["agent-7"]["agent"] is agent
+    assert cancel_tasks.call_args.kwargs["agent_task_map"]["00000000-0000-4000-8000-000000000007"]["agent"] is agent

@@ -70,7 +70,7 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 	}
 
 	logger.GetLogger().WithFields(map[string]interface{}{
-		"agent_id": agentID,
+		"agent_uid": agentID,
 	}).Info("websocket connected")
 
 	// Agent上线时，处理待处理任务
@@ -442,7 +442,7 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 	}
 
 	fields := map[string]interface{}{
-		"agent_id":       conn.ID,
+		"agent_uid":      conn.ID,
 		"agent_name":     conn.Name,
 		"host_id":        conn.HostID,
 		"status":         status,
