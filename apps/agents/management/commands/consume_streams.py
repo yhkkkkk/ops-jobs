@@ -186,6 +186,11 @@ class Command(BaseCommand):
                 logger.warning("result message missing execution_id", extra={"id": msg_id})
                 return True  # 不阻塞
 
+            task_id = fields.get("task_id")
+            if not task_id:
+                logger.error("result message missing task_id", extra={"id": msg_id, "execution_id": execution_id})
+                return False
+
             # 提取结果基础字段
             result_payload = {
                 "status": fields.get("status"),
@@ -214,7 +219,7 @@ class Command(BaseCommand):
 
             # 调用处理服务，传入结果和进度
             resp = AgentExecutionService.handle_task_result(
-                execution_id=str(execution_id),
+                task_id=str(task_id),
                 result=result_payload,
                 progress=progress_payload
             )

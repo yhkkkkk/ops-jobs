@@ -11,6 +11,8 @@ from apps.executor.services import ExecutionRecordService
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan, JobStep, JobTemplate, PlanStep
 from apps.scheduler.models import ScheduledJob
+from apps.scheduler.services import SchedulerService
+
 from apps.scheduler.tasks import execute_scheduled_job, update_scheduled_job_stats
 
 
@@ -195,3 +197,49 @@ def test_scheduled_job_stats_reconciliation_keeps_launch_failures_without_record
     assert job.total_runs == 1
     assert job.success_runs == 0
     assert job.failed_runs == 1
+
+
+def test_scheduler_update_persists_execution_plan_and_parameters():
+    job = _create_scheduled_job()
+    replacement = _create_scheduled_job().execution_plan
+
+    SchedulerService.update_scheduled_job(
+        job,
+        execution_plan=replacement,
+        execution_parameters={"ReleaseVersion": "v2"},
+    )
+
+    job.refresh_from_db()
+    assert job.execution_plan == replacement
+    assert job.execution_parameters == {"ReleaseVersion": "v2"}
+
+
+def test_scheduler_enable_disable_no_longer_uses_removed_periodic_task():
+    job = _create_scheduled_job()
+
+    SchedulerService.disable_scheduled_job(job)
+    job.refresh_from_db()
+    assert job.is_active is False
+
+    SchedulerService.enable_scheduled_job(job)
+    job.refresh_from_db()
+    assert job.is_active is True
+
+
+def test_scheduler_reconciles_database_jobs_without_restart():
+    from apscheduler.schedulers.blocking import BlockingScheduler
+    from apps.scheduler.management.commands.run_scheduler import _sync_jobs
+
+    job = _create_scheduled_job()
+    scheduler = BlockingScheduler(timezone="Asia/Shanghai")
+
+    _sync_jobs(scheduler)
+    assert scheduler.get_job(f"scheduled_job_{job.id}") is not None
+
+    job.is_active = False
+    job.save(update_fields=["is_active", "updated_at"])
+    _sync_jobs(scheduler)
+    assert scheduler.get_job(f"scheduled_job_{job.id}") is None
+
+    assert job.success_runs == 0
+    assert job.failed_runs == 0

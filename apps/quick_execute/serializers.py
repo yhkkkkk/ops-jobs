@@ -74,7 +74,6 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
     rolling_batch_size = serializers.IntegerField(default=20, min_value=1, max_value=100, help_text="滚动批次大小(百分比)")
     rolling_batch_delay = serializers.IntegerField(default=0, min_value=0, help_text="批次间延迟(秒)")
 
-    agent_server_id = serializers.IntegerField(required=True, help_text="Agent-Server ID")
     
     def validate(self, attrs):
         """验证数据"""
@@ -85,8 +84,6 @@ class QuickScriptExecuteSerializer(serializers.Serializer):
         if not target_host_ids and not target_group_ids:
             raise serializers.ValidationError("必须指定至少一个目标主机或分组")
 
-        if not attrs.get('agent_server_id'):
-            raise serializers.ValidationError("必须选择 Agent-Server")
         
         # 验证target_host_ids格式
         for host_id in target_host_ids:
@@ -174,7 +171,6 @@ class QuickFileTransferSerializer(serializers.Serializer):
     rolling_batch_size = serializers.IntegerField(default=20, min_value=1, max_value=100, help_text="滚动批次大小(百分比)")
     rolling_batch_delay = serializers.IntegerField(default=0, min_value=0, help_text="批次间延迟(秒)")
 
-    agent_server_id = serializers.IntegerField(required=True, help_text="Agent-Server ID")
 
     def validate(self, attrs):
         """验证数据"""
@@ -208,8 +204,6 @@ class QuickFileTransferSerializer(serializers.Serializer):
         if not target_host_ids and not dynamic_ips:
             raise serializers.ValidationError("必须指定至少一个目标主机或IP地址")
 
-        if not attrs.get('agent_server_id'):
-            raise serializers.ValidationError("必须选择 Agent-Server")
 
         # 验证主机ID格式
         for host_id in target_host_ids:

@@ -45,29 +45,6 @@
                 />
               </a-form-item>
 
-              <a-form-item label="Agent-Server" required>
-                <a-select
-                  v-model="selectedAgentServerId"
-                  placeholder="请选择 Agent-Server"
-                  allow-clear
-                  allow-search
-                  :loading="agentServerLoading"
-                  :filter-option="filterAgentServerOption"
-                >
-                  <a-option
-                    v-for="server in agentServers"
-                    :key="server.id"
-                    :value="server.id"
-                    :label="`${server.name} (${server.base_url})`"
-                  >
-                    {{ server.name }} ({{ server.base_url }})
-                  </a-option>
-                </a-select>
-                <div class="agent-server-tip">
-                  控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server。
-                </div>
-              </a-form-item>
-
               <a-form-item label="执行模式">
                 <a-radio-group v-model="executeForm.execution_mode">
                   <a-radio value="parallel">并行执行</a-radio>
@@ -227,7 +204,6 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
-import { agentServerApi } from '@/api/agents'
 import type { ExecutionPlan } from '@/types'
 
 const route = useRoute()
@@ -237,28 +213,6 @@ const router = useRouter()
 const loading = ref(false)
 const executing = ref(false)
 const plan = ref<ExecutionPlan | null>(null)
-
-const agentServers = ref<any[]>([])
-const selectedAgentServerId = ref<number | null>(null)
-const agentServerLoading = ref(false)
-
-const filterAgentServerOption = (input: string, option: any) => {
-  const label = String(option?.label ?? option?.value ?? '')
-  return label.toLowerCase().includes(input.toLowerCase())
-}
-
-const fetchAgentServers = async () => {
-  try {
-    agentServerLoading.value = true
-    const resp = await agentServerApi.getAgentServers({ page_size: 200, is_active: true })
-    agentServers.value = resp?.results || []
-  } catch (error) {
-    console.error('获取Agent-Server列表失败:', error)
-    agentServers.value = []
-  } finally {
-    agentServerLoading.value = false
-  }
-}
 
 // 执行表单
 const executeForm = reactive({
@@ -306,10 +260,6 @@ const handleExecute = async () => {
     Message.error('请输入执行名称')
     return
   }
-  if (!selectedAgentServerId.value) {
-    Message.error('请选择 Agent-Server')
-    return
-  }
 
   try {
     executing.value = true
@@ -329,7 +279,6 @@ const handleExecute = async () => {
       rolling_batch_size: executeForm.rolling_batch_size,
       rolling_batch_delay: executeForm.rolling_batch_delay,
       execution_parameters: executionParameters,
-      agent_server_id: selectedAgentServerId.value,
       trigger_type: 'manual'
     }
 
@@ -356,7 +305,6 @@ const handleBack = () => {
 // 生命周期
 onMounted(() => {
   fetchPlanDetail()
-  fetchAgentServers()
 })
 </script>
 
@@ -411,13 +359,6 @@ onMounted(() => {
   padding: 12px;
   background: var(--color-bg-1);
   border-radius: 6px;
-}
-
-.agent-server-tip {
-  margin-top: 6px;
-  color: var(--color-text-3);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .parameters-section {

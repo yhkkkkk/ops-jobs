@@ -78,6 +78,242 @@ describe('mock route page contracts', () => {
       config_schema: expect.any(Object),
     })
   })
+
+  it('supports flow template copy and run operation mock routes', async () => {
+    const copied = await adapter({
+      ...makeConfig('/flows/templates/801/copy/', 'post'),
+      data: JSON.stringify({ name: '生产发布前置检查流程 副本' }),
+    })
+    expect(copied.status).toBe(200)
+    expect(copied.data.content).toMatchObject({
+      name: expect.stringContaining('生产发布前置检查流程 副本'),
+      is_active: false,
+      nodes: expect.any(Array),
+      edges: expect.any(Array),
+    })
+
+    const logs = await adapter(makeConfig('/flows/runs/8801/operation_logs/'))
+    expect(logs.status).toBe(200)
+    expect(logs.data.content[0]).toMatchObject({
+      action: expect.any(String),
+      extra_data: expect.objectContaining({ flow_run_id: 8801 }),
+    })
+
+    const cancel = await adapter({
+      ...makeConfig('/flows/runs/8801/cancel/', 'post'),
+      data: JSON.stringify({}),
+    })
+    expect(cancel.data.content.status).toBe('cancelled')
+
+    const retry = await adapter({
+      ...makeConfig('/flows/runs/8802/retry_node/', 'post'),
+      data: JSON.stringify({ node_run_id: 8821 }),
+    })
+    expect(retry.data.content.node_runs[0].status).toBe('success')
+  })
+
+  it('starts mock flow runs with selected scope, condition outputs, and audit logs', async () => {
+    const created = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock 条件流程',
+        nodes: [
+          { uuid: 'branch', name: '按环境分支', node_type: 'condition', config: {} },
+          { uuid: 'prod', name: '生产确认', node_type: 'manual', config: { instructions: 'check prod' } },
+          { uuid: 'fallback', name: '回退检查', node_type: 'script', config: { script_content: 'echo fallback' } },
+        ],
+        edges: [
+          { source_uuid: 'branch', target_uuid: 'prod', condition: { variable: 'inputs.env', operator: 'eq', value: 'prod' } },
+          { source_uuid: 'branch', target_uuid: 'fallback', condition: { default: true } },
+        ],
+      }),
+    })
+    const templateId = created.data.content.id
+
+    const started = await adapter({
+      ...makeConfig(`/flows/templates/${templateId}/start/`, 'post'),
+      data: JSON.stringify({        inputs: {
+          env: 'prod',
+          __execution_scope: 'selected',
+          __selected_node_uuids: ['branch', 'prod'],
+        },
+      }),
+    })
+
+    expect(started.data.content.status).toBe('paused')
+    expect(started.data.content.node_runs.map((nodeRun: any) => nodeRun.node_uuid)).toEqual(['branch', 'prod'])
+    expect(started.data.content.node_runs[0]).toMatchObject({
+      node_uuid: 'branch',
+      status: 'success',
+      outputs: expect.objectContaining({
+        matched_count: 1,
+        selected_node_uuids: ['prod'],
+      }),
+    })
+    expect(started.data.content.node_runs[1]).toMatchObject({
+      node_uuid: 'prod',
+      status: 'paused',
+    })
+
+    const logs = await adapter(makeConfig(`/flows/runs/${started.data.content.id}/operation_logs/`))
+    expect(logs.data.content[0]).toMatchObject({
+      action: 'start_flow',
+      extra_data: expect.objectContaining({ new_status: 'paused' }),
+    })
+  })
+
+  it('advances mock condition and manual runs through reachable branches', async () => {
+    const created = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock 人工分支继续流程',
+        nodes: [
+          { uuid: 'branch', name: '按环境分支', node_type: 'condition', config: {} },
+          { uuid: 'prod', name: '生产确认', node_type: 'manual', config: { instructions: 'check prod' } },
+          { uuid: 'deploy', name: '部署检查', node_type: 'script', config: { script_content: 'echo deploy' } },
+          { uuid: 'fallback', name: '回退检查', node_type: 'script', config: { script_content: 'echo fallback' } },
+        ],
+        edges: [
+          { source_uuid: 'branch', target_uuid: 'prod', condition: { variable: 'inputs.env', operator: 'eq', value: 'prod' } },
+          { source_uuid: 'branch', target_uuid: 'fallback', condition: { default: true } },
+          { source_uuid: 'prod', target_uuid: 'deploy', condition: {} },
+        ],
+      }),
+    })
+    const templateId = created.data.content.id
+
+    const started = await adapter({
+      ...makeConfig(`/flows/templates/${templateId}/start/`, 'post'),
+      data: JSON.stringify({ inputs: { env: 'prod' } }),
+    })
+
+    expect(started.data.content.status).toBe('paused')
+    expect(started.data.content.node_runs.map((nodeRun: any) => nodeRun.node_uuid)).toEqual(['branch', 'prod'])
+    expect(started.data.content.node_runs[0].outputs.selected_node_uuids).toEqual(['prod'])
+
+    const manualRun = started.data.content.node_runs.find((nodeRun: any) => nodeRun.node_uuid === 'prod')
+    const confirmed = await adapter({
+      ...makeConfig(`/flows/runs/${started.data.content.id}/confirm_manual_node/`, 'post'),
+      data: JSON.stringify({ node_run_id: manualRun.id, remark: 'ok' }),
+    })
+
+    expect(confirmed.data.content.status).toBe('success')
+    expect(confirmed.data.content.node_runs.map((nodeRun: any) => nodeRun.node_uuid)).toEqual(['branch', 'prod', 'deploy'])
+    expect(confirmed.data.content.node_runs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ node_uuid: 'fallback' })]),
+    )
+    expect(confirmed.data.content.node_runs.at(-1)).toMatchObject({
+      node_uuid: 'deploy',
+      status: 'success',
+    })
+  })
+
+  it('matches implicit truthy condition branches like the backend runner', async () => {
+    const created = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock truthy 条件流程',
+        nodes: [
+          { uuid: 'branch', name: '按变量分支', node_type: 'condition', config: {} },
+          { uuid: 'truthy', name: '命中分支', node_type: 'script', config: { script_content: 'echo truthy' } },
+          { uuid: 'fallback', name: '默认分支', node_type: 'script', config: { script_content: 'echo fallback' } },
+        ],
+        edges: [
+          { source_uuid: 'branch', target_uuid: 'truthy', condition: { variable: 'inputs.env' } },
+          { source_uuid: 'branch', target_uuid: 'fallback', condition: { default: true } },
+        ],
+      }),
+    })
+
+    const started = await adapter({
+      ...makeConfig(`/flows/templates/${created.data.content.id}/start/`, 'post'),
+      data: JSON.stringify({ inputs: { env: 'prod' } }),
+    })
+
+    expect(started.data.content.status).toBe('success')
+    expect(started.data.content.node_runs.map((nodeRun: any) => nodeRun.node_uuid)).toEqual(['branch', 'truthy'])
+    expect(started.data.content.node_runs[0].outputs).toMatchObject({
+      matched_count: 1,
+      selected_node_uuids: ['truthy'],
+    })
+  })
+
+  it('completes mock subprocess runs and continues parent downstream nodes', async () => {
+    const child = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock 子流程',
+        nodes: [
+          { uuid: 'child-script', name: '子流程脚本', node_type: 'script', config: { script_content: 'echo child' } },
+        ],
+        edges: [],
+      }),
+    })
+    const parent = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock 父流程',
+        nodes: [
+          { uuid: 'sub', name: '执行子流程', node_type: 'sub_process', config: { template_id: child.data.content.id, inputs: { child_only: 'yes' } } },
+          { uuid: 'after', name: '父流程后置', node_type: 'script', config: { script_content: 'echo after' } },
+        ],
+        edges: [
+          { source_uuid: 'sub', target_uuid: 'after', condition: {} },
+        ],
+      }),
+    })
+
+    const started = await adapter({
+      ...makeConfig(`/flows/templates/${parent.data.content.id}/start/`, 'post'),
+      data: JSON.stringify({ inputs: { env: 'prod' } }),
+    })
+
+    const subRun = started.data.content.node_runs.find((nodeRun: any) => nodeRun.node_uuid === 'sub')
+    expect(started.data.content.status).toBe('success')
+    expect(started.data.content.node_runs.map((nodeRun: any) => nodeRun.node_uuid)).toEqual(['sub', 'after'])
+    expect(subRun).toMatchObject({
+      status: 'success',
+      outputs: expect.objectContaining({
+        sub_process: true,
+        child_status: 'success',
+        child_flow_run_id: expect.any(Number),
+      }),
+    })
+
+    const childRun = await adapter(makeConfig(`/flows/runs/${subRun.outputs.child_flow_run_id}/`))
+    expect(childRun.data.content).toMatchObject({
+      template: child.data.content.id,
+      status: 'success',
+    })
+  })
+
+  it('rejects invalid mock manual confirmations like the backend', async () => {
+    const created = await adapter({
+      ...makeConfig('/flows/templates/', 'post'),
+      data: JSON.stringify({
+        name: 'Mock 非人工确认流程',
+        nodes: [
+          { uuid: 'script', name: '脚本', node_type: 'script', config: { script_content: 'echo ok' } },
+        ],
+        edges: [],
+      }),
+    })
+    const started = await adapter({
+      ...makeConfig(`/flows/templates/${created.data.content.id}/start/`, 'post'),
+      data: JSON.stringify({ inputs: {} }),
+    })
+
+    const confirmed = await adapter({
+      ...makeConfig(`/flows/runs/${started.data.content.id}/confirm_manual_node/`, 'post'),
+      data: JSON.stringify({ node_run_id: started.data.content.node_runs[0].id }),
+    })
+
+    expect(confirmed.status).toBe(400)
+    expect(confirmed.data).toMatchObject({
+      success: false,
+      content: expect.objectContaining({ node_run_id: expect.any(String) }),
+    })
+  })
 })
 
 describe('createMockAxiosAdapter', () => {

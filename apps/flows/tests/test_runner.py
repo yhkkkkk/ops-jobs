@@ -86,7 +86,7 @@ def test_flow_runner_executes_script_node_with_agent_service():
             "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
         },
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=1)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.SUCCESS
@@ -98,6 +98,103 @@ def test_flow_runner_executes_script_node_with_agent_service():
     assert node_run.outputs["success_count"] == 1
     execute_script.assert_called_once()
     assert execute_script.call_args.kwargs["script_content"] == "echo hello"
+
+
+def test_flow_runner_resolves_script_node_variables_from_flow_inputs():
+    user = _create_user()
+    host = _create_host(user)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+        variables={
+            "CheckHost": {
+                "name": "执行脚本机器",
+                "type": "host_list",
+                "widget": "host_list",
+                "required": True,
+                "show_on_start": True,
+            },
+            "ReleaseVersion": {
+                "name": "发布版本",
+                "type": "text",
+                "widget": "input",
+                "required": True,
+                "regex": r"^v\d+\.\d+\.\d+$",
+                "show_on_start": True,
+            },
+        },
+    )
+    node = FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="run script",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={
+            "script_content": "deploy ${ReleaseVersion}",
+            "script_type": "shell",
+            "target_host_ids": "${CheckHost}",
+            "timeout": 30,
+        },
+    )
+
+    with patch(
+        "apps.agents.execution_service.AgentExecutionService.execute_script_via_agent",
+        return_value={
+            "success": True,
+            "success_count": 1,
+            "failed_count": 0,
+            "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
+        },
+    ) as execute_script:
+        flow_run = FlowRunner.start(
+            template=template,
+            user=user,
+            inputs={"CheckHost": [host.id], "ReleaseVersion": "v1.2.3"},
+        )
+
+    flow_run.refresh_from_db()
+    assert flow_run.status == FlowRun.Status.SUCCESS
+    node_run = flow_run.node_runs.get(node=node)
+    assert node_run.inputs["target_host_ids"] == [host.id]
+    assert node_run.inputs["script_content"] == "deploy v1.2.3"
+    assert flow_run.inputs["CheckHost"] == [host.id]
+    execute_script.assert_called_once()
+    assert execute_script.call_args.kwargs["target_hosts"][0].id == host.id
+    assert execute_script.call_args.kwargs["script_content"] == "deploy v1.2.3"
+    assert execute_script.call_args.kwargs["global_variables"]["ReleaseVersion"] == "v1.2.3"
+
+
+def test_flow_runner_rejects_invalid_flow_variable_input_before_dispatch():
+    user = _create_user()
+    host = _create_host(user)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+        variables={
+            "CheckHost": {"type": "host_list", "widget": "host_list", "required": True},
+            "ReleaseVersion": {"type": "text", "widget": "input", "required": True, "regex": r"^v\d+$"},
+        },
+    )
+    FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="run script",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={
+            "script_content": "deploy ${ReleaseVersion}",
+            "target_host_ids": "${CheckHost}",
+        },
+    )
+
+    with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
+        with pytest.raises(ValueError, match="ReleaseVersion"):
+            FlowRunner.start(
+                template=template,
+                user=user,
+                inputs={"CheckHost": [host.id], "ReleaseVersion": "bad-version"},
+            )
+
+    execute_script.assert_not_called()
 
 
 def test_flow_runner_rejects_cycles():
@@ -124,7 +221,7 @@ def test_flow_runner_rejects_cycles():
     FlowEdge.objects.create(template=template, source=second, target=first)
 
     with pytest.raises(ValueError, match="cycle"):
-        FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=1)
+        FlowRunner.start(template=template, user=user, inputs={})
 
 
 def test_flow_runner_rejects_script_node_without_valid_target_hosts():
@@ -142,7 +239,7 @@ def test_flow_runner_rejects_script_node_without_valid_target_hosts():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=1)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     execute_script.assert_not_called()
     flow_run.refresh_from_db()
@@ -172,7 +269,7 @@ def test_flow_runner_marks_node_failed_when_script_execution_raises():
         side_effect=RuntimeError("agent unavailable"),
     ):
         with pytest.raises(RuntimeError, match="agent unavailable"):
-            FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=1)
+            FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run = FlowRun.objects.get(template=template)
     assert flow_run.status == FlowRun.Status.FAILED
@@ -252,7 +349,7 @@ def test_flow_runner_executes_job_plan_node_with_execution_plan_service():
         "apps.job_templates.services.ExecutionPlanService.execute_plan",
         side_effect=execute_plan,
     ) as execute_plan_mock:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.SUCCESS
@@ -263,8 +360,81 @@ def test_flow_runner_executes_job_plan_node_with_execution_plan_service():
     assert execute_plan_mock.call_args.kwargs["execution_plan"] == plan
     assert execute_plan_mock.call_args.kwargs["execution_type"] == "flow_node"
     assert execute_plan_mock.call_args.kwargs["related_object"] == node_run
-    assert execute_plan_mock.call_args.kwargs["agent_server_id"] == 7
+    assert "agent_server_id" not in execute_plan_mock.call_args.kwargs
     assert node_run_holder["node_run"] == node_run
+
+
+def test_flow_runner_maps_flow_variables_to_job_plan_parameters():
+    user = _create_user()
+    host = _create_host(user)
+    plan = _create_execution_plan(user, host)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+        variables={
+            "ReleaseVersion": {
+                "name": "发布版本",
+                "type": "text",
+                "widget": "input",
+                "required": True,
+                "show_on_start": True,
+            },
+            "CheckHost": {
+                "name": "执行机器",
+                "type": "host_list",
+                "widget": "host_list",
+                "required": True,
+                "show_on_start": True,
+            },
+        },
+    )
+    node = FlowNode.objects.create(
+        template=template,
+        uuid="job-plan-1",
+        name="run plan",
+        node_type=FlowNode.NodeType.JOB_PLAN,
+        config={
+            "execution_plan_id": plan.id,
+            "execution_parameter_bindings": {
+                "release_version": "${ReleaseVersion}",
+                "target_hosts": "${CheckHost}",
+            },
+        },
+    )
+
+    def execute_plan(**kwargs):
+        execution_record = ExecutionRecordService.create_execution_record(
+            execution_type="flow_node",
+            name="flow job plan",
+            executed_by=user,
+            related_object=kwargs["related_object"],
+        )
+        execution_record.status = "success"
+        execution_record.save(update_fields=["status"])
+        return {"success": True, "execution_record_id": execution_record.id}
+
+    with patch(
+        "apps.job_templates.services.ExecutionPlanService.execute_plan",
+        side_effect=execute_plan,
+    ) as execute_plan_mock:
+        flow_run = FlowRunner.start(
+            template=template,
+            user=user,
+            inputs={"ReleaseVersion": "v9.8.7", "CheckHost": [host.id]},
+        )
+
+    flow_run.refresh_from_db()
+    assert flow_run.status == FlowRun.Status.SUCCESS
+    node_run = flow_run.node_runs.get(node=node)
+    assert node_run.status == FlowRun.Status.SUCCESS
+    assert node_run.inputs["execution_parameter_bindings"] == {
+        "release_version": "v9.8.7",
+        "target_hosts": [host.id],
+    }
+    assert execute_plan_mock.call_args.kwargs["execution_parameters"] == {
+        "release_version": "v9.8.7",
+        "target_hosts": [host.id],
+    }
 
 
 def test_flow_runner_pauses_job_plan_node_when_execution_record_is_still_running():
@@ -301,7 +471,7 @@ def test_flow_runner_pauses_job_plan_node_when_execution_record_is_still_running
         "apps.job_templates.services.ExecutionPlanService.execute_plan",
         side_effect=execute_plan,
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.PAUSED
@@ -329,7 +499,7 @@ def test_flow_runner_rejects_job_plan_node_without_plan_permission():
     )
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan") as execute_plan:
-        flow_run = FlowRunner.start(template=template, user=other, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=other, inputs={})
 
     execute_plan.assert_not_called()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -354,7 +524,7 @@ def test_flow_runner_rejects_job_plan_with_unauthorized_internal_host():
     )
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan") as execute_plan:
-        flow_run = FlowRunner.start(template=template, user=other, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=other, inputs={})
 
     execute_plan.assert_not_called()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -378,7 +548,7 @@ def test_flow_runner_rejects_script_node_without_host_permission():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
-        flow_run = FlowRunner.start(template=template, user=other, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=other, inputs={})
 
     execute_script.assert_not_called()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -427,7 +597,7 @@ def test_flow_runner_continues_after_paused_job_plan_execution_succeeds():
         "apps.job_templates.services.ExecutionPlanService.execute_plan",
         side_effect=execute_plan,
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     assert flow_run.status == FlowRun.Status.PAUSED
     execution_record = execution_record_holder["record"]
@@ -495,7 +665,7 @@ def test_execution_record_status_update_advances_paused_flow_node():
         "apps.job_templates.services.ExecutionPlanService.execute_plan",
         side_effect=execute_plan,
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     assert flow_run.status == FlowRun.Status.PAUSED
 
@@ -558,7 +728,7 @@ def test_flow_runner_rejects_mismatched_job_plan_execution_record_without_rebind
         "apps.job_templates.services.ExecutionPlanService.execute_plan",
         return_value={"success": True, "execution_record_id": mismatched_record.id},
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=7)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     mismatched_record.refresh_from_db()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -657,7 +827,7 @@ def test_flow_runner_does_not_continue_past_existing_running_node():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
-        FlowRunner._continue_flow(flow_run, user, agent_server_id=7)
+        FlowRunner._continue_flow(flow_run, user)
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.PAUSED
@@ -703,7 +873,7 @@ def test_flow_runner_executes_file_transfer_node_with_agent_service():
             "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
         },
     ) as execute_transfer:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.SUCCESS
@@ -714,7 +884,7 @@ def test_flow_runner_executes_file_transfer_node_with_agent_service():
     execute_transfer.assert_called_once()
     assert execute_transfer.call_args.kwargs["remote_path"] == "/tmp/a.txt"
     assert execute_transfer.call_args.kwargs["download_url"] == "https://example.test/a.txt"
-    assert execute_transfer.call_args.kwargs["agent_server_id"] == 3
+    assert "agent_server_id" not in execute_transfer.call_args.kwargs
 
 
 def test_flow_runner_selected_scope_executes_only_selected_nodes():
@@ -756,7 +926,6 @@ def test_flow_runner_selected_scope_executes_only_selected_nodes():
                 "__execution_scope": "selected",
                 "__selected_node_uuids": ["script-2"],
             },
-            agent_server_id=3,
         )
 
     flow_run.refresh_from_db()
@@ -806,7 +975,6 @@ def test_flow_runner_node_overrides_apply_to_run_without_mutating_template():
                     }
                 }
             },
-            agent_server_id=3,
         )
 
     flow_run.refresh_from_db()
@@ -864,13 +1032,11 @@ def test_flow_runner_strips_control_inputs_from_job_plan_parameters():
                 "__selected_node_uuids": ["job-plan-1"],
                 "__node_overrides": {},
             },
-            agent_server_id=3,
         )
 
     assert flow_run.status == FlowRun.Status.SUCCESS
     execution_parameters = execute_plan_mock.call_args.kwargs["execution_parameters"]
     assert execution_parameters == {
-        "business_param": "business-value",
         "node_param": "node-value",
     }
     assert flow_run.node_runs.get(node=node).status == FlowRun.Status.SUCCESS
@@ -921,7 +1087,7 @@ def test_flow_runner_ignore_failure_policy_continues_after_failed_node():
             },
         ],
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.SUCCESS
@@ -967,7 +1133,7 @@ def test_flow_runner_pause_failure_policy_pauses_before_downstream_nodes():
             "results": [{"host_id": host.id, "host_name": host.name, "success": False}],
         },
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.PAUSED
@@ -1014,7 +1180,7 @@ def test_flow_runner_skip_paused_node_continues_downstream_nodes():
             "results": [{"host_id": host.id, "host_name": host.name, "success": False}],
         },
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     first_run = flow_run.node_runs.get(node=first)
     assert first_run.status == FlowRun.Status.PAUSED
@@ -1033,7 +1199,6 @@ def test_flow_runner_skip_paused_node_continues_downstream_nodes():
             node_run=first_run,
             user=user,
             reason="manual skip",
-            agent_server_id=3,
         )
 
     flow_run.refresh_from_db()
@@ -1070,7 +1235,7 @@ def test_flow_runner_pauses_at_manual_node_before_downstream_nodes():
     FlowEdge.objects.create(template=template, source=manual, target=script)
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     manual_run = flow_run.node_runs.get(node=manual)
@@ -1106,7 +1271,7 @@ def test_flow_runner_confirms_manual_node_and_continues_downstream_nodes():
     )
     FlowEdge.objects.create(template=template, source=manual, target=script)
 
-    flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+    flow_run = FlowRunner.start(template=template, user=user, inputs={})
     manual_run = flow_run.node_runs.get(node=manual)
     assert flow_run.status == FlowRun.Status.PAUSED
 
@@ -1124,7 +1289,6 @@ def test_flow_runner_confirms_manual_node_and_continues_downstream_nodes():
             node_run=manual_run,
             user=user,
             remark="window verified",
-            agent_server_id=3,
         )
 
     flow_run.refresh_from_db()
@@ -1170,7 +1334,6 @@ def test_flow_runner_subprocess_success_continues_parent_downstream_nodes():
         template=parent_template,
         user=user,
         inputs={"env": "prod", "__parent_flow_run_id": 999},
-        agent_server_id=3,
     )
 
     flow_run.refresh_from_db()
@@ -1222,7 +1385,7 @@ def test_flow_runner_subprocess_pauses_parent_and_resumes_when_child_succeeds():
     )
     FlowEdge.objects.create(template=parent_template, source=sub_process, target=downstream)
 
-    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={}, agent_server_id=3)
+    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={})
 
     parent_run.refresh_from_db()
     parent_node_run = parent_run.node_runs.get(node=sub_process)
@@ -1238,7 +1401,6 @@ def test_flow_runner_subprocess_pauses_parent_and_resumes_when_child_succeeds():
         node_run=child_manual_run,
         user=user,
         remark="ok",
-        agent_server_id=3,
     )
 
     parent_run.refresh_from_db()
@@ -1270,7 +1432,7 @@ def test_flow_runner_subprocess_child_failure_fails_parent_node():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
-        parent_run = FlowRunner.start(template=parent_template, user=user, inputs={}, agent_server_id=3)
+        parent_run = FlowRunner.start(template=parent_template, user=user, inputs={})
 
     execute_script.assert_not_called()
     parent_run.refresh_from_db()
@@ -1310,7 +1472,7 @@ def test_flow_runner_subprocess_async_child_failure_updates_parent():
             name="child job plan",
             executed_by=user,
             related_object=kwargs["related_object"],
-            execution_parameters={"agent_server_id": 3},
+            execution_parameters={},
         )
         execution_record.status = "running"
         execution_record.save(update_fields=["status"])
@@ -1318,7 +1480,7 @@ def test_flow_runner_subprocess_async_child_failure_updates_parent():
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan):
-        parent_run = FlowRunner.start(template=parent_template, user=user, inputs={}, agent_server_id=3)
+        parent_run = FlowRunner.start(template=parent_template, user=user, inputs={})
 
     parent_node_run = parent_run.node_runs.get(node=sub_process)
     child_run = FlowRun.objects.get(id=parent_node_run.outputs["child_flow_run_id"])
@@ -1359,7 +1521,7 @@ def test_flow_runner_subprocess_rejects_recursive_template_stack():
         config={"template_id": parent_template.id},
     )
 
-    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={}, agent_server_id=3)
+    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={})
 
     parent_run.refresh_from_db()
     parent_node_run = parent_run.node_runs.get(node=parent_sub)
@@ -1390,7 +1552,7 @@ def test_flow_runner_cancel_parent_subprocess_cancels_active_child_flow():
         config={"template_id": child_template.id},
     )
 
-    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={}, agent_server_id=3)
+    parent_run = FlowRunner.start(template=parent_template, user=user, inputs={})
     parent_node_run = parent_run.node_runs.get(node=sub_process)
     child_run = FlowRun.objects.get(id=parent_node_run.outputs["child_flow_run_id"])
 
@@ -1455,7 +1617,7 @@ def test_flow_runner_condition_node_executes_only_matching_branch():
             "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
         },
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"})
 
     flow_run.refresh_from_db()
     condition_run = flow_run.node_runs.get(node=condition)
@@ -1518,7 +1680,7 @@ def test_flow_runner_condition_node_uses_default_branch_when_no_condition_matche
             "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
         },
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "stage"}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "stage"})
 
     flow_run.refresh_from_db()
     condition_run = flow_run.node_runs.get(node=condition)
@@ -1575,7 +1737,7 @@ def test_flow_runner_parallel_gateway_starts_all_ready_async_branches_before_pau
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan) as execute_plan_mock:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.PAUSED
@@ -1649,7 +1811,7 @@ def test_flow_runner_join_waits_for_all_active_parallel_branches_before_downstre
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     assert flow_run.status == FlowRun.Status.PAUSED
     assert len(execution_records) == 2
@@ -1741,7 +1903,7 @@ def test_flow_runner_join_ignores_unselected_condition_branch():
             "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
         },
     ) as execute_script:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.SUCCESS
@@ -1815,7 +1977,7 @@ def test_flow_runner_join_waits_for_selected_async_condition_branch():
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={"env": "prod"})
 
     flow_run.refresh_from_db()
     assert flow_run.status == FlowRun.Status.PAUSED
@@ -1907,7 +2069,7 @@ def test_flow_runner_async_failed_branch_with_ignore_policy_can_pass_join():
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     execution_records[0].status = "failed"
     execution_records[0].error_message = "ignored branch failed"
@@ -2001,7 +2163,7 @@ def test_flow_runner_parallel_stop_failure_does_not_pass_join():
         return {"success": True, "execution_record_id": execution_record.id}
 
     with patch("apps.job_templates.services.ExecutionPlanService.execute_plan", side_effect=execute_plan):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     execution_records[0].status = "failed"
     execution_records[0].error_message = "branch failed"
@@ -2049,7 +2211,7 @@ def test_flow_runner_retries_failed_node_and_continues_downstream_nodes():
             "results": [{"host_id": host.id, "host_name": host.name, "success": False}],
         },
     ):
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     first_run = flow_run.node_runs.get(node=first)
     assert flow_run.status == FlowRun.Status.FAILED
@@ -2076,7 +2238,6 @@ def test_flow_runner_retries_failed_node_and_continues_downstream_nodes():
             flow_run=flow_run,
             node_run=first_run,
             user=user,
-            agent_server_id=3,
         )
 
     flow_run.refresh_from_db()
@@ -2118,7 +2279,7 @@ def test_flow_runner_cancels_paused_flow_and_running_node_record():
         name="running flow node",
         executed_by=user,
         related_object=node_run,
-        execution_parameters={"agent_server_id": 3},
+        execution_parameters={},
     )
     execution_record.status = "running"
     execution_record.save(update_fields=["status"])
@@ -2166,7 +2327,7 @@ def test_flow_runner_rejects_invalid_file_transfer_source_before_dispatch():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_file_transfer_via_agent") as transfer:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     transfer.assert_not_called()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -2195,7 +2356,7 @@ def test_flow_runner_rejects_file_transfer_source_without_remote_path():
     )
 
     with patch("apps.agents.execution_service.AgentExecutionService.execute_file_transfer_via_agent") as transfer:
-        flow_run = FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+        flow_run = FlowRunner.start(template=template, user=user, inputs={})
 
     transfer.assert_not_called()
     assert flow_run.status == FlowRun.Status.FAILED
@@ -2231,7 +2392,7 @@ def test_flow_runner_marks_file_transfer_execution_record_failed_when_dispatch_r
         side_effect=RuntimeError("agent dispatch failed"),
     ):
         with pytest.raises(RuntimeError, match="agent dispatch failed"):
-            FlowRunner.start(template=template, user=user, inputs={}, agent_server_id=3)
+            FlowRunner.start(template=template, user=user, inputs={})
 
     node_run = FlowNodeRun.objects.get()
     assert node_run.status == FlowRun.Status.FAILED

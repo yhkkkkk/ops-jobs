@@ -114,13 +114,18 @@ const editorOptions = computed<monaco.editor.IStandaloneEditorConstructionOption
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   wordWrap: 'on',
+  scrollbar: {
+    horizontal: 'hidden',
+    vertical: 'auto',
+  },
   lineNumbers: 'on',
   folding: true,
   contextmenu: true,
   selectOnLineNumbers: true,
   accessibilitySupport: 'off',
-  glyphMargin: true, // 启用装饰器边距
-  lineDecorationsWidth: 20,
+  glyphMargin: false,
+  lineDecorationsWidth: 10,
+  lineNumbersMinChars: 3,
 }))
 
 // 监听内容变化

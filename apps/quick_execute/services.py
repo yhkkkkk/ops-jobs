@@ -114,6 +114,7 @@ class QuickExecuteService:
                     'script_type': script_data.get('script_type', 'shell'),
                     'timeout': execution_params['timeout'],  # 使用统一提取的timeout
                     'execution_mode': script_data.get('execution_mode', 'parallel'),
+                    'execution_backend': 'agent',
                     'rolling_strategy': script_data.get('rolling_strategy', 'fail_pause'),
                     'rolling_batch_size': script_data.get('rolling_batch_size', 20),
                     'rolling_batch_delay': script_data.get('rolling_batch_delay', 0),
@@ -127,16 +128,6 @@ class QuickExecuteService:
                 user_agent=user_agent
             )
 
-            # 只支持Agent方式执行
-            agent_server_id = script_data.get('agent_server_id')
-
-            # 更新执行参数，添加执行方式标识
-            execution_record.execution_parameters.update({
-                'execution_mode': 'agent',
-                'agent_server_id': agent_server_id,
-            })
-            execution_record.save()
-
             # 通过Agent执行脚本
             result = AgentExecutionService.execute_script_via_agent(
                 execution_record=execution_record,
@@ -146,7 +137,6 @@ class QuickExecuteService:
                 timeout=execution_params['timeout'],  # 使用统一提取的timeout
                 global_variables=global_variables,
                 step_id=None,  # 快速执行没有步骤ID
-                agent_server_id=agent_server_id,
                 account_id=account_id,
             )
 
@@ -233,11 +223,12 @@ class QuickExecuteService:
             # 创建统一的执行记录
             execution_record = ExecutionRecordService.create_execution_record(
                 executed_by=user,
-                execution_type='file_transfer',
+                execution_type='quick_file_transfer',
                 name=f"文件传输 - {transfer_data.get('transfer_name', '未命名')}",
                 execution_parameters={
                     'timeout': execution_params['timeout'],  # 使用统一提取的timeout
                     'bandwidth_limit': execution_params['bandwidth_limit'],  # 使用统一提取的带宽限制
+                    'execution_backend': 'agent',
                     'execution_mode': transfer_data.get('execution_mode', 'parallel'),
                     'rolling_batch_size': transfer_data.get('rolling_batch_size', 20),
                     'rolling_batch_delay': transfer_data.get('rolling_batch_delay', 0),
@@ -252,23 +243,27 @@ class QuickExecuteService:
                 user_agent=user_agent
             )
 
-            # 只支持Agent方式执行
-            agent_server_id = transfer_data.get('agent_server_id')
-
-            # 更新执行参数，添加执行方式标识
-            execution_record.execution_parameters.update({
-                'execution_mode': 'agent',
-                'agent_server_id': agent_server_id,
-            })
-            execution_record.save()
-
             # 处理上传的多个 sources（必须存在，且不兼容旧字段）
             file_items = []
+            # 仅供内部重试链路复用已经鉴权并落库的 artifact。
+            # 公开 API 仍然只能提交 local/server sources。
+            artifact_sources = transfer_data.get('artifact_sources') or []
+            for artifact in artifact_sources:
+                if (
+                    isinstance(artifact, dict)
+                    and artifact.get('type') == 'artifact'
+                    and artifact.get('download_url')
+                    and artifact.get('remote_path')
+                ):
+                    file_items.append(dict(artifact))
+                else:
+                    logger.warning("忽略无效的内部 artifact source")
+
             sources = transfer_data.get('sources') or []
             uploaded_files = transfer_data.get('uploaded_files')  # request.FILES
             logger.debug(f"[quick_transfer] sources={sources}, uploaded_keys={(list(uploaded_files.keys()) if uploaded_files else [])}")
             is_e2e = bool(os.getenv("E2E_CONTROL_PLANE") or getattr(__import__("django.conf").conf.settings, "E2E_CONTROL_PLANE", False))
-            if not uploaded_files and is_e2e:
+            if not uploaded_files and not sources and not artifact_sources and is_e2e:
                 # E2E 环境允许不上传文件，直接标记成功，便于链路校验
                 ExecutionRecordService.update_execution_status(
                     execution_record=execution_record,
@@ -390,7 +385,6 @@ class QuickExecuteService:
                             size=item.get('size'),
                             auth_headers=item.get('auth_headers') or {},
                             step_id=None,
-                            agent_server_id=agent_server_id,
                             account_id=account_id,
                             file_sources=[item],
                         )
@@ -422,23 +416,35 @@ class QuickExecuteService:
                 }
 
             if result['success']:
-                # 更新执行记录状态
+                success_count = result.get('success_count', 0)
+                failed_count = result.get('failed_count', 0)
+                final_status = 'success' if failed_count == 0 else 'failed'
+                execution_results = {
+                    'summary': {
+                        'total_hosts': len(target_hosts),
+                        'success_hosts': success_count,
+                        'failed_hosts': failed_count,
+                    },
+                    'hosts': result.get('results', []),
+                }
                 ExecutionRecordService.update_execution_status(
                     execution_record=execution_record,
-                    status='running',
+                    status=final_status,
+                    execution_results=execution_results,
                 )
 
-                logger.info(f"快速文件传输已启动: {execution_record.execution_id}")
+                logger.info(f"快速文件传输已完成: {execution_record.execution_id} status={final_status}")
 
                 return {
                     'success': True,
                     'execution_id': execution_record.execution_id,
                     'execution_record_id': execution_record.id,
-                    'task_id': str(execution_record.execution_id),  # 用于实时日志的task_id
-                    'message': '文件传输已启动（Agent方式）',
+                    'task_id': str(execution_record.execution_id),
+                    'message': '文件传输完成（Agent方式）',
                     'target_host_count': len(target_hosts),
-                    'success_count': result.get('success_count', 0),
-                    'failed_count': result.get('failed_count', 0)
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'status': final_status,
                 }
             else:
                 # 执行失败

@@ -60,10 +60,15 @@ def test_parameter_unification_script_execution(user):
                     result = QuickExecuteService.execute_script(user, script_data)
                     assert mock_update
 
+                saved_params = mock_create.call_args.kwargs["execution_parameters"]
+                assert saved_params["execution_backend"] == "agent"
+                assert saved_params["execution_mode"] == "parallel"
+                assert "agent_server_id" not in saved_params
                 # 验证execute_script_via_agent被调用时使用了提取的参数
                 mock_execute.assert_called_once()
                 call_args = mock_execute.call_args
                 assert call_args.kwargs["timeout"] == 300
+                assert "agent_server_id" not in call_args.kwargs
                 assert result["success"] is True
 
 
@@ -200,6 +205,81 @@ def test_log_field_consistency():
         assert stored["log_type"] == "stdout"
 
 
+
+
+def test_result_consumer_routes_by_task_id():
+    """结果流必须把完整 task_id 交给任务结果处理器。"""
+    from apps.agents.management.commands import consume_streams
+
+    fields = {
+        "execution_id": "123456",
+        "task_id": "123456_9_7_abcd",
+        "status": "success",
+        "exit_code": "0",
+        "progress": "100",
+    }
+
+    with patch("apps.agents.management.commands.consume_streams._flush_log_store"), patch(
+        "apps.agents.management.commands.consume_streams.AgentExecutionService.handle_task_result",
+        return_value={"success": True},
+    ) as handle_result:
+        ok = consume_streams.Command.handle_result("1-0", fields)
+
+    assert ok is True
+    assert handle_result.call_args.kwargs["task_id"] == fields["task_id"]
+
+
+def test_quick_file_transfer_uses_valid_type_and_terminal_status(user):
+    """同步等待 Agent 返回后，文件传输必须写入真实终态。"""
+    host = MagicMock(id=7, name="host-7", ip_address="127.0.0.7")
+    record = MagicMock()
+    record.execution_id = 123456
+    record.id = 42
+    record.execution_parameters = {}
+
+    transfer_data = {
+        "transfer_name": "package",
+        "target_host_ids": [host.id],
+        "agent_server_id": 1,
+        "sources": [{
+            "type": "server",
+            "source_server_host": "files.internal",
+            "source_server_path": "/release/app.tar.gz",
+            "remote_path": "/opt/app.tar.gz",
+        }],
+    }
+    artifact = {
+        "type": "artifact",
+        "download_url": "https://files.internal/app.tar.gz",
+        "sha256": "abc",
+        "size": 10,
+        "remote_path": "/opt/app.tar.gz",
+    }
+
+    with patch(
+        "apps.quick_execute.services.QuickExecuteService._get_target_hosts_from_data",
+        return_value=[host],
+    ), patch(
+        "apps.quick_execute.services.AgentExecutionService._fetch_server_source_to_artifact_http",
+        return_value=artifact,
+    ), patch(
+        "apps.quick_execute.services.AgentExecutionService.execute_file_transfer_via_agent",
+        return_value={"success": True, "success_count": 1, "failed_count": 0, "results": []},
+    ), patch(
+        "apps.quick_execute.services.ExecutionRecordService.create_execution_record",
+        return_value=record,
+    ) as create_record, patch(
+        "apps.quick_execute.services.ExecutionRecordService.update_execution_status",
+    ) as update_status:
+        result = QuickExecuteService.transfer_file(user, transfer_data)
+
+    assert create_record.call_args.kwargs["execution_type"] == "quick_file_transfer"
+    assert update_status.call_args.kwargs["status"] == "success"
+    assert result["status"] == "success"
+    saved_params = create_record.call_args.kwargs["execution_parameters"]
+    assert saved_params["execution_backend"] == "agent"
+    assert "agent_server_id" not in saved_params
+
 def test_retry_parameter_handling(user):
     """测试重试参数处理"""
     execution_record = MagicMock()
@@ -209,7 +289,6 @@ def test_retry_parameter_handling(user):
         "script_type": "shell",
         "target_host_ids": [1, 2],
         "timeout": 300,
-        "agent_server_id": 1,
     }
 
     # 测试基于IP的重试
@@ -262,3 +341,129 @@ def test_concurrent_retry_limit(user):
         # 验证失败并带有提示信息
         assert result["success"] is False
         assert "并发" in result["error"]
+
+
+def test_quick_file_transfer_accepts_trusted_retry_artifacts(user, monkeypatch):
+    """重试应复用已落库 artifact，不能再次按公开 sources 解析。"""
+    monkeypatch.setenv("E2E_CONTROL_PLANE", "1")
+    host = MagicMock(id=7, name="host-7", ip_address="127.0.0.7")
+    record = MagicMock(
+        execution_id=123456,
+        id=42,
+        execution_parameters={},
+        execution_results={},
+    )
+    artifact = {
+        "type": "artifact",
+        "download_url": "https://storage.internal/signed/app.tar.gz",
+        "sha256": "abc",
+        "size": 10,
+        "remote_path": "/opt/app.tar.gz",
+        "auth_headers": {"Authorization": "signed"},
+    }
+
+    with patch(
+        "apps.quick_execute.services.QuickExecuteService._get_target_hosts_from_data",
+        return_value=[host],
+    ), patch(
+        "apps.quick_execute.services.AgentExecutionService.execute_file_transfer_via_agent",
+        return_value={"success": True, "success_count": 1, "failed_count": 0, "results": []},
+    ) as execute_transfer, patch(
+        "apps.quick_execute.services.ExecutionRecordService.create_execution_record",
+        return_value=record,
+    ), patch(
+        "apps.quick_execute.services.ExecutionRecordService.update_execution_status",
+    ):
+        result = QuickExecuteService.transfer_file(
+            user,
+            {
+                "target_host_ids": [host.id],
+                "agent_server_id": 1,
+                "artifact_sources": [artifact],
+            },
+        )
+
+    assert result["success"] is True
+    assert execute_transfer.call_args.kwargs["download_url"] == artifact["download_url"]
+    assert record.execution_parameters["file_sources"] == [artifact]
+
+
+def test_quick_file_transfer_retry_passes_internal_artifacts(user):
+    execution_record = MagicMock()
+    execution_record.execution_type = "quick_file_transfer"
+    execution_record.execution_parameters = {
+        "file_sources": [{
+            "type": "artifact",
+            "download_url": "https://storage.internal/signed/app.tar.gz",
+            "remote_path": "/opt/app.tar.gz",
+        }],
+        "target_host_ids": [7],
+    }
+    root_execution = MagicMock(retry_count=0, max_retries=3, total_retry_count=1)
+    execution_record.get_root_execution.return_value = root_execution
+
+    with patch("apps.agents.execution_service.ExecutionRecord") as execution_model, patch(
+        "apps.quick_execute.services.QuickExecuteService.transfer_file",
+        return_value={"success": True, "execution_record_id": 456},
+    ) as transfer_file:
+        execution_model.objects.filter.return_value.select_for_update.return_value.count.return_value = 0
+        execution_model.objects.filter.return_value.exclude.return_value.update.return_value = 1
+        execution_model.objects.get.return_value = MagicMock(id=456, execution_id="exec-new")
+
+        result = AgentExecutionService.retry_execution_record(execution_record, user)
+
+    assert result["success"] is True
+    transfer_data = transfer_file.call_args.kwargs["transfer_data"]
+    assert transfer_data["artifact_sources"] == execution_record.execution_parameters["file_sources"]
+    assert "file_sources" not in transfer_data
+
+
+def test_quick_execute_serializers_route_by_target_agent_binding():
+    from apps.quick_execute.serializers import (
+        QuickFileTransferSerializer,
+        QuickScriptExecuteSerializer,
+    )
+
+    script = QuickScriptExecuteSerializer(data={
+        "script_content": "echo ok",
+        "target_host_ids": [1],
+    })
+    transfer = QuickFileTransferSerializer(data={
+        "sources": [{
+            "type": "server",
+            "source_server_host": "files.internal",
+            "source_server_path": "/release/app.tar.gz",
+            "account_id": 1,
+            "remote_path": "/opt/app.tar.gz",
+        }],
+        "target_host_ids": [1],
+    })
+
+    assert script.is_valid(), script.errors
+    assert transfer.is_valid(), transfer.errors
+    assert "agent_server_id" not in script.validated_data
+    assert "agent_server_id" not in transfer.validated_data
+
+
+def test_cancel_routes_through_each_target_agent_binding():
+    record = MagicMock(execution_id=123456, execution_parameters={})
+    step = MagicMock(host_results=[{"task_id": "task-1", "host_id": 7}])
+    agent = MagicMock(host_id="agent-7", agent_server_id=3)
+    host = MagicMock(agent=agent)
+
+    with patch(
+        "apps.agents.execution_service.ExecutionStep.objects.filter",
+        return_value=[step],
+    ), patch(
+        "apps.agents.execution_service.Host.objects.get",
+        return_value=host,
+    ), patch.object(
+        AgentExecutionService,
+        "_cancel_tasks_via_agent_server",
+        return_value={"success": True},
+    ) as cancel_tasks:
+        result = AgentExecutionService.cancel_task_via_agent(record)
+
+    assert result["success"] is True
+    assert set(cancel_tasks.call_args.kwargs) == {"agent_task_map"}
+    assert cancel_tasks.call_args.kwargs["agent_task_map"]["agent-7"]["agent"] is agent

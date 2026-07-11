@@ -8,12 +8,36 @@ export interface StartVariable {
   value: string
 }
 
+export type FlowVariableType = 'text' | 'number' | 'boolean' | 'secret' | 'host_list'
+export type FlowVariableWidget = 'input' | 'textarea' | 'password' | 'host_list'
+
+export interface FlowVariableDefinition {
+  key: string
+  name: string
+  type: FlowVariableType
+  widget: FlowVariableWidget
+  default?: any
+  required: boolean
+  regex?: string
+  show_on_start: boolean
+  placeholder?: string
+  description?: string
+}
+
 export interface BuildStartInputsParams {
   scope: PipelineScope | string
   selectedNodeUuids: string[]
-  variables: StartVariable[]
+  variables?: StartVariable[]
+  variableDefinitions?: FlowVariableDefinition[]
+  variableValues?: Record<string, any>
   nodes: FlowNode[]
   nodeOverrides: Record<string, string>
+}
+
+export interface FlowNodeJsonValidation {
+  valid: boolean
+  field?: string
+  message?: string
 }
 
 export interface FlowGraphValidation {
@@ -22,6 +46,30 @@ export interface FlowGraphValidation {
   startNodes: number
   terminalNodes: number
   invalidEdges: number
+  issues: FlowGraphIssue[]
+}
+
+export type FlowGraphIssueSeverity = 'error' | 'warning'
+export type FlowGraphIssueCode =
+  | 'missing-required'
+  | 'disconnected-node'
+  | 'invalid-edge'
+  | 'invalid-start'
+  | 'missing-terminal'
+  | 'cycle'
+  | 'condition-no-branch'
+  | 'condition-many-defaults'
+  | 'condition-missing-expression'
+  | 'parallel-branch-count'
+  | 'join-incoming-count'
+  | 'join-outgoing-count'
+
+export interface FlowGraphIssue {
+  code: FlowGraphIssueCode
+  severity: FlowGraphIssueSeverity
+  message: string
+  nodeUuid?: string
+  edgeKey?: string
 }
 
 export interface FlowTemplateFilters {
@@ -103,6 +151,104 @@ export interface FlowRunTimelineEvent {
   nodeName?: string
   nodeType?: FlowNodeType
 }
+
+const hostBindingKeys = new Set([
+  'host_ids',
+  'target_host_ids',
+  'step_target_host_ids',
+  'target_hosts',
+  'hosts',
+])
+
+const displayKeyMap: Record<string, string> = {
+  host_ids: '目标主机',
+  target_host_ids: '目标主机',
+  step_target_host_ids: '目标主机',
+  target_hosts: '目标主机',
+  hosts: '目标主机',
+  remote_path: '远端路径',
+  download_url: '下载地址',
+  upload_path: '上传路径',
+  script_content: '脚本内容',
+  execution_plan_id: '作业执行方案',
+  execution_parameters: '作业参数',
+  current_node: '当前节点',
+}
+
+const countHostLikeValue = (value: any) => {
+  if (Array.isArray(value)) return value.length
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return 0
+    if (/^\$\{[^}]+\}$/.test(trimmed)) return null
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) return parsed.length
+    } catch {
+      // fall through to comma-separated values
+    }
+    return trimmed.split(',').map(item => item.trim()).filter(Boolean).length
+  }
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.ids)) return value.ids.length
+    if (Array.isArray(value.host_ids)) return value.host_ids.length
+  }
+  return 0
+}
+
+export const sanitizeFlowRunDisplayData = (value: any): any => {
+  if (Array.isArray(value)) return value.map(item => sanitizeFlowRunDisplayData(item))
+  if (!value || typeof value !== 'object') return value
+
+  return Object.entries(value).reduce<Record<string, any>>((acc, [key, item]) => {
+    const displayKey = displayKeyMap[key] || key
+    if (hostBindingKeys.has(key)) {
+      if (typeof item === 'string' && /^\s*\$\{[^}]+\}\s*$/.test(item)) {
+        acc[displayKey] = `主机变量 ${item.trim()}`
+      } else {
+        const count = countHostLikeValue(item)
+        acc[displayKey] = count === null ? '已绑定主机变量' : count > 0 ? `已选 ${count} 台主机` : '未绑定主机'
+      }
+      return acc
+    }
+    acc[displayKey] = sanitizeFlowRunDisplayData(item)
+    return acc
+  }, {})
+}
+
+export const formatFlowRunDisplayJson = (value: Record<string, any> = {}) =>
+  JSON.stringify(sanitizeFlowRunDisplayData(value || {}), null, 2)
+
+export interface FlowRunDisplayRow {
+  key: string
+  value: string
+  multiline: boolean
+}
+
+export interface FlowNodeConfigDisplayRow {
+  label: string
+  value: string
+  multiline?: boolean
+}
+
+const formatRunDisplayValue = (value: any): Pick<FlowRunDisplayRow, 'value' | 'multiline'> => {
+  if (value === undefined || value === null || value === '') return { value: '-', multiline: false }
+  if (typeof value === 'boolean') return { value: value ? '是' : '否', multiline: false }
+  if (Array.isArray(value)) {
+    const primitive = value.every(item => item === null || ['string', 'number', 'boolean'].includes(typeof item))
+    return primitive
+      ? { value: value.length ? value.map(item => String(item)).join(', ') : '-', multiline: false }
+      : { value: JSON.stringify(value, null, 2), multiline: true }
+  }
+  if (typeof value === 'object') return { value: JSON.stringify(value, null, 2), multiline: true }
+  return { value: String(value), multiline: false }
+}
+
+export const flowRunDisplayRows = (value: Record<string, any> = {}): FlowRunDisplayRow[] =>
+  Object.entries(sanitizeFlowRunDisplayData(value || {})).map(([key, item]) => {
+    const formatted = formatRunDisplayValue(item)
+    return { key, ...formatted }
+  })
 
 const flowAuditActionTitle = (log: FlowAuditLog) => {
   const nodeName = log.extra_data?.node_name
@@ -347,6 +493,8 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
   const auditEvents = buildAuditTimelineEvents(auditLogs)
   if (!run) return auditEvents
   const events: Array<FlowRunTimelineEvent & { order: number }> = []
+  const nodeNameMap = new Map((run.node_runs || []).map(nodeRun => [nodeRun.node_uuid, nodeRun.node_name]))
+  const displayNodeName = (uuid?: string) => uuid ? nodeNameMap.get(uuid) || '未知节点' : '未知节点'
   let order = 0
   const addEvent = (event: FlowRunTimelineEvent) => {
     if (!event.timestamp) return
@@ -377,7 +525,7 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
       kind: 'node_start',
       timestamp: timelineTime(nodeRun.started_at || nodeRun.created_at),
       title: `${nodeRun.node_name} 开始执行`,
-      description: `${typeText} / ${nodeRun.node_uuid}`,
+      description: typeText,
       status: 'running',
       nodeRunId: nodeRun.id,
       nodeUuid: nodeRun.node_uuid,
@@ -388,7 +536,7 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
     if (nodeRun.node_type === 'condition') {
       const summary = summarizeConditionNodeRun(nodeRun)
       const decisionText = summary.hasDecision
-        ? summary.rows.map(row => `${row.isDefault ? '默认' : '命中'} ${row.targetUuid}`).join('；')
+        ? summary.rows.map(row => `${row.isDefault ? '默认' : '命中'} ${displayNodeName(row.targetUuid)}`).join('；')
         : '没有命中的条件，也没有默认分支'
       addEvent({
         key: `condition-${nodeRun.id}`,
@@ -593,19 +741,78 @@ export const parseLooseValue = (value: string) => {
   }
 }
 
+export const flowVariableReference = (key: string) => `\${${key}}`
+
+export const normalizeFlowVariables = (variables: Record<string, any> = {}): FlowVariableDefinition[] =>
+  Object.entries(variables).map(([key, raw]) => {
+    const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+    const type = (value.type || 'text') as FlowVariableType
+    const widget = (value.widget || (type === 'secret' ? 'password' : type === 'host_list' ? 'host_list' : 'input')) as FlowVariableWidget
+    return {
+      key,
+      name: String(value.name || value.label || key),
+      type,
+      widget,
+      default: value.default,
+      required: Boolean(value.required),
+      regex: value.regex ? String(value.regex) : undefined,
+      show_on_start: value.show_on_start !== false,
+      placeholder: value.placeholder ? String(value.placeholder) : undefined,
+      description: value.description ? String(value.description) : undefined,
+    }
+  })
+
+export const serializeFlowVariables = (definitions: FlowVariableDefinition[] = []) =>
+  definitions.reduce<Record<string, any>>((acc, item) => {
+    const key = item.key.trim()
+    if (!key) return acc
+    acc[key] = {
+      name: item.name || key,
+      type: item.type || 'text',
+      widget: item.widget || 'input',
+      default: item.default,
+      required: Boolean(item.required),
+      regex: item.regex || '',
+      show_on_start: item.show_on_start !== false,
+      placeholder: item.placeholder || '',
+      description: item.description || '',
+    }
+    return acc
+  }, {})
+
+export const flowVariableSelectOptions = (definitions: FlowVariableDefinition[] = [], type?: FlowVariableType) =>
+  definitions
+    .filter(item => !type || item.type === type)
+    .map(item => ({
+      label: `${item.name || item.key} (${flowVariableReference(item.key)})`,
+      value: flowVariableReference(item.key),
+      key: item.key,
+    }))
+
+const buildStandardVariableInputs = (definitions: FlowVariableDefinition[] = [], values: Record<string, any> = {}) =>
+  definitions.reduce<Record<string, any>>((acc, item) => {
+    const value = Object.prototype.hasOwnProperty.call(values, item.key) ? values[item.key] : item.default
+    acc[item.key] = value
+    return acc
+  }, {})
+
 export const buildStartInputs = ({
   scope,
   selectedNodeUuids,
   variables,
+  variableDefinitions,
+  variableValues,
   nodes,
   nodeOverrides,
 }: BuildStartInputsParams) => {
-  const variableInputs = variables.reduce<Record<string, any>>((acc, item) => {
-    const key = item.key.trim()
-    if (!key) return acc
-    acc[key] = parseLooseValue(item.value)
-    return acc
-  }, {})
+  const variableInputs = variableDefinitions
+    ? buildStandardVariableInputs(variableDefinitions, variableValues)
+    : (variables || []).reduce<Record<string, any>>((acc, item) => {
+        const key = item.key.trim()
+        if (!key) return acc
+        acc[key] = parseLooseValue(item.value)
+        return acc
+      }, {})
 
   const selected = new Set(selectedNodeUuids)
   const selectedNodes = nodes.filter(node => selected.has(node.uuid))
@@ -657,8 +864,8 @@ export const validFileSources = (config: Record<string, any>) =>
 export const isNodeReady = (node: FlowNode) => {
   const config = node.config || {}
   if (!node.name?.trim()) return false
-  if (node.node_type === 'script') return Boolean(config.script_content?.trim())
-  if (node.node_type === 'file_transfer') return validFileSources(config).length > 0
+  if (node.node_type === 'script') return Boolean(config.script_content?.trim() && config.target_host_ids)
+  if (node.node_type === 'file_transfer') return Boolean(config.target_host_ids && validFileSources(config).length > 0)
   if (node.node_type === 'job_plan') return Boolean(config.execution_plan_id)
   if (node.node_type === 'sub_process') return Boolean(config.template_id)
   if (node.node_type === 'manual') return true
@@ -668,11 +875,12 @@ export const isNodeReady = (node: FlowNode) => {
 
 export const summarizeFlowNode = (node: FlowNode) => {
   const config = node.config || {}
+  const targetHostText = summarizeTargetHostBinding(config.target_host_ids)
   if (node.node_type === 'script') {
-    return `${config.script_type || 'shell'} / ${(config.target_host_ids || []).length} 台主机 / ${config.timeout || 300}s`
+    return `${config.script_type || 'shell'} / ${targetHostText} / ${config.timeout || 300}s`
   }
   if (node.node_type === 'file_transfer') {
-    return `${validFileSources(config).length} 个文件源 / 限速 ${config.bandwidth_limit || 0} MB/s`
+    return `${targetHostText} / ${validFileSources(config).length} 个文件源 / 限速 ${config.bandwidth_limit || 0} MB/s`
   }
   if (node.node_type === 'job_plan') {
     return `方案 #${config.execution_plan_id || '-'} / ${executionModeText(config.execution_mode)}`
@@ -695,20 +903,222 @@ export const summarizeFlowNode = (node: FlowNode) => {
   return '-'
 }
 
+const formatBindings = (bindings?: Record<string, any>) => {
+  const rows = Object.entries(bindings || {})
+    .filter(([key, value]) => key && value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key} -> ${String(value)}`)
+  return rows.length ? rows.join('\n') : '未配置'
+}
+
+export const flowNodeConfigDisplayRows = (node: FlowNode): FlowNodeConfigDisplayRow[] => {
+  const config = node.config || {}
+  if (node.node_type === 'script') {
+    return [
+      { label: '脚本类型', value: String(config.script_type || 'shell') },
+      { label: '目标主机', value: summarizeTargetHostBinding(config.target_host_ids) },
+      { label: '超时时间', value: `${config.timeout || 300}s` },
+      { label: '脚本内容', value: config.script_content || '未配置', multiline: true },
+    ]
+  }
+  if (node.node_type === 'file_transfer') {
+    const sources = validFileSources(config)
+    return [
+      { label: '目标主机', value: summarizeTargetHostBinding(config.target_host_ids) },
+      { label: '文件源', value: sources.length ? sources.map(source => `${source.download_url || '-'} -> ${source.remote_path || '-'}`).join('\n') : '未配置', multiline: true },
+      { label: '超时时间', value: `${config.timeout || 600}s` },
+      { label: '限速', value: `${config.bandwidth_limit || 0} MB/s` },
+    ]
+  }
+  if (node.node_type === 'job_plan') {
+    return [
+      { label: '执行方案', value: config.execution_plan_id ? `#${config.execution_plan_id}` : '未选择' },
+      { label: '执行模式', value: executionModeText(config.execution_mode) },
+      { label: '变量映射', value: formatBindings(config.execution_parameter_bindings), multiline: true },
+    ]
+  }
+  if (node.node_type === 'sub_process') {
+    return [
+      { label: '子流程模板', value: config.template_id ? `#${config.template_id}` : '未选择' },
+      { label: '输入继承', value: config.inherit_inputs === false ? '独立输入' : '继承父流程输入' },
+      { label: '输入映射', value: config.inputs ? JSON.stringify(config.inputs, null, 2) : '未配置', multiline: true },
+    ]
+  }
+  if (node.node_type === 'manual') {
+    return [
+      { label: '确认说明', value: config.instructions || '等待人工确认后继续', multiline: true },
+    ]
+  }
+  if (node.node_type === 'condition') {
+    return [
+      { label: '分支说明', value: config.description || '按出边条件选择分支', multiline: true },
+    ]
+  }
+  if (node.node_type === 'parallel') {
+    return [{ label: '网关说明', value: config.description || '并行启动所有下游分支', multiline: true }]
+  }
+  if (node.node_type === 'join') {
+    return [{ label: '网关说明', value: config.description || '等待所有活跃上游分支完成', multiline: true }]
+  }
+  return [{ label: '节点配置', value: summarizeFlowNode(node), multiline: true }]
+}
+
+export const summarizeTargetHostBinding = (value: any) => {
+  if (Array.isArray(value)) return value.length ? `已选 ${value.length} 台主机` : '未绑定主机变量'
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return '未绑定主机变量'
+    if (/^\$\{[^}]+\}$/.test(trimmed)) return `主机变量 ${trimmed}`
+    const jsonArrayMatch = trimmed.match(/^\[(.*)\]$/)
+    const pieces = jsonArrayMatch ? jsonArrayMatch[1].split(',') : trimmed.split(',')
+    const hostCount = pieces.map(item => item.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).length
+    if (hostCount > 0 && (jsonArrayMatch || pieces.length > 1 || /^\d+$/.test(trimmed))) return `已选 ${hostCount} 台主机`
+    return '已绑定主机'
+  }
+  if (value && typeof value === 'object') return '动态主机配置'
+  return '未绑定主机变量'
+}
+
 export const evaluateFlowGraph = (nodes: FlowNode[], edges: FlowEdge[]): FlowGraphValidation => {
   const nodeUuids = new Set(nodes.map(node => node.uuid))
+  const nodeMap = new Map(nodes.map(node => [node.uuid, node]))
   const validEdges = edges.filter(edge =>
     Boolean(edge.source_uuid && edge.target_uuid && nodeUuids.has(edge.source_uuid) && nodeUuids.has(edge.target_uuid))
   )
   const incoming = new Set(validEdges.map(edge => edge.target_uuid))
   const outgoing = new Set(validEdges.map(edge => edge.source_uuid))
   const connected = new Set(validEdges.flatMap(edge => [edge.source_uuid, edge.target_uuid]).filter(Boolean))
+  const outgoingEdgesByNode = new Map<string, FlowEdge[]>()
+  const incomingEdgesByNode = new Map<string, FlowEdge[]>()
+  validEdges.forEach(edge => {
+    if (edge.source_uuid) outgoingEdgesByNode.set(edge.source_uuid, [...(outgoingEdgesByNode.get(edge.source_uuid) || []), edge])
+    if (edge.target_uuid) incomingEdgesByNode.set(edge.target_uuid, [...(incomingEdgesByNode.get(edge.target_uuid) || []), edge])
+  })
+
+  const issues: FlowGraphIssue[] = []
+  nodes.forEach(node => {
+    if (!isNodeReady(node)) {
+      issues.push({
+        code: 'missing-required',
+        severity: 'error',
+        nodeUuid: node.uuid,
+        message: `${node.name || node.uuid} 缺少必填配置`,
+      })
+    }
+    if (nodes.length > 1 && !connected.has(node.uuid)) {
+      issues.push({
+        code: 'disconnected-node',
+        severity: 'error',
+        nodeUuid: node.uuid,
+        message: `${node.name || node.uuid} 未连接到流程拓扑`,
+      })
+    }
+  })
+
+  edges.forEach((edge, index) => {
+    if (!validEdges.includes(edge)) {
+      issues.push({
+        code: 'invalid-edge',
+        severity: 'error',
+        edgeKey: `${edge.source_uuid || 'source'}-${edge.target_uuid || 'target'}-${index}`,
+        message: `连线 ${edge.source_uuid || '-'} -> ${edge.target_uuid || '-'} 指向不存在的节点`,
+      })
+    }
+  })
+
+  if (nodes.length > 1 && nodes.filter(node => !incoming.has(node.uuid)).length !== 1) {
+    issues.push({
+      code: 'invalid-start',
+      severity: 'error',
+      message: '流程必须保留一个明确的起始节点',
+    })
+  }
+  if (nodes.length > 1 && nodes.filter(node => !outgoing.has(node.uuid)).length < 1) {
+    issues.push({
+      code: 'missing-terminal',
+      severity: 'error',
+      message: '流程至少需要一个结束节点',
+    })
+  }
+  if (hasGraphCycle(validEdges)) {
+    issues.push({
+      code: 'cycle',
+      severity: 'error',
+      message: '流程拓扑存在环路，执行器无法按 DAG 推进',
+    })
+  }
+
+  nodes.forEach(node => {
+    const nodeOutgoingEdges = outgoingEdgesByNode.get(node.uuid) || []
+    const nodeIncomingEdges = incomingEdgesByNode.get(node.uuid) || []
+    if (node.node_type === 'condition') {
+      if (nodeOutgoingEdges.length === 0) {
+        issues.push({
+          code: 'condition-no-branch',
+          severity: 'error',
+          nodeUuid: node.uuid,
+          message: `${node.name || node.uuid} 至少需要一条分支连线`,
+        })
+      }
+      const defaultCount = nodeOutgoingEdges.filter(edge => edge.condition?.default).length
+      if (defaultCount > 1) {
+        issues.push({
+          code: 'condition-many-defaults',
+          severity: 'error',
+          nodeUuid: node.uuid,
+          message: `${node.name || node.uuid} 只能设置一个默认分支`,
+        })
+      }
+      nodeOutgoingEdges.forEach(edge => {
+        const condition = edge.condition || {}
+        const operator = condition.operator || condition.op || 'eq'
+        const variable = condition.variable || condition.left || condition.key
+        const needsExpectedValue = !['truthy', 'falsy', 'empty', 'not_empty'].includes(operator)
+        if (!condition.default && (!variable || (needsExpectedValue && condition.value === undefined && condition.right === undefined))) {
+          issues.push({
+            code: 'condition-missing-expression',
+            severity: 'error',
+            nodeUuid: node.uuid,
+            edgeKey: `${edge.source_uuid}-${edge.target_uuid}`,
+            message: `${node.name || node.uuid} 到 ${nodeMap.get(edge.target_uuid || '')?.name || edge.target_uuid || '-'} 的分支缺少判断变量`,
+          })
+        }
+      })
+    }
+    if (node.node_type === 'parallel' && nodeOutgoingEdges.length < 2) {
+      issues.push({
+        code: 'parallel-branch-count',
+        severity: 'warning',
+        nodeUuid: node.uuid,
+        message: `${node.name || node.uuid} 通常需要至少两个下游分支`,
+      })
+    }
+    if (node.node_type === 'join') {
+      if (nodeIncomingEdges.length < 2) {
+        issues.push({
+          code: 'join-incoming-count',
+          severity: 'warning',
+          nodeUuid: node.uuid,
+          message: `${node.name || node.uuid} 通常需要至少两个上游分支`,
+        })
+      }
+      if (nodeOutgoingEdges.length > 1) {
+        issues.push({
+          code: 'join-outgoing-count',
+          severity: 'warning',
+          nodeUuid: node.uuid,
+          message: `${node.name || node.uuid} 建议只保留一个下游出口`,
+        })
+      }
+    }
+  })
+
   return {
     missingRequired: nodes.filter(node => !isNodeReady(node)).length,
     disconnected: nodes.filter(node => !connected.has(node.uuid) && nodes.length > 1).length,
     startNodes: nodes.filter(node => !incoming.has(node.uuid)).length,
     terminalNodes: nodes.filter(node => !outgoing.has(node.uuid)).length,
     invalidEdges: edges.length - validEdges.length,
+    issues,
   }
 }
 
@@ -724,19 +1134,73 @@ const hasPath = (edges: FlowEdge[], from: string, to: string, visited: Set<strin
 export const createsCycle = (edges: FlowEdge[], source: string, target: string) =>
   hasPath(edges, target, source, new Set<string>())
 
+const hasGraphCycle = (edges: FlowEdge[]) => {
+  const outgoing = new Map<string, string[]>()
+  edges.forEach(edge => {
+    if (!edge.source_uuid || !edge.target_uuid) return
+    outgoing.set(edge.source_uuid, [...(outgoing.get(edge.source_uuid) || []), edge.target_uuid])
+  })
+
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const visit = (uuid: string): boolean => {
+    if (visiting.has(uuid)) return true
+    if (visited.has(uuid)) return false
+    visiting.add(uuid)
+    for (const target of outgoing.get(uuid) || []) {
+      if (visit(target)) return true
+    }
+    visiting.delete(uuid)
+    visited.add(uuid)
+    return false
+  }
+
+  return [...outgoing.keys()].some(visit)
+}
+
 export const normalizeFlowNode = (node: FlowNode): FlowNode => {
   const config = { ...(node.config || {}) }
   if (!config.failure_policy) config.failure_policy = node.node_type === 'job_plan' ? 'pause' : 'stop'
   if (node.node_type === 'file_transfer') {
     config.file_sources = parseFileSources(config.file_sources_text, config.file_sources)
   }
-  if (node.node_type === 'job_plan' && !config.execution_parameters_text) {
-    config.execution_parameters_text = JSON.stringify(config.execution_parameters || {}, null, 2)
-  }
   if (node.node_type === 'sub_process' && !config.inputs_text) {
     config.inputs_text = JSON.stringify(config.inputs || {}, null, 2)
   }
   return { ...node, config }
+}
+
+export const resolveFlowTemplateTopology = (
+  template: Pick<FlowTemplate, 'nodes' | 'edges'>,
+  fallbackNodes: FlowNode[] = [],
+  fallbackEdges: FlowEdge[] = [],
+) => ({
+  nodes: Array.isArray(template.nodes) && template.nodes.length > 0 ? template.nodes : fallbackNodes,
+  edges: Array.isArray(template.edges) && template.edges.length > 0 ? template.edges : fallbackEdges,
+})
+
+export const validateFlowNodeConfigJson = (node: FlowNode): FlowNodeJsonValidation => {
+  const config = node.config || {}
+  const checks: Array<{ field: string; label: string; value?: string }> = []
+  if (node.node_type === 'sub_process') {
+    checks.push({ field: 'inputs_text', label: '子流程输入 JSON', value: config.inputs_text || '{}' })
+  }
+
+  for (const check of checks) {
+    try {
+      const parsed = JSON.parse(check.value || '{}')
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+        return { valid: false, field: check.field, message: `${node.name || node.uuid} 的 ${check.label} 必须是 JSON 对象` }
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        field: check.field,
+        message: `${node.name || node.uuid} 的 ${check.label} 格式不正确: ${(error as Error).message}`,
+      }
+    }
+  }
+  return { valid: true }
 }
 
 export const serializeFlowNode = (node: FlowNode): FlowNode => {
@@ -746,8 +1210,8 @@ export const serializeFlowNode = (node: FlowNode): FlowNode => {
     delete config.file_sources_text
   }
   if (node.node_type === 'job_plan') {
-    config.execution_parameters = JSON.parse(config.execution_parameters_text || '{}')
     delete config.execution_parameters_text
+    delete config.execution_parameters
   }
   if (node.node_type === 'sub_process') {
     config.inputs = JSON.parse(config.inputs_text || '{}')

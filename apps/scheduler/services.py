@@ -41,6 +41,7 @@ class SchedulerService:
                     cron_expression=cron_expression,
                     timezone=kwargs.get('timezone', 'Asia/Shanghai'),
                     is_active=kwargs.get('is_active', False),
+                    execution_parameters=kwargs.get('execution_parameters') or {},
                     created_by=created_by,
                     updated_by=kwargs.get('updated_by') or created_by
                 )
@@ -57,7 +58,15 @@ class SchedulerService:
         try:
             with transaction.atomic():
                 # 更新基本信息
-                for field in ['name', 'description', 'cron_expression', 'timezone', 'is_active']:
+                for field in [
+                    'name',
+                    'description',
+                    'execution_plan',
+                    'cron_expression',
+                    'timezone',
+                    'is_active',
+                    'execution_parameters',
+                ]:
                     if field in kwargs:
                         setattr(scheduled_job, field, kwargs[field])
 
@@ -96,40 +105,24 @@ class SchedulerService:
 
     @staticmethod
     def enable_scheduled_job(scheduled_job):
-        """启用定时作业"""
+        """启用定时作业；运行中的调度器会在下一次同步周期加载。"""
         try:
-            # 更新数据库状态
             scheduled_job.is_active = True
-            scheduled_job.save()
-
-            # 启用Celery Beat任务
-            if scheduled_job.periodic_task:
-                scheduled_job.periodic_task.enabled = True
-                scheduled_job.periodic_task.save()
-                logger.info(f"启用定时作业成功: {scheduled_job.name}")
-            else:
-                logger.warning(f"定时作业 {scheduled_job.name} 没有关联的Celery Beat任务")
-
+            scheduled_job.save(update_fields=['is_active', 'updated_at'])
+            logger.info(f"启用定时作业成功: {scheduled_job.name}")
+            return scheduled_job
         except Exception as e:
             logger.error(f"启用定时作业失败: {scheduled_job.name} - {e}")
             raise
 
     @staticmethod
     def disable_scheduled_job(scheduled_job):
-        """禁用定时作业"""
+        """禁用定时作业；运行中的调度器会在下一次同步周期移除。"""
         try:
-            # 更新数据库状态
             scheduled_job.is_active = False
-            scheduled_job.save()
-
-            # 禁用Celery Beat任务
-            if scheduled_job.periodic_task:
-                scheduled_job.periodic_task.enabled = False
-                scheduled_job.periodic_task.save()
-                logger.info(f"禁用定时作业成功: {scheduled_job.name}")
-            else:
-                logger.warning(f"定时作业 {scheduled_job.name} 没有关联的Celery Beat任务")
-
+            scheduled_job.save(update_fields=['is_active', 'updated_at'])
+            logger.info(f"禁用定时作业成功: {scheduled_job.name}")
+            return scheduled_job
         except Exception as e:
             logger.error(f"禁用定时作业失败: {scheduled_job.name} - {e}")
             raise

@@ -595,7 +595,6 @@ class JobTemplateViewSet(AuditLogMixin, TemplateSyncMixin, viewsets.ModelViewSet
                 execution_mode=data.get('execution_mode', 'parallel'),
                 rolling_batch_size=data.get('rolling_batch_size', 1),
                 rolling_batch_delay=data.get('rolling_batch_delay', 0),
-                agent_server_id=data.get('agent_server_id'),
                 client_ip=client_ip,
                 user_agent=user_agent
             )
@@ -922,7 +921,6 @@ class ExecutionPlanViewSet(AuditLogMixin, ExecutionPlanSyncMixin, viewsets.Model
             execution_mode=data.get('execution_mode', 'parallel'),
             rolling_batch_size=data.get('rolling_batch_size', 1),
             rolling_batch_delay=data.get('rolling_batch_delay', 0),
-            agent_server_id=data.get('agent_server_id'),
             client_ip=client_ip,
             user_agent=user_agent
         )

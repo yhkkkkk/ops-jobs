@@ -16,7 +16,51 @@
         </div>
       </div>
       
+      <nav v-if="collapsed" class="compact-nav" aria-label="折叠菜单">
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': selectedKeys.includes('/dashboard') }]"
+          title="仪表盘"
+          @click="onMenuClick('/dashboard')"
+        >
+          <icon-dashboard />
+        </button>
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'resource' }]"
+          title="资源管理"
+          @click="onMenuClick('/hosts')"
+        >
+          <icon-storage />
+        </button>
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'job' }]"
+          title="作业管理"
+          @click="onMenuClick('/flows')"
+        >
+          <icon-apps />
+        </button>
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'schedule' }]"
+          title="调度管理"
+          @click="onMenuClick('/scheduled-tasks')"
+        >
+          <icon-schedule />
+        </button>
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'monitor' }]"
+          title="监控审计"
+          @click="onMenuClick('/execution-records')"
+        >
+          <icon-eye />
+        </button>
+      </nav>
+
       <a-menu
+        v-else
         :selected-keys="selectedKeys"
         :open-keys="openKeys"
         mode="vertical"
@@ -139,6 +183,12 @@
       <!-- 顶部导航 -->
       <a-layout-header class="header">
         <div class="header-left">
+          <a-button class="layout-collapse-btn" type="text" size="small" @click="toggleCollapsed">
+            <template #icon>
+              <icon-menu-unfold v-if="collapsed" />
+              <icon-menu-fold v-else />
+            </template>
+          </a-button>
           <a-breadcrumb>
             <a-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
               {{ item.title }}
@@ -247,6 +297,11 @@ const breadcrumbs = computed(() => {
   }
 })
 
+const compactActiveGroup = computed(() => {
+  const menuInfo = findMenuInfo(route.path)
+  return menuInfo.parent || menuInfo.key
+})
+
 // 监听路由变化，更新菜单选中状态
 watch(
   () => route.path,
@@ -302,6 +357,10 @@ const onCollapse = (collapsedState: boolean) => {
   } catch (error) {
     console.error('侧边栏折叠处理失败:', error)
   }
+}
+
+const toggleCollapsed = () => {
+  onCollapse(!collapsed.value)
 }
 
 // 菜单点击
@@ -433,6 +492,38 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
+.compact-nav {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px 6px;
+}
+
+.compact-nav__item {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--app-fg-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  cursor: pointer;
+}
+
+.compact-nav__item:hover,
+.compact-nav__item--active {
+  color: var(--app-accent);
+  background: var(--app-accent-soft);
+}
+
+.compact-nav__item svg {
+  width: 16px;
+  height: 16px;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -445,7 +536,22 @@ onBeforeUnmount(() => {
 }
 
 .header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
   flex: 1;
+}
+
+.layout-collapse-btn {
+  flex: 0 0 auto;
+  color: var(--app-fg-secondary);
+  border-radius: var(--app-radius-sm);
+}
+
+.layout-collapse-btn:hover {
+  color: var(--app-accent);
+  background: var(--app-accent-soft);
 }
 
 .header-right {
@@ -576,14 +682,45 @@ onBeforeUnmount(() => {
 }
 
 :deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-menu-item),
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title) {
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title),
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-inline-header),
+:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-pop-header) {
+  width: 32px !important;
+  min-width: 32px !important;
   justify-content: center;
+  margin-left: auto !important;
+  margin-right: auto !important;
   padding: 0 !important;
+  overflow: hidden !important;
 }
 
 :deep(.arco-layout-sider-collapsed .arco-menu-item .arco-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-icon) {
+:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-inline-header .arco-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-pop-header .arco-icon) {
   margin-right: 0 !important;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-item .arco-menu-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-menu-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-inline-header .arco-menu-icon),
+:deep(.arco-layout-sider-collapsed .arco-menu-pop-header .arco-menu-icon) {
+  margin-right: 0 !important;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-inline-header > *:not(.arco-menu-icon)),
+:deep(.arco-layout-sider-collapsed .arco-menu-pop-header > *:not(.arco-menu-icon)) {
+  display: none !important;
+}
+
+:deep(.arco-layout-sider-collapsed .arco-menu-icon-suffix),
+:deep(.arco-layout-sider-collapsed .arco-menu-suffix),
+:deep(.arco-layout-sider-collapsed .arco-menu-collapse-button) {
+  display: none !important;
+}
+
+:global(.arco-menu-pop-trigger .arco-trigger-arrow) {
+  display: none !important;
 }
 
 :deep(.arco-breadcrumb) {

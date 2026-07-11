@@ -278,10 +278,10 @@ class AgentExecutionService:
             from utils.agent_server_client import AgentServerClient
 
             if not agent_server_id and not getattr(agent, "agent_server_id", None):
-                logger.error(f"Agent-Server ID 未配置，无法推送任务到 Agent {agent.host_id}")
+                logger.error(f"Agent {agent.host_id} 未绑定 Agent-Server，无法推送任务")
                 return {
                     'success': False,
-                    'error': '请先选择 Agent-Server'
+                    'error': '目标主机 Agent 未绑定 Agent-Server'
                 }
 
             # 支持在设置中提供覆盖的 agent_id（测试/单实例场景）
@@ -1003,6 +1003,7 @@ class AgentExecutionService:
             }
 
     @staticmethod
+    @transaction.atomic
     def handle_task_result(
         task_id: str,
         result: Dict[str, Any],
@@ -1033,13 +1034,29 @@ class AgentExecutionService:
 
             # 查找ExecutionRecord
             try:
-                execution_record = ExecutionRecord.objects.get(execution_id=execution_id)
+                execution_record = ExecutionRecord.objects.select_for_update().get(
+                    execution_id=execution_id
+                )
             except ExecutionRecord.DoesNotExist:
                 logger.warning(f"执行记录不存在: {execution_id}")
                 return {'success': False, 'error': '执行记录不存在'}
 
             # 更新执行记录状态
             status = result.get('status', 'failed')
+            if execution_record.is_completed and execution_record.status != status:
+                logger.info(
+                    "忽略执行记录 %s 的迟到结果: current=%s incoming=%s",
+                    execution_id,
+                    execution_record.status,
+                    status,
+                )
+                return {
+                    'success': True,
+                    'execution_record_id': execution_record.id,
+                    'status': execution_record.status,
+                    'ignored': True,
+                }
+
             if status == 'success':
                 execution_record.status = 'success'
             elif status == 'failed':
@@ -1072,7 +1089,7 @@ class AgentExecutionService:
                     'failed_hosts': progress.get('failed_hosts'),
                     'running_hosts': progress.get('running_hosts'),
                     'pending_hosts': progress.get('pending_hosts'),
-                    'updated_at': datetime.now(tz=timezone.utc).isoformat(),
+                    'updated_at': datetime.now(tz=dt_timezone.utc).isoformat(),
                 }
                 execution_record.execution_results = exec_results
 
@@ -1147,6 +1164,7 @@ class AgentExecutionService:
 
         except Exception as e:
             logger.error(f"处理任务结果异常: {str(e)}", exc_info=True)
+            transaction.set_rollback(True)
             return {
                 'success': False,
                 'error': f'处理结果异常: {str(e)}'
@@ -1180,7 +1198,6 @@ class AgentExecutionService:
         retry_type: str = 'full',  # full: 完整重试, step: 步骤重试
         step_id: str = None,
         failed_only: bool = True,
-        agent_server_id: int = None,
         ip_list: List[str] = None,  # 基于IP的重试支持
     ) -> Dict[str, Any]:
         """
@@ -1192,7 +1209,6 @@ class AgentExecutionService:
             retry_type: 重试类型（full/step）
             step_id: 步骤ID（如果是步骤重试）
             failed_only: 是否只重试失败的主机
-            agent_server_id: Agent-Server ID
             ip_list: 指定IP列表进行重试（可选）
         
         Returns:
@@ -1203,12 +1219,6 @@ class AgentExecutionService:
             from django.db import transaction
             from apps.system_config.models import ConfigManager
 
-            agent_server_id = agent_server_id or (execution_record.execution_parameters or {}).get('agent_server_id')
-            if not agent_server_id:
-                return {
-                    'success': False,
-                    'error': '请先选择Agent-Server'
-                }
 
             if retry_type == 'full':
                 # 完整重试：创建新的ExecutionRecord
@@ -1255,8 +1265,9 @@ class AgentExecutionService:
                             name=f"重试: {root_execution.name}",
                             description=f"重试执行记录 {root_execution.execution_id}",
                             execution_parameters=execution_record.execution_parameters,
-                            execution_mode='agent',  # 使用Agent方式
-                            agent_server_id=agent_server_id,
+                            execution_mode=(execution_record.execution_parameters or {}).get(
+                                'execution_mode', 'parallel'
+                            ),
                         )
 
                         if result['success']:
@@ -1304,7 +1315,6 @@ class AgentExecutionService:
                         'target_host_ids': params.get('target_host_ids', []),
                         'global_variables': params.get('global_variables', {}),
                         'positional_args': params.get('positional_args', []),
-                        'agent_server_id': agent_server_id,
                     }
 
                     # 在事务中进行并发检查
@@ -1365,7 +1375,7 @@ class AgentExecutionService:
 
                     params = execution_record.execution_parameters
                     transfer_data = {
-                        'file_sources': params.get('file_sources', []),
+                        'artifact_sources': params.get('file_sources', []),
                         'remote_path': params.get('remote_path'),
                         'timeout': params.get('timeout', 300),
                         'execution_mode': params.get('execution_mode', 'parallel'),
@@ -1373,7 +1383,6 @@ class AgentExecutionService:
                         'rolling_batch_delay': params.get('rolling_batch_delay', 0),
                         'overwrite_policy': params.get('overwrite_policy', 'overwrite'),
                         'target_host_ids': params.get('target_host_ids', []),
-                        'agent_server_id': agent_server_id,
                         'bandwidth_limit': params.get('bandwidth_limit', 0),
                         'account_id': params.get('account_id'),
                     }
@@ -1545,7 +1554,6 @@ class AgentExecutionService:
                         timeout=step_params.get('timeout', 300),
                         global_variables=execution_record.execution_parameters.get('global_variables', {}),
                         step_id=str(step.id),
-                        agent_server_id=agent_server_id,
                         account_id=step_params.get('account_id'),  # 传递执行账号ID
                     )
                 elif step_type == 'file_transfer':
@@ -1566,7 +1574,6 @@ class AgentExecutionService:
                         size=src.get('size'),
                         auth_headers=src.get('auth_headers') or {},
                         step_id=str(step.id),
-                        agent_server_id=agent_server_id,
                         account_id=step_params.get('account_id'),  # 传递执行账号ID
                         file_sources=file_sources,
                     )
@@ -1601,14 +1608,12 @@ class AgentExecutionService:
     @staticmethod
     def cancel_task_via_agent(
         execution_record: ExecutionRecord,
-        agent_server_id: int = None,
     ) -> Dict[str, Any]:
         """
         通过Agent取消任务（支持直连和Agent-Server两种模式）
         
         Args:
             execution_record: 执行记录
-            agent_server_id: Agent-Server ID
         
         Returns:
             Dict: 取消结果
@@ -1653,19 +1658,17 @@ class AgentExecutionService:
                 }
             
             # Agent-Server模式（唯一支持的模式）
-            server_id = agent_server_id or (execution_record.execution_parameters or {}).get('agent_server_id')
-            has_bound_server = any(
+            all_agents_bound = all(
                 getattr(agent_info.get('agent'), 'agent_server_id', None)
                 for agent_info in agent_task_map.values()
             )
-            if not server_id and not has_bound_server:
+            if not all_agents_bound:
                 return {
                     'success': False,
-                    'error': '请先选择Agent-Server'
+                    'error': '目标主机 Agent 未绑定 Agent-Server'
                 }
             return AgentExecutionService._cancel_tasks_via_agent_server(
                 agent_task_map=agent_task_map,
-                agent_server_id=server_id,
             )
         
         except Exception as e:

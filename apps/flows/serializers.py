@@ -236,4 +236,3 @@ class FlowRunSerializer(serializers.ModelSerializer):
 
 class FlowStartSerializer(serializers.Serializer):
     inputs = serializers.DictField(required=False, allow_empty=True)
-    agent_server_id = serializers.IntegerField(required=True)

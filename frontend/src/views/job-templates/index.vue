@@ -8,9 +8,10 @@
     }"
   >
     <PageHeader
+      dense
       eyebrow="作业资产"
       title="作业模板"
-      description="创建和管理可复用的作业模板，维护步骤、标签、执行方案引用和同步状态。"
+      description="维护模板步骤、标签、执行方案引用和同步状态。"
     >
       <template #actions>
         <a-space>

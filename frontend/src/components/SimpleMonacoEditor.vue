@@ -4,9 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as monaco from 'monaco-editor'
-import { setupMonacoWorkers } from '@/utils/monacoWorkers'
-import { ensureMonacoLanguage, getMonacoLanguage } from '@/utils/monacoFactory'
+import { ensureMonacoLanguage, getMonacoLanguage, loadMonaco } from '@/utils/monacoFactory'
 
 interface Props {
   modelValue: string
@@ -30,18 +28,18 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const editorContainer = ref<HTMLElement>()
-let editor: monaco.editor.IStandaloneCodeEditor | null = null
+let monacoApi: any = null
+let editor: any = null
 const resolveLanguage = (lang?: string) => getMonacoLanguage((lang || '').toLowerCase())
 
 const initEditor = async () => {
   if (!editorContainer.value) return
 
   try {
-    // 创建编辑器
-    setupMonacoWorkers()
+    monacoApi = await loadMonaco()
     const resolvedLanguage = resolveLanguage(props.language)
-    await ensureMonacoLanguage(monaco, resolvedLanguage)
-    editor = monaco.editor.create(editorContainer.value, {
+    await ensureMonacoLanguage(monacoApi, resolvedLanguage)
+    editor = monacoApi.editor.create(editorContainer.value, {
       value: props.modelValue,
       language: resolvedLanguage,
       theme: props.theme,
@@ -88,20 +86,20 @@ watch(() => props.modelValue, (newValue) => {
 
 // 监听语言变化
 watch(() => props.language, (newLanguage) => {
-  if (editor) {
+  if (editor && monacoApi) {
     const model = editor.getModel()
     if (model) {
       const resolved = resolveLanguage(newLanguage)
-      void ensureMonacoLanguage(monaco, resolved)
-      monaco.editor.setModelLanguage(model, resolved)
+      void ensureMonacoLanguage(monacoApi, resolved)
+      monacoApi.editor.setModelLanguage(model, resolved)
     }
   }
 })
 
 // 监听主题变化
 watch(() => props.theme, (newTheme) => {
-  if (editor) {
-    monaco.editor.setTheme(newTheme)
+  if (editor && monacoApi) {
+    monacoApi.editor.setTheme(newTheme)
   }
 })
 

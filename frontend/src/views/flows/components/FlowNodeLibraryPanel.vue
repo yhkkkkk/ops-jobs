@@ -1,9 +1,9 @@
 <template>
-  <aside class="node-library">
+  <aside :class="['node-library', { 'node-library--readonly': readonly }]">
     <div class="workbench-panel-head">
       <div>
         <h2>节点插件库</h2>
-        <p>拖入画布，或点击串到末尾。</p>
+        <p>标准插件 / 场景模板</p>
       </div>
     </div>
     <a-input v-model="search" class="node-search" allow-clear placeholder="搜索脚本、文件、作业、子流程" />
@@ -12,7 +12,7 @@
         <h3>标准场景</h3>
         <span>模板化编排</span>
       </div>
-      <button v-for="scenario in scenarios" :key="scenario.key" type="button" class="scenario-row" @click="emit('applyScenario', scenario.key)">
+      <button v-for="scenario in scenarios" :key="scenario.key" type="button" class="scenario-row" :disabled="readonly" @click="handleScenarioClick(scenario.key)">
         <strong>{{ scenario.name }}</strong>
         <em>{{ scenario.description }}</em>
       </button>
@@ -22,8 +22,9 @@
       :key="plugin.type"
       class="plugin-card"
       type="button"
-      draggable="true"
-      @click="emit('addNode', plugin.type)"
+      :disabled="readonly"
+      :draggable="!readonly"
+      @click="handlePluginClick(plugin.type)"
       @dragstart="handlePluginDragStart($event, plugin)"
     >
       <span class="plugin-card__icon"><component :is="plugin.icon" /></span>
@@ -34,15 +35,6 @@
     </button>
     <a-empty v-if="filteredPlugins.length === 0" description="没有匹配的节点类型" />
 
-    <div class="library-guide">
-      <h3>配置顺序</h3>
-      <ol>
-        <li>添加节点并连线</li>
-        <li>逐个补齐右侧字段</li>
-        <li>切到预览检查状态</li>
-        <li>保存模板后启动执行</li>
-      </ol>
-    </div>
     <div class="status-legend">
       <span><i class="legend-dot legend-dot--success" /> 成功</span>
       <span><i class="legend-dot legend-dot--warn" /> 执行/暂停</span>
@@ -73,6 +65,7 @@ export interface FlowScenarioOption {
 const props = defineProps<{
   plugins: FlowNodePluginOption[]
   scenarios: FlowScenarioOption[]
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -81,6 +74,7 @@ const emit = defineEmits<{
 }>()
 
 const search = ref('')
+const readonly = computed(() => props.readonly === true)
 const filteredPlugins = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   if (!keyword) return props.plugins
@@ -92,10 +86,20 @@ const filteredPlugins = computed(() => {
 })
 
 const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) => {
+  if (readonly.value) {
+    event.preventDefault()
+    return
+  }
   if (!event.dataTransfer) return
   event.dataTransfer.effectAllowed = 'copy'
   event.dataTransfer.setData('application/x-flow-node-type', plugin.type)
   event.dataTransfer.setData('text/plain', plugin.type)
+}
+const handlePluginClick = (type: SupportedFlowNodeType) => {
+  if (!readonly.value) emit('addNode', type)
+}
+const handleScenarioClick = (key: 'release' | 'dispatch') => {
+  if (!readonly.value) emit('applyScenario', key)
 }
 </script>
 
@@ -104,8 +108,9 @@ const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) =
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
-  padding: 10px;
+  padding: 7px;
   background: #fff;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -115,16 +120,24 @@ const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) =
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
-.workbench-panel-head h2 { margin: 0; color: var(--app-fg); font-size: 15px; line-height: 1.3; }
-.workbench-panel-head p { margin: 4px 0 0; color: var(--app-muted); font-size: 12px; line-height: 1.4; }
-.node-search { margin-bottom: 8px; }
+.workbench-panel-head h2 { margin: 0; color: var(--app-fg); font-size: 14px; line-height: 1.25; }
+.workbench-panel-head p { margin: 3px 0 0; color: var(--app-muted); font-size: 11px; line-height: 1.35; }
+.node-search {
+  width: 100%;
+  margin-bottom: 6px;
+}
+.node-search :deep(.arco-input-wrapper) {
+  width: 100%;
+  height: 30px;
+  font-size: 12px;
+}
 .scenario-box {
   display: grid;
-  gap: 5px;
-  margin-bottom: 8px;
-  padding: 8px;
+  gap: 3px;
+  margin-bottom: 6px;
+  padding: 6px;
   background: var(--app-surface-soft);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -135,13 +148,13 @@ const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) =
   align-items: baseline;
   gap: 8px;
 }
-.scenario-box h3 { margin: 0; color: var(--app-fg); font-size: 13px; line-height: 1.3; }
-.scenario-box span { color: var(--app-muted); font-size: 12px; }
+.scenario-box h3 { margin: 0; color: var(--app-fg); font-size: 12px; line-height: 1.25; }
+.scenario-box span { color: var(--app-muted); font-size: 11px; }
 .scenario-row {
   display: grid;
-  gap: 1px;
   width: 100%;
-  padding: 7px 8px;
+  min-width: 0;
+  padding: 5px 6px;
   text-align: left;
   background: #fff;
   border: 1px solid var(--app-border);
@@ -149,16 +162,17 @@ const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) =
   cursor: pointer;
 }
 .scenario-row:hover { border-color: var(--app-accent); }
-.scenario-box strong { color: var(--app-fg); font-size: 12px; line-height: 1.35; }
-.scenario-box em { color: var(--app-muted); font-size: 12px; font-style: normal; line-height: 1.4; }
+.scenario-box strong { overflow: hidden; color: var(--app-fg); font-size: 12px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.scenario-box em { overflow: hidden; color: var(--app-muted); font-size: 11px; font-style: normal; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 .plugin-card {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 42px;
-  padding: 7px 8px;
-  margin-bottom: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 6px;
+  margin-bottom: 4px;
   text-align: left;
   background: #fff;
   border: 1px solid var(--app-border);
@@ -167,39 +181,46 @@ const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) =
 }
 .plugin-card:hover { border-color: var(--app-accent); background: var(--app-accent-soft); }
 .plugin-card:active { cursor: grabbing; }
+.node-library--readonly .scenario-row,
+.node-library--readonly .plugin-card {
+  cursor: default;
+  opacity: .74;
+}
+.node-library--readonly .scenario-row:hover,
+.node-library--readonly .plugin-card:hover {
+  background: #fff;
+  border-color: var(--app-border);
+}
 .plugin-card__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
   color: var(--app-accent);
   background: var(--app-accent-soft);
   border-radius: var(--app-radius-sm);
 }
+.plugin-card__icon svg { font-size: 13px; }
 .plugin-card > span:last-child { min-width: 0; }
 .plugin-card strong,
 .plugin-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plugin-card strong { color: var(--app-fg); font-size: 13px; line-height: 1.35; }
+.plugin-card strong { color: var(--app-fg); font-size: 12px; line-height: 1.2; }
 .plugin-card small {
-  margin-top: 2px;
   color: var(--app-meta);
   font-family: var(--app-mono);
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 10px;
+  line-height: 1.2;
 }
-.library-guide { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--app-border); }
-.library-guide h3 { margin: 0 0 8px; color: var(--app-fg); font-size: 13px; }
-.library-guide ol { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: var(--app-muted); font-size: 12px; line-height: 1.45; }
 .status-legend {
   display: grid;
-  gap: 7px;
-  margin-top: 12px;
-  padding-top: 12px;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 7px;
   border-top: 1px solid var(--app-border);
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 .status-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend-dot { width: 7px; height: 7px; border-radius: var(--app-radius-pill); background: var(--app-muted); }

@@ -79,8 +79,16 @@ class ExecutionRecordService:
             with transaction.atomic():
                 execution_record = ExecutionRecord.objects.select_for_update().get(pk=execution_record.pk)
                 previous_status = execution_record.status
-                newly_completed = previous_status not in completed_statuses and status in completed_statuses
+                if previous_status in completed_statuses and status != previous_status:
+                    logger.warning(
+                        "忽略执行记录的迟到状态更新: %s %s -> %s",
+                        execution_record.execution_id,
+                        previous_status,
+                        status,
+                    )
+                    return execution_record
 
+                newly_completed = previous_status not in completed_statuses and status in completed_statuses
                 execution_record.status = status
 
                 if status == 'running' and not execution_record.started_at:

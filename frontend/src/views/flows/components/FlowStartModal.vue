@@ -27,39 +27,48 @@
 
       <main class="start-config">
         <a-form :model="startForm" layout="vertical">
-          <a-row :gutter="12">
-            <a-col :span="8">
-              <a-form-item label="调度 Agent Server" required>
-                <a-input-number v-model="startForm.agent_server_id" :min="1" placeholder="Agent Server ID" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item label="执行范围">
-                <a-radio-group v-model="startForm.scope" type="button">
-                  <a-radio value="all">全量执行</a-radio>
-                  <a-radio value="selected">只执行勾选节点</a-radio>
-                </a-radio-group>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <a-form-item label="执行范围">
+            <a-radio-group v-model="startForm.scope" type="button">
+              <a-radio value="all">全量执行</a-radio>
+              <a-radio value="selected">只执行勾选节点</a-radio>
+            </a-radio-group>
+          </a-form-item>
 
           <section class="start-section">
             <div class="start-section-head">
               <strong>全局变量</strong>
-              <span>启动时注入到 inputs，可覆盖模板变量。</span>
+              <span>按流水线变量定义填写，隐藏变量会使用模板默认值。</span>
             </div>
-            <div class="variable-row-list">
-              <div v-for="(variable, index) in startForm.variables" :key="index" class="variable-row">
-                <a-input v-model="variable.key" placeholder="变量名，如 env" />
-                <a-input v-model="variable.value" placeholder="变量值，如 prod" />
-                <a-button size="small" status="danger" :disabled="startForm.variables.length <= 1" @click="removeStartVariable(index)">
-                  <template #icon><icon-delete /></template>
-                </a-button>
+            <a-empty v-if="visibleVariables.length === 0" description="当前流水线没有执行时显示的变量" />
+            <div v-else class="variable-form-list">
+              <div v-for="variable in visibleVariables" :key="variable.key" class="variable-form-row">
+                <div class="variable-form-row__label">
+                  <strong>{{ variable.name }}</strong>
+                  <span>{{ flowVariableReference(variable.key) }}</span>
+                </div>
+                <a-textarea
+                  v-if="variable.widget === 'textarea'"
+                  v-model="startForm.variableValues[variable.key]"
+                  :placeholder="variable.placeholder || variable.description || variable.key"
+                  :auto-size="{ minRows: 2, maxRows: 5 }"
+                />
+                <a-input-password
+                  v-else-if="variable.widget === 'password'"
+                  v-model="startForm.variableValues[variable.key]"
+                  :placeholder="variable.placeholder || variable.description || variable.key"
+                />
+                <a-input
+                  v-else-if="variable.widget === 'host_list'"
+                  :model-value="formatHostListValue(startForm.variableValues[variable.key])"
+                  :placeholder="variable.placeholder || '主机地址或主机标识，用逗号分隔'"
+                  @input="value => setHostListValue(variable.key, value)"
+                />
+                <a-input
+                  v-else
+                  v-model="startForm.variableValues[variable.key]"
+                  :placeholder="variable.placeholder || variable.description || variable.key"
+                />
               </div>
-              <a-button size="small" @click="addStartVariable">
-                <template #icon><icon-plus /></template>
-                添加变量
-              </a-button>
             </div>
           </section>
 
@@ -93,10 +102,12 @@ import type { FlowRun, FlowTemplate } from '@/types'
 import {
   buildStartInputs,
   canStartFlow,
+  flowVariableReference,
   flowNodeTypeText,
+  normalizeFlowVariables,
   summarizeFlowNode,
+  type FlowVariableDefinition,
   type PipelineScope,
-  type StartVariable,
 } from '../flowUtils'
 
 const props = defineProps<{
@@ -110,10 +121,9 @@ const emit = defineEmits<{
 }>()
 
 const startForm = reactive({
-  agent_server_id: 1,
   scope: 'all' as PipelineScope,
   selectedNodeUuids: [] as string[],
-  variables: [{ key: 'env', value: 'prod' }] as StartVariable[],
+  variableValues: {} as Record<string, any>,
   nodeOverrides: {} as Record<string, string>,
 })
 const starting = ref(false)
@@ -124,28 +134,24 @@ const selectedStartNodes = computed(() => {
   return templateNodes.filter(node => startForm.selectedNodeUuids.includes(node.uuid))
 })
 
-const toStartVariables = (variables: Record<string, any>) => {
-  const entries = Object.entries(variables || {})
-  if (entries.length === 0) return [{ key: 'env', value: 'prod' }]
-  return entries.map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) }))
-}
+const variableDefinitions = computed<FlowVariableDefinition[]>(() => normalizeFlowVariables(props.template?.variables || {}))
+const visibleVariables = computed(() => variableDefinitions.value.filter(variable => variable.show_on_start !== false))
+
+const defaultVariableValues = () =>
+  Object.fromEntries(variableDefinitions.value.map(variable => [variable.key, variable.default]))
 
 const resetForm = () => {
   const nodes = props.template?.nodes || []
-  startForm.agent_server_id = 1
   startForm.scope = 'all'
   startForm.selectedNodeUuids = nodes.map(node => node.uuid)
-  startForm.variables = toStartVariables(props.template?.variables || {})
+  startForm.variableValues = defaultVariableValues()
   startForm.nodeOverrides = Object.fromEntries(nodes.map(node => [node.uuid, '{}']))
 }
 
-const addStartVariable = () => {
-  startForm.variables.push({ key: '', value: '' })
-}
+const formatHostListValue = (value: any) => Array.isArray(value) ? value.join(',') : String(value || '')
 
-const removeStartVariable = (index: number) => {
-  if (startForm.variables.length <= 1) return
-  startForm.variables.splice(index, 1)
+const setHostListValue = (key: string, value: string) => {
+  startForm.variableValues[key] = value.split(',').map(item => item.trim()).filter(Boolean).map(Number).filter(item => !Number.isNaN(item))
 }
 
 const startFlow = async () => {
@@ -160,12 +166,12 @@ const startFlow = async () => {
     const inputs = buildStartInputs({
       scope: startForm.scope,
       selectedNodeUuids: startForm.selectedNodeUuids,
-      variables: startForm.variables,
+      variableDefinitions: variableDefinitions.value,
+      variableValues: startForm.variableValues,
       nodes: props.template.nodes || [],
       nodeOverrides: startForm.nodeOverrides,
     })
     const run = await flowApi.startTemplate(props.template.id, {
-      agent_server_id: startForm.agent_server_id,
       inputs,
     })
     Message.success('流水线已启动')
@@ -241,15 +247,29 @@ watch(
   margin-top: 4px;
   border-top: 1px solid var(--app-border);
 }
-.variable-row-list { display: grid; gap: 8px; }
-.variable-row {
+.variable-form-list { display: grid; gap: 10px; }
+.variable-form-row {
   display: grid;
-  grid-template-columns: minmax(120px, .6fr) minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(150px, .5fr) minmax(0, 1fr);
   gap: 8px;
-  align-items: center;
+  align-items: start;
+}
+.variable-form-row__label {
+  display: grid;
+  gap: 2px;
+  padding-top: 5px;
+}
+.variable-form-row__label strong {
+  color: var(--app-fg);
+  font-size: 13px;
+}
+.variable-form-row__label span {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 12px;
 }
 @media (max-width: 720px) {
   .start-workbench { grid-template-columns: 1fr; }
-  .variable-row { grid-template-columns: 1fr; }
+  .variable-form-row { grid-template-columns: 1fr; }
 }
 </style>

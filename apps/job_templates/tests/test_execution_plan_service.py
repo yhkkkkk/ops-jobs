@@ -80,15 +80,64 @@ def test_execute_plan_passes_all_plan_steps_to_workflow():
     assert [step["step_name"] for step in captured["plan_steps"]] == ["step-1", "step-2"]
 
 
-def test_execute_plan_without_agent_server_does_not_create_pending_record():
+def test_execute_plan_without_agent_server_lets_agent_layer_route_by_host_binding():
     user, plan = _create_two_step_plan()
+    captured = {}
 
-    result = ExecutionPlanService.execute_plan(
-        execution_plan=plan,
-        user=user,
-        execution_mode="serial",
-    )
+    def _capture_workflow(**kwargs):
+        captured["has_agent_server_id"] = "agent_server_id" in kwargs
+        captured["target_hosts"] = kwargs["target_hosts"]
+        return {"success": True, "message": "ok"}
 
-    assert result["success"] is False
-    assert result["error"] == "请先选择Agent-Server"
-    assert ExecutionRecord.objects.count() == 0
+    with patch(
+        "apps.agents.execution_service.AgentExecutionService.execute_workflow_via_agent",
+        side_effect=_capture_workflow,
+    ):
+        result = ExecutionPlanService.execute_plan(
+            execution_plan=plan,
+            user=user,
+            execution_mode="serial",
+        )
+
+    assert result["success"] is True
+    assert captured["has_agent_server_id"] is False
+    assert len(captured["target_hosts"]) == 1
+    assert ExecutionRecord.objects.count() == 1
+    record = ExecutionRecord.objects.get()
+    assert "agent_server_id" not in record.execution_parameters
+    assert record.execution_parameters["execution_backend"] == "agent"
+
+
+def test_execute_plan_does_not_read_agent_server_from_business_parameters():
+    user, plan = _create_two_step_plan()
+    captured = {}
+
+    def _capture_workflow(**kwargs):
+        captured["has_agent_server_id"] = "agent_server_id" in kwargs
+        return {"success": True, "message": "ok"}
+
+    with patch(
+        "apps.agents.execution_service.AgentExecutionService.execute_workflow_via_agent",
+        side_effect=_capture_workflow,
+    ):
+        result = ExecutionPlanService.execute_plan(
+            execution_plan=plan,
+            user=user,
+            execution_parameters={"agent_server_id": 99, "ReleaseVersion": "v1"},
+            execution_mode="serial",
+        )
+
+    assert result["success"] is True
+    assert captured["has_agent_server_id"] is False
+    record = ExecutionRecord.objects.get()
+    assert record.execution_parameters["ReleaseVersion"] == "v1"
+    assert "agent_server_id" not in record.execution_parameters
+
+
+def test_execution_plan_execute_serializer_does_not_require_agent_server():
+    from apps.job_templates.serializers import ExecutionPlanExecuteSerializer
+
+    serializer = ExecutionPlanExecuteSerializer(data={"execution_parameters": {}})
+
+    assert serializer.is_valid(), serializer.errors
+    assert "agent_server_id" not in serializer.validated_data

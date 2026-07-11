@@ -4,9 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import * as monaco from 'monaco-editor'
-import { setupMonacoWorkers } from '@/utils/monacoWorkers'
-import { ensureMonacoLanguage, getMonacoLanguage } from '@/utils/monacoFactory'
+import { createEditor, ensureMonacoLanguage, getMonacoLanguage, loadMonaco } from '@/utils/monacoFactory'
 
 interface Props {
   modelValue: string
@@ -14,7 +12,7 @@ interface Props {
   theme?: string
   height?: number
   readonly?: boolean
-  options?: monaco.editor.IStandaloneEditorConstructionOptions
+  options?: Record<string, any>
 }
 
 interface Emits {
@@ -33,7 +31,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const editorRef = ref<HTMLElement>()
-let editor: monaco.editor.IStandaloneCodeEditor | null = null
+let monacoApi: any = null
+let editor: any = null
 const resolveLanguage = (lang?: string) => getMonacoLanguage((lang || '').toLowerCase())
 
 // 初始化编辑器
@@ -50,11 +49,11 @@ const initEditor = async () => {
   }
 
   try {
-    setupMonacoWorkers()
+    monacoApi = await loadMonaco()
     const resolvedLanguage = resolveLanguage(props.language)
-    await ensureMonacoLanguage(monaco, resolvedLanguage)
+    await ensureMonacoLanguage(monacoApi, resolvedLanguage)
 
-    const defaultOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
+    const defaultOptions = {
       value: props.modelValue || '',
       language: resolvedLanguage,
       theme: props.theme,
@@ -86,7 +85,7 @@ const initEditor = async () => {
       editor = null
     }
 
-    editor = monaco.editor.create(editorRef.value, defaultOptions)
+    editor = await createEditor(editorRef.value, defaultOptions)
 
     // 确保编辑器获得焦点
     setTimeout(() => {
@@ -131,18 +130,18 @@ const getValue = () => {
 
 // 设置语言
 const setLanguage = async (language: string) => {
-  if (!editor) return
+  if (!editor || !monacoApi) return
   const model = editor.getModel()
   if (!model) return
   const resolved = resolveLanguage(language)
-  await ensureMonacoLanguage(monaco, resolved)
-  monaco.editor.setModelLanguage(model, resolved)
+  await ensureMonacoLanguage(monacoApi, resolved)
+  monacoApi.editor.setModelLanguage(model, resolved)
 }
 
 // 设置主题
 const setTheme = (theme: string) => {
-  if (editor) {
-    monaco.editor.setTheme(theme)
+  if (editor && monacoApi) {
+    monacoApi.editor.setTheme(theme)
   }
 }
 

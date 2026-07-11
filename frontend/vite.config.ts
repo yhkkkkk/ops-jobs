@@ -109,12 +109,12 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vue: ['vue', 'vue-router', 'pinia'],
-          arco: ['@arco-design/web-vue'],
-          charts: ['echarts'],
-          // Monaco Editor 单独分包，按需加载
-          'monaco-editor': ['monaco-editor'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('monaco-editor')) return 'monaco-editor'
+          if (id.includes('echarts')) return 'charts'
+          if (id.includes('@arco-design')) return 'arco'
+          if (id.includes('vue') || id.includes('pinia')) return 'vue'
         },
       },
       external: (id) => {

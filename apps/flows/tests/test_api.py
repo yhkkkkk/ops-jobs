@@ -4,9 +4,12 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError
 from rest_framework.test import APIClient
 
-from apps.flows.models import FlowEdge, FlowNode, FlowRun, FlowTemplate
+from apps.flows.models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowTemplate
+from apps.flows.views import _lock_template_for_graph_change
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan, JobStep, JobTemplate, PlanStep
 from apps.permissions.models import AuditLog
@@ -124,7 +127,7 @@ def test_flow_api_creates_template_node_edge_and_starts_run():
     ):
         start_resp = client.post(
             f"/api/flows/templates/{template_id}/start/",
-            {"inputs": {"env": "dev"}, "agent_server_id": 1},
+            {"inputs": {"env": "dev"}},
             format="json",
         )
 
@@ -136,7 +139,7 @@ def test_flow_api_creates_template_node_edge_and_starts_run():
     start_log = _flow_run_audit_logs(flow_run).get(action="start_flow")
     assert start_log.resource_name == f"{template.name} #{flow_run.id}"
     assert start_log.extra_data["template_id"] == template_id
-    assert start_log.extra_data["agent_server_id"] == 1
+    assert "agent_server_id" not in start_log.extra_data
 
     detail_resp = client.get(f"/api/flows/runs/{flow_run.id}/")
     assert detail_resp.status_code == 200
@@ -145,6 +148,44 @@ def test_flow_api_creates_template_node_edge_and_starts_run():
     logs_resp = client.get(f"/api/flows/runs/{flow_run.id}/operation_logs/")
     assert logs_resp.status_code == 200
     assert [item["action"] for item in logs_resp.data["content"]] == ["start_flow"]
+
+
+def test_flow_api_validates_start_inputs_against_flow_variables():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    host = Host.objects.create(
+        name=f"host-{uuid.uuid4().hex[:6]}",
+        os_type="linux",
+        device_type="physical",
+        created_by=user,
+    )
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+        variables={
+            "CheckHost": {"type": "host_list", "widget": "host_list", "required": True},
+            "ReleaseVersion": {"type": "text", "widget": "input", "required": True, "regex": r"^v\d+$"},
+        },
+    )
+    FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="script",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo ${ReleaseVersion}", "target_host_ids": "${CheckHost}"},
+    )
+    client = _client_for(user)
+
+    with patch("apps.agents.execution_service.AgentExecutionService.execute_script_via_agent") as execute_script:
+        resp = client.post(
+            f"/api/flows/templates/{template.id}/start/",
+            {"inputs": {"CheckHost": [host.id], "ReleaseVersion": "bad"}},
+            format="json",
+        )
+
+    assert resp.status_code == 400
+    assert "ReleaseVersion" in str(resp.data)
+    assert FlowRun.objects.filter(template=template).count() == 0
+    execute_script.assert_not_called()
 
 
 def test_flow_node_plugins_api_returns_backend_supported_plugins():
@@ -167,6 +208,327 @@ def test_flow_node_plugins_api_returns_backend_supported_plugins():
     }.issubset(plugin_types)
     sub_process = next(item for item in resp.data["content"] if item["type"] == "sub_process")
     assert sub_process["config_schema"]["required"] == ["template_id"]
+
+
+def test_flow_template_api_copies_template_graph_as_disabled_draft():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    source = FlowTemplate.objects.create(
+        name=f"source-{uuid.uuid4().hex[:8]}",
+        description="copy me",
+        variables={"env": "prod"},
+        created_by=user,
+    )
+    first = FlowNode.objects.create(
+        template=source,
+        uuid="script-1",
+        name="first",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo first"},
+        position={"x": 10, "y": 20},
+    )
+    second = FlowNode.objects.create(
+        template=source,
+        uuid="manual-1",
+        name="manual",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "check"},
+        position={"x": 220, "y": 20},
+    )
+    FlowEdge.objects.create(
+        template=source,
+        source=first,
+        target=second,
+        condition={"variable": "env", "operator": "eq", "value": "prod"},
+    )
+    client = _client_for(user)
+
+    resp = client.post(f"/api/flows/templates/{source.id}/copy/", {"name": "copied flow"}, format="json")
+
+    assert resp.status_code == 200
+    copied = FlowTemplate.objects.get(id=resp.data["content"]["id"])
+    assert copied.name == "copied flow"
+    assert copied.description == source.description
+    assert copied.variables == source.variables
+    assert copied.is_active is False
+    assert copied.created_by == user
+    copied_nodes = list(copied.nodes.order_by("id"))
+    assert [node.uuid for node in copied_nodes] == ["script-1", "manual-1"]
+    assert copied_nodes[0].config == first.config
+    assert copied_nodes[0].position == first.position
+    copied_edge = copied.edges.select_related("source", "target").get()
+    assert copied_edge.source.uuid == "script-1"
+    assert copied_edge.target.uuid == "manual-1"
+    assert copied_edge.condition == {"variable": "env", "operator": "eq", "value": "prod"}
+
+
+def test_flow_template_api_copy_truncates_overlong_requested_name():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    source = FlowTemplate.objects.create(name=f"source-{uuid.uuid4().hex[:8]}", created_by=user)
+    client = _client_for(user)
+
+    resp = client.post(f"/api/flows/templates/{source.id}/copy/", {"name": "x" * 240}, format="json")
+
+    assert resp.status_code == 200
+    copied = FlowTemplate.objects.get(id=resp.data["content"]["id"])
+    assert len(copied.name) <= FlowTemplate._meta.get_field("name").max_length
+    assert copied.name == "x" * FlowTemplate._meta.get_field("name").max_length
+
+
+def test_flow_template_api_copy_retries_transient_name_conflict():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    source = FlowTemplate.objects.create(name=f"source-{uuid.uuid4().hex[:8]}", created_by=user)
+    client = _client_for(user)
+    original_create = FlowTemplate.objects.create
+    attempts = []
+
+    def flaky_create(**kwargs):
+        attempts.append(kwargs["name"])
+        if len(attempts) == 1:
+            raise IntegrityError("mock duplicate name")
+        return original_create(**kwargs)
+
+    with patch("apps.flows.views.FlowTemplate.objects.create", side_effect=flaky_create):
+        resp = client.post(f"/api/flows/templates/{source.id}/copy/", {"name": "racy copy"}, format="json")
+
+    assert resp.status_code == 200
+    assert attempts == ["racy copy", "racy copy 2"]
+    copied = FlowTemplate.objects.get(id=resp.data["content"]["id"])
+    assert copied.name == "racy copy 2"
+
+
+def test_flow_template_api_rejects_graph_update_while_run_is_active_and_preserves_history():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    node = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "wait"},
+    )
+    flow_run = FlowRun.objects.create(template=template, status=FlowRun.Status.PAUSED, started_by=user)
+    node_run = flow_run.node_runs.create(node=node, status=FlowRun.Status.PAUSED)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/templates/{template.id}/",
+        {
+            "nodes": [
+                {
+                    "uuid": "manual-1",
+                    "name": "renamed",
+                    "node_type": FlowNode.NodeType.MANUAL,
+                    "config": {"instructions": "changed"},
+                }
+            ],
+            "edges": [],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert "执行中" in str(resp.data)
+    assert FlowNodeRun.objects.filter(id=node_run.id, node=node).exists()
+    node.refresh_from_db()
+    assert node.name == "人工确认"
+
+
+def test_flow_template_api_updates_nodes_only_without_deleting_existing_edges():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    first = FlowNode.objects.create(
+        template=template,
+        uuid="a",
+        name="first",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo a"},
+    )
+    second = FlowNode.objects.create(
+        template=template,
+        uuid="b",
+        name="second",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo b"},
+    )
+    edge = FlowEdge.objects.create(template=template, source=first, target=second)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/templates/{template.id}/",
+        {
+            "nodes": [
+                {
+                    "uuid": "a",
+                    "name": "first renamed",
+                    "node_type": FlowNode.NodeType.SCRIPT,
+                    "config": {"script_content": "echo renamed"},
+                },
+                {
+                    "uuid": "b",
+                    "name": "second",
+                    "node_type": FlowNode.NodeType.SCRIPT,
+                    "config": {"script_content": "echo b"},
+                },
+            ]
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    first.refresh_from_db()
+    assert first.name == "first renamed"
+    assert first.config == {"script_content": "echo renamed"}
+    assert FlowEdge.objects.filter(id=edge.id, source=first, target=second).exists()
+
+
+def test_lock_template_for_graph_change_reports_deleted_template_as_validation_error():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    template_id = template.id
+    FlowTemplate.objects.filter(id=template_id).delete()
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        _lock_template_for_graph_change(template)
+
+    assert "不存在或已被删除" in str(exc_info.value)
+
+
+def test_flow_template_api_updates_existing_completed_graph_without_deleting_node_runs():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    node = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "wait"},
+    )
+    flow_run = FlowRun.objects.create(template=template, status=FlowRun.Status.SUCCESS, started_by=user)
+    node_run = flow_run.node_runs.create(node=node, status=FlowRun.Status.SUCCESS)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/templates/{template.id}/",
+        {
+            "nodes": [
+                {
+                    "uuid": "manual-1",
+                    "name": "人工复核",
+                    "node_type": FlowNode.NodeType.MANUAL,
+                    "config": {"instructions": "check again"},
+                    "position": {"x": 20, "y": 40},
+                }
+            ],
+            "edges": [],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert FlowNodeRun.objects.filter(id=node_run.id, node=node).exists()
+    node.refresh_from_db()
+    assert node.name == "人工复核"
+    assert node.config == {"instructions": "check again"}
+    assert node.position == {"x": 20, "y": 40}
+
+
+def test_flow_node_api_rejects_deleting_node_with_execution_history():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    node = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={},
+    )
+    flow_run = FlowRun.objects.create(template=template, status=FlowRun.Status.SUCCESS, started_by=user)
+    node_run = flow_run.node_runs.create(node=node, status=FlowRun.Status.SUCCESS)
+    client = _client_for(user)
+
+    resp = client.delete(f"/api/flows/nodes/{node.id}/")
+
+    assert resp.status_code == 400
+    assert "执行历史" in str(resp.data)
+    assert FlowNode.objects.filter(id=node.id).exists()
+    assert FlowNodeRun.objects.filter(id=node_run.id).exists()
+
+
+def test_flow_node_api_rejects_moving_node_to_another_template():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    source_template = FlowTemplate.objects.create(name=f"source-{uuid.uuid4().hex[:8]}", created_by=user)
+    target_template = FlowTemplate.objects.create(name=f"target-{uuid.uuid4().hex[:8]}", created_by=user)
+    node = FlowNode.objects.create(
+        template=source_template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={},
+    )
+    flow_run = FlowRun.objects.create(template=source_template, status=FlowRun.Status.SUCCESS, started_by=user)
+    node_run = flow_run.node_runs.create(node=node, status=FlowRun.Status.SUCCESS)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/nodes/{node.id}/",
+        {"template": target_template.id},
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert "不能移动到其他流程模板" in str(resp.data)
+    node.refresh_from_db()
+    assert node.template_id == source_template.id
+    assert FlowNodeRun.objects.filter(id=node_run.id, flow_run__template=source_template, node=node).exists()
+
+
+def test_flow_edge_api_rejects_moving_edge_to_another_template():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    source_template = FlowTemplate.objects.create(name=f"source-{uuid.uuid4().hex[:8]}", created_by=user)
+    target_template = FlowTemplate.objects.create(name=f"target-{uuid.uuid4().hex[:8]}", created_by=user)
+    source_first = FlowNode.objects.create(
+        template=source_template,
+        uuid="a",
+        name="a",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo a"},
+    )
+    source_second = FlowNode.objects.create(
+        template=source_template,
+        uuid="b",
+        name="b",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo b"},
+    )
+    target_first = FlowNode.objects.create(
+        template=target_template,
+        uuid="c",
+        name="c",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo c"},
+    )
+    target_second = FlowNode.objects.create(
+        template=target_template,
+        uuid="d",
+        name="d",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo d"},
+    )
+    edge = FlowEdge.objects.create(template=source_template, source=source_first, target=source_second)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/edges/{edge.id}/",
+        {"template": target_template.id, "source": target_first.id, "target": target_second.id},
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert "不能移动到其他流程模板" in str(resp.data)
+    edge.refresh_from_db()
+    assert edge.template_id == source_template.id
+    assert edge.source == source_first
+    assert edge.target == source_second
 
 
 def test_flow_node_api_accepts_owned_subprocess_template():
@@ -314,7 +676,7 @@ def test_flow_run_api_skips_paused_node_and_continues_flow():
     ):
         start_resp = client.post(
             f"/api/flows/templates/{template.id}/start/",
-            {"inputs": {}, "agent_server_id": 1},
+            {"inputs": {}},
             format="json",
         )
 
@@ -346,7 +708,7 @@ def test_flow_run_api_skips_paused_node_and_continues_flow():
     assert first_run.outputs["skipped"] is True
     assert flow_run.node_runs.get(node=second).status == FlowRun.Status.SUCCESS
     execute_script.assert_called_once()
-    assert execute_script.call_args.kwargs["agent_server_id"] == 1
+    assert "agent_server_id" not in execute_script.call_args.kwargs
     skip_log = _flow_run_audit_logs(flow_run).get(action="skip_flow_node")
     assert skip_log.extra_data["node_run_id"] == first_run.id
     assert skip_log.extra_data["node_uuid"] == first.uuid
@@ -393,7 +755,7 @@ def test_flow_run_api_retries_failed_node_and_continues_flow():
     ):
         start_resp = client.post(
             f"/api/flows/templates/{template.id}/start/",
-            {"inputs": {}, "agent_server_id": 1},
+            {"inputs": {}},
             format="json",
         )
 
@@ -429,7 +791,7 @@ def test_flow_run_api_retries_failed_node_and_continues_flow():
     flow_run.refresh_from_db()
     assert flow_run.node_runs.get(node=first).status == FlowRun.Status.SUCCESS
     assert flow_run.node_runs.get(node=second).status == FlowRun.Status.SUCCESS
-    assert execute_script.call_args_list[0].kwargs["agent_server_id"] == 1
+    assert "agent_server_id" not in execute_script.call_args_list[0].kwargs
     retry_log = _flow_run_audit_logs(flow_run).get(action="retry_flow_node")
     assert retry_log.extra_data["node_run_id"] == first_run.id
     assert retry_log.extra_data["node_uuid"] == first.uuid
@@ -465,7 +827,7 @@ def test_flow_run_api_confirms_manual_node_and_continues_flow():
 
     start_resp = client.post(
         f"/api/flows/templates/{template.id}/start/",
-        {"inputs": {}, "agent_server_id": 1},
+        {"inputs": {}},
         format="json",
     )
 
@@ -497,7 +859,7 @@ def test_flow_run_api_confirms_manual_node_and_continues_flow():
     assert manual_run.outputs["confirmed"] is True
     assert manual_run.outputs["confirm_remark"] == "confirmed in window"
     assert flow_run.node_runs.get(node=script).status == FlowRun.Status.SUCCESS
-    assert execute_script.call_args.kwargs["agent_server_id"] == 1
+    assert "agent_server_id" not in execute_script.call_args.kwargs
     confirm_log = _flow_run_audit_logs(flow_run).get(action="confirm_flow_node")
     assert confirm_log.extra_data["node_run_id"] == manual_run.id
     assert confirm_log.extra_data["node_uuid"] == manual.uuid
@@ -817,6 +1179,59 @@ def test_flow_edge_api_rejects_unknown_source_uuid_with_validation_response():
     assert resp.status_code == 400
     assert resp.data["success"] is False
     assert FlowEdge.objects.count() == 0
+
+
+def test_flow_edge_api_rejects_invalid_template_id_with_validation_response():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    client = _client_for(user)
+
+    resp = client.post(
+        "/api/flows/edges/",
+        {
+            "template": "not-an-id",
+            "source_uuid": "a",
+            "target_uuid": "b",
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert resp.data["success"] is False
+    assert "流程模板不存在或无权操作" in str(resp.data)
+    assert FlowEdge.objects.count() == 0
+
+
+def test_flow_edge_api_rejects_invalid_update_template_id_with_validation_response():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    first = FlowNode.objects.create(
+        template=template,
+        uuid="a",
+        name="a",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo a"},
+    )
+    second = FlowNode.objects.create(
+        template=template,
+        uuid="b",
+        name="b",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo b"},
+    )
+    edge = FlowEdge.objects.create(template=template, source=first, target=second)
+    client = _client_for(user)
+
+    resp = client.patch(
+        f"/api/flows/edges/{edge.id}/",
+        {"template": "not-an-id", "condition": {"label": "bad"}},
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert resp.data["success"] is False
+    assert "流程模板不存在或无权操作" in str(resp.data)
+    edge.refresh_from_db()
+    assert edge.condition == {}
 
 
 def test_flow_edge_api_updates_nodes_by_uuid_without_template_payload():

@@ -3,13 +3,17 @@ import { createPinia } from 'pinia'
 import ArcoVue from '@arco-design/web-vue'
 import ArcoVueIcon from '@arco-design/web-vue/es/icon'
 import '@arco-design/web-vue/dist/arco.css'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
 import cronCore from '@vue-js-cron/core'
 
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/auth'
 import { setupPermissionDirectives } from './directives/permission'
-import { preloadMonaco } from './utils/monacoFactory'
+import { preloadMonaco, shouldPreloadMonaco } from './utils/monacoFactory'
 import './styles/app.css'
 
 const app = createApp(App)
@@ -63,8 +67,10 @@ document.addEventListener('visibilitychange', () => {
 // 启动认证检查
 startAuthCheck()
 
-// 预加载Monaco Editor（在空闲时间）
-preloadMonaco()
+// Monaco 体积较大，默认等到脚本编辑器真正出现时再加载，避免拖慢普通页面切换。
+if (shouldPreloadMonaco()) {
+  preloadMonaco()
+}
 
 // 全局错误处理
 app.config.errorHandler = (err, _vm, info) => {

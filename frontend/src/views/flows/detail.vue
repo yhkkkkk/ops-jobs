@@ -1,5 +1,5 @@
 <template>
-  <FlowTemplateWorkbench mode="edit" />
+  <FlowTemplateWorkbench mode="readonly" />
 </template>
 
 <script setup lang="ts">

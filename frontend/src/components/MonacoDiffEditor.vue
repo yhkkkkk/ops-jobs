@@ -4,9 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as monaco from 'monaco-editor'
-import { setupMonacoWorkers } from '@/utils/monacoWorkers'
-import { ensureMonacoLanguage, getMonacoLanguage } from '@/utils/monacoFactory'
+import { ensureMonacoLanguage, getMonacoLanguage, loadMonaco } from '@/utils/monacoFactory'
 
 interface Props {
   original: string
@@ -25,9 +23,10 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const editorContainer = ref<HTMLElement>()
-let diffEditor: monaco.editor.IStandaloneDiffEditor | null = null
-let originalModel: monaco.editor.ITextModel | null = null
-let modifiedModel: monaco.editor.ITextModel | null = null
+let monacoApi: any = null
+let diffEditor: any = null
+let originalModel: any = null
+let modifiedModel: any = null
 
 const resolveLanguage = (lang?: string) => getMonacoLanguage((lang || '').toLowerCase())
 
@@ -35,11 +34,11 @@ const initEditor = async () => {
   if (!editorContainer.value) return
 
   try {
-    setupMonacoWorkers()
+    monacoApi = await loadMonaco()
     const resolvedLanguage = resolveLanguage(props.language)
-    await ensureMonacoLanguage(monaco, resolvedLanguage)
+    await ensureMonacoLanguage(monacoApi, resolvedLanguage)
 
-    diffEditor = monaco.editor.createDiffEditor(editorContainer.value, {
+    diffEditor = monacoApi.editor.createDiffEditor(editorContainer.value, {
       readOnly: props.readonly,
       automaticLayout: true,
       fontSize: 14,
@@ -52,10 +51,10 @@ const initEditor = async () => {
       accessibilitySupport: 'off',
     })
 
-    originalModel = monaco.editor.createModel(props.original || '', resolvedLanguage)
-    modifiedModel = monaco.editor.createModel(props.modified || '', resolvedLanguage)
+    originalModel = monacoApi.editor.createModel(props.original || '', resolvedLanguage)
+    modifiedModel = monacoApi.editor.createModel(props.modified || '', resolvedLanguage)
     diffEditor.setModel({ original: originalModel, modified: modifiedModel })
-    monaco.editor.setTheme(props.theme)
+    monacoApi.editor.setTheme(props.theme)
   } catch (error) {
     console.error('Monaco diff 编辑器初始化失败:', error)
   }
@@ -89,16 +88,16 @@ watch(() => props.modified, (newValue) => {
 })
 
 watch(() => props.language, (newLanguage) => {
-  if (originalModel && modifiedModel) {
+  if (originalModel && modifiedModel && monacoApi) {
     const resolved = resolveLanguage(newLanguage)
-    void ensureMonacoLanguage(monaco, resolved)
-    monaco.editor.setModelLanguage(originalModel, resolved)
-    monaco.editor.setModelLanguage(modifiedModel, resolved)
+    void ensureMonacoLanguage(monacoApi, resolved)
+    monacoApi.editor.setModelLanguage(originalModel, resolved)
+    monacoApi.editor.setModelLanguage(modifiedModel, resolved)
   }
 })
 
 watch(() => props.theme, (newTheme) => {
-  monaco.editor.setTheme(newTheme)
+  if (monacoApi) monacoApi.editor.setTheme(newTheme)
 })
 
 onMounted(() => {

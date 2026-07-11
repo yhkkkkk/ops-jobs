@@ -1,4 +1,5 @@
 import copy
+import re
 from collections import defaultdict, deque
 
 from django.db import transaction
@@ -17,6 +18,9 @@ from .validators import get_execution_plan_resource_permission_error, get_file_s
 class FlowRunner:
     """Internal DAG runner for flow templates."""
 
+    VARIABLE_TOKEN_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+    FULL_VARIABLE_TOKEN_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+
     CONTROL_INPUT_KEYS = frozenset(
         {
             "__execution_scope",
@@ -24,30 +28,32 @@ class FlowRunner:
             "__node_overrides",
             "__parent_flow_run_id",
             "__parent_node_run_id",
-            "__parent_agent_server_id",
             "__flow_template_stack",
             "__defer_sub_process_parent_notify",
         }
     )
 
     @classmethod
-    def start(cls, template: FlowTemplate, user, inputs=None, agent_server_id=None) -> FlowRun:
-        flow_run = FlowRun.objects.create(
-            template=template,
-            status=FlowRun.Status.RUNNING,
-            started_by=user,
-            inputs=inputs or {},
-            started_at=timezone.now(),
-        )
+    def start(cls, template: FlowTemplate, user, inputs=None) -> FlowRun:
+        prepared_inputs = cls._prepare_flow_inputs(template, inputs or {})
+        with transaction.atomic():
+            locked_template = FlowTemplate.objects.select_for_update().get(pk=template.pk)
+            flow_run = FlowRun.objects.create(
+                template=locked_template,
+                status=FlowRun.Status.RUNNING,
+                started_by=user,
+                inputs=prepared_inputs,
+                started_at=timezone.now(),
+            )
 
         try:
-            return cls._continue_flow(flow_run, user, agent_server_id=agent_server_id)
+            return cls._continue_flow(flow_run, user)
         except Exception as exc:
             flow_run.mark_finished(FlowRun.Status.FAILED, str(exc))
             raise
 
     @classmethod
-    def skip_node(cls, flow_run: FlowRun, node_run: FlowNodeRun, user=None, reason="", agent_server_id=None) -> FlowRun:
+    def skip_node(cls, flow_run: FlowRun, node_run: FlowNodeRun, user=None, reason="") -> FlowRun:
         with transaction.atomic():
             flow_run = FlowRun.objects.select_for_update().select_related("started_by").get(pk=flow_run.pk)
             if flow_run.status in (FlowRun.Status.SUCCESS, FlowRun.Status.CANCELLED):
@@ -60,8 +66,6 @@ class FlowRunner:
             )
             if node_run.status not in (FlowRun.Status.FAILED, FlowRun.Status.PAUSED):
                 raise ValueError(f"cannot skip {node_run.status} node")
-            if agent_server_id is None and node_run.execution_record_id:
-                agent_server_id = (node_run.execution_record.execution_parameters or {}).get("agent_server_id")
 
             outputs = dict(node_run.outputs or {})
             outputs.update(
@@ -82,10 +86,10 @@ class FlowRunner:
             flow_run.finished_at = None
             flow_run.save(update_fields=["status", "error_message", "finished_at"])
 
-        return cls._continue_flow(flow_run, user or flow_run.started_by, agent_server_id=agent_server_id)
+        return cls._continue_flow(flow_run, user or flow_run.started_by)
 
     @classmethod
-    def retry_node(cls, flow_run: FlowRun, node_run: FlowNodeRun, user=None, agent_server_id=None) -> FlowRun:
+    def retry_node(cls, flow_run: FlowRun, node_run: FlowNodeRun, user=None) -> FlowRun:
         with transaction.atomic():
             flow_run = FlowRun.objects.select_for_update().select_related("started_by").get(pk=flow_run.pk)
             if flow_run.status == FlowRun.Status.CANCELLED:
@@ -98,8 +102,6 @@ class FlowRunner:
             )
             if node_run.status not in (FlowRun.Status.FAILED, FlowRun.Status.PAUSED):
                 raise ValueError(f"cannot retry {node_run.status} node")
-            if agent_server_id is None and node_run.execution_record_id:
-                agent_server_id = (node_run.execution_record.execution_parameters or {}).get("agent_server_id")
 
             node_run.status = FlowRun.Status.RUNNING
             node_run.outputs = {}
@@ -123,7 +125,7 @@ class FlowRunner:
             flow_run.finished_at = None
             flow_run.save(update_fields=["status", "error_message", "finished_at"])
 
-        cls._dispatch_node_run(node_run, user or flow_run.started_by, agent_server_id=agent_server_id)
+        cls._dispatch_node_run(node_run, user or flow_run.started_by)
         node_run.refresh_from_db()
         if node_run.status == FlowRun.Status.FAILED:
             cls._apply_failed_node_policy(flow_run, node_run)
@@ -133,7 +135,7 @@ class FlowRunner:
             flow_run.status = FlowRun.Status.PAUSED
             flow_run.save(update_fields=["status"])
             return flow_run
-        return cls._continue_flow(flow_run, user or flow_run.started_by, agent_server_id=agent_server_id)
+        return cls._continue_flow(flow_run, user or flow_run.started_by)
 
     @classmethod
     def confirm_manual_node(
@@ -142,7 +144,6 @@ class FlowRunner:
         node_run: FlowNodeRun,
         user=None,
         remark="",
-        agent_server_id=None,
     ) -> FlowRun:
         with transaction.atomic():
             flow_run = FlowRun.objects.select_for_update().select_related("started_by").get(pk=flow_run.pk)
@@ -158,8 +159,6 @@ class FlowRunner:
                 raise ValueError("only manual nodes can be confirmed")
             if node_run.status != FlowRun.Status.PAUSED:
                 raise ValueError(f"cannot confirm {node_run.status} manual node")
-            if agent_server_id is None:
-                agent_server_id = (node_run.outputs or {}).get("agent_server_id")
 
             actor = user or flow_run.started_by
             outputs = dict(node_run.outputs or {})
@@ -184,7 +183,7 @@ class FlowRunner:
             flow_run.finished_at = None
             flow_run.save(update_fields=["status", "error_message", "finished_at"])
 
-        return cls._continue_flow(flow_run, user or flow_run.started_by, agent_server_id=agent_server_id)
+        return cls._continue_flow(flow_run, user or flow_run.started_by)
 
     @classmethod
     def cancel_flow(cls, flow_run: FlowRun, user=None, notify_parent=True) -> FlowRun:
@@ -212,12 +211,7 @@ class FlowRunner:
 
                 execution_record = node_run.execution_record
                 if execution_record and execution_record.status in ("pending", "running"):
-                    agent_server_id = (execution_record.execution_parameters or {}).get("agent_server_id")
-                    if agent_server_id:
-                        AgentExecutionService.cancel_task_via_agent(
-                            execution_record=execution_record,
-                            agent_server_id=agent_server_id,
-                        )
+                    AgentExecutionService.cancel_task_via_agent(execution_record=execution_record)
                     execution_record.status = "cancelled"
                     execution_record.error_message = "flow cancelled"
                     execution_record.finished_at = now
@@ -230,11 +224,11 @@ class FlowRunner:
             should_notify_parent = notify_parent and cls._has_parent_sub_process(flow_run)
 
         if should_notify_parent:
-            return cls._finalize_parent_sub_process(flow_run, agent_server_id=cls._parent_agent_server_id(flow_run)) or flow_run
+            return cls._finalize_parent_sub_process(flow_run) or flow_run
         return flow_run
 
     @classmethod
-    def _continue_flow(cls, flow_run: FlowRun, user, agent_server_id=None) -> FlowRun:
+    def _continue_flow(cls, flow_run: FlowRun, user) -> FlowRun:
         if flow_run.status in (FlowRun.Status.SUCCESS, FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
             return flow_run
         if flow_run.status != FlowRun.Status.RUNNING:
@@ -268,12 +262,12 @@ class FlowRunner:
             if node_run and node_run.status == FlowRun.Status.FAILED:
                 if cls._apply_failed_node_policy(flow_run, node_run) == "continue":
                     continue
-                cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+                cls._notify_parent_if_terminal(flow_run)
                 return flow_run
             if node_run and node_run.status == FlowRun.Status.CANCELLED:
                 if cls._apply_failed_node_policy(flow_run, node_run) == "continue":
                     continue
-                cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+                cls._notify_parent_if_terminal(flow_run)
                 return flow_run
 
             if node_run is None:
@@ -281,7 +275,6 @@ class FlowRunner:
                     flow_run,
                     node,
                     user,
-                    agent_server_id=agent_server_id,
                     config=cls._node_config_for_run(node, flow_run.inputs),
                 )
                 node_runs_by_node_id[node.id] = node_run
@@ -289,12 +282,12 @@ class FlowRunner:
             if node_run.status == FlowRun.Status.FAILED:
                 if cls._apply_failed_node_policy(flow_run, node_run) == "continue":
                     continue
-                cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+                cls._notify_parent_if_terminal(flow_run)
                 return flow_run
             if node_run.status == FlowRun.Status.CANCELLED:
                 if cls._apply_failed_node_policy(flow_run, node_run) == "continue":
                     continue
-                cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+                cls._notify_parent_if_terminal(flow_run)
                 return flow_run
             if node_run.status == FlowRun.Status.PAUSED:
                 has_blocking_nodes = True
@@ -310,7 +303,7 @@ class FlowRunner:
             return flow_run
 
         flow_run.mark_finished(FlowRun.Status.SUCCESS)
-        cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+        cls._notify_parent_if_terminal(flow_run)
         return flow_run
 
     @classmethod
@@ -318,7 +311,6 @@ class FlowRunner:
         terminal_failed_statuses = {"failed", "cancelled", "timeout"}
         should_continue = False
         flow_run = None
-        agent_server_id = None
 
         with transaction.atomic():
             execution_record = ExecutionRecord.objects.select_for_update().get(pk=execution_record.pk)
@@ -354,7 +346,6 @@ class FlowRunner:
                     ]
                 )
                 should_continue = True
-                agent_server_id = (execution_record.execution_parameters or {}).get("agent_server_id")
             elif execution_record.status in terminal_failed_statuses:
                 error_message = execution_record.error_message or f"job_plan node {execution_record.status}"
                 node_run.status = FlowRun.Status.FAILED
@@ -374,13 +365,12 @@ class FlowRunner:
                 policy_result = cls._apply_failed_node_policy(flow_run, node_run)
                 if policy_result == "continue":
                     should_continue = True
-                    agent_server_id = (execution_record.execution_parameters or {}).get("agent_server_id")
 
         if should_continue:
-            return cls._continue_flow(flow_run, flow_run.started_by, agent_server_id=agent_server_id)
+            return cls._continue_flow(flow_run, flow_run.started_by)
 
         if flow_run and flow_run.status in (FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
-            cls._notify_parent_if_terminal(flow_run, agent_server_id=agent_server_id)
+            cls._notify_parent_if_terminal(flow_run)
 
         return flow_run
 
@@ -497,16 +487,118 @@ class FlowRunner:
         config = copy.deepcopy(node.config or {})
         overrides = (inputs or {}).get("__node_overrides") or {}
         if not isinstance(overrides, dict):
-            return config
+            overrides = {}
 
         override = overrides.get(node.uuid) or overrides.get(str(node.id))
         if isinstance(override, dict):
             config.update(copy.deepcopy(override))
+        config = cls._resolve_config_variables(config, cls._business_inputs(inputs))
+        if node.node_type == FlowNode.NodeType.SCRIPT:
+            config["global_variables"] = {
+                **cls._business_inputs(inputs),
+                **(config.get("global_variables") or {}),
+            }
         return config
 
     @classmethod
     def _business_inputs(cls, inputs):
         return {key: value for key, value in (inputs or {}).items() if key not in cls.CONTROL_INPUT_KEYS}
+
+    @classmethod
+    def _prepare_flow_inputs(cls, template: FlowTemplate, inputs):
+        inputs = copy.deepcopy(inputs or {})
+        variables = template.variables or {}
+        if not variables:
+            return inputs
+        if not isinstance(variables, dict):
+            raise ValueError("flow variables must be an object")
+
+        control_inputs = {key: value for key, value in inputs.items() if key in cls.CONTROL_INPUT_KEYS}
+        provided_inputs = cls._business_inputs(inputs)
+        prepared = {}
+
+        for key, definition in variables.items():
+            if not isinstance(definition, dict):
+                raise ValueError(f"flow variable {key} definition must be an object")
+            value = provided_inputs[key] if key in provided_inputs else copy.deepcopy(definition.get("default"))
+            value = cls._coerce_variable_value(key, definition, value)
+            if cls._is_empty_value(value):
+                if definition.get("required"):
+                    raise ValueError(f"flow variable {key} is required")
+                prepared[key] = value
+                continue
+            pattern = definition.get("regex")
+            if pattern and not re.match(str(pattern), str(value)):
+                raise ValueError(f"flow variable {key} does not match regex")
+            prepared[key] = value
+
+        unknown_inputs = {
+            key: value
+            for key, value in provided_inputs.items()
+            if key not in variables
+        }
+        return {**prepared, **unknown_inputs, **control_inputs}
+
+    @classmethod
+    def _coerce_variable_value(cls, key, definition, value):
+        value_type = str(definition.get("type") or definition.get("widget") or "text")
+        if cls._is_empty_value(value):
+            return value
+        if value_type == "host_list":
+            if not isinstance(value, list):
+                raise ValueError(f"flow variable {key} must be a host_list")
+            host_ids = []
+            for item in value:
+                try:
+                    host_ids.append(int(item))
+                except (TypeError, ValueError):
+                    raise ValueError(f"flow variable {key} contains invalid host id")
+            return host_ids
+        if value_type in ("number", "integer"):
+            try:
+                return int(value) if value_type == "integer" else float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"flow variable {key} must be a number")
+        if value_type == "boolean":
+            if isinstance(value, bool):
+                return value
+            if str(value).lower() in ("true", "1", "yes", "y"):
+                return True
+            if str(value).lower() in ("false", "0", "no", "n"):
+                return False
+            raise ValueError(f"flow variable {key} must be a boolean")
+        return value
+
+    @staticmethod
+    def _is_empty_value(value):
+        return value is None or value == "" or value == []
+
+    @classmethod
+    def _resolve_config_variables(cls, value, variables):
+        if isinstance(value, dict):
+            return {key: cls._resolve_config_variables(item, variables) for key, item in value.items()}
+        if isinstance(value, list):
+            return [cls._resolve_config_variables(item, variables) for item in value]
+        if not isinstance(value, str):
+            return value
+
+        full_match = cls.FULL_VARIABLE_TOKEN_PATTERN.match(value.strip())
+        if full_match:
+            key = full_match.group(1)
+            if key not in variables:
+                raise ValueError(f"flow variable {key} is not provided")
+            return copy.deepcopy(variables[key])
+
+        def replace(match):
+            key = match.group(1)
+            if key not in variables:
+                raise ValueError(f"flow variable {key} is not provided")
+            replacement = variables[key]
+            if isinstance(replacement, (dict, list)):
+                return str(replacement)
+            return "" if replacement is None else str(replacement)
+
+        return cls.VARIABLE_TOKEN_PATTERN.sub(replace, value)
 
     @classmethod
     def _apply_failed_node_policy(cls, flow_run: FlowRun, node_run: FlowNodeRun):
@@ -528,7 +620,7 @@ class FlowRunner:
         return "stop"
 
     @classmethod
-    def _execute_node(cls, flow_run: FlowRun, node: FlowNode, user, agent_server_id=None, config=None) -> FlowNodeRun:
+    def _execute_node(cls, flow_run: FlowRun, node: FlowNode, user, config=None) -> FlowNodeRun:
         config = copy.deepcopy(config if config is not None else node.config or {})
         node_run = FlowNodeRun.objects.create(
             flow_run=flow_run,
@@ -538,10 +630,10 @@ class FlowRunner:
             started_at=timezone.now(),
         )
 
-        return cls._dispatch_node_run(node_run, user, agent_server_id=agent_server_id)
+        return cls._dispatch_node_run(node_run, user)
 
     @classmethod
-    def _dispatch_node_run(cls, node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _dispatch_node_run(cls, node_run: FlowNodeRun, user) -> FlowNodeRun:
         node = node_run.node
         if node.node_type in (
             FlowNode.NodeType.SCRIPT,
@@ -555,18 +647,18 @@ class FlowRunner:
         ):
             try:
                 if node.node_type == FlowNode.NodeType.SUB_PROCESS:
-                    return cls._execute_sub_process_node(node_run, user, agent_server_id=agent_server_id)
+                    return cls._execute_sub_process_node(node_run, user)
                 if node.node_type in (FlowNode.NodeType.PARALLEL, FlowNode.NodeType.JOIN):
-                    return cls._execute_gateway_node(node_run, agent_server_id=agent_server_id)
+                    return cls._execute_gateway_node(node_run)
                 if node.node_type == FlowNode.NodeType.CONDITION:
-                    return cls._execute_condition_node(node_run, user, agent_server_id=agent_server_id)
+                    return cls._execute_condition_node(node_run, user)
                 if node.node_type == FlowNode.NodeType.MANUAL:
-                    return cls._execute_manual_node(node_run, user, agent_server_id=agent_server_id)
+                    return cls._execute_manual_node(node_run, user)
                 if node.node_type == FlowNode.NodeType.SCRIPT:
-                    return cls._execute_script_node(node_run, user, agent_server_id=agent_server_id)
+                    return cls._execute_script_node(node_run, user)
                 if node.node_type == FlowNode.NodeType.FILE_TRANSFER:
-                    return cls._execute_file_transfer_node(node_run, user, agent_server_id=agent_server_id)
-                return cls._execute_job_plan_node(node_run, user, agent_server_id=agent_server_id)
+                    return cls._execute_file_transfer_node(node_run, user)
+                return cls._execute_job_plan_node(node_run, user)
             except Exception as exc:
                 node_run.status = FlowRun.Status.FAILED
                 node_run.error_message = str(exc)
@@ -586,7 +678,7 @@ class FlowRunner:
         return node_run
 
     @classmethod
-    def _execute_sub_process_node(cls, node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_sub_process_node(cls, node_run: FlowNodeRun, user) -> FlowNodeRun:
         config = node_run.inputs or {}
         child_template = cls._get_sub_process_template_or_fail(node_run, config, user)
         if child_template is None:
@@ -608,7 +700,6 @@ class FlowRunner:
             {
                 "__parent_flow_run_id": node_run.flow_run_id,
                 "__parent_node_run_id": node_run.id,
-                "__parent_agent_server_id": agent_server_id,
                 "__flow_template_stack": stack,
                 "__defer_sub_process_parent_notify": True,
             }
@@ -618,7 +709,6 @@ class FlowRunner:
             template=child_template,
             user=user,
             inputs=child_inputs,
-            agent_server_id=agent_server_id,
         )
         child_flow_run.refresh_from_db()
         if child_flow_run.status not in (FlowRun.Status.SUCCESS, FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
@@ -630,7 +720,6 @@ class FlowRunner:
         return cls._sync_sub_process_node_with_child(
             node_run=node_run,
             child_flow_run=child_flow_run,
-            agent_server_id=agent_server_id,
         )
 
     @classmethod
@@ -679,7 +768,7 @@ class FlowRunner:
         return stack
 
     @classmethod
-    def _sync_sub_process_node_with_child(cls, node_run: FlowNodeRun, child_flow_run: FlowRun, agent_server_id=None):
+    def _sync_sub_process_node_with_child(cls, node_run: FlowNodeRun, child_flow_run: FlowRun):
         outputs = dict(node_run.outputs or {})
         outputs.update(
             {
@@ -687,7 +776,6 @@ class FlowRunner:
                 "child_flow_run_id": child_flow_run.id,
                 "child_template_id": child_flow_run.template_id,
                 "child_status": child_flow_run.status,
-                "agent_server_id": agent_server_id,
             }
         )
         node_run.outputs = outputs
@@ -717,22 +805,18 @@ class FlowRunner:
         inputs = flow_run.inputs or {}
         return bool(inputs.get("__parent_flow_run_id") and inputs.get("__parent_node_run_id"))
 
-    @staticmethod
-    def _parent_agent_server_id(flow_run: FlowRun):
-        return (flow_run.inputs or {}).get("__parent_agent_server_id")
-
     @classmethod
-    def _notify_parent_if_terminal(cls, flow_run: FlowRun, agent_server_id=None):
+    def _notify_parent_if_terminal(cls, flow_run: FlowRun):
         if flow_run.status not in (FlowRun.Status.SUCCESS, FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
             return None
         if (flow_run.inputs or {}).get("__defer_sub_process_parent_notify"):
             return None
         if not cls._has_parent_sub_process(flow_run):
             return None
-        return cls._finalize_parent_sub_process(flow_run, agent_server_id=agent_server_id)
+        return cls._finalize_parent_sub_process(flow_run)
 
     @classmethod
-    def _finalize_parent_sub_process(cls, child_flow_run: FlowRun, agent_server_id=None):
+    def _finalize_parent_sub_process(cls, child_flow_run: FlowRun):
         parent_node_run = None
         parent_flow_run = None
         should_continue = False
@@ -759,7 +843,6 @@ class FlowRunner:
             cls._sync_sub_process_node_with_child(
                 node_run=parent_node_run,
                 child_flow_run=child_flow_run,
-                agent_server_id=agent_server_id or cls._parent_agent_server_id(child_flow_run),
             )
             parent_node_run.refresh_from_db()
 
@@ -781,7 +864,6 @@ class FlowRunner:
             return cls._continue_flow(
                 parent_flow_run,
                 parent_flow_run.started_by,
-                agent_server_id=agent_server_id or cls._parent_agent_server_id(child_flow_run),
             )
         return parent_flow_run
 
@@ -800,12 +882,11 @@ class FlowRunner:
         return cls.cancel_flow(child_flow_run, user=user, notify_parent=False)
 
     @staticmethod
-    def _execute_gateway_node(node_run: FlowNodeRun, agent_server_id=None) -> FlowNodeRun:
+    def _execute_gateway_node(node_run: FlowNodeRun) -> FlowNodeRun:
         node_run.status = FlowRun.Status.SUCCESS
         node_run.outputs = {
             "gateway": True,
             "gateway_type": node_run.node.node_type,
-            "agent_server_id": agent_server_id,
         }
         node_run.error_message = ""
         node_run.finished_at = timezone.now()
@@ -813,13 +894,12 @@ class FlowRunner:
         return node_run
 
     @staticmethod
-    def _execute_manual_node(node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_manual_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
         node_run.status = FlowRun.Status.PAUSED
         node_run.outputs = {
             "manual": True,
             "confirmed": False,
             "instructions": (node_run.inputs or {}).get("instructions", ""),
-            "agent_server_id": agent_server_id,
         }
         node_run.error_message = ""
         node_run.finished_at = None
@@ -827,7 +907,7 @@ class FlowRunner:
         return node_run
 
     @classmethod
-    def _execute_condition_node(cls, node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_condition_node(cls, node_run: FlowNodeRun, user) -> FlowNodeRun:
         outgoing_edges = list(node_run.node.out_edges.select_related("target").order_by("id"))
         matched_edges = []
         default_edges = []
@@ -856,7 +936,6 @@ class FlowRunner:
                 }
                 for edge in selected_edges
             ],
-            "agent_server_id": agent_server_id,
         }
         node_run.error_message = ""
         node_run.finished_at = timezone.now()
@@ -991,7 +1070,7 @@ class FlowRunner:
         return target_hosts
 
     @staticmethod
-    def _execute_script_node(node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_script_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
         config = node_run.inputs or {}
         host_ids = config.get("target_host_ids") or []
         target_hosts = FlowRunner._get_target_hosts_or_fail(node_run, config, user)
@@ -1007,7 +1086,6 @@ class FlowRunner:
             execution_parameters={
                 "flow_run_id": node_run.flow_run_id,
                 "flow_node_id": node_run.node_id,
-                "agent_server_id": agent_server_id,
                 "script_type": config.get("script_type", "shell"),
                 "timeout": config.get("timeout", 300),
                 "target_host_ids": host_ids,
@@ -1025,7 +1103,6 @@ class FlowRunner:
             timeout=config.get("timeout", 300),
             global_variables=config.get("global_variables") or {},
             step_id=None,
-            agent_server_id=agent_server_id,
             account_id=config.get("account_id"),
         )
 
@@ -1065,7 +1142,7 @@ class FlowRunner:
         return node_run
 
     @staticmethod
-    def _execute_file_transfer_node(node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_file_transfer_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
         config = node_run.inputs or {}
         target_hosts = FlowRunner._get_target_hosts_or_fail(node_run, config, user)
         if target_hosts is None:
@@ -1096,7 +1173,6 @@ class FlowRunner:
             execution_parameters={
                 "flow_run_id": node_run.flow_run_id,
                 "flow_node_id": node_run.node_id,
-                "agent_server_id": agent_server_id,
                 "timeout": config.get("timeout", 300),
                 "bandwidth_limit": config.get("bandwidth_limit", 0),
                 "target_host_ids": config.get("target_host_ids") or [],
@@ -1128,7 +1204,6 @@ class FlowRunner:
                 size=source.get("size"),
                 auth_headers=source.get("auth_headers") or {},
                 step_id=None,
-                agent_server_id=agent_server_id,
                 account_id=config.get("account_id"),
                 file_sources=[source],
             )
@@ -1174,7 +1249,7 @@ class FlowRunner:
         return get_file_source_errors(file_sources)
 
     @staticmethod
-    def _execute_job_plan_node(node_run: FlowNodeRun, user, agent_server_id=None) -> FlowNodeRun:
+    def _execute_job_plan_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
         config = node_run.inputs or {}
         plan_id = config.get("execution_plan_id")
         if not plan_id:
@@ -1208,10 +1283,17 @@ class FlowRunner:
 
         from apps.job_templates.services import ExecutionPlanService
 
-        execution_parameters = {
-            **FlowRunner._business_inputs(node_run.flow_run.inputs),
-            **(config.get("execution_parameters") or {}),
-        }
+        execution_parameter_bindings = config.get("execution_parameter_bindings")
+        if execution_parameter_bindings is not None:
+            if not isinstance(execution_parameter_bindings, dict):
+                node_run.status = FlowRun.Status.FAILED
+                node_run.error_message = "job_plan execution_parameter_bindings must be an object"
+                node_run.finished_at = timezone.now()
+                node_run.save(update_fields=["status", "error_message", "finished_at"])
+                return node_run
+            execution_parameters = execution_parameter_bindings
+        else:
+            execution_parameters = config.get("execution_parameters") or {}
         result = ExecutionPlanService.execute_plan(
             execution_plan=execution_plan,
             user=user,
@@ -1222,7 +1304,6 @@ class FlowRunner:
             execution_mode=config.get("execution_mode", "parallel"),
             rolling_batch_size=config.get("rolling_batch_size", 1),
             rolling_batch_delay=config.get("rolling_batch_delay", 0),
-            agent_server_id=config.get("agent_server_id") or agent_server_id,
             execution_type="flow_node",
             related_object=node_run,
         )

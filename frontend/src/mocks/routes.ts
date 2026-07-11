@@ -1,4 +1,4 @@
-import type { MockRoute } from './mockAdapter'
+import { mockHttpResponse, type MockRoute } from './mockAdapter'
 
 const iso = (daysOffset = 0, hour = 9) => {
   const date = new Date()
@@ -128,6 +128,11 @@ const jobTemplates = [
     description: 'CPU、内存、磁盘、Agent 心跳的发布前检查。',
     category: 'release',
     tags: [{ key: 'env', value: 'prod' }],
+    global_parameters: {
+      env: { type: 'string', value: 'prod', description: '发布环境' },
+      target_hosts: { type: 'host_list', value: [1, 2], description: '发布目标主机' },
+      release_version: { type: 'string', value: '2026.06.11', description: '发布版本号' },
+    },
     step_count: 4,
     plan_count: 3,
     has_unsync_plans: false,
@@ -157,8 +162,20 @@ const executionPlans = [
     id: 301,
     name: '生产网关发布前检查',
     description: '覆盖生产网关节点。',
+    template: 201,
+    template_name: '发布前主机健康检查',
     job_template: 201,
     job_template_name: '发布前主机健康检查',
+    template_global_parameters: {
+      env: { type: 'string', value: 'prod', description: '发布环境' },
+      target_hosts: { type: 'host_list', value: [1, 2], description: '发布目标主机' },
+      release_version: { type: 'string', value: '2026.06.11', description: '发布版本号' },
+    },
+    global_parameters_snapshot: {
+      env: { type: 'string', value: 'prod', description: '发布环境' },
+      target_hosts: { type: 'host_list', value: [1, 2], description: '发布目标主机' },
+      release_version: { type: 'string', value: '2026.06.11', description: '发布版本号' },
+    },
     target_count: 18,
     is_active: true,
     created_by_name: '平台工程',
@@ -168,8 +185,18 @@ const executionPlans = [
     id: 302,
     name: '夜间日志归档',
     description: '每天 01:00 执行。',
+    template: 202,
+    template_name: '日志归档与压缩',
     job_template: 202,
     job_template_name: '日志归档与压缩',
+    template_global_parameters: {
+      log_dir: { type: 'string', value: '/var/log', description: '日志目录' },
+      keep_days: { type: 'number', value: 7, description: '保留天数' },
+    },
+    global_parameters_snapshot: {
+      log_dir: { type: 'string', value: '/var/log', description: '日志目录' },
+      keep_days: { type: 'number', value: 7, description: '保留天数' },
+    },
     target_count: 42,
     is_active: true,
     created_by_name: 'SRE',
@@ -455,9 +482,69 @@ let flowTemplates: any[] = [
     name: '生产发布前置检查流程',
     description: '发布前完成 Agent 心跳、配置校验、构件分发和执行方案检查。',
     variables: {
-      env: 'prod',
-      release_id: 'REL-20260608-01',
-      operator: 'demo-admin',
+      CheckHost: {
+        name: '执行脚本机器',
+        type: 'host_list',
+        widget: 'host_list',
+        default: [1, 3],
+        required: true,
+        show_on_start: true,
+        placeholder: '选择发布前检查目标主机',
+        description: '脚本检查和作业方案使用的主机变量',
+      },
+      FileHost: {
+        name: '文件分发机器',
+        type: 'host_list',
+        widget: 'host_list',
+        default: [1],
+        required: true,
+        show_on_start: true,
+        placeholder: '选择发布包分发目标主机',
+      },
+      PackageUrl: {
+        name: '发布包地址',
+        type: 'text',
+        widget: 'input',
+        default: 'https://artifact.local/releases/app.tar.gz',
+        required: true,
+        regex: '^https?://',
+        show_on_start: true,
+        placeholder: 'https://artifact.local/releases/app.tar.gz',
+      },
+      DeployPath: {
+        name: '远端发布路径',
+        type: 'text',
+        widget: 'input',
+        default: '/data/releases/current/app.tar.gz',
+        required: true,
+        show_on_start: true,
+        placeholder: '/data/releases/current/app.tar.gz',
+      },
+      ReleaseEnv: {
+        name: '发布环境',
+        type: 'text',
+        widget: 'input',
+        default: 'prod',
+        required: true,
+        regex: '^(prod|staging)$',
+        show_on_start: true,
+      },
+      ReleaseVersion: {
+        name: '发布版本',
+        type: 'text',
+        widget: 'input',
+        default: 'REL-20260608-01',
+        required: true,
+        show_on_start: true,
+      },
+      Operator: {
+        name: '操作人',
+        type: 'text',
+        widget: 'input',
+        default: 'demo-admin',
+        required: false,
+        show_on_start: false,
+      },
     },
     is_active: true,
     created_by: 1,
@@ -473,8 +560,8 @@ let flowTemplates: any[] = [
         node_type: 'script',
         config: {
           script_type: 'shell',
-          script_content: 'systemctl is-active ops-agent && curl -sf http://127.0.0.1:9100/health',
-          target_host_ids: [1, 3],
+          script_content: 'systemctl is-active ops-agent && curl -sf http://127.0.0.1:9100/health && echo ${ReleaseVersion}',
+          target_host_ids: '${CheckHost}',
           timeout: 180,
           ignore_error: false,
         },
@@ -489,15 +576,15 @@ let flowTemplates: any[] = [
         name: '分发发布包',
         node_type: 'file_transfer',
         config: {
-          target_host_ids: [1],
+          target_host_ids: '${FileHost}',
           timeout: 600,
           bandwidth_limit: 2048,
           overwrite_policy: 'backup',
           file_sources: [
             {
               type: 'artifact',
-              download_url: 'https://artifact.local/releases/app.tar.gz',
-              remote_path: '/data/releases/current/app.tar.gz',
+              download_url: '${PackageUrl}',
+              remote_path: '${DeployPath}',
             },
           ],
         },
@@ -513,9 +600,10 @@ let flowTemplates: any[] = [
         node_type: 'job_plan',
         config: {
           execution_plan_id: 301,
-          execution_parameters: {
-            env: 'prod',
-            check_level: 'strict',
+          execution_parameter_bindings: {
+            env: '${ReleaseEnv}',
+            target_hosts: '${CheckHost}',
+            release_version: '${ReleaseVersion}',
           },
           execution_mode: 'rolling',
           rolling_batch_size: 1,
@@ -552,8 +640,39 @@ let flowTemplates: any[] = [
     name: '夜间日志归档流程',
     description: '先清理磁盘水位，再执行归档方案，失败时保留节点错误信息。',
     variables: {
-      env: 'prod',
-      window: 'nightly',
+      ArchiveHost: {
+        name: '日志归档机器',
+        type: 'host_list',
+        widget: 'host_list',
+        default: [1, 2],
+        required: true,
+        show_on_start: true,
+      },
+      LogDir: {
+        name: '日志目录',
+        type: 'text',
+        widget: 'input',
+        default: '/data/logs',
+        required: true,
+        show_on_start: true,
+      },
+      KeepDays: {
+        name: '保留天数',
+        type: 'number',
+        widget: 'input',
+        default: 14,
+        required: true,
+        regex: '^\\d+$',
+        show_on_start: true,
+      },
+      ArchiveWindow: {
+        name: '归档窗口',
+        type: 'text',
+        widget: 'input',
+        default: 'nightly',
+        required: true,
+        show_on_start: true,
+      },
     },
     is_active: true,
     created_by: 1,
@@ -569,8 +688,8 @@ let flowTemplates: any[] = [
         node_type: 'script',
         config: {
           script_type: 'shell',
-          script_content: 'find /data/logs -type f -mtime +14 -delete',
-          target_host_ids: [1, 2],
+          script_content: 'find ${LogDir} -type f -mtime +${KeepDays} -delete',
+          target_host_ids: '${ArchiveHost}',
           timeout: 300,
           ignore_error: true,
         },
@@ -586,9 +705,9 @@ let flowTemplates: any[] = [
         node_type: 'job_plan',
         config: {
           execution_plan_id: 302,
-          execution_parameters: {
-            window: 'nightly',
-            retain_days: 14,
+          execution_parameter_bindings: {
+            log_dir: '${LogDir}',
+            keep_days: '${KeepDays}',
           },
           execution_mode: 'serial',
           rolling_batch_size: 1,
@@ -616,8 +735,47 @@ let flowTemplates: any[] = [
     name: '数据库变更灰度流水线',
     description: '先备份配置，再按滚动批次执行数据库变更方案，job_plan 可暂停等待执行记录完成。',
     variables: {
-      env: 'staging',
-      change_id: 'DB-20260609-07',
+      DbHost: {
+        name: '数据库变更机器',
+        type: 'host_list',
+        widget: 'host_list',
+        default: [2, 3],
+        required: true,
+        show_on_start: true,
+      },
+      RollbackUrl: {
+        name: '回滚文件地址',
+        type: 'text',
+        widget: 'input',
+        default: 'https://artifact.local/db/change-rollback.yml',
+        required: true,
+        regex: '^https?://',
+        show_on_start: true,
+      },
+      RollbackPath: {
+        name: '回滚文件路径',
+        type: 'text',
+        widget: 'input',
+        default: '/data/db-change/rollback.yml',
+        required: true,
+        show_on_start: true,
+      },
+      ChangeId: {
+        name: '变更单号',
+        type: 'text',
+        widget: 'input',
+        default: 'DB-20260609-07',
+        required: true,
+        show_on_start: true,
+      },
+      DryRun: {
+        name: '预执行',
+        type: 'boolean',
+        widget: 'input',
+        default: false,
+        required: false,
+        show_on_start: true,
+      },
     },
     is_active: true,
     created_by: 1,
@@ -632,13 +790,13 @@ let flowTemplates: any[] = [
         name: '备份变更配置',
         node_type: 'file_transfer',
         config: {
-          target_host_ids: [2, 3],
+          target_host_ids: '${DbHost}',
           timeout: 480,
           bandwidth_limit: 128,
           file_sources: [
             {
-              download_url: 'https://artifact.local/db/change-rollback.yml',
-              remote_path: '/data/db-change/rollback.yml',
+              download_url: '${RollbackUrl}',
+              remote_path: '${RollbackPath}',
             },
           ],
         },
@@ -654,9 +812,9 @@ let flowTemplates: any[] = [
         node_type: 'job_plan',
         config: {
           execution_plan_id: 303,
-          execution_parameters: {
-            change_id: 'DB-20260609-07',
-            dry_run: false,
+          execution_parameter_bindings: {
+            change_id: '${ChangeId}',
+            dry_run: '${DryRun}',
           },
           execution_mode: 'rolling',
           rolling_batch_size: 1,
@@ -937,6 +1095,72 @@ let flowRuns: any[] = [
   },
 ]
 
+let flowOperationLogs: any[] = [
+  {
+    id: 91001,
+    user: 1,
+    user_name: 'demo-admin',
+    user_full_name: '演示管理员',
+    action: 'start_flow',
+    action_display: '启动流程',
+    resource_id: 8801,
+    resource_name: '生产发布前置检查流程 #8801',
+    description: '启动流程: 生产发布前置检查流程',
+    ip_address: '127.0.0.1',
+    success: true,
+    error_message: '',
+    extra_data: {
+      flow_run_id: 8801,
+      flow_run_status: 'running',
+      template_id: 801,
+      template_name: '生产发布前置检查流程',
+    },
+    created_at: iso(0, 10),
+  },
+  {
+    id: 91002,
+    user: 1,
+    user_name: 'demo-admin',
+    user_full_name: '演示管理员',
+    action: 'start_flow',
+    action_display: '启动流程',
+    resource_id: 8803,
+    resource_name: '数据库变更灰度流水线 #8803',
+    description: '启动流程: 数据库变更灰度流水线',
+    ip_address: '127.0.0.1',
+    success: true,
+    error_message: '',
+    extra_data: {
+      flow_run_id: 8803,
+      flow_run_status: 'paused',
+      template_id: 803,
+      template_name: '数据库变更灰度流水线',
+    },
+    created_at: iso(0, 9),
+  },
+  {
+    id: 91003,
+    user: 1,
+    user_name: 'scheduler',
+    user_full_name: 'scheduler',
+    action: 'start_flow',
+    action_display: '启动流程',
+    resource_id: 8802,
+    resource_name: '夜间日志归档流程 #8802',
+    description: '定时触发流程: 夜间日志归档流程',
+    ip_address: '127.0.0.1',
+    success: true,
+    error_message: '',
+    extra_data: {
+      flow_run_id: 8802,
+      flow_run_status: 'failed',
+      template_id: 802,
+      template_name: '夜间日志归档流程',
+    },
+    created_at: iso(-1, 1),
+  },
+]
+
 const normalizeFlowTemplate = (data: any, id: number) => {
   const nodes = (data?.nodes || []).map((node: any, index: number) => ({
     id: node.id || id * 10 + index + 1,
@@ -988,6 +1212,264 @@ const paginate = <T>(items: T[], query: Record<string, any>) => {
 
 const byId = <T extends { id: number }>(items: T[], id: string) => {
   return items.find((item) => item.id === Number(id)) || items[0]
+}
+
+const appendFlowOperationLog = (run: any, action: string, description: string, nodeRun?: any, extraData: Record<string, any> = {}) => {
+  const id = Math.max(...flowOperationLogs.map((item) => item.id), 91000) + 1
+  const log = {
+    id,
+    user: 1,
+    user_name: 'demo-admin',
+    user_full_name: '演示管理员',
+    action,
+    action_display: {
+      start_flow: '启动流程',
+      skip_flow_node: '跳过流程节点',
+      retry_flow_node: '重试流程节点',
+      confirm_flow_node: '确认人工节点',
+      cancel_flow: '取消流程',
+    }[action] || action,
+    resource_id: run.id,
+    resource_name: `${run.template_name} #${run.id}`,
+    description,
+    ip_address: '127.0.0.1',
+    success: true,
+    error_message: '',
+    extra_data: {
+      flow_run_id: run.id,
+      flow_run_status: run.status,
+      template_id: run.template,
+      template_name: run.template_name,
+      ...(nodeRun ? {
+        node_run_id: nodeRun.id,
+        node_uuid: nodeRun.node_uuid,
+        node_name: nodeRun.node_name,
+        node_type: nodeRun.node_type,
+        node_status: nodeRun.status,
+      } : {}),
+      ...extraData,
+    },
+    created_at: iso(0, 10),
+  }
+  flowOperationLogs = [log, ...flowOperationLogs]
+  return log
+}
+
+const getPathValue = (data: Record<string, any>, path?: string) => {
+  if (!path) return undefined
+  const normalized = String(path).replace(/^inputs\./, '')
+  return normalized.split('.').reduce((current: any, part: string) => {
+    if (current && typeof current === 'object') return current[part]
+    return undefined
+  }, data)
+}
+
+const mockConditionMatched = (condition: Record<string, any>, inputs: Record<string, any>) => {
+  if (!condition || condition.default) return false
+  const actual = getPathValue(inputs, condition.variable || condition.left || condition.key)
+  const expected = condition.value ?? condition.right
+  const operator = condition.operator || condition.op || 'truthy'
+  if (operator === 'truthy') return Boolean(actual)
+  if (operator === 'falsy') return !actual
+  if (operator === 'empty') return actual === undefined || actual === null || actual === '' || (Array.isArray(actual) && actual.length === 0)
+  if (operator === 'not_empty') return !(actual === undefined || actual === null || actual === '' || (Array.isArray(actual) && actual.length === 0))
+  if (operator === 'ne') return actual !== expected
+  if (operator === 'contains') return String(actual || '').includes(String(expected || ''))
+  if (operator === 'not_contains') return !String(actual || '').includes(String(expected || ''))
+  if (['gt', 'gte', 'lt', 'lte'].includes(operator)) {
+    const left = Number(actual)
+    const right = Number(expected)
+    if (Number.isNaN(left) || Number.isNaN(right)) return false
+    if (operator === 'gt') return left > right
+    if (operator === 'gte') return left >= right
+    if (operator === 'lt') return left < right
+    return left <= right
+  }
+  return actual === expected
+}
+
+const mockRunStatus = (nodeRuns: any[]) => {
+  if (nodeRuns.some((nodeRun) => nodeRun.status === 'paused')) return 'paused'
+  if (nodeRuns.some((nodeRun) => nodeRun.status === 'running' || nodeRun.status === 'pending')) return 'running'
+  if (nodeRuns.some((nodeRun) => nodeRun.status === 'failed')) return 'failed'
+  return nodeRuns.length > 0 ? 'success' : 'pending'
+}
+
+const selectedNodeUuidsForInputs = (template: any, inputs: Record<string, any>) => new Set<string>(
+    inputs.__execution_scope === 'selected' && Array.isArray(inputs.__selected_node_uuids)
+      ? inputs.__selected_node_uuids.map(String)
+      : (template.nodes || []).map((node: any) => node.uuid),
+)
+
+const selectedConditionEdges = (template: any, node: any, inputs: Record<string, any>) => {
+  const outgoingEdges = (template.edges || []).filter((edge: any) => edge.source_uuid === node.uuid)
+  const matchedEdges = outgoingEdges.filter((edge: any) => mockConditionMatched(edge.condition || {}, inputs))
+  const defaultEdges = outgoingEdges.filter((edge: any) => edge.condition?.default)
+  return matchedEdges.length > 0 ? matchedEdges : defaultEdges
+}
+
+const mockNodeRunStatus = (node: any) => {
+  if (node.node_type === 'manual') return 'paused'
+  if (node.node_type === 'job_plan') return 'running'
+  return 'success'
+}
+
+let nextMockFlowRunId = 9000
+
+const businessMockInputs = (inputs: Record<string, any>) =>
+  Object.fromEntries(Object.entries(inputs || {}).filter(([key]) => !key.startsWith('__')))
+
+const buildMockSubProcessChildRun = (parentRun: any, node: any) => {
+  const config = node.config || {}
+  const childTemplate = flowTemplates.find((template) => template.id === Number(config.template_id))
+  if (!childTemplate) return null
+  const childInputs = {
+    ...(config.inherit_inputs === false ? {} : businessMockInputs(parentRun.inputs || {})),
+    ...(config.inputs || {}),
+    __parent_flow_run_id: parentRun.id,
+    __parent_node_run_id: null,
+  }
+  const childRun = buildMockFlowRun(childTemplate, { inputs: childInputs })
+  flowRuns = [childRun, ...flowRuns]
+  return childRun
+}
+
+const mockNodeRunOutputs = (template: any, node: any, inputs: Record<string, any>) => {
+  if (node.node_type === 'condition') {
+    const outgoingEdges = (template.edges || []).filter((edge: any) => edge.source_uuid === node.uuid)
+    const matchedEdges = outgoingEdges.filter((edge: any) => mockConditionMatched(edge.condition || {}, inputs))
+    const selectedEdges = matchedEdges.length > 0
+      ? matchedEdges
+      : outgoingEdges.filter((edge: any) => edge.condition?.default)
+    return {
+      condition: true,
+      matched_count: matchedEdges.length,
+      default_used: matchedEdges.length === 0 && selectedEdges.length > 0,
+      selected_node_uuids: selectedEdges.map((edge: any) => edge.target_uuid),
+      selected_edges: selectedEdges.map((edge: any) => ({
+        source_uuid: edge.source_uuid,
+        target_uuid: edge.target_uuid,
+        condition: edge.condition || {},
+      })),
+    }
+  }
+  if (node.node_type === 'parallel' || node.node_type === 'join') return { gateway: true }
+  return {}
+}
+
+const isMockEdgeReachable = (template: any, edge: any, nodeRunsByUuid: Map<string, any>, inputs: Record<string, any>) => {
+  const sourceRun = nodeRunsByUuid.get(edge.source_uuid)
+  if (!sourceRun || sourceRun.status !== 'success') return false
+  const sourceNode = (template.nodes || []).find((node: any) => node.uuid === edge.source_uuid)
+  if (sourceNode?.node_type !== 'condition') return true
+  return selectedConditionEdges(template, sourceNode, inputs).some((selectedEdge: any) => selectedEdge.target_uuid === edge.target_uuid)
+}
+
+const isMockNodeReachable = (template: any, node: any, nodeRunsByUuid: Map<string, any>, inputs: Record<string, any>) => {
+  const incomingEdges = (template.edges || []).filter((edge: any) => edge.target_uuid === node.uuid)
+  if (incomingEdges.length === 0) return true
+  if (node.node_type === 'join') {
+    const activeIncomingEdges = incomingEdges.filter((edge: any) => {
+      const sourceNode = (template.nodes || []).find((item: any) => item.uuid === edge.source_uuid)
+      if (sourceNode?.node_type !== 'condition') return true
+      return selectedConditionEdges(template, sourceNode, inputs).some((selectedEdge: any) => selectedEdge.target_uuid === edge.target_uuid)
+    })
+    return activeIncomingEdges.length > 0 && activeIncomingEdges.every((edge: any) => isMockEdgeReachable(template, edge, nodeRunsByUuid, inputs))
+  }
+  return incomingEdges.some((edge: any) => isMockEdgeReachable(template, edge, nodeRunsByUuid, inputs))
+}
+
+const makeMockNodeRun = (run: any, template: any, node: any) => {
+  const childRun = node.node_type === 'sub_process' ? buildMockSubProcessChildRun(run, node) : null
+  const status = childRun
+    ? (childRun.status === 'success' ? 'success' : childRun.status === 'failed' || childRun.status === 'cancelled' ? childRun.status : 'paused')
+    : mockNodeRunStatus(node)
+  const nextId = Math.max(run.id * 10, ...run.node_runs.map((nodeRun: any) => nodeRun.id)) + 1
+  return {
+    id: nextId,
+    node: node.id,
+    node_name: node.name,
+    node_uuid: node.uuid,
+    node_type: node.node_type,
+    status,
+    inputs: node.config || {},
+    outputs: childRun ? {
+      sub_process: true,
+      child_flow_run_id: childRun.id,
+      child_template_id: childRun.template,
+      child_status: childRun.status,
+    } : mockNodeRunOutputs(template, node, run.inputs || {}),
+    error_message: '',
+    execution_record: status === 'running' ? 9002 : null,
+    execution_record_id: status === 'running' ? 9002 : null,
+    started_at: iso(0, 10),
+    finished_at: status === 'success' ? iso(0, 10) : null,
+    created_at: iso(0, 10),
+  }
+}
+
+const continueMockFlowRun = (run: any) => {
+  const template = byId(flowTemplates, run.template)
+  const selectedUuids = selectedNodeUuidsForInputs(template, run.inputs || {})
+  let progressed = true
+
+  while (progressed) {
+    progressed = false
+    const nodeRunsByUuid = new Map<string, any>(
+      run.node_runs.map((nodeRun: any) => [String(nodeRun.node_uuid), nodeRun]),
+    )
+
+    for (const node of template.nodes || []) {
+      if (!selectedUuids.has(node.uuid) || nodeRunsByUuid.has(node.uuid)) continue
+      if (!isMockNodeReachable(template, node, nodeRunsByUuid, run.inputs || {})) continue
+
+      const nodeRun = makeMockNodeRun(run, template, node)
+      run.node_runs.push(nodeRun)
+      nodeRunsByUuid.set(node.uuid, nodeRun)
+      progressed = true
+    }
+  }
+
+  return refreshMockRunStatus(run)
+}
+
+const buildMockFlowRun = (template: any, data: any) => {
+  const id = nextMockFlowRunId++
+  const run = {
+    id,
+    template: template.id,
+    template_name: template.name,
+    status: 'running',
+    trigger_type: 'manual',
+    started_by: 1,
+    started_by_name: 'demo-admin',
+    inputs: data?.inputs || {},
+    outputs: {},
+    error_message: '',
+    started_at: iso(0, 10),
+    finished_at: null,
+    created_at: iso(0, 10),
+    node_runs: [],
+  }
+  return continueMockFlowRun(run)
+}
+
+const refreshMockRunStatus = (run: any) => {
+  const terminalStatuses = new Set(['success', 'failed', 'cancelled'])
+  if (run.node_runs.some((nodeRun: any) => nodeRun.status === 'paused')) {
+    run.status = 'paused'
+    run.finished_at = null
+  } else if (run.node_runs.some((nodeRun: any) => nodeRun.status === 'running' || nodeRun.status === 'pending')) {
+    run.status = 'running'
+    run.finished_at = null
+  } else if (run.node_runs.some((nodeRun: any) => nodeRun.status === 'failed')) {
+    run.status = 'failed'
+    run.finished_at = run.finished_at || iso(0, 10)
+  } else if (run.node_runs.length > 0 && run.node_runs.every((nodeRun: any) => terminalStatuses.has(nodeRun.status))) {
+    run.status = run.node_runs.every((nodeRun: any) => nodeRun.status === 'cancelled') ? 'cancelled' : 'success'
+    run.finished_at = run.finished_at || iso(0, 10)
+  }
+  return run
 }
 
 const latencyTrend = (range: string) => {
@@ -1578,43 +2060,44 @@ export const mockRoutes: MockRoute[] = [
   },
   {
     method: 'post',
+    pattern: '/flows/templates/:id/copy/',
+    handler: ({ params, data }) => {
+      const source = byId(flowTemplates, params.id)
+      const id = Math.max(...flowTemplates.map((item) => item.id), 800) + 1
+      const baseName = data?.name || `${source.name} 副本`
+      let name = baseName
+      let index = 2
+      while (flowTemplates.some((item) => item.name === name)) {
+        name = `${baseName} ${index}`
+        index += 1
+      }
+      const template = normalizeFlowTemplate({
+        ...source,
+        id,
+        name,
+        is_active: false,
+        created_by: 1,
+        created_by_name: 'demo-admin',
+        created_at: iso(0),
+        updated_at: iso(0),
+        nodes: (source.nodes || []).map((node: any) => ({ ...node, id: undefined, template: id })),
+        edges: (source.edges || []).map((edge: any) => ({ ...edge, id: undefined, template: id })),
+      }, id)
+      flowTemplates = [template, ...flowTemplates]
+      return template
+    },
+  },
+  {
+    method: 'post',
     pattern: '/flows/templates/:id/start/',
     handler: ({ params, data }) => {
       const template = byId(flowTemplates, params.id)
-      const id = Math.max(...flowRuns.map((item) => item.id), 8800) + 1
-      const nodeRuns = template.nodes.map((node, index) => ({
-        id: id * 10 + index + 1,
-        node: node.id,
-        node_name: node.name,
-        node_uuid: node.uuid,
-        node_type: node.node_type,
-        status: index === 0 ? 'running' : 'pending',
-        inputs: node.config || {},
-        outputs: {},
-        error_message: '',
-        execution_record: index === 0 ? 9002 : null,
-        execution_record_id: index === 0 ? 9002 : null,
-        started_at: index === 0 ? iso(0, 10) : null,
-        finished_at: null,
-        created_at: iso(0, 10),
-      }))
-      const run = {
-        id,
-        template: template.id,
-        template_name: template.name,
-        status: 'running',
-        trigger_type: 'manual',
-        started_by: 1,
-        started_by_name: 'demo-admin',
-        inputs: data?.inputs || {},
-        outputs: {},
-        error_message: '',
-        started_at: iso(0, 10),
-        finished_at: null,
-        created_at: iso(0, 10),
-        node_runs: nodeRuns,
-      }
+      const run = buildMockFlowRun(template, data)
       flowRuns = [run, ...flowRuns]
+      appendFlowOperationLog(run, 'start_flow', `启动流程: ${template.name}`, undefined, {
+        input_keys: Object.keys(data?.inputs || {}).filter((key) => !key.startsWith('__')).sort(),
+        new_status: run.status,
+      })
       return run
     },
   },
@@ -1660,6 +2143,136 @@ export const mockRoutes: MockRoute[] = [
     method: 'get',
     pattern: '/flows/runs/:id/',
     handler: ({ params }) => byId(flowRuns, params.id),
+  },
+  {
+    method: 'get',
+    pattern: '/flows/runs/:id/operation_logs/',
+    handler: ({ params }) => flowOperationLogs.filter((item) => item.resource_id === Number(params.id)),
+  },
+  {
+    method: 'post',
+    pattern: '/flows/runs/:id/skip_node/',
+    handler: ({ params, data }) => {
+      const run = byId(flowRuns, params.id)
+      const nodeRun = run.node_runs.find((item: any) => item.id === Number(data?.node_run_id)) || run.node_runs[0]
+      const previousStatus = nodeRun.status
+      nodeRun.status = 'success'
+      nodeRun.outputs = {
+        ...(nodeRun.outputs || {}),
+        skipped: true,
+        skip_reason: data?.reason || '',
+        skipped_at: iso(0, 10),
+      }
+      nodeRun.error_message = ''
+      nodeRun.finished_at = iso(0, 10)
+      continueMockFlowRun(run)
+      appendFlowOperationLog(run, 'skip_flow_node', `跳过流程节点: ${nodeRun.node_name}`, nodeRun, {
+        previous_status: previousStatus,
+        new_status: nodeRun.status,
+        reason: data?.reason || '',
+      })
+      return run
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/runs/:id/retry_node/',
+    handler: ({ params, data }) => {
+      const run = byId(flowRuns, params.id)
+      const nodeRun = run.node_runs.find((item: any) => item.id === Number(data?.node_run_id)) || run.node_runs[0]
+      const previousStatus = nodeRun.status
+      nodeRun.status = 'success'
+      nodeRun.outputs = {
+        ...(nodeRun.outputs || {}),
+        retried: true,
+        retried_at: iso(0, 10),
+      }
+      nodeRun.error_message = ''
+      nodeRun.started_at = nodeRun.started_at || iso(0, 10)
+      nodeRun.finished_at = iso(0, 10)
+      continueMockFlowRun(run)
+      appendFlowOperationLog(run, 'retry_flow_node', `重试流程节点: ${nodeRun.node_name}`, nodeRun, {
+        previous_status: previousStatus,
+        new_status: nodeRun.status,
+      })
+      return run
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/runs/:id/confirm_manual_node/',
+    handler: ({ params, data }) => {
+      const run = byId(flowRuns, params.id)
+      const nodeRun = run.node_runs.find((item: any) => item.id === Number(data?.node_run_id))
+      if (!nodeRun) {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: '节点执行不存在或不属于该流程' },
+        })
+      }
+      if (nodeRun.node_type !== 'manual') {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: 'only manual nodes can be confirmed' },
+        })
+      }
+      if (nodeRun.status !== 'paused') {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: `cannot confirm ${nodeRun.status} manual node` },
+        })
+      }
+      const previousStatus = nodeRun.status
+      nodeRun.status = 'success'
+      nodeRun.outputs = {
+        ...(nodeRun.outputs || {}),
+        manual: true,
+        confirmed: true,
+        confirmed_by: 'demo-admin',
+        confirmed_by_id: 1,
+        confirmed_at: iso(0, 10),
+        confirm_remark: data?.remark || '',
+      }
+      nodeRun.error_message = ''
+      nodeRun.finished_at = iso(0, 10)
+      continueMockFlowRun(run)
+      appendFlowOperationLog(run, 'confirm_flow_node', `确认人工节点: ${nodeRun.node_name}`, nodeRun, {
+        previous_status: previousStatus,
+        new_status: nodeRun.status,
+        remark: data?.remark || '',
+      })
+      return run
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/runs/:id/cancel/',
+    handler: ({ params }) => {
+      const run = byId(flowRuns, params.id)
+      const previousStatus = run.status
+      run.status = 'cancelled'
+      run.error_message = 'flow cancelled'
+      run.finished_at = iso(0, 10)
+      run.node_runs = run.node_runs.map((nodeRun: any) => {
+        if (['pending', 'running', 'paused'].includes(nodeRun.status)) {
+          return {
+            ...nodeRun,
+            status: 'cancelled',
+            error_message: 'flow cancelled',
+            finished_at: iso(0, 10),
+          }
+        }
+        return nodeRun
+      })
+      appendFlowOperationLog(run, 'cancel_flow', `取消流程: ${run.template_name}`, undefined, {
+        previous_status: previousStatus,
+        new_status: run.status,
+      })
+      return run
+    },
   },
   {
     method: 'get',

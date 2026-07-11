@@ -262,30 +262,6 @@
               </a-form-item>
             </div>
 
-            <a-form-item label="Agent-Server">
-              <a-select
-                v-model="selectedAgentServerId"
-                placeholder="请选择 Agent-Server"
-                allow-clear
-                allow-search
-                :loading="agentServerLoading"
-                :filter-option="filterAgentServerOption"
-              >
-                <a-option
-                  v-for="server in agentServers"
-                  :key="server.id"
-                  :value="server.id"
-                  :label="`${server.name} (${server.base_url})`"
-                >
-                  {{ server.name }} ({{ server.base_url }})
-                </a-option>
-              </a-select>
-              <div class="form-tip">
-                <icon-info-circle />
-                控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server
-              </div>
-            </a-form-item>
-
             <a-form-item label="执行账号">
               <a-select
                 v-model="selectedAccountId"
@@ -729,31 +705,6 @@
 
             <!-- 执行账号 -->
             <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item label="Agent-Server">
-                  <a-select
-                    v-model="selectedAgentServerId"
-                    placeholder="请选择 Agent-Server"
-                    allow-clear
-                    allow-search
-                    :loading="agentServerLoading"
-                    :filter-option="filterAgentServerOption"
-                  >
-                    <a-option
-                      v-for="server in agentServers"
-                      :key="server.id"
-                      :value="server.id"
-                      :label="`${server.name} (${server.base_url})`"
-                    >
-                      {{ server.name }} ({{ server.base_url }})
-                    </a-option>
-                  </a-select>
-                  <div class="form-tip">
-                    <icon-info-circle />
-                    控制面会优先使用当前选择，若节点不可用将自动切换到可用的 Agent-Server
-                  </div>
-                </a-form-item>
-              </a-col>
               <a-col :span="12">
                 <a-form-item label="执行账号">
                   <a-select
@@ -1343,32 +1294,6 @@ const fetchHostGroups = async () => {
   }
 }
 
-const agentServers = ref<any[]>([])
-const selectedAgentServerId = ref<number | null>(null)
-const agentServerLoading = ref(false)
-
-const filterAgentServerOption = (input: string, option: any) => {
-  const label = String(option?.label ?? option?.value ?? '')
-  return label.toLowerCase().includes(input.toLowerCase())
-}
-
-const fetchAgentServers = async () => {
-  try {
-    agentServerLoading.value = true
-    const resp = await request.get('/agents/agent_servers/', {
-      params: { page_size: 200, is_active: true }
-    })
-    const data = resp?.data || resp
-    const content = data?.content || data
-    agentServers.value = content?.results || []
-  } catch (error) {
-    console.error('获取Agent-Server列表失败:', error)
-    agentServers.value = []
-  } finally {
-    agentServerLoading.value = false
-  }
-}
-
 // 获取服务器账号列表
 const fetchServerAccounts = async () => {
   try {
@@ -1708,11 +1633,6 @@ const handleFileTransfer = async () => {
     Message.error(`必填变量未填写：${missingRequiredVarNames.value.join(', ')}`)
     return
   }
-  if (!selectedAgentServerId.value) {
-    Message.warning('请选择 Agent-Server')
-    return
-  }
-
   // 检查源服务器和目标服务器的agent状态
   const agentStatusWarnings = checkFileTransferAgentStatus(fileArtifacts.value, allTargetHosts.value)
   if (agentStatusWarnings.length > 0) {
@@ -1743,7 +1663,6 @@ const handleFileTransfer = async () => {
       rolling_batch_size: rollingBatchSize.value,
       rolling_batch_delay: rollingBatchDelay.value,
       account_id: selectedAccountId.value,
-      agent_server_id: selectedAgentServerId.value,
       global_variables: {
         ...globalVariables.value,
         execute_user: selectedAccount.value?.username || '',
@@ -1828,7 +1747,6 @@ const handleClear = () => {
   scriptContent.value = ''
   timeout.value = 300
   selectedAccountId.value = undefined
-  selectedAgentServerId.value = null
   positionalArgs.value = ['']
   scriptParameterInputMode.value = 'individual' // 重置参数输入模式
   scriptBulkParameters.value = '' // 清空批量参数
@@ -1875,11 +1793,6 @@ const handleExecute = () => {
 const handleConfirmExecute = async () => {
   executing.value = true
   try {
-    if (!selectedAgentServerId.value) {
-      Message.warning('请选择 Agent-Server')
-      executing.value = false
-      return
-    }
     // 获取位置参数
     let filteredPositionalArgs: string[] = []
     if (scriptParameterInputMode.value === 'individual') {
@@ -1898,7 +1811,6 @@ const handleConfirmExecute = async () => {
       rolling_batch_size: rollingBatchSize.value,
       rolling_batch_delay: rollingBatchDelay.value,
       positional_args: filteredPositionalArgs,
-      agent_server_id: selectedAgentServerId.value,
       global_variables: {
         execute_user: selectedAccount.value?.username || '',
         account_id: selectedAccountId.value,
@@ -2140,7 +2052,6 @@ onMounted(() => {
 
     fetchHosts()
     fetchHostGroups()
-    fetchAgentServers()
     fetchServerAccounts()
 
     if (!scriptContent.value) {

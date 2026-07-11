@@ -235,6 +235,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/flows/:id/detail',
+        name: 'FlowDetail',
+        component: () => import('@/views/flows/detail.vue'),
+        meta: {
+          title: '流水线详情',
+          hideInMenu: true,
+        },
+      },
+      {
         path: '/flows/runs/:id',
         name: 'FlowRunDetail',
         component: () => import('@/views/flows/run-detail.vue'),

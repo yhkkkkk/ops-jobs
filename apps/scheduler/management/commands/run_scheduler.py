@@ -9,6 +9,7 @@ from django.utils import timezone
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.jobstores.memory import MemoryJobStore
 from django_apscheduler.jobstores import DjangoJobStore, register_events
 
 from apps.scheduler.models import ScheduledJob
@@ -61,22 +62,40 @@ def _run_job(job_id: int):
         )
 
 
-def _load_jobs(scheduler: BlockingScheduler):
-    jobs = ScheduledJob.objects.filter(is_active=True)
-    for job in jobs:
+def _sync_jobs(scheduler: BlockingScheduler):
+    """将数据库中的启用状态和 Cron 配置同步到运行中的调度器。"""
+    active_job_ids = set()
+    for job in ScheduledJob.objects.filter(is_active=True):
+        scheduler_job_id = f"scheduled_job_{job.id}"
+        active_job_ids.add(scheduler_job_id)
         try:
             tz = pytz.timezone(job.timezone or "Asia/Shanghai")
         except Exception:
             tz = pytz.timezone("Asia/Shanghai")
         trigger = CronTrigger.from_crontab(job.cron_expression, timezone=tz)
-        scheduler.add_job(
-            _run_job,
-            trigger=trigger,
-            args=[job.id],
-            id=f"scheduled_job_{job.id}",
-            replace_existing=True,
-        )
-        logger.info("ScheduledJob loaded", extra={"job_id": job.id, "cron": job.cron_expression, "tz": str(tz)})
+        existing = scheduler.get_job(scheduler_job_id)
+        if existing is None:
+            scheduler.add_job(
+                _run_job,
+                trigger=trigger,
+                args=[job.id],
+                id=scheduler_job_id,
+                replace_existing=True,
+            )
+            logger.info("ScheduledJob loaded", extra={"job_id": job.id, "cron": job.cron_expression, "tz": str(tz)})
+        elif str(existing.trigger) != str(trigger):
+            scheduler.reschedule_job(scheduler_job_id, trigger=trigger)
+            logger.info("ScheduledJob rescheduled", extra={"job_id": job.id, "cron": job.cron_expression, "tz": str(tz)})
+
+    for scheduled_job in scheduler.get_jobs():
+        if scheduled_job.id.startswith("scheduled_job_") and scheduled_job.id not in active_job_ids:
+            scheduler.remove_job(scheduled_job.id)
+            logger.info("ScheduledJob removed", extra={"scheduler_job_id": scheduled_job.id})
+
+
+def _load_jobs(scheduler: BlockingScheduler):
+    """兼容管理命令内部旧名称。"""
+    _sync_jobs(scheduler)
 
 
 class Command(BaseCommand):
@@ -85,7 +104,18 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         scheduler = BlockingScheduler(timezone=pytz.timezone("Asia/Shanghai"))
         scheduler.add_jobstore(DjangoJobStore(), "default")
-        _load_jobs(scheduler)
+        scheduler.add_jobstore(MemoryJobStore(), "runtime")
+        _sync_jobs(scheduler)
+        scheduler.add_job(
+            _sync_jobs,
+            trigger=IntervalTrigger(seconds=int(getattr(settings, "SCHEDULER_SYNC_INTERVAL", 5))),
+            args=[scheduler],
+            id="sync_scheduled_jobs",
+            jobstore="runtime",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
         register_events(scheduler)
         logger.info("APS cheduler started (run_scheduler)")
         try:

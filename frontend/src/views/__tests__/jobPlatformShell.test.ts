@@ -101,4 +101,14 @@ describe('job platform list page shell', () => {
     expect(scheduledColumns).not.toContain("title: '模板名称'")
     expect(scheduledColumns).not.toContain('width: 96')
   })
+
+  it('keeps job template page header concise for dense operations pages', () => {
+    const jobTemplates = readFileSync(resolve(__dirname, '../job-templates/index.vue'), 'utf8')
+    const pageHeader = readFileSync(resolve(__dirname, '../../components/app/PageHeader.vue'), 'utf8')
+
+    expect(jobTemplates).toContain('<PageHeader\n      dense')
+    expect(jobTemplates).toContain('description="维护模板步骤、标签、执行方案引用和同步状态。"')
+    expect(jobTemplates).not.toContain('创建和管理可复用的作业模板')
+    expect(pageHeader).toContain('app-page-header--dense')
+  })
 })

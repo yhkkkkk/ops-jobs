@@ -97,6 +97,15 @@ const delay = (ms: number) => {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+export const mockHttpResponse = (status: number, data: any, statusText = status >= 400 ? 'Bad Request' : 'OK') => ({
+  __mockHttpResponse: true,
+  status,
+  statusText,
+  data,
+})
+
+const isMockHttpResponse = (value: any) => Boolean(value?.__mockHttpResponse)
+
 const findRoute = (
   routes: CompiledMockRoute[],
   method: string,
@@ -168,6 +177,19 @@ export const createMockAxiosAdapter = ({
       params: match.params,
       query,
     })
+
+    if (isMockHttpResponse(content)) {
+      return {
+        data: content.data,
+        status: content.status,
+        statusText: content.statusText,
+        headers: {
+          'x-mock-api': 'true',
+        },
+        config,
+        request: { mocked: true },
+      }
+    }
 
     return {
       data: {

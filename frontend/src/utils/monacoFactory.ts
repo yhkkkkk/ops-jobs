@@ -1,7 +1,5 @@
 // Monaco Editor 工厂函数 - 按需加载和优化
 
-import { setupMonacoWorkers } from '@/utils/monacoWorkers'
-
 let monacoInstance: any = null
 let isLoading = false
 let loadPromise: Promise<any> | null = null
@@ -93,10 +91,11 @@ export const loadMonaco = async (): Promise<any> => {
   isLoading = true
   loadPromise = new Promise(async (resolve, reject) => {
     try {
-      // 动态导入Monaco Editor
-      const monacoModule = await import('monaco-editor')
+      // 动态导入 Monaco ESM API，避免普通路由切换时解析完整编辑器入口
+      const monacoModule = await import('monaco-editor/esm/vs/editor/editor.api')
       monacoInstance = monacoModule.default || monacoModule
 
+      const { setupMonacoWorkers } = await import('@/utils/monacoWorkers')
       setupMonacoWorkers()
 
       isLoading = false
@@ -110,6 +109,8 @@ export const loadMonaco = async (): Promise<any> => {
 
   return loadPromise
 }
+
+export const shouldPreloadMonaco = (flag = import.meta.env.VITE_PRELOAD_MONACO) => flag === 'true'
 
 // 从CDN加载Monaco Editor
 export const loadMonacoFromCDN = (): Promise<any> => {
@@ -230,7 +231,7 @@ export const createEditor = async (
   return monaco.editor.create(container, defaultOptions)
 }
 
-// 预加载Monaco Editor（在应用启动时调用）
+// 预加载Monaco Editor（仅在显式开启时调用）
 export const preloadMonaco = () => {
   // 在空闲时间预加载Monaco Editor
   if ('requestIdleCallback' in window) {

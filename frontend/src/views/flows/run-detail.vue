@@ -1,5 +1,5 @@
 <template>
-  <div class="app-page pipeline-run-page">
+  <div class="app-page pipeline-run-page standard-run-detail">
     <header class="run-head app-card">
       <div>
         <p>流水线执行</p>
@@ -65,7 +65,7 @@
         </a-alert>
 
         <div class="run-layout">
-          <DetailPanel title="执行上下文">
+          <DetailPanel title="执行上下文" dense>
             <a-descriptions :column="2" bordered size="medium">
               <a-descriptions-item label="执行 ID">#{{ run.id }}</a-descriptions-item>
               <a-descriptions-item label="触发方式">{{ triggerText(run.trigger_type) }}</a-descriptions-item>
@@ -76,50 +76,24 @@
             </a-descriptions>
           </DetailPanel>
 
-          <DetailPanel title="运行输入 / 汇总输出">
+          <DetailPanel title="运行输入 / 汇总输出" dense>
             <a-tabs size="small">
               <a-tab-pane key="inputs" title="输入变量">
-                <pre class="json-block">{{ formatJson(run.inputs) }}</pre>
+                <FlowVariableReadOnlyPanel mode="value" :values="run.inputs || {}" empty-text="本次执行没有输入变量" />
               </a-tab-pane>
               <a-tab-pane key="outputs" title="输出结果">
-                <pre class="json-block">{{ formatJson(run.outputs) }}</pre>
+                <FlowRunDataView :value="run.outputs || {}" empty-text="本次执行暂无汇总输出" />
               </a-tab-pane>
             </a-tabs>
           </DetailPanel>
         </div>
 
-        <DetailPanel title="操作时间线" description="按时间展示流程实例、节点状态、人工确认、跳过和分支决策。">
-          <a-alert v-if="operationLogLoadError" class="timeline-alert" type="warning" show-icon>
-            {{ operationLogLoadError }}
-          </a-alert>
-          <div class="run-timeline">
-            <article
-              v-for="event in runTimeline"
-              :key="event.key"
-              :class="['timeline-event', `timeline-event--${event.status}`]"
-            >
-              <div class="timeline-event__marker" />
-              <div class="timeline-event__main">
-                <div class="timeline-event__head">
-                  <strong>{{ event.title }}</strong>
-                  <span>{{ formatTime(event.timestamp) }}</span>
-                </div>
-                <p>{{ event.description }}</p>
-                <div class="timeline-event__meta">
-                  <span>{{ eventKindText(event.kind) }}</span>
-                  <span v-if="event.nodeType">{{ nodeTypeText(event.nodeType) }}</span>
-                  <span v-if="event.nodeUuid">{{ event.nodeUuid }}</span>
-                </div>
-              </div>
-            </article>
-          </div>
-        </DetailPanel>
-
-        <DetailPanel title="执行拓扑" description="基于模板拓扑展示本次执行实际覆盖的节点和条件分支。">
-          <a-alert v-if="templateLoadError" class="topology-alert" type="warning" show-icon>
-            {{ templateLoadError }}
-          </a-alert>
-          <template v-else>
+        <DetailPanel title="执行拓扑" description="基于模板拓扑展示本次执行实际覆盖的节点和条件分支。" dense>
+          <div class="readonly-run-topology">
+            <a-alert v-if="templateLoadError" class="topology-alert" type="warning" show-icon>
+              {{ templateLoadError }}
+            </a-alert>
+            <template v-else>
             <div class="topology-summary">
               <div>
                 <span>模板节点</span>
@@ -149,7 +123,7 @@
                   <div class="topology-node__main">
                     <span>{{ nodeTypeText(node.nodeType) }}</span>
                     <strong>{{ node.name }}</strong>
-                    <em>{{ node.uuid }}</em>
+                    <em>{{ topologyNodeMeta(node) }}</em>
                     <a-link v-if="childFlowRunId(node.run)" class="sub-run-link" @click="openChildFlowRun(node.run!)">子流程 #{{ childFlowRunId(node.run) }}</a-link>
                   </div>
                   <StatusBadge
@@ -178,11 +152,12 @@
                 </article>
               </div>
             </div>
-          </template>
+            </template>
+          </div>
         </DetailPanel>
 
-        <DetailPanel title="节点运行路径" description="按节点运行顺序展示状态、耗时、输出和关联执行记录。">
-          <div class="run-path">
+        <DetailPanel title="节点运行路径" description="按节点运行顺序展示状态、耗时、输出和关联执行记录。" dense>
+          <div class="run-path run-path-table">
             <article v-for="(nodeRun, index) in run.node_runs" :key="nodeRun.id" :class="['run-node', `run-node--${nodeRun.status}`]">
               <div class="run-node__index">{{ index + 1 }}</div>
               <div class="run-node__main">
@@ -273,14 +248,18 @@
                   </div>
                   <a-empty v-else description="没有命中的条件，也没有默认分支" />
                 </div>
-                <div class="node-json-grid">
+                <div class="node-host-summary">
+                  <span>目标主机</span>
+                  <strong>{{ formatHostDisplay(nodeRun.inputs?.target_hosts || nodeRun.inputs?.hosts || nodeRun.outputs?.target_hosts || nodeRun.outputs?.hosts) }}</strong>
+                </div>
+                <div class="node-data-grid">
                   <div>
                     <span>输入</span>
-                    <pre>{{ formatJson(nodeRun.inputs) }}</pre>
+                    <FlowRunDataView :value="nodeRun.inputs || {}" empty-text="该节点暂无输入" />
                   </div>
                   <div>
                     <span>输出</span>
-                    <pre>{{ formatJson(nodeRun.outputs) }}</pre>
+                    <FlowRunDataView :value="nodeRun.outputs || {}" empty-text="该节点暂无输出" />
                   </div>
                 </div>
               </div>
@@ -288,7 +267,34 @@
           </div>
         </DetailPanel>
 
-        <DetailPanel title="节点运行表">
+        <DetailPanel title="操作时间线" description="按时间展示流程实例、节点状态、人工确认、跳过和分支决策。" dense>
+          <a-alert v-if="operationLogLoadError" class="timeline-alert" type="warning" show-icon>
+            {{ operationLogLoadError }}
+          </a-alert>
+          <div class="run-timeline">
+            <article
+              v-for="event in runTimeline"
+              :key="event.key"
+              :class="['timeline-event', `timeline-event--${event.status}`]"
+            >
+              <div class="timeline-event__marker" />
+              <div class="timeline-event__main">
+                <div class="timeline-event__head">
+                  <strong>{{ event.title }}</strong>
+                  <span>{{ formatTime(event.timestamp) }}</span>
+                </div>
+                <p>{{ event.description }}</p>
+                <div class="timeline-event__meta">
+                  <span>{{ eventKindText(event.kind) }}</span>
+                  <span v-if="event.nodeType">{{ nodeTypeText(event.nodeType) }}</span>
+                  <span v-if="event.nodeName">{{ event.nodeName }}</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </DetailPanel>
+
+        <DetailPanel title="节点运行表" dense>
           <a-table row-key="id" :data="run.node_runs" :pagination="false">
             <template #columns>
               <a-table-column title="节点" data-index="node_name" />
@@ -317,6 +323,18 @@
           </a-table>
         </DetailPanel>
       </template>
+      <template v-else>
+        <DetailPanel title="执行拓扑" description="基于模板拓扑展示本次执行实际覆盖的节点和条件分支。" dense>
+          <div class="readonly-run-topology">
+            <a-empty description="未找到流水线执行实例或暂无访问权限" />
+          </div>
+        </DetailPanel>
+        <DetailPanel title="节点运行路径" description="按节点运行顺序展示状态、耗时、输出和关联执行记录。" dense>
+          <div class="run-path-table">
+            <a-empty description="暂无节点运行路径" />
+          </div>
+        </DetailPanel>
+      </template>
     </a-spin>
   </div>
 </template>
@@ -328,6 +346,8 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { flowApi } from '@/api/ops'
 import type { FlowAuditLog, FlowNodeRun, FlowNodeType, FlowRun, FlowRunStatus, FlowTemplate } from '@/types'
 import { DetailPanel, StatusBadge } from '@/components/app'
+import FlowRunDataView from './components/FlowRunDataView.vue'
+import FlowVariableReadOnlyPanel from './components/FlowVariableReadOnlyPanel.vue'
 import {
   buildFlowRunTimeline,
   buildRunTopology,
@@ -339,6 +359,7 @@ import {
   flowRunStatusText,
   type FlowRunTimelineEventKind,
   type RunTopologyEdgeState,
+  type RunTopologyNode,
   type RunTopologyNodeStatus,
   summarizeConditionNodeRun,
 } from './flowUtils'
@@ -399,7 +420,16 @@ const openChildFlowRun = (nodeRun: Pick<FlowNodeRun, 'outputs'>) => {
 }
 const nodeNameByUuid = (uuid: string) => {
   const nodeRun = run.value?.node_runs.find(item => item.node_uuid === uuid)
-  return nodeRun ? `${nodeRun.node_name}（${uuid}）` : uuid
+  const topologyNode = runTopology.value.nodes.find(item => item.uuid === uuid)
+  return nodeRun?.node_name || topologyNode?.name || '未知节点'
+}
+const topologyNodeMeta = (node: RunTopologyNode) => {
+  const pieces = [topologyStatusText(node.status)]
+  const recordId = node.run?.execution_record_id
+  if (recordId) pieces.push(`执行记录 #${recordId}`)
+  const childId = childFlowRunId(node.run)
+  if (childId) pieces.push(`子流程 #${childId}`)
+  return pieces.join(' / ')
 }
 const triggerText = (trigger: string) => {
   if (trigger === 'manual') return '手动触发'
@@ -407,9 +437,32 @@ const triggerText = (trigger: string) => {
   if (trigger === 'api') return 'API 触发'
   return trigger || '-'
 }
+const formatHostDisplay = (value: any) => {
+  if (!value || (Array.isArray(value) && value.length === 0)) return '未绑定主机变量'
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return '未绑定主机变量'
+    if (/^\$\{[^}]+\}$/.test(trimmed)) return `主机变量 ${trimmed}`
+    return trimmed
+  }
+  if (Array.isArray(value)) {
+    const objectHosts = value.filter(item => item && typeof item === 'object')
+    if (objectHosts.length) {
+      return objectHosts
+        .map(item => [item.name || item.hostname, item.internal_ip || item.public_ip || item.ip_address, item.status_display || item.status].filter(Boolean).join(' / '))
+        .join('；')
+    }
+    return `已选择 ${value.length} 台主机`
+  }
+  if (typeof value === 'object') {
+    return [value.name || value.hostname, value.internal_ip || value.public_ip || value.ip_address, value.status_display || value.status]
+      .filter(Boolean)
+      .join(' / ') || '动态主机配置'
+  }
+  return String(value)
+}
 
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '-'
-const formatJson = (value: Record<string, any>) => JSON.stringify(value || {}, null, 2)
 const durationText = (start?: string | null, end?: string | null) => {
   if (!start) return '-'
   const startTime = new Date(start).getTime()
@@ -545,7 +598,7 @@ onMounted(loadRun)
 </script>
 
 <style scoped>
-.pipeline-run-page { display: grid; gap: 12px; padding: 0; }
+.pipeline-run-page { display: grid; gap: 10px; padding: 0; }
 .run-head {
   display: flex;
   justify-content: space-between;
@@ -557,7 +610,7 @@ onMounted(loadRun)
 .run-head h1 { margin: 0; color: var(--app-fg); font-size: 22px; line-height: 1.25; }
 .run-head span { display: block; margin-top: 5px; color: var(--app-muted); font-size: 13px; line-height: 1.45; }
 .run-spin { display: block; }
-.run-focus-alert { margin-top: 12px; }
+.run-focus-alert { margin-top: 8px; }
 .timeline-alert { margin-bottom: 10px; }
 .run-status {
   display: grid;
@@ -573,8 +626,7 @@ onMounted(loadRun)
 }
 .run-status span { display: block; color: var(--app-muted); font-size: 12px; }
 .run-status strong { display: block; margin-top: 4px; overflow: hidden; color: var(--app-fg); font-family: var(--app-mono); font-size: 18px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
-.run-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(340px, .9fr); gap: 12px; margin: 12px 0; }
-.json-block { min-height: 148px; max-height: 280px; margin: 0; overflow: auto; padding: 12px; color: var(--app-fg); background: var(--app-surface-soft); border: 1px solid var(--app-border); border-radius: var(--app-radius-sm); font-family: var(--app-mono); font-size: 12px; line-height: 1.55; }
+.run-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(340px, .9fr); gap: 10px; margin: 8px 0; }
 .run-timeline {
   display: grid;
   gap: 8px;
@@ -660,11 +712,11 @@ onMounted(loadRun)
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .topology-summary div {
   min-width: 0;
-  padding: 10px;
+  padding: 8px 10px;
   background: var(--app-surface-soft);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -685,7 +737,8 @@ onMounted(loadRun)
 .topology-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
-  gap: 12px;
+  align-items: start;
+  gap: 10px;
 }
 .topology-nodes,
 .topology-edges {
@@ -699,8 +752,8 @@ onMounted(loadRun)
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 68px;
-  padding: 10px 12px;
+  min-height: 58px;
+  padding: 8px 10px;
   background: #fff;
   border: 1px solid var(--app-border);
   border-left: 3px solid var(--app-border);
@@ -761,8 +814,8 @@ onMounted(loadRun)
   grid-template-columns: 52px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  min-height: 58px;
-  padding: 9px 10px;
+  min-height: 50px;
+  padding: 8px 10px;
   background: #fff;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -794,8 +847,9 @@ onMounted(loadRun)
 }
 .topology-edge strong { color: var(--app-fg); font-size: 13px; line-height: 1.35; }
 .topology-edge em { color: var(--app-muted); font-size: 12px; font-style: normal; }
-.run-path { display: grid; gap: 10px; }
-.run-node { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; }
+.run-path { display: grid; gap: 8px; }
+.run-path-table { min-width: 0; }
+.run-node { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
 .run-node__index {
   display: grid;
   place-items: center;
@@ -813,7 +867,7 @@ onMounted(loadRun)
 .run-node--success .run-node__index { color: var(--app-success); background: var(--app-success-soft); border-color: color-mix(in srgb, var(--app-success) 24%, transparent); }
 .run-node--failed .run-node__index { color: var(--app-danger); background: var(--app-danger-soft); border-color: color-mix(in srgb, var(--app-danger) 24%, transparent); }
 .run-node--running .run-node__index, .run-node--paused .run-node__index { color: var(--app-warn); background: var(--app-warn-soft); border-color: color-mix(in srgb, var(--app-warn) 24%, transparent); }
-.run-node__main { display: grid; gap: 10px; padding: 12px; background: #fff; border: 1px solid var(--app-border); border-radius: var(--app-radius-sm); }
+.run-node__main { display: grid; gap: 8px; padding: 10px; background: #fff; border: 1px solid var(--app-border); border-radius: var(--app-radius-sm); }
 .run-node__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .run-node__head span { color: var(--app-accent); font-size: 12px; font-weight: 700; }
 .run-node__head h3 { margin: 4px 0 0; color: var(--app-fg); font-size: 15px; line-height: 1.3; }
@@ -877,13 +931,35 @@ onMounted(loadRun)
 }
 .condition-branch-row strong { color: var(--app-fg); font-size: 12px; }
 .condition-branch-row em { color: var(--app-muted); font-size: 12px; font-style: normal; }
-.node-json-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.node-json-grid span { display: block; margin-bottom: 5px; color: var(--app-muted); font-size: 12px; }
-.node-json-grid pre { max-height: 142px; margin: 0; overflow: auto; padding: 10px; color: var(--app-fg); background: var(--app-surface-soft); border: 1px solid var(--app-border); border-radius: var(--app-radius-sm); font-family: var(--app-mono); font-size: 12px; line-height: 1.5; }
+.node-host-summary {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+}
+.node-host-summary span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.node-host-summary strong {
+  overflow: hidden;
+  color: var(--app-fg);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.node-data-grid > div { min-width: 0; }
+.node-data-grid > div > span { display: block; margin-bottom: 5px; color: var(--app-muted); font-size: 12px; }
 :deep(.arco-table-th) { background: #fff; }
 @media (max-width: 1080px) {
   .run-status { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .run-layout, .topology-grid, .node-json-grid { grid-template-columns: 1fr; }
+  .run-layout, .topology-grid, .node-data-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .run-head { flex-direction: column; align-items: stretch; }
