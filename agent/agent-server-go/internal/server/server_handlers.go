@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/bytedance/sonic"
 
@@ -23,7 +24,16 @@ func (s *Server) handleRegister(c *gin.Context) {
 		return
 	}
 
-	_, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID, req.AgentUID)
+	token := req.Token
+	if token == "" {
+		const bearerPrefix = "Bearer "
+		authorization := c.GetHeader("Authorization")
+		if strings.HasPrefix(authorization, bearerPrefix) {
+			token = strings.TrimSpace(strings.TrimPrefix(authorization, bearerPrefix))
+		}
+	}
+
+	_, agentID, err := s.agentManager.Register(req.Name, token, req.Labels, req.System, req.HostID, req.AgentUID)
 	if err != nil {
 		if errors.Is(err, serrors.ErrMaxConnectionsReached) {
 			writeError(c, http.StatusServiceUnavailable, serrors.ErrCodeInternal, serrors.ErrMaxConnectionsReached.Error())
