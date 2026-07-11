@@ -493,11 +493,10 @@ EXECUTION_LOGS_DIR=/path/to/logs/executions
 # 前端配置
 VITE_API_BASE_URL=http://localhost:8000/api
 
-# 云同步配置
-CLOUD_ALIYUN_ACCESS_KEY=your-access-key
-CLOUD_ALIYUN_SECRET_KEY=your-secret-key
-CLOUD_TENCENT_SECRET_ID=your-secret-id
-CLOUD_TENCENT_SECRET_KEY=your-secret-key
+# 云同步凭证不从 .env 读取；请在系统配置中设置下列键：
+# cloud.aliyun.access_key / cloud.aliyun.secret_key / cloud.aliyun.region
+# cloud.tencent.secret_id / cloud.tencent.secret_key / cloud.tencent.region
+# cloud.aws.access_key / cloud.aws.secret_key / cloud.aws.region
 
 # Agent 配置 (Agent-Server 模式)
 AGENT_MODE=agent-server
