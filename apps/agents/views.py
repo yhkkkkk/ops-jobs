@@ -902,7 +902,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         # 计算 agent_server_url 及备用地址：安装记录 > 请求覆盖 > Agent.endpoint
         override_url = request.data.get("agent_server_url", "")
         agent_server_url = install_record.agent_server_url or self._get_agent_server_base(agent, override_url)
-        agent_server_backup_url = ""
+        agent_server_backup_url = install_record.agent_server_backup_url or ""
         if install_type == 'agent' and not agent_server_url:
             return SycResponse.error(message="未配置 agent_server_url，无法重新生成安装脚本", code=400)
         if install_type == 'agent' and agent_server_url:
@@ -920,6 +920,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 install_type=install_type,
                 install_mode=install_record.install_mode,
                 agent_server_url=agent_server_url,
+                agent_server_backup_url=agent_server_backup_url,
                 ws_backoff_initial_ms=install_record.ws_backoff_initial_ms,
                 ws_backoff_max_ms=install_record.ws_backoff_max_ms,
                 ws_max_retries=install_record.ws_max_retries,
@@ -974,7 +975,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         install_type = data.get('install_type', 'agent')
         install_mode = data.get('install_mode', 'agent-server')
         agent_server_url = data.get('agent_server_url', '')
-        agent_server_backup_url = ''
+        agent_server_backup_url = data.get('agent_server_backup_url', '')
         ws_backoff_initial_ms = data.get('ws_backoff_initial_ms', 1000)
         ws_backoff_max_ms = data.get('ws_backoff_max_ms', 30000)
         ws_max_retries = data.get('ws_max_retries', 6)
@@ -1094,7 +1095,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         'install_type': install_type,
                         'install_mode': install_mode,
                         'agent_server_url': agent_server_url if install_type == 'agent' else '',
-                        'agent_server_backup_url': '',
+                        'agent_server_backup_url': agent_server_backup_url if install_type == 'agent' else '',
                         'ws_backoff_initial_ms': ws_backoff_initial_ms,
                         'ws_backoff_max_ms': ws_backoff_max_ms,
                         'ws_max_retries': ws_max_retries,
@@ -1113,7 +1114,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     install_record.install_type = install_type
                     install_record.install_mode = install_mode
                     install_record.agent_server_url = agent_server_url if install_type == 'agent' else ''
-                    install_record.agent_server_backup_url = ''
+                    install_record.agent_server_backup_url = agent_server_backup_url if install_type == 'agent' else ''
                     install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
                     install_record.ws_backoff_max_ms = ws_backoff_max_ms
                     install_record.ws_max_retries = ws_max_retries
@@ -1135,6 +1136,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                         install_type=install_type,
                         install_mode=install_mode,
                         agent_server_url=agent_server_url,
+                        agent_server_backup_url=agent_server_backup_url,
                         ws_backoff_initial_ms=ws_backoff_initial_ms,
                         ws_backoff_max_ms=ws_backoff_max_ms,
                         ws_max_retries=ws_max_retries,
@@ -1227,7 +1229,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         install_type = data.get('install_type', 'agent')
         install_mode = data.get('install_mode', install_type or 'agent-server')
         agent_server_url = data.get('agent_server_url', '')
-        agent_server_backup_url = ''
+        agent_server_backup_url = data.get('agent_server_backup_url', '')
         agent_server_listen_addr = data.get('agent_server_listen_addr', '0.0.0.0:8080')
         max_connections = data.get('max_connections', 1000)
         heartbeat_timeout = data.get('heartbeat_timeout', 60)
@@ -1328,7 +1330,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                     'install_type': install_type,
                     'install_mode': install_mode,
                     'agent_server_url': agent_server_url if install_type == 'agent' else '',
-                    'agent_server_backup_url': '',
+                    'agent_server_backup_url': agent_server_backup_url if install_type == 'agent' else '',
                     'ws_backoff_initial_ms': ws_backoff_initial_ms,
                     'ws_backoff_max_ms': ws_backoff_max_ms,
                     'ws_max_retries': ws_max_retries,
@@ -1347,7 +1349,7 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
                 install_record.install_type = install_type
                 install_record.install_mode = install_mode
                 install_record.agent_server_url = agent_server_url if install_type == 'agent' else ''
-                install_record.agent_server_backup_url = ''
+                install_record.agent_server_backup_url = agent_server_backup_url if install_type == 'agent' else ''
                 install_record.ws_backoff_initial_ms = ws_backoff_initial_ms
                 install_record.ws_backoff_max_ms = ws_backoff_max_ms
                 install_record.ws_max_retries = ws_max_retries

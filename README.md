@@ -430,6 +430,21 @@ Authorization: Bearer <access_token>
 # 或 Session 认证 (Cookie)
 ```
 
+### 执行链路 E2E
+
+端到端执行测试不会读取开发环境的 `REDIS_HOST`。先启动 Compose Redis，再显式设置 E2E 配置：
+
+```powershell
+docker compose up -d redis
+$env:E2E_CONTROL_PLANE = "1"
+$env:E2E_REDIS_HOST = "127.0.0.1"
+$env:E2E_REDIS_PORT = "16379"
+$env:E2E_REDIS_PASSWORD = "<REDIS_PASSWORD>"
+$env:E2E_REDIS_DB = "8"
+.\.venv\Scripts\python.exe -m pytest apps/agents/tests/test_e2e_control_plane.py apps/executor/tests/test_e2e_execution_records.py -q
+```
+
+E2E 开启后 Redis 不可达会直接失败，避免关键执行路径被跳过后误判为通过。
 ### 响应格式
 
 ```json

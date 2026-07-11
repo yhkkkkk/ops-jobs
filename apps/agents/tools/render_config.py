@@ -80,6 +80,7 @@ def parse_args():
     p.add_argument("--agent-uid", help="stable agent UUID", default="")
     p.add_argument("--agent-name", help="agent name", default=None)
     p.add_argument("--agent-server-url", help="agent server url", default="")
+    p.add_argument("--agent-server-backup-url", help="agent server backup url", default="")
     p.add_argument("--control-plane-url", help="control plane url", default="")
     p.add_argument("--ws-backoff-initial", help="ws backoff initial", default=None)
     p.add_argument("--ws-backoff-max", help="ws backoff max", default=None)
@@ -107,6 +108,7 @@ def render_config_yaml(
     agent_uid: str = "",
     agent_name: str = None,
     agent_server_url: str = "",
+    agent_server_backup_url: str = "",
     control_plane_url: str = "",
     ws_backoff_initial: int = None,
     ws_backoff_max: int = None,
@@ -154,6 +156,7 @@ def render_config_yaml(
         overrides = {
             "connection": {
                 "agent_server_url": agent_server_url,
+                "agent_server_backup_url": agent_server_backup_url,
             },
             "identification": {
                 "agent_token": agent_token,
@@ -324,6 +327,7 @@ def main():
         agent_uid=args.agent_uid,
         agent_name=args.agent_name,
         agent_server_url=args.agent_server_url,
+        agent_server_backup_url=args.agent_server_backup_url,
         control_plane_url=args.control_plane_url,
         ws_backoff_initial=int(args.ws_backoff_initial) if args.ws_backoff_initial else None,
         ws_backoff_max=int(args.ws_backoff_max) if args.ws_backoff_max else None,

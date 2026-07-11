@@ -1,3 +1,5 @@
+import base64
+import re
 import uuid
 
 import pytest
@@ -5,6 +7,7 @@ from django.contrib.auth.models import User
 
 from apps.agents.management.commands.consume_streams import Command
 from apps.agents.models import Agent, AgentTaskStats
+from apps.agents.services import AgentService
 from apps.agents.tools.render_config import render_config_yaml
 from apps.hosts.models import Host
 
@@ -50,6 +53,105 @@ def test_agent_config_renders_stable_agent_uid():
     assert f"agent_uid: {agent_uid}" in rendered
     assert "host_id: 42" in rendered
 
+
+def test_agent_service_exposes_batch_install_entrypoint():
+    assert callable(AgentService.batch_install_agents)
+
+
+def test_batch_install_creates_agent_for_host_without_existing_agent(monkeypatch):
+    user = User.objects.create_user(f"installer-{uuid.uuid4().hex[:8]}", password="pass")
+    host = Host.objects.create(
+        name=f"fresh-host-{uuid.uuid4().hex[:8]}",
+        os_type="linux",
+        device_type="physical",
+        created_by=user,
+    )
+    generated = {}
+
+    def fake_generate_install_script(cls, **kwargs):
+        generated.update(kwargs)
+        return {"linux": "#!/bin/sh\nexit 0"}
+
+    def fake_execute_install(cls, **kwargs):
+        return {
+            "success": True,
+            "used_ip": "127.0.0.1",
+            "used_ip_type": "internal",
+        }
+
+    monkeypatch.setattr(
+        AgentService,
+        "generate_install_script",
+        classmethod(fake_generate_install_script),
+    )
+    monkeypatch.setattr(
+        AgentService,
+        "_execute_install_with_ip_fallback",
+        classmethod(fake_execute_install),
+    )
+    monkeypatch.setattr("apps.agents.services.realtime_log_service.push_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr("apps.agents.services.realtime_log_service.push_status", lambda *args, **kwargs: None)
+
+    result = AgentService.batch_install_agents(
+        host_ids=[host.id],
+        user=user,
+        agent_server_url="ws://agent-server.internal:8080",
+        agent_server_backup_url="ws://agent-server-backup.internal:8080",
+        download_url="https://example.invalid/ops-job-agent.tar.gz",
+    )
+
+    agent = Agent.objects.get(host=host)
+    assert result["success_count"] == 1, result["results"][0]["message"]
+    assert generated["agent_uid"] == str(agent.agent_uid)
+    assert generated["agent_server_backup_url"] == "ws://agent-server-backup.internal:8080"
+
+def test_windows_agent_install_script_embeds_config_and_registers_service():
+    user = User.objects.create_user(f"windows-installer-{uuid.uuid4().hex[:8]}", password="pass")
+    host = Host.objects.create(
+        name=f"windows-host-{uuid.uuid4().hex[:8]}",
+        os_type="windows",
+        device_type="physical",
+        created_by=user,
+    )
+    agent_uid = uuid.uuid4()
+
+    scripts = AgentService.generate_install_script(
+        host=host,
+        agent_token="agent-token",
+        agent_uid=str(agent_uid),
+        install_type="agent",
+        agent_server_url="wss://agent-server.internal/ws",
+        agent_server_backup_url="wss://agent-server-backup.internal/ws",
+        download_url="https://example.invalid/ops-job-agent.zip",
+    )
+
+    windows_script = scripts["windows"]
+    config_b64 = re.search(r'\$ConfigB64 = "([^"]+)"', windows_script)
+    assert config_b64
+    rendered_config = base64.b64decode(config_b64.group(1)).decode("utf-8")
+    assert str(agent_uid) in rendered_config
+    assert 'agent_server_backup_url: "wss://agent-server-backup.internal/ws"' in rendered_config
+    assert "New-Service" in windows_script
+    assert "ops-job-agent.exe" in windows_script
+
+def test_windows_agent_uninstall_script_stops_service_and_removes_installation():
+    windows_script = AgentService.generate_uninstall_script("agent")["windows"]
+
+    assert "Stop-Service" in windows_script
+    assert "Remove-Item" in windows_script
+    assert "ops-job-agent" in windows_script
+
+def test_agent_config_renders_agent_server_backup_url():
+    rendered = render_config_yaml(
+        install_type="agent",
+        agent_token="token",
+        agent_uid=str(uuid.uuid4()),
+        agent_server_url="ws://primary:8080",
+        agent_server_backup_url="ws://backup:8080",
+    )
+
+    assert 'agent_server_url: "ws://primary:8080"' in rendered
+    assert 'agent_server_backup_url: "ws://backup:8080"' in rendered
 
 def test_status_stream_requires_agent_uid_and_updates_matching_agent():
     agent = _create_agent(status="pending")

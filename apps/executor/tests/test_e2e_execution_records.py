@@ -4,7 +4,7 @@ E2E: 验证快速执行和执行方案的端到端链路，会真实启动本地
 
 依赖：
 - 环境变量 E2E_CONTROL_PLANE=1（与 apps/agents/tests/test_e2e_control_plane.py 保持一致）
-- Redis / 数据库 可用
+- Redis 必须通过 E2E_REDIS_HOST/E2E_REDIS_PORT 显式配置且可用
 - 运行时会编译并启动本地 agent-server / agent 二进制（由 control_plane_env fixture 完成）
 """
 

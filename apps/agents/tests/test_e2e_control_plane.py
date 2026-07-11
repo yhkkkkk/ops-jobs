@@ -16,8 +16,6 @@ from django.contrib.auth.models import User
 
 from apps.agents.management.commands.consume_streams import Command
 
-os.environ.setdefault("E2E_CONTROL_PLANE", "1")
-
 from apps.agents.models import Agent, AgentTaskStats, AgentServer
 from apps.agents.services import AgentService
 from apps.hosts.models import Host
@@ -30,6 +28,16 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def _e2e_redis_settings() -> tuple[str, str, str, int]:
+    """Read Redis only from E2E-scoped configuration, never development defaults."""
+    return (
+        os.getenv("E2E_REDIS_HOST", "127.0.0.1"),
+        os.getenv("E2E_REDIS_PORT", "16379"),
+        os.getenv("E2E_REDIS_PASSWORD", ""),
+        int(os.getenv("E2E_REDIS_DB", "8")),
+    )
+
+
 @pytest.fixture(scope="function")
 def control_plane_env(django_db_blocker):
     if os.getenv("E2E_CONTROL_PLANE") != "1":
@@ -38,18 +46,15 @@ def control_plane_env(django_db_blocker):
     work_dir = ROOT_DIR / "tmp" / f"e2e-{uuid.uuid4().hex[:8]}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    redis_host = os.getenv("REDIS_HOST", "127.0.0.1")
-    redis_port = os.getenv("REDIS_PORT", "6379")
-    redis_password = os.getenv("REDIS_PASSWORD", "")
+    redis_host, redis_port, redis_password, redis_db = _e2e_redis_settings()
     redis_addr = f"{redis_host}:{redis_port}"
-    redis_db = int(os.getenv("E2E_REDIS_DB", os.getenv("REDIS_DB_REALTIME", "8")))
 
     shared_secret = os.getenv("E2E_AGENT_SERVER_SECRET", "e2e-secret")
 
     try:
         _ensure_redis_available(redis_addr)
     except Exception as exc:
-        pytest.skip(f"Redis not reachable at {redis_addr}: {exc}")
+        pytest.fail(f"E2E Redis is required at {redis_addr}: {exc}")
 
     with django_db_blocker.unblock():
         username = f"e2e-{uuid.uuid4().hex[:8]}"
