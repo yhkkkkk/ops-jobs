@@ -92,13 +92,11 @@ func (s *Server) extractTokenFromProtocol(protocol string) string {
 	if protocol == "" {
 		return ""
 	}
-	// 格式: "agent-token,<token>"
 	prefix := "agent-token,"
-	if len(protocol) > len(prefix) && protocol[:len(prefix)] == prefix {
-		return protocol[len(prefix):]
+	if len(protocol) <= len(prefix) || protocol[:len(prefix)] != prefix {
+		return ""
 	}
-	// 兼容旧格式：直接是 token
-	return protocol
+	return protocol[len(prefix):]
 }
 
 // requireSignature 校验 HMAC 时间窗签名：X-Timestamp + X-Signature

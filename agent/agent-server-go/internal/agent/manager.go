@@ -50,22 +50,21 @@ func (m *Manager) Register(name, token string, labels map[string]string, system 
 	}
 	agentID := parsedUID.String()
 
-	if token != "" {
-		if conn, exists := m.agentsByToken[token]; exists {
-			if conn.ID != agentID {
-				return nil, "", serrors.ErrInvalidAgentUID
-			}
-			conn.mu.Lock()
-			conn.Name = name
-			conn.Labels = labels
-			conn.System = system
-			conn.HostID = hostID
-			conn.LastHeartbeat = time.Now()
-			conn.mu.Unlock()
-			return conn, conn.ID, nil
+	if token == "" {
+		return nil, "", serrors.ErrInvalidToken
+	}
+	if conn, exists := m.agentsByToken[token]; exists {
+		if conn.ID != agentID {
+			return nil, "", serrors.ErrInvalidAgentUID
 		}
-	} else {
-		token = uuid.NewString()
+		conn.mu.Lock()
+		conn.Name = name
+		conn.Labels = labels
+		conn.System = system
+		conn.HostID = hostID
+		conn.LastHeartbeat = time.Now()
+		conn.mu.Unlock()
+		return conn, conn.ID, nil
 	}
 	if conn, exists := m.agents[agentID]; exists {
 		if conn.Token != token {

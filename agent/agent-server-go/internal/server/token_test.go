@@ -9,8 +9,7 @@ func TestExtractTokenFromProtocol(t *testing.T) {
 		t.Fatalf("expected abc123, got %q", token)
 	}
 
-	token2 := s.extractTokenFromProtocol("legacytoken")
-	if token2 != "legacytoken" {
-		t.Fatalf("expected fallback legacy token, got %q", token2)
+	if token2 := s.extractTokenFromProtocol("legacytoken"); token2 != "" {
+		t.Fatalf("bare legacy token must be rejected, got %q", token2)
 	}
 }

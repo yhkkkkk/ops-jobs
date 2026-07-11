@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/bytedance/sonic"
 
@@ -22,19 +21,6 @@ func (s *Server) handleRegister(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, serrors.ErrCodeInvalidParam, err.Error())
 		return
-	}
-
-	// 兼容：优先使用请求体 token；若为空则读取 Authorization 头（Bearer）
-	if strings.TrimSpace(req.Token) == "" {
-		if authHeader := c.GetHeader(constants.HeaderAuthorization); authHeader != "" {
-			const bearerPrefix = "bearer "
-			lower := strings.ToLower(authHeader)
-			if strings.HasPrefix(lower, bearerPrefix) {
-				req.Token = strings.TrimSpace(authHeader[len(bearerPrefix):])
-			} else {
-				req.Token = strings.TrimSpace(authHeader)
-			}
-		}
 	}
 
 	_, agentID, err := s.agentManager.Register(req.Name, req.Token, req.Labels, req.System, req.HostID, req.AgentUID)

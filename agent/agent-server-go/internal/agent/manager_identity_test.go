@@ -15,6 +15,9 @@ func TestRegisterRequiresStableAgentUID(t *testing.T) {
 	if _, _, err := manager.Register("agent", "token", nil, nil, 1, ""); err == nil {
 		t.Fatal("registration without agent_uid must fail")
 	}
+	if _, _, err := manager.Register("agent", "", nil, nil, 1, uuid.NewString()); err == nil {
+		t.Fatal("registration without token must fail")
+	}
 }
 
 func TestRegisterUsesStableAgentUIDAcrossReconnects(t *testing.T) {
