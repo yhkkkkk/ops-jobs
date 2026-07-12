@@ -6,7 +6,8 @@ import pytest
 from django.contrib.auth.models import User
 
 from apps.agents.management.commands.consume_streams import Command
-from apps.agents.models import Agent, AgentTaskStats
+from apps.agents.models import Agent, AgentServer, AgentTaskStats
+from apps.agents.serializers import AgentServerSerializer, GenerateInstallScriptSerializer
 from apps.agents.services import AgentService
 from apps.agents.tools.render_config import render_config_yaml
 from apps.hosts.models import Host
@@ -187,3 +188,73 @@ def test_task_stats_stream_requires_agent_uid_and_updates_matching_agent():
     ) is True
     stats = AgentTaskStats.objects.get(agent=agent)
     assert stats.total_tasks == 8
+
+
+def test_agent_server_install_rejects_missing_hmac_secret(settings):
+    settings.CONTROL_PLANE_URL = "https://control-plane.example.com"
+    agent = _create_agent()
+
+    with pytest.raises(ValueError, match="auth_shared_secret"):
+        AgentService.generate_install_script(
+            host=agent.host,
+            agent_token="agent-token",
+            agent_uid=str(agent.agent_uid),
+            install_type="agent-server",
+            download_url="https://example.invalid/ops-job-agent-server.tar.gz",
+        )
+
+
+def test_agent_server_install_rejects_disabled_hmac_signature(settings):
+    settings.CONTROL_PLANE_URL = "https://control-plane.example.com"
+    agent = _create_agent()
+
+    with pytest.raises(ValueError, match="auth_require_signature"):
+        AgentService.generate_install_script(
+            host=agent.host,
+            agent_token="agent-token",
+            agent_uid=str(agent.agent_uid),
+            install_type="agent-server",
+            download_url="https://example.invalid/ops-job-agent-server.tar.gz",
+            auth_shared_secret="shared-secret",
+            auth_require_signature=False,
+        )
+
+
+def test_agent_server_api_rejects_disabled_signature():
+    serializer = AgentServerSerializer(data={
+        "name": "agent-server",
+        "base_url": "https://agent-server.example.com",
+        "shared_secret": "shared-secret",
+        "require_signature": False,
+    })
+
+    assert not serializer.is_valid()
+    assert "require_signature" in serializer.errors
+
+def test_agent_server_install_serializer_requires_hmac_secret_by_default(settings):
+    settings.CONTROL_PLANE_URL = "https://control-plane.example.com"
+    serializer = GenerateInstallScriptSerializer(data={
+        "host_ids": [1],
+        "install_type": "agent-server",
+        "agent_server_base_url": "https://agent-server.example.com",
+    })
+
+    assert not serializer.is_valid()
+    assert "auth_shared_secret" in serializer.errors
+
+
+def test_agent_server_api_rejects_clearing_existing_shared_secret():
+    server = AgentServer.objects.create(
+        name="agent-server",
+        base_url="https://agent-server.example.com",
+        shared_secret="shared-secret",
+        require_signature=True,
+    )
+    serializer = AgentServerSerializer(
+        server,
+        data={"shared_secret": ""},
+        partial=True,
+    )
+
+    assert not serializer.is_valid()
+    assert "shared_secret" in serializer.errors

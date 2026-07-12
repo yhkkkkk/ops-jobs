@@ -185,6 +185,11 @@ def render_config_yaml(
         if host_id:
             overrides["identification"]["host_id"] = int(host_id)
     else:
+        if not auth_shared_secret:
+            raise ValueError("auth_shared_secret is required for agent-server configuration")
+        if auth_require_signature is False:
+            raise ValueError("auth_require_signature must be enabled for agent-server configuration")
+        auth_require_signature = True
         host = "0.0.0.0"
         port = 8080
         if agent_server_listen_addr and ":" in agent_server_listen_addr:

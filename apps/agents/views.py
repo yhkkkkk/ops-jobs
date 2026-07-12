@@ -248,6 +248,11 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
         return server, ""
 
     def _upsert_agent_server_from_base_url(self, base_url: str, auth_shared_secret: str = '', auth_require_signature: bool | None = None):
+        if not auth_shared_secret:
+            raise ValueError('Agent-Server requires an HMAC shared secret')
+        if auth_require_signature is False:
+            raise ValueError('Agent-Server requires HMAC signature validation')
+
         normalized = normalize_agent_server_base_url(base_url)
         if not normalized:
             return None
@@ -260,16 +265,16 @@ class AgentViewSet(BatchOperationMixin, viewsets.ModelViewSet):
             return AgentServer.objects.create(
                 name=display_name,
                 base_url=normalized,
-                shared_secret=auth_shared_secret or '',
-                require_signature=bool(auth_require_signature)
+                shared_secret=auth_shared_secret,
+                require_signature=True,
             )
 
         update_fields = []
-        if auth_shared_secret:
+        if server.shared_secret != auth_shared_secret:
             server.shared_secret = auth_shared_secret
             update_fields.append('shared_secret')
-        if auth_require_signature is not None and server.require_signature != bool(auth_require_signature):
-            server.require_signature = bool(auth_require_signature)
+        if not server.require_signature:
+            server.require_signature = True
             update_fields.append('require_signature')
         if not server.name:
             server.name = display_name

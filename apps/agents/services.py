@@ -244,6 +244,11 @@ class AgentService:
             ws_max_retries = max(1, min(ws_max_retries or 6, 20))
         elif install_type == 'agent-server':
             # Agent-Server 安装配置
+            if not auth_shared_secret:
+                raise ValueError("auth_shared_secret is required for agent-server installation")
+            if auth_require_signature is False:
+                raise ValueError("auth_require_signature must be enabled for agent-server installation")
+            auth_require_signature = True
             max_connections = max(100, min(max_connections or 1000, 10000))
             heartbeat_timeout = max(30, min(heartbeat_timeout or 60, 300))
         else:

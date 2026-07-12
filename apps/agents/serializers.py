@@ -550,19 +550,20 @@ class AgentServerSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'base_url': ['无效的 Agent-Server 地址']})
             attrs['base_url'] = normalized
 
+        if 'shared_secret' in attrs and not attrs.get('shared_secret'):
+            raise serializers.ValidationError({'shared_secret': ['Agent-Server 必须提供 shared_secret']})
         if self.instance is None and not attrs.get('shared_secret'):
             raise serializers.ValidationError({'shared_secret': ['shared_secret 不能为空']})
 
-        require_signature = attrs.get(
-            'require_signature',
-            getattr(self.instance, 'require_signature', False) if self.instance else False
-        )
-        if require_signature:
-            has_secret = bool(attrs.get('shared_secret'))
-            if not has_secret and self.instance:
-                has_secret = bool(self.instance.shared_secret)
-            if not has_secret:
-                raise serializers.ValidationError({'shared_secret': ['启用签名校验必须提供 shared_secret']})
+        if attrs.get('require_signature') is False:
+            raise serializers.ValidationError({'require_signature': ['Agent-Server 必须启用签名校验']})
+        attrs['require_signature'] = True
+
+        has_secret = bool(attrs.get('shared_secret'))
+        if not has_secret and self.instance:
+            has_secret = bool(self.instance.shared_secret)
+        if not has_secret:
+            raise serializers.ValidationError({'shared_secret': ['Agent-Server 必须提供 shared_secret']})
 
         return attrs
 
@@ -793,7 +794,7 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
     )
     auth_require_signature = serializers.BooleanField(
         required=False,
-        default=False,
+        default=True,
         help_text="agent-server 是否强制签名校验（可选）"
     )
 
@@ -814,8 +815,10 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
             if not normalized:
                 raise serializers.ValidationError({'agent_server_base_url': ['安装 Agent-Server 需要控制面访问地址']})
             attrs['agent_server_base_url'] = normalized
-            if attrs.get('auth_require_signature') and not attrs.get('auth_shared_secret'):
-                raise serializers.ValidationError({'auth_shared_secret': ['启用签名校验必须提供 shared_secret']})
+            if not attrs.get('auth_require_signature'):
+                raise serializers.ValidationError({'auth_require_signature': ['Agent-Server 必须启用签名校验']})
+            if not attrs.get('auth_shared_secret'):
+                raise serializers.ValidationError({'auth_shared_secret': ['Agent-Server 必须提供 shared_secret']})
         return attrs
 
 
@@ -917,7 +920,7 @@ class BatchInstallSerializer(serializers.Serializer):
     )
     auth_require_signature = serializers.BooleanField(
         required=False,
-        default=False,
+        default=True,
         help_text="agent-server 是否强制签名校验（可选）"
     )
     confirmed = serializers.BooleanField(
@@ -941,8 +944,10 @@ class BatchInstallSerializer(serializers.Serializer):
             if not normalized:
                 raise serializers.ValidationError({'agent_server_base_url': ['安装 Agent-Server 需要控制面访问地址']})
             attrs['agent_server_base_url'] = normalized
-            if attrs.get('auth_require_signature') and not attrs.get('auth_shared_secret'):
-                raise serializers.ValidationError({'auth_shared_secret': ['启用签名校验必须提供 shared_secret']})
+            if not attrs.get('auth_require_signature'):
+                raise serializers.ValidationError({'auth_require_signature': ['Agent-Server 必须启用签名校验']})
+            if not attrs.get('auth_shared_secret'):
+                raise serializers.ValidationError({'auth_shared_secret': ['Agent-Server 必须提供 shared_secret']})
         return attrs
 
 

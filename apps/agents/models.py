@@ -203,7 +203,7 @@ class AgentServer(models.Model):
     name = models.CharField(max_length=100, verbose_name="名称")
     base_url = models.CharField(max_length=255, unique=True, verbose_name="基础URL")
     shared_secret = models.CharField(max_length=255, blank=True, verbose_name="HMAC共享密钥")
-    require_signature = models.BooleanField(default=False, verbose_name="是否强制签名校验")
+    require_signature = models.BooleanField(default=True, verbose_name="是否强制签名校验")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     description = models.TextField(blank=True, verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
