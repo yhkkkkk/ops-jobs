@@ -23,21 +23,43 @@ import (
 
 // fake sinks for test injection
 type fakeLogStream struct {
+	mu      sync.Mutex
 	entries []map[string]interface{}
 }
 
 func (f *fakeLogStream) PushLogsByExecutionID(ctx context.Context, executionID string, entries []map[string]interface{}) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.entries = append(f.entries, entries...)
 	return nil
 }
 
+func (f *fakeLogStream) Snapshot() []map[string]interface{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entries := make([]map[string]interface{}, len(f.entries))
+	copy(entries, f.entries)
+	return entries
+}
+
 type fakeResultStream struct {
+	mu      sync.Mutex
 	results []*api.TaskResult
 }
 
 func (f *fakeResultStream) PushResult(ctx context.Context, agentID string, r *api.TaskResult) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.results = append(f.results, r)
 	return nil
+}
+
+func (f *fakeResultStream) Snapshot() []*api.TaskResult {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	results := make([]*api.TaskResult, len(f.results))
+	copy(results, f.results)
+	return results
 }
 
 type fakeStatusStream struct {
@@ -171,12 +193,12 @@ func TestTaskDispatchLogResultFlow(t *testing.T) {
 		logSink := s.logStream.(*fakeLogStream)
 		resultSink := s.resultStream.(*fakeResultStream)
 		statusSink := s.statusStream.(*fakeStatusStream)
-		if len(logSink.entries) >= 1 && len(resultSink.results) >= 1 {
-			if logSink.entries[0]["content"] != "hello" {
-				t.Fatalf("logs not captured: %+v", logSink.entries)
+		if len(logSink.Snapshot()) >= 1 && len(resultSink.Snapshot()) >= 1 {
+			if logSink.Snapshot()[0]["content"] != "hello" {
+				t.Fatalf("logs not captured: %+v", logSink.Snapshot())
 			}
-			if resultSink.results[0].TaskID != taskSpec.ID || resultSink.results[0].Status != "success" {
-				t.Fatalf("result not captured: %+v", resultSink.results)
+			if resultSink.Snapshot()[0].TaskID != taskSpec.ID || resultSink.Snapshot()[0].Status != "success" {
+				t.Fatalf("result not captured: %+v", resultSink.Snapshot())
 			}
 			statusSink.mu.Lock()
 			statusCount := len(statusSink.entries)
@@ -356,7 +378,7 @@ func TestDuplicateMessageIDDedupE2E(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if len(logSink.entries) >= 1 {
+		if len(logSink.Snapshot()) >= 1 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -365,8 +387,8 @@ func TestDuplicateMessageIDDedupE2E(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if len(logSink.entries) != 1 {
-		t.Fatalf("expected 1 log entry after dedup, got %d", len(logSink.entries))
+	if len(logSink.Snapshot()) != 1 {
+		t.Fatalf("expected 1 log entry after dedup, got %d", len(logSink.Snapshot()))
 	}
 }
 

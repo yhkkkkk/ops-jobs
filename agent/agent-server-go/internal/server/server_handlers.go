@@ -80,11 +80,12 @@ func (s *Server) handleListAgents(c *gin.Context) {
 	agents := s.agentManager.List()
 	result := make([]map[string]interface{}, 0, len(agents))
 	for _, agentConn := range agents {
+		snapshot := agentConn.Snapshot()
 		result = append(result, map[string]interface{}{
-			"id":             agentConn.ID,
-			"name":           agentConn.Name,
-			"status":         agentConn.Status,
-			"last_heartbeat": agentConn.LastHeartbeat,
+			"id":             snapshot.ID,
+			"name":           snapshot.Name,
+			"status":         snapshot.Status,
+			"last_heartbeat": snapshot.LastHeartbeat,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"agents": result})
@@ -99,13 +100,14 @@ func (s *Server) handleGetAgent(c *gin.Context) {
 		return
 	}
 
+	snapshot := conn.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
-		"id":             conn.ID,
-		"name":           conn.Name,
-		"status":         conn.Status,
-		"last_heartbeat": conn.LastHeartbeat,
-		"labels":         conn.Labels,
-		"system":         conn.System,
+		"id":             snapshot.ID,
+		"name":           snapshot.Name,
+		"status":         snapshot.Status,
+		"last_heartbeat": snapshot.LastHeartbeat,
+		"labels":         snapshot.Labels,
+		"system":         snapshot.System,
 	})
 }
 
@@ -230,7 +232,7 @@ func (s *Server) handleCancelTask(c *gin.Context) {
 	}
 
 	// Agent 在线，尝试通过 WebSocket 发送取消消息
-	if conn.Status == constants.StatusActive && conn.Conn != nil {
+	if conn.IsActive() {
 		if err := conn.SendCancelTask(taskID); err != nil {
 			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 				"agent_id": agentID,
@@ -312,7 +314,7 @@ func (s *Server) handleCancelTasksBatch(c *gin.Context) {
 	failedCount := 0
 
 	// Agent 在线，通过 WebSocket 批量发送取消消息
-	if conn.Status == constants.StatusActive && conn.Conn != nil {
+	if conn.IsActive() {
 		if err := conn.SendCancelTasks(req.TaskIDs); err != nil {
 			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 				"agent_uid":  agentID,

@@ -287,7 +287,7 @@ func (s *Server) sendAck(conn *agent.Connection, messageID string) {
 		Type:  constants.MessageTypeAck,
 		AckID: messageID,
 	}
-	if err := conn.Conn.WriteJSON(ack); err != nil {
+	if err := conn.WriteJSON(ack); err != nil {
 		logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
 			"agent_id":   conn.ID,
 			"message_id": messageID,
@@ -439,24 +439,25 @@ func (s *Server) pushStatus(ctx context.Context, conn *agent.Connection, status 
 		return
 	}
 
+	snapshot := conn.Snapshot()
 	fields := map[string]interface{}{
-		"agent_uid":      conn.ID,
-		"agent_name":     conn.Name,
-		"host_id":        conn.HostID,
+		"agent_uid":      snapshot.ID,
+		"agent_name":     snapshot.Name,
+		"host_id":        snapshot.HostID,
 		"status":         status,
-		"last_heartbeat": conn.LastHeartbeat.UnixMilli(),
+		"last_heartbeat": snapshot.LastHeartbeat.UnixMilli(),
 	}
 
 	// 从 SystemInfo / payload 中提取补充信息
-	if conn.System != nil {
-		if conn.System.Hostname != "" {
-			fields["hostname"] = conn.System.Hostname
+	if snapshot.System != nil {
+		if snapshot.System.Hostname != "" {
+			fields["hostname"] = snapshot.System.Hostname
 		}
-		if conn.System.OS != "" {
-			fields["os"] = conn.System.OS
+		if snapshot.System.OS != "" {
+			fields["os"] = snapshot.System.OS
 		}
-		if conn.System.Arch != "" {
-			fields["arch"] = conn.System.Arch
+		if snapshot.System.Arch != "" {
+			fields["arch"] = snapshot.System.Arch
 		}
 	}
 

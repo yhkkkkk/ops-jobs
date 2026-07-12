@@ -39,7 +39,7 @@ func (s *Server) handleAgentControl(c *gin.Context) {
 	}
 
 	// 检查 Agent 是否在线
-	if conn.Status != constants.StatusActive || conn.Conn == nil {
+	if !conn.IsActive() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": serrors.ErrAgentNotActive.Error()})
 		return
 	}
@@ -94,7 +94,7 @@ func (s *Server) handleAgentUpgrade(c *gin.Context) {
 	}
 
 	// 检查 Agent 是否在线
-	if conn.Status != constants.StatusActive || conn.Conn == nil {
+	if !conn.IsActive() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": serrors.ErrAgentNotActive.Error()})
 		return
 	}

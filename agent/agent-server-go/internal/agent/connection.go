@@ -27,10 +27,82 @@ type Connection struct {
 	HostID            int // 控制面主机ID，用于建立映射关系
 	runningTasks      map[string]*api.TaskSpec
 	mu                sync.RWMutex
+	writeMu           sync.Mutex
 	ackStore          *websocket.AckStore // 持久化去重存储
 	closed            bool
 	taskQueueLoopOnce sync.Once
 	logBufferLoopOnce sync.Once
+}
+
+// ConnectionSnapshot is an immutable view of mutable Agent connection metadata.
+type ConnectionSnapshot struct {
+	ID            string
+	Name          string
+	Status        string
+	LastHeartbeat time.Time
+	Labels        map[string]string
+	System        *api.SystemInfo
+	HostID        int
+	Connected     bool
+}
+
+// Snapshot copies mutable connection state while holding the connection lock.
+func (c *Connection) Snapshot() ConnectionSnapshot {
+	if c == nil {
+		return ConnectionSnapshot{}
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	snapshot := ConnectionSnapshot{
+		ID:            c.ID,
+		Name:          c.Name,
+		Status:        c.Status,
+		LastHeartbeat: c.LastHeartbeat,
+		Labels:        cloneLabels(c.Labels),
+		System:        cloneSystemInfo(c.System),
+		HostID:        c.HostID,
+		Connected:     !c.closed && c.Conn != nil,
+	}
+	return snapshot
+}
+
+// IsActive reports whether the Agent has an active WebSocket connection.
+func (c *Connection) IsActive() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return !c.closed && c.Status == constants.StatusActive && c.Conn != nil
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+	result := make(map[string]string, len(labels))
+	for key, value := range labels {
+		result[key] = value
+	}
+	return result
+}
+
+func cloneSystemInfo(system *api.SystemInfo) *api.SystemInfo {
+	if system == nil {
+		return nil
+	}
+	result := *system
+	result.IPs = append([]string(nil), system.IPs...)
+	result.LoadAvg = append([]float64(nil), system.LoadAvg...)
+	if system.DiskUsage != nil {
+		result.DiskUsage = make(map[string]float64, len(system.DiskUsage))
+		for key, value := range system.DiskUsage {
+			result.DiskUsage[key] = value
+		}
+	}
+	return &result
 }
 
 // SeenMessage 记录并检查 message_id 幂等，返回是否已见过
@@ -78,19 +150,27 @@ func (c *Connection) Close() error {
 	return c.Conn.Close()
 }
 
-// SendTask 发送任务到 Agent
-func (c *Connection) SendTask(task *api.TaskSpec) error {
+// WriteJSON serializes every Gorilla WebSocket write for this Agent connection.
+func (c *Connection) WriteJSON(value interface{}) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.closed || c.Conn == nil {
 		return serrors.ErrAgentConnectionClosed
 	}
 
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.Conn.WriteJSON(value)
+}
+
+// SendTask 发送任务到 Agent
+func (c *Connection) SendTask(task *api.TaskSpec) error {
+
 	msg := api.WebSocketMessage{
 		Type: constants.MessageTypeTask,
 		Task: task,
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // SendTasks 批量发送任务到 Agent
@@ -99,33 +179,22 @@ func (c *Connection) SendTasks(tasks []*api.TaskSpec) error {
 		return nil
 	}
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.closed || c.Conn == nil {
-		return serrors.ErrAgentConnectionClosed
-	}
-
 	// 批量发送消息
 	msg := api.WebSocketMessage{
 		Type:  constants.MessageTypeTasksBatch,
 		Tasks: tasks,
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // SendCancelTask 发送取消任务消息
 func (c *Connection) SendCancelTask(taskID string) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.closed || c.Conn == nil {
-		return serrors.ErrAgentConnectionClosed
-	}
 
 	msg := api.WebSocketMessage{
 		Type:   constants.MessageTypeCancelTask,
 		TaskID: taskID,
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // SendCancelTasks 批量发送取消任务消息
@@ -134,27 +203,16 @@ func (c *Connection) SendCancelTasks(taskIDs []string) error {
 		return nil
 	}
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.closed || c.Conn == nil {
-		return serrors.ErrAgentConnectionClosed
-	}
-
 	// 批量取消
 	msg := api.WebSocketMessage{
 		Type:    constants.MessageTypeCancelTasksBatch,
 		TaskIDs: taskIDs,
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // SendControl 发送控制消息（start/stop/restart）到 Agent
 func (c *Connection) SendControl(action, reason string) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.closed || c.Conn == nil {
-		return serrors.ErrAgentConnectionClosed
-	}
 
 	msg := api.WebSocketMessage{
 		Type: constants.MessageTypeControl,
@@ -163,16 +221,11 @@ func (c *Connection) SendControl(action, reason string) error {
 			"reason": reason,
 		},
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // SendUpgrade 发送升级消息到 Agent
 func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash string) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.closed || c.Conn == nil {
-		return serrors.ErrAgentConnectionClosed
-	}
 
 	msg := api.WebSocketMessage{
 		Type: constants.MessageTypeUpgrade,
@@ -183,7 +236,7 @@ func (c *Connection) SendUpgrade(targetVersion, downloadURL, md5Hash, sha256Hash
 			"sha256_hash":    sha256Hash,
 		},
 	}
-	return c.Conn.WriteJSON(msg)
+	return c.WriteJSON(msg)
 }
 
 // AddRunningTask 注册一个正在运行的任务

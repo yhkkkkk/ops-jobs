@@ -57,7 +57,7 @@ func (d *Dispatcher) DispatchTaskToAgent(agentID string, task *api.TaskSpec) err
 	}
 
 	// 检查Agent是否在线
-	if agentConn.Status != "active" || agentConn.Conn == nil {
+	if !agentConn.IsActive() {
 		// Agent离线，持久化到 pendingTaskStore（如果有）
 		if d.pendingTaskStore != nil {
 			if err := d.pendingTaskStore.SavePending(agentID, task, 3); err != nil {

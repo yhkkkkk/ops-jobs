@@ -62,7 +62,7 @@ func NewPendingTaskStore(rdb *redis.Client) *PendingTaskStore {
 func (s *PendingTaskStore) SavePending(agentID string, task *api.TaskSpec, maxRetries int) error {
 	pending := &PendingTask{
 		AgentID:    agentID,
-		Task:       task,
+		Task:       cloneTaskSpec(task),
 		SentAt:     time.Now(),
 		RetryCount: 0,
 		MaxRetries: maxRetries,
@@ -112,12 +112,12 @@ func (s *PendingTaskStore) GetPending(agentID, taskID string) (*PendingTask, err
 
 	// 先检查内存缓存
 	s.mu.RLock()
-	pending, exists := s.pending[key]
-	s.mu.RUnlock()
-
-	if exists {
-		return pending, nil
+	if pending, exists := s.pending[key]; exists {
+		snapshot := clonePendingTask(pending)
+		s.mu.RUnlock()
+		return snapshot, nil
 	}
+	s.mu.RUnlock()
 
 	// 从 Redis 加载
 	if s.redis == nil {
@@ -143,9 +143,10 @@ func (s *PendingTaskStore) GetPending(agentID, taskID string) (*PendingTask, err
 	// 更新内存缓存
 	s.mu.Lock()
 	s.pending[key] = &pendingTask
+	snapshot := clonePendingTask(&pendingTask)
 	s.mu.Unlock()
 
-	return &pendingTask, nil
+	return snapshot, nil
 }
 
 // MarkAcked 标记任务已确认
@@ -208,54 +209,72 @@ func (s *PendingTaskStore) HasAcked(agentID, taskID string) (bool, error) {
 func (s *PendingTaskStore) IncrementRetry(agentID, taskID string) error {
 	key := s.pendingKey(agentID, taskID)
 
-	// 先从内存获取
-	s.mu.RLock()
+	s.mu.Lock()
 	pending, exists := s.pending[key]
-	s.mu.RUnlock()
-
-	if !exists {
-		// 从 Redis 加载
-		task, err := s.GetPending(agentID, taskID)
-		if err != nil {
-			return err
+	if exists {
+		pending.RetryCount++
+		snapshot := *pending
+		s.mu.Unlock()
+		if snapshot.RetryCount >= snapshot.MaxRetries {
+			return s.MarkAcked(agentID, taskID)
 		}
-		pending = task
+		return s.persistPending(key, &snapshot)
 	}
+	s.mu.Unlock()
 
-	pending.RetryCount++
-
-	// 检查是否超过最大重试次数
-	if pending.RetryCount >= pending.MaxRetries {
-		logger.GetLogger().WithFields(map[string]interface{}{
-			"agent_id":    agentID,
-			"task_id":     taskID,
-			"retry_count": pending.RetryCount,
-			"max_retries": pending.MaxRetries,
-		}).Warn("task exceeded max retries, will be marked as failed")
-		return s.MarkAcked(agentID, taskID) // 超时不再重试
+	if _, err := s.GetPending(agentID, taskID); err != nil {
+		return err
 	}
+	return s.IncrementRetry(agentID, taskID)
+}
 
-	// 更新存储
+func (s *PendingTaskStore) persistPending(key string, pending *PendingTask) error {
 	data, err := sonic.Marshal(pending)
 	if err != nil {
 		return fmt.Errorf("marshal pending task failed: %w", err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	if s.redis != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		if err = s.redis.Set(ctx, key, data, defaultTaskTimeout).Err(); err != nil {
 			return fmt.Errorf("update pending task in redis failed: %w", err)
 		}
 	}
-
-	// 更新内存缓存
-	s.mu.Lock()
-	s.pending[key] = pending
-	s.mu.Unlock()
-
 	return nil
+}
+
+func clonePendingTask(pending *PendingTask) *PendingTask {
+	if pending == nil {
+		return nil
+	}
+	copy := *pending
+	copy.Task = cloneTaskSpec(pending.Task)
+	return &copy
+}
+
+func cloneTaskSpec(task *api.TaskSpec) *api.TaskSpec {
+	if task == nil {
+		return nil
+	}
+	copy := *task
+	copy.Args = append([]string(nil), task.Args...)
+	if task.Env != nil {
+		copy.Env = make(map[string]string, len(task.Env))
+		for key, value := range task.Env {
+			copy.Env[key] = value
+		}
+	}
+	if task.FileTransfer != nil {
+		fileTransfer := *task.FileTransfer
+		if task.FileTransfer.AuthHeaders != nil {
+			fileTransfer.AuthHeaders = make(map[string]string, len(task.FileTransfer.AuthHeaders))
+			for key, value := range task.FileTransfer.AuthHeaders {
+				fileTransfer.AuthHeaders[key] = value
+			}
+		}
+		copy.FileTransfer = &fileTransfer
+	}
+	return &copy
 }
 
 // GetAgentPendingTasks 获取 Agent 所有待处理任务
