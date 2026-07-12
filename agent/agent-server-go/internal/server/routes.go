@@ -25,10 +25,8 @@ func (s *Server) setupAgentIngressRoutes() {
 func (s *Server) setupControlPlaneIngressRoutes() {
 	api := s.engine.Group("/api")
 
-	// 控制面入站：可选的 HMAC 签名校验
-	if s.cfg.Auth.RequireSignature && s.cfg.Auth.SharedSecret != "" {
-		api.Use(s.requireSignature())
-	}
+	// Production startup validates this configuration; protect every control-plane route.
+	api.Use(s.requireSignature())
 
 	{
 		// Agent 列表

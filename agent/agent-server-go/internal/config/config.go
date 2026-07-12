@@ -191,5 +191,5 @@ func setDefaults() {
 	// Auth 默认值
 	viper.SetDefault("auth.shared_secret", "")
 	viper.SetDefault("auth.clock_skew", "300s")
-	viper.SetDefault("auth.require_signature", false)
+	viper.SetDefault("auth.require_signature", true)
 }

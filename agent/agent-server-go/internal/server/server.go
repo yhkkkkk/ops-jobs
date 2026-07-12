@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"ops-job-agent-server/internal/agent"
@@ -63,6 +64,15 @@ type Server struct {
 
 // New 创建服务器
 func New(cfg *config.Config) (*Server, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("agent-server configuration is required")
+	}
+	if strings.TrimSpace(cfg.Auth.SharedSecret) == "" {
+		return nil, fmt.Errorf("auth.shared_secret is required")
+	}
+	if !cfg.Auth.RequireSignature {
+		return nil, fmt.Errorf("auth.require_signature must be enabled")
+	}
 	gin.SetMode(gin.ReleaseMode)
 
 	engine := gin.New()

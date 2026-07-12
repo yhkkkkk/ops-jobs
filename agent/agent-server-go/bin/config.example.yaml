@@ -56,4 +56,4 @@ redis:
 auth:
   shared_secret: ""    # 可选，控制面调用时用于 HMAC 校验
   clock_skew: "300s"   # 允许的时间偏移
-  require_signature: false
+  require_signature: true

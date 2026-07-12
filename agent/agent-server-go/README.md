@@ -58,8 +58,8 @@ agent:
   cleanup_interval: "30s"       # 清理间隔
 
 auth:
-  shared_secret: ""             # 可选，启用后控制面请求需带 HMAC 签名
-  require_signature: false      # 是否要求签名
+  shared_secret: "REPLACE_WITH_SHARED_SECRET"  # Required for control-plane HMAC
+  require_signature: true      # 是否要求签名
   clock_skew: "300s"            # 允许的时间偏移
 
 logging:

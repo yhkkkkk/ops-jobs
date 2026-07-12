@@ -43,3 +43,9 @@ func TestRegisterAcceptsBearerTokenWithoutJSONToken(t *testing.T) {
 		t.Fatalf("register status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 }
+
+func TestNewRejectsUnsignedControlPlaneConfig(t *testing.T) {
+	if _, err := New(&config.Config{}); err == nil {
+		t.Fatal("server without shared secret and signature requirement must be rejected")
+	}
+}
