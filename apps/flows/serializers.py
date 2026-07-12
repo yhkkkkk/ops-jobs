@@ -3,7 +3,7 @@ from rest_framework import serializers
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan
 
-from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowTemplate
+from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowTemplate
 from .plugins import validate_flow_node_config
 from .validators import get_execution_plan_resource_permission_error, get_file_source_errors
 
@@ -236,3 +236,43 @@ class FlowRunSerializer(serializers.ModelSerializer):
 
 class FlowStartSerializer(serializers.Serializer):
     inputs = serializers.DictField(required=False, allow_empty=True)
+
+class FlowScheduleSerializer(serializers.ModelSerializer):
+    template_name = serializers.CharField(source='template.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = FlowSchedule
+        fields = [
+            'id',
+            'name',
+            'template',
+            'template_name',
+            'cron_expression',
+            'timezone',
+            'inputs',
+            'is_active',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_by_name', 'created_at', 'updated_at']
+
+    def validate_template(self, template):
+        request = self.context.get('request')
+        if request and not request.user.is_superuser and template.created_by_id != request.user.id:
+            raise serializers.ValidationError('无权调度该流程模板')
+        return template
+
+    def validate(self, attrs):
+        from utils.validators import validate_cron_expression, validate_timezone
+
+        cron_expression = attrs.get('cron_expression') or getattr(self.instance, 'cron_expression', '')
+        timezone_name = attrs.get('timezone') or getattr(self.instance, 'timezone', 'Asia/Shanghai')
+        validate_cron_expression(cron_expression)
+        validate_timezone(timezone_name)
+        inputs = attrs.get('inputs', getattr(self.instance, 'inputs', {}))
+        if not isinstance(inputs, dict):
+            raise serializers.ValidationError({'inputs': '流程启动变量必须是对象'})
+        return attrs

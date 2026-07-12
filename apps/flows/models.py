@@ -198,3 +198,70 @@ class FlowNodeRun(models.Model):
         ]
         verbose_name = "流程节点执行实例"
         verbose_name_plural = "流程节点执行实例"
+
+class FlowSchedule(models.Model):
+    """Cron schedule that starts a FlowTemplate with predefined global inputs."""
+
+    name = models.CharField(max_length=200, unique=True, verbose_name='调度名称')
+    template = models.ForeignKey(FlowTemplate, on_delete=models.CASCADE, related_name='schedules', verbose_name='流程模板')
+    cron_expression = models.CharField(max_length=100, verbose_name='Cron表达式')
+    timezone = models.CharField(max_length=50, default='Asia/Shanghai', verbose_name='时区')
+    inputs = models.JSONField(default=dict, blank=True, verbose_name='启动变量')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_flow_schedules', verbose_name='创建人')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_flow_schedules', verbose_name='更新人')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'flows_flow_schedule'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['is_active', 'created_at']),
+            models.Index(fields=['template', 'is_active']),
+        ]
+        verbose_name = '流程定时调度'
+        verbose_name_plural = '流程定时调度'
+
+    def clean(self):
+        from utils.validators import validate_cron_expression, validate_timezone
+
+        validate_cron_expression(self.cron_expression)
+        validate_timezone(self.timezone)
+        if not isinstance(self.inputs, dict):
+            raise ValidationError({'inputs': '流程启动变量必须是对象'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class FlowScheduleRun(models.Model):
+    """Durable launch claim for one FlowSchedule and one Cron minute."""
+
+    STATUS_CHOICES = [
+        ('starting', '启动中'),
+        ('launched', '已启动'),
+        ('failed', '启动失败'),
+    ]
+
+    schedule = models.ForeignKey(FlowSchedule, on_delete=models.CASCADE, related_name='runs', verbose_name='流程调度')
+    scheduled_for = models.DateTimeField(verbose_name='计划触发时间')
+    flow_run = models.ForeignKey(FlowRun, on_delete=models.SET_NULL, null=True, blank=True, related_name='schedule_runs', verbose_name='流程实例')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='starting', verbose_name='启动状态')
+    error_message = models.TextField(blank=True, verbose_name='启动错误')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'flows_flow_schedule_run'
+        ordering = ['-scheduled_for']
+        constraints = [
+            models.UniqueConstraint(fields=['schedule', 'scheduled_for'], name='flows_unique_schedule_minute'),
+        ]
+        indexes = [
+            models.Index(fields=['schedule', '-scheduled_for']),
+            models.Index(fields=['status', '-scheduled_for']),
+        ]
+        verbose_name = '流程调度运行'
+        verbose_name_plural = '流程调度运行'

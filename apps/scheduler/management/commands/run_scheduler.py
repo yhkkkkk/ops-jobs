@@ -12,6 +12,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from django_apscheduler.jobstores import DjangoJobStore, register_events
 
 from apps.scheduler.lease import SchedulerLeaseService
+from apps.flows.models import FlowSchedule
 from apps.scheduler.models import ScheduledJob
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,43 @@ def _sync_jobs(scheduler: BlockingScheduler):
             logger.info("ScheduledJob removed", extra={"scheduler_job_id": scheduled_job.id})
 
 
+def _run_flow_schedule(schedule_id: int):
+    from apps.flows.schedule_service import execute_flow_schedule
+
+    return execute_flow_schedule(schedule_id)
+
+
+def _sync_flow_schedules(scheduler: BlockingScheduler):
+    active_schedule_ids = set()
+    for schedule in FlowSchedule.objects.filter(is_active=True, template__is_active=True):
+        scheduler_job_id = f"flow_schedule_{schedule.id}"
+        active_schedule_ids.add(scheduler_job_id)
+        try:
+            tz = pytz.timezone(schedule.timezone or "Asia/Shanghai")
+        except Exception:
+            tz = pytz.timezone("Asia/Shanghai")
+        trigger = CronTrigger.from_crontab(schedule.cron_expression, timezone=tz)
+        existing = scheduler.get_job(scheduler_job_id)
+        if existing is None:
+            scheduler.add_job(
+                _run_flow_schedule,
+                trigger=trigger,
+                args=[schedule.id],
+                id=scheduler_job_id,
+                replace_existing=True,
+            )
+        elif str(existing.trigger) != str(trigger):
+            scheduler.reschedule_job(scheduler_job_id, trigger=trigger)
+
+    for scheduled_job in scheduler.get_jobs():
+        if scheduled_job.id.startswith("flow_schedule_") and scheduled_job.id not in active_schedule_ids:
+            scheduler.remove_job(scheduled_job.id)
+
+
+def _sync_automation_jobs(scheduler: BlockingScheduler):
+    _sync_jobs(scheduler)
+    _sync_flow_schedules(scheduler)
+
 def _load_jobs(scheduler: BlockingScheduler):
     """兼容管理命令内部旧名称。"""
     _sync_jobs(scheduler)
@@ -76,7 +114,7 @@ class Command(BaseCommand):
         scheduler = BlockingScheduler(timezone=pytz.timezone("Asia/Shanghai"))
         scheduler.add_jobstore(DjangoJobStore(), "default")
         scheduler.add_jobstore(MemoryJobStore(), "runtime")
-        _sync_jobs(scheduler)
+        _sync_automation_jobs(scheduler)
 
         def renew_lease():
             if SchedulerLeaseService.renew(lease_name, lease_holder, lease_ttl):
@@ -85,7 +123,7 @@ class Command(BaseCommand):
             scheduler.shutdown(wait=False)
 
         scheduler.add_job(
-            _sync_jobs,
+            _sync_automation_jobs,
             trigger=IntervalTrigger(seconds=int(getattr(settings, "SCHEDULER_SYNC_INTERVAL", 5))),
             args=[scheduler],
             id="sync_scheduled_jobs",

@@ -34,13 +34,14 @@ class FlowRunner:
     )
 
     @classmethod
-    def start(cls, template: FlowTemplate, user, inputs=None) -> FlowRun:
+    def start(cls, template: FlowTemplate, user, inputs=None, trigger_type="manual") -> FlowRun:
         prepared_inputs = cls._prepare_flow_inputs(template, inputs or {})
         with transaction.atomic():
             locked_template = FlowTemplate.objects.select_for_update().get(pk=template.pk)
             flow_run = FlowRun.objects.create(
                 template=locked_template,
                 status=FlowRun.Status.RUNNING,
+                trigger_type=trigger_type,
                 started_by=user,
                 inputs=prepared_inputs,
                 started_at=timezone.now(),

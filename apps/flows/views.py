@@ -13,12 +13,13 @@ from apps.permissions.serializers import AuditLogSerializer
 from utils.audit_service import AuditLogService
 from utils.responses import SycResponse
 
-from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowTemplate
+from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowTemplate
 from .plugins import list_flow_node_plugins
 from .serializers import (
     FlowEdgeSerializer,
     FlowNodeSerializer,
     FlowRunSerializer,
+    FlowScheduleSerializer,
     FlowStartSerializer,
     FlowTemplateSerializer,
 )
@@ -965,3 +966,38 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
             content=FlowRunSerializer(flow_run).data,
             message="流程已取消",
         )
+
+class FlowScheduleViewSet(viewsets.ModelViewSet):
+    queryset = FlowSchedule.objects.all()
+    serializer_class = FlowScheduleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related('template', 'created_by')
+        if self.request.user.is_superuser:
+            return queryset
+        return queryset.filter(created_by=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        return SycResponse.success(content=self.get_serializer(self.get_queryset(), many=True).data, message='获取流程调度列表成功')
+
+    def retrieve(self, request, *args, **kwargs):
+        return SycResponse.success(content=self.get_serializer(self.get_object()).data, message='获取流程调度详情成功')
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+        schedule = serializer.save(created_by=request.user, updated_by=request.user)
+        return SycResponse.success(content=self.get_serializer(schedule).data, message='流程调度创建成功')
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=kwargs.pop('partial', False))
+        if not serializer.is_valid():
+            return SycResponse.validation_error(serializer.errors)
+        schedule = serializer.save(updated_by=request.user)
+        return SycResponse.success(content=self.get_serializer(schedule).data, message='流程调度更新成功')
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return SycResponse.success(message='流程调度删除成功')
