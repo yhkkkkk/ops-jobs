@@ -10,7 +10,7 @@ from apps.executor.models import ExecutionRecord
 from apps.executor.services import ExecutionRecordService
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan, JobStep, JobTemplate, PlanStep
-from apps.scheduler.models import ScheduledJob
+from apps.scheduler.models import ScheduledJob, ScheduledJobRun
 from apps.scheduler.services import SchedulerService
 
 from apps.scheduler.tasks import execute_scheduled_job, update_scheduled_job_stats
@@ -61,7 +61,7 @@ def _create_scheduled_job():
         execution_plan=plan,
         cron_expression="* * * * *",
         created_by=user,
-        execution_parameters={"agent_server_id": 1},
+        execution_parameters={"ReleaseVersion": "v1"},
         is_active=True,
     )
     return job
@@ -243,3 +243,59 @@ def test_scheduler_reconciles_database_jobs_without_restart():
 
     assert job.success_runs == 0
     assert job.failed_runs == 0
+
+
+def test_scheduled_job_does_not_pass_agent_server_to_execution_plan():
+    job = _create_scheduled_job()
+    captured = {}
+
+    def _execute_plan(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "execution_record_id": 123}
+
+    with patch(
+        "apps.job_templates.services.ExecutionPlanService.execute_plan",
+        side_effect=_execute_plan,
+    ):
+        result = execute_scheduled_job(job.id)
+
+    assert result["success"] is True
+    assert "agent_server_id" not in captured
+    assert captured["execution_parameters"] == {"ReleaseVersion": "v1"}
+
+
+def test_scheduled_job_only_launches_once_per_scheduled_minute():
+    from django.utils import timezone
+
+    job = _create_scheduled_job()
+    scheduled_for = timezone.now().replace(second=0, microsecond=0)
+
+    with patch(
+        "apps.job_templates.services.ExecutionPlanService.execute_plan",
+        return_value={"success": True, "execution_record_id": 123},
+    ) as execute_plan:
+        first = execute_scheduled_job(job.id, scheduled_for=scheduled_for)
+        second = execute_scheduled_job(job.id, scheduled_for=scheduled_for)
+
+    assert first["success"] is True
+    assert second == {"success": True, "skipped": True, "reason": "duplicate_schedule"}
+    assert execute_plan.call_count == 1
+    job.refresh_from_db()
+    assert job.total_runs == 1
+    scheduled_run = ScheduledJobRun.objects.get(scheduled_job=job, scheduled_for=scheduled_for)
+    assert scheduled_run.status == "launched"
+
+def test_scheduler_process_delegates_to_shared_scheduled_job_launcher():
+    from apps.scheduler.management.commands.run_scheduler import _run_job
+
+    job = _create_scheduled_job()
+    expected = {"success": True, "skipped": True, "reason": "duplicate_schedule"}
+
+    with patch(
+        "apps.scheduler.tasks.execute_scheduled_job",
+        return_value=expected,
+    ) as launch:
+        result = _run_job(job.id)
+
+    assert result == expected
+    launch.assert_called_once_with(job.id)

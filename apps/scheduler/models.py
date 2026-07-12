@@ -101,3 +101,43 @@ class ScheduledJob(models.Model):
             return 0
         return round((self.success_runs / self.total_runs) * 100, 2)
 
+
+
+class ScheduledJobRun(models.Model):
+    """A durable launch claim for one scheduled job and one Cron minute."""
+
+    STATUS_CHOICES = [
+        ('starting', '启动中'),
+        ('launched', '已启动'),
+        ('failed', '启动失败'),
+    ]
+
+    scheduled_job = models.ForeignKey(
+        ScheduledJob,
+        on_delete=models.CASCADE,
+        related_name='runs',
+        verbose_name='定时作业',
+    )
+    scheduled_for = models.DateTimeField(verbose_name='计划触发时间')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='starting', verbose_name='启动状态')
+    error_message = models.TextField(blank=True, verbose_name='启动错误')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '定时作业运行'
+        verbose_name_plural = '定时作业运行'
+        ordering = ['-scheduled_for']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['scheduled_job', 'scheduled_for'],
+                name='scheduler_unique_job_scheduled_minute',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['scheduled_job', '-scheduled_for']),
+            models.Index(fields=['status', '-scheduled_for']),
+        ]
+
+    def __str__(self):
+        return f'{self.scheduled_job_id}@{self.scheduled_for.isoformat()}'

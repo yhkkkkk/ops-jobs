@@ -3,83 +3,107 @@
 """
 import logging
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import F
-from .models import ScheduledJob
-from apps.executor.services import ExecutionRecordService
+from .models import ScheduledJob, ScheduledJobRun
 
 logger = logging.getLogger(__name__)
 
 
-def execute_scheduled_job(scheduled_job_id):
-    """执行定时作业"""
-    try:
-        # 获取定时作业
-        try:
-            scheduled_job = ScheduledJob.objects.get(id=scheduled_job_id)
-        except ScheduledJob.DoesNotExist:
-            logger.error(f"定时作业不存在: {scheduled_job_id}")
-            return {
-                'success': False,
-                'error': f'定时作业不存在: {scheduled_job_id}'
-            }
-        
-        # 检查作业是否启用
-        if not scheduled_job.is_active:
-            logger.info(f"定时作业已禁用，跳过执行: {scheduled_job.name}")
-            return {
-                'success': False,
-                'error': '定时作业已禁用'
-            }
+def _scheduled_minute(scheduled_for=None):
+    scheduled_for = scheduled_for or timezone.now()
+    if timezone.is_naive(scheduled_for):
+        scheduled_for = timezone.make_aware(scheduled_for, timezone.get_current_timezone())
+    return scheduled_for.replace(second=0, microsecond=0)
 
-        # 直接执行ExecutionPlan，创建ExecutionRecord
+
+def execute_scheduled_job(scheduled_job_id, scheduled_for=None):
+    """Launch one scheduled job at most once for each scheduled minute."""
+    scheduled_job = None
+    scheduled_run = None
+    scheduled_for = _scheduled_minute(scheduled_for)
+
+    try:
+        scheduled_job = ScheduledJob.objects.select_related('execution_plan', 'created_by').get(id=scheduled_job_id)
+    except ScheduledJob.DoesNotExist:
+        logger.error(f"定时作业不存在: {scheduled_job_id}")
+        return {
+            'success': False,
+            'error': f'定时作业不存在: {scheduled_job_id}',
+        }
+
+    if not scheduled_job.is_active:
+        logger.info(f"定时作业已禁用，跳过执行: {scheduled_job.name}")
+        return {
+            'success': False,
+            'error': '定时作业已禁用',
+        }
+
+    try:
+        # The unique database constraint is the cross-process launch claim.
+        with transaction.atomic():
+            scheduled_run, created = ScheduledJobRun.objects.get_or_create(
+                scheduled_job=scheduled_job,
+                scheduled_for=scheduled_for,
+            )
+
+        if not created:
+            logger.info(
+                "ScheduledJob duplicate trigger skipped",
+                extra={'job_id': scheduled_job.id, 'scheduled_for': scheduled_for.isoformat()},
+            )
+            return {'success': True, 'skipped': True, 'reason': 'duplicate_schedule'}
+
         from apps.job_templates.services import ExecutionPlanService
 
-        logger.info(f"开始执行定时作业: {scheduled_job.name}")
-
-        # 使用ExecutionPlanService执行ExecutionPlan
-        execution_parameters = scheduled_job.execution_parameters or {}
+        logger.info(
+            "开始执行定时作业",
+            extra={'job_id': scheduled_job.id, 'scheduled_for': scheduled_for.isoformat()},
+        )
         result = ExecutionPlanService.execute_plan(
             execution_plan=scheduled_job.execution_plan,
             user=scheduled_job.created_by,
             trigger_type='scheduled',
             name=f"定时作业: {scheduled_job.name}",
             description=f"由定时作业 {scheduled_job.name} 自动创建",
-            execution_parameters=execution_parameters,
-            agent_server_id=execution_parameters.get('agent_server_id'),
+            execution_parameters=scheduled_job.execution_parameters or {},
             execution_type='scheduled_job',
             related_object=scheduled_job,
         )
 
-        # 这里只统计调度触发次数；最终成功/失败由 ExecutionRecord 完成态回写。
-        if not result.get('success'):
+        if result.get('success'):
+            scheduled_run.status = 'launched'
+            scheduled_run.error_message = ''
+            ScheduledJob.objects.filter(id=scheduled_job.id).update(
+                total_runs=F('total_runs') + 1,
+                updated_at=timezone.now(),
+            )
+        else:
+            scheduled_run.status = 'failed'
+            scheduled_run.error_message = result.get('error', '')
             ScheduledJob.objects.filter(id=scheduled_job.id).update(
                 total_runs=F('total_runs') + 1,
                 failed_runs=F('failed_runs') + 1,
                 updated_at=timezone.now(),
             )
-        else:
-            ScheduledJob.objects.filter(id=scheduled_job.id).update(
-                total_runs=F('total_runs') + 1,
-                updated_at=timezone.now(),
-            )
-
+        scheduled_run.save(update_fields=['status', 'error_message', 'updated_at'])
         return result
 
-    except Exception as e:
-        logger.error(f"执行定时作业失败: {scheduled_job.name} - {e}")
-
-        # 启动阶段异常没有执行记录，直接按一次调度失败统计。
+    except Exception as exc:
+        logger.exception("执行定时作业失败", extra={'job_id': scheduled_job.id})
+        if scheduled_run is not None:
+            scheduled_run.status = 'failed'
+            scheduled_run.error_message = str(exc)
+            scheduled_run.save(update_fields=['status', 'error_message', 'updated_at'])
         ScheduledJob.objects.filter(id=scheduled_job.id).update(
             total_runs=F('total_runs') + 1,
             failed_runs=F('failed_runs') + 1,
             updated_at=timezone.now(),
         )
-
         return {
             'success': False,
-            'error': str(e)
+            'error': str(exc),
         }
-
 
 def cleanup_old_executions(days=30):
     """清理旧的执行记录"""
