@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.hosts.models import Host
@@ -5,7 +6,7 @@ from apps.job_templates.models import ExecutionPlan
 
 from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowTemplate
 from .plugins import validate_flow_node_config
-from .validators import get_execution_plan_resource_permission_error, get_file_source_errors
+from .validators import get_execution_plan_resource_permission_error, get_file_source_errors, validate_flow_schedule_cron_expression
 
 
 class FlowNodeSerializer(serializers.ModelSerializer):
@@ -266,12 +267,15 @@ class FlowScheduleSerializer(serializers.ModelSerializer):
         return template
 
     def validate(self, attrs):
-        from utils.validators import validate_cron_expression, validate_timezone
+        from utils.validators import validate_timezone
 
         cron_expression = attrs.get('cron_expression') or getattr(self.instance, 'cron_expression', '')
         timezone_name = attrs.get('timezone') or getattr(self.instance, 'timezone', 'Asia/Shanghai')
-        validate_cron_expression(cron_expression)
-        validate_timezone(timezone_name)
+        try:
+            validate_flow_schedule_cron_expression(cron_expression)
+            validate_timezone(timezone_name)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'cron_expression': exc.messages}) from exc
         inputs = attrs.get('inputs', getattr(self.instance, 'inputs', {}))
         if not isinstance(inputs, dict):
             raise serializers.ValidationError({'inputs': '流程启动变量必须是对象'})

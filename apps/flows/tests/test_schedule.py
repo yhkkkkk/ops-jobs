@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.flows.models import FlowRun, FlowSchedule, FlowScheduleRun, FlowTemplate
@@ -73,6 +74,39 @@ def test_scheduler_loads_active_flow_schedules():
     schedule.save(update_fields=["is_active", "updated_at"])
     _sync_flow_schedules(scheduler)
     assert scheduler.get_job(f"flow_schedule_{schedule.id}") is None
+
+def test_flow_schedule_rejects_six_field_cron_expression():
+    user = User.objects.create_user(f"cron-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+
+    with pytest.raises(ValidationError, match="5个字段"):
+        FlowSchedule.objects.create(
+            name=f"schedule-{uuid.uuid4().hex[:8]}",
+            template=template,
+            cron_expression="* * * * * *",
+            created_by=user,
+        )
+
+def test_flow_schedule_api_rejects_six_field_cron_expression():
+    from rest_framework.test import APIClient
+
+    owner = User.objects.create_user(f"api-cron-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/flows/schedules/",
+        {
+            "name": f"schedule-{uuid.uuid4().hex[:8]}",
+            "template": template.id,
+            "cron_expression": "* * * * * *",
+            "inputs": {},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
 
 def test_flow_schedule_api_creates_schedule_only_for_owned_template():
     from rest_framework.test import APIClient

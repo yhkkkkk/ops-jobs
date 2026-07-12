@@ -224,9 +224,11 @@ class FlowSchedule(models.Model):
         verbose_name_plural = '流程定时调度'
 
     def clean(self):
-        from utils.validators import validate_cron_expression, validate_timezone
+        from utils.validators import validate_timezone
 
-        validate_cron_expression(self.cron_expression)
+        from .validators import validate_flow_schedule_cron_expression
+
+        validate_flow_schedule_cron_expression(self.cron_expression)
         validate_timezone(self.timezone)
         if not isinstance(self.inputs, dict):
             raise ValidationError({'inputs': '流程启动变量必须是对象'})

@@ -61,3 +61,14 @@ def get_execution_plan_resource_permission_error(execution_plan, user):
         return f"permission denied for execution plan target host ids: {denied_group_host_ids}"
 
     return ""
+
+
+def validate_flow_schedule_cron_expression(value):
+    """Validate the five-field Cron syntax accepted by APScheduler.from_crontab."""
+    from django.core.exceptions import ValidationError
+    from utils.validators import validate_cron_expression
+
+    normalized = validate_cron_expression(value)
+    if len(normalized.split()) != 5:
+        raise ValidationError('流程定时调度 Cron 表达式必须包含5个字段（分 时 日 月 周）')
+    return normalized
