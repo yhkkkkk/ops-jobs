@@ -32,7 +32,10 @@
           <template #icon><icon-code /></template>
           全局变量
         </a-button>
-        <a-button v-if="isReadonly && currentTemplate?.id" @click="router.push(`/flows/${currentTemplate.id}/edit`)">
+        <a-button v-if="currentTemplate?.id" @click="scheduleDrawerVisible = true">
+          <template #icon><icon-schedule /></template>
+          定时调度
+        </a-button>        <a-button v-if="isReadonly && currentTemplate?.id" @click="router.push(`/flows/${currentTemplate.id}/edit`)">
           <template #icon><icon-edit /></template>
           编辑
         </a-button>
@@ -443,6 +446,11 @@
       <FlowVariableReadOnlyPanel v-else :variables="form.variables" empty-text="暂无全局变量" />
     </a-drawer>
 
+    <FlowScheduleDrawer
+      v-model:visible="scheduleDrawerVisible"
+      :template="currentTemplate"
+      :readonly="isReadonly"
+    />
     <FlowStartModal
       v-model:visible="startVisible"
       :template="currentTemplate"
@@ -463,6 +471,7 @@ import type { Edge, Node } from '@vue-flow/core'
 import { executionPlanApi, flowApi } from '@/api/ops'
 import type { ExecutionPlan, FlowEdge, FlowNode, FlowNodePlugin, FlowNodeType, FlowTemplate } from '@/types'
 import FlowNodeLibraryPanel, { type FlowNodePluginOption, type FlowScenarioOption } from './FlowNodeLibraryPanel.vue'
+import FlowScheduleDrawer from './FlowScheduleDrawer.vue'
 import FlowStartModal from './FlowStartModal.vue'
 import FlowVariableEditor from './FlowVariableEditor.vue'
 import FlowVariableReadOnlyPanel from './FlowVariableReadOnlyPanel.vue'
@@ -496,6 +505,7 @@ const isEdit = computed(() => props.mode === 'edit' && route.name === 'FlowEdit'
 const loading = ref(false)
 const saving = ref(false)
 const startVisible = ref(false)
+const scheduleDrawerVisible = ref(false)
 const propertyDrawerVisible = ref(false)
 const variablesDrawerVisible = ref(false)
 const pluginRailCollapsed = ref(false)

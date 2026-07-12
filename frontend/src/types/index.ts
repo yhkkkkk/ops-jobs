@@ -606,6 +606,20 @@ export interface FlowNodeRun {
   created_at: string
 }
 
+export interface FlowSchedule {
+  id: number
+  name: string
+  template: number
+  template_name?: string
+  cron_expression: string
+  timezone: string
+  inputs: Record<string, any>
+  is_active: boolean
+  created_by?: number
+  created_by_name?: string
+  created_at?: string
+  updated_at?: string
+}
 export interface FlowRun {
   id: number
   template: number

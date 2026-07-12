@@ -839,6 +839,9 @@ let flowTemplates: any[] = [
   },
 ]
 
+let flowSchedules: any[] = []
+let nextMockFlowScheduleId = 1
+
 const flowNodePlugins = [
   {
     type: 'script',
@@ -2102,6 +2105,43 @@ export const mockRoutes: MockRoute[] = [
     },
   },
   {
+    method: 'get',
+    pattern: '/flows/schedules/',
+    handler: ({ query }) => {
+      const templateId = Number(query.template || 0)
+      return flowSchedules.filter((schedule) => !templateId || schedule.template === templateId)
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/schedules/',
+    handler: ({ data }) => {
+      const template = byId(flowTemplates, data.template)
+      const schedule = { ...data, id: nextMockFlowScheduleId++, template_name: template?.name || '-', created_by_name: 'admin', created_at: iso(0), updated_at: iso(0) }
+      flowSchedules = [schedule, ...flowSchedules]
+      return schedule
+    },
+  },
+  {
+    method: 'put',
+    pattern: '/flows/schedules/:id/',
+    handler: ({ params, data }) => {
+      const id = Number(params.id)
+      const current = byId(flowSchedules, params.id)
+      const template = byId(flowTemplates, data.template)
+      const updated = { ...current, ...data, id, template_name: template?.name || current?.template_name || '-', updated_at: iso(0) }
+      flowSchedules = flowSchedules.map((schedule) => schedule.id === id ? updated : schedule)
+      return updated
+    },
+  },
+  {
+    method: 'delete',
+    pattern: '/flows/schedules/:id/',
+    handler: ({ params }) => {
+      flowSchedules = flowSchedules.filter((schedule) => schedule.id !== Number(params.id))
+      return { ok: true }
+    },
+  },  {
     method: 'get',
     pattern: '/flows/nodes/',
     handler: ({ query }) => {

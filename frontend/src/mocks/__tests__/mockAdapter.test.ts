@@ -112,6 +112,23 @@ describe('mock route page contracts', () => {
     expect(retry.data.content.node_runs[0].status).toBe('success')
   })
 
+  it('supports template-scoped flow schedule CRUD routes', async () => {
+    const created = await adapter({
+      ...makeConfig('/flows/schedules/', 'post'),
+      data: JSON.stringify({ name: '每日检查', template: 801, cron_expression: '0 2 * * *', timezone: 'Asia/Shanghai', inputs: { ReleaseVersion: 'v1' }, is_active: true }),
+    })
+    expect(created.status).toBe(200)
+    const scheduleId = created.data.content.id
+
+    const listed = await adapter(makeConfig('/flows/schedules/?template=801'))
+    expect(listed.data.content.map((item: any) => item.id)).toContain(scheduleId)
+
+    const updated = await adapter({ ...makeConfig(`/flows/schedules/${scheduleId}/`, 'put'), data: JSON.stringify({ ...created.data.content, is_active: false }) })
+    expect(updated.data.content.is_active).toBe(false)
+
+    const deleted = await adapter(makeConfig(`/flows/schedules/${scheduleId}/`, 'delete'))
+    expect(deleted.status).toBe(200)
+  })
   it('starts mock flow runs with selected scope, condition outputs, and audit logs', async () => {
     const created = await adapter({
       ...makeConfig('/flows/templates/', 'post'),

@@ -974,9 +974,12 @@ class FlowScheduleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related('template', 'created_by')
-        if self.request.user.is_superuser:
-            return queryset
-        return queryset.filter(created_by=self.request.user)
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(created_by=self.request.user)
+        template_id = self.request.query_params.get('template')
+        if template_id:
+            queryset = queryset.filter(template_id=template_id)
+        return queryset
 
     def list(self, request, *args, **kwargs):
         return SycResponse.success(content=self.get_serializer(self.get_queryset(), many=True).data, message='获取流程调度列表成功')

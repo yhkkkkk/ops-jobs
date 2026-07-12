@@ -6,6 +6,7 @@ import {
   buildFlowRunTimeline,
   buildRunNodeStatusMap,
   buildRunTopology,
+  buildScheduledInputs,
   buildStartInputs,
   canCancelFlowRun,
   canConfirmManualNodeRun,
@@ -237,6 +238,22 @@ describe('flow utils', () => {
     })
   })
 
+  it('builds scheduled inputs from the complete flow variable definition set', () => {
+    const definitions = normalizeFlowVariables({
+      CheckHost: { type: 'host_list', default: [1], required: true },
+      ReleaseVersion: { type: 'text', default: 'v1.0.0', required: true },
+      HiddenToken: { type: 'secret', default: 'template-secret', show_on_start: false },
+    })
+
+    expect(buildScheduledInputs(definitions, {
+      CheckHost: [2, 3],
+      ReleaseVersion: 'v2.0.0',
+    })).toEqual({
+      CheckHost: [2, 3],
+      ReleaseVersion: 'v2.0.0',
+      HiddenToken: 'template-secret',
+    })
+  })
   it('allows full-scope starts without selected nodes but requires nodes for selected scope', () => {
     expect(canStartFlow('all', [])).toBe(true)
     expect(canStartFlow('selected', [])).toBe(false)

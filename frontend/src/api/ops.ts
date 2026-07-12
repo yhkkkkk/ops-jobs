@@ -15,6 +15,7 @@ import type {
   FlowNodePlugin,
   FlowEdge,
   FlowRun,
+  FlowSchedule,
   FlowAuditLog,
 } from '@/types'
 
@@ -511,6 +512,22 @@ export const flowApi = {
 
   cancelRun(id: number): Promise<FlowRun> {
     return http.post(`/flows/runs/${id}/cancel/`)
+  },
+
+  getSchedules(params?: { template?: number }): Promise<FlowSchedule[]> {
+    return http.get('/flows/schedules/', { params })
+  },
+
+  createSchedule(data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'is_active'>): Promise<FlowSchedule> {
+    return http.post('/flows/schedules/', data)
+  },
+
+  updateSchedule(id: number, data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'is_active'>): Promise<FlowSchedule> {
+    return http.put(`/flows/schedules/${id}/`, data)
+  },
+
+  deleteSchedule(id: number): Promise<void> {
+    return http.delete(`/flows/schedules/${id}/`)
   },
 }
 

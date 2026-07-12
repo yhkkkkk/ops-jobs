@@ -796,6 +796,10 @@ const buildStandardVariableInputs = (definitions: FlowVariableDefinition[] = [],
     return acc
   }, {})
 
+export const buildScheduledInputs = (
+  definitions: FlowVariableDefinition[] = [],
+  values: Record<string, any> = {},
+) => buildStandardVariableInputs(definitions, values)
 export const buildStartInputs = ({
   scope,
   selectedNodeUuids,

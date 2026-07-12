@@ -87,6 +87,32 @@ def test_flow_schedule_rejects_six_field_cron_expression():
             created_by=user,
         )
 
+def test_flow_schedule_api_lists_only_the_requested_template_schedules():
+    from rest_framework.test import APIClient
+
+    owner = User.objects.create_user(f"list-{uuid.uuid4().hex[:6]}", password="pass")
+    first_template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    second_template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    first_schedule = FlowSchedule.objects.create(
+        name=f"schedule-{uuid.uuid4().hex[:8]}",
+        template=first_template,
+        cron_expression="0 1 * * *",
+        created_by=owner,
+    )
+    FlowSchedule.objects.create(
+        name=f"schedule-{uuid.uuid4().hex[:8]}",
+        template=second_template,
+        cron_expression="0 2 * * *",
+        created_by=owner,
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.get(f"/api/flows/schedules/?template={first_template.id}")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.data["content"]] == [first_schedule.id]
+
 def test_flow_schedule_api_rejects_six_field_cron_expression():
     from rest_framework.test import APIClient
 
