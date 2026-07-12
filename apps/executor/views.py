@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from django.contrib.contenttypes.models import ContentType
+from guardian.shortcuts import get_objects_for_user
 from utils.pagination import CustomPagination
 from utils.responses import SycResponse
 from .models import ExecutionRecord, ExecutionStep
@@ -69,6 +70,13 @@ class ExecutionRecordViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """获取查询集 - 支持混合模式"""
         queryset = super().get_queryset().select_related('executed_by', 'content_type').order_by('-created_at')
+        if self.action == 'list' and not self.request.user.is_superuser:
+            queryset = get_objects_for_user(
+                self.request.user,
+                'executor.view_executionrecord',
+                klass=queryset,
+                accept_global_perms=True,
+            )
 
         # 默认只返回最新的执行记录（混合模式）
         if self.request.query_params.get('include_retries') != 'true':

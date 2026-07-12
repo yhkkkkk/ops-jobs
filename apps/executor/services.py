@@ -5,6 +5,7 @@ import logging
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
+from guardian.shortcuts import assign_perm
 from django.db.models import F
 from .models import ExecutionRecord, ExecutionStep
 from apps.job_templates.variable_service import build_and_render, mask_secrets, build_builtin_vars, normalize_user_vars, validate_required
@@ -48,19 +49,21 @@ class ExecutionRecordService:
                     logger.error(f"变量渲染失败: {e}")
                     raise
 
-            execution_record = ExecutionRecord.objects.create(
-                execution_type=execution_type,
-                name=name,
-                description=kwargs.get('description', ''),
-                content_type=content_type,
-                object_id=object_id,
-                status='pending',
-                trigger_type=trigger_type,
-                executed_by=executed_by,
-                execution_parameters=exec_params,
-                client_ip=client_ip,
-                user_agent=user_agent or ''  # 确保不为 None
-            )
+            with transaction.atomic():
+                execution_record = ExecutionRecord.objects.create(
+                    execution_type=execution_type,
+                    name=name,
+                    description=kwargs.get('description', ''),
+                    content_type=content_type,
+                    object_id=object_id,
+                    status='pending',
+                    trigger_type=trigger_type,
+                    executed_by=executed_by,
+                    execution_parameters=exec_params,
+                    client_ip=client_ip,
+                    user_agent=user_agent or ''  # 确保不为 None
+                )
+                assign_perm('executor.view_executionrecord', executed_by, execution_record)
             
             logger.info(f"创建执行记录: {execution_record.execution_id}")
             return execution_record

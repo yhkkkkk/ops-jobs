@@ -8,6 +8,7 @@ from guardian.shortcuts import assign_perm
 from rest_framework.test import APIClient
 
 from apps.executor.models import ExecutionRecord, ExecutionStep
+from apps.executor.services import ExecutionRecordService
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan, JobTemplate
 from apps.permissions.models import AuditLog
@@ -218,3 +219,30 @@ def test_cancel_quick_script_requires_execute_scripts_permission():
 
     record.refresh_from_db()
     assert record.status == "cancelled"
+
+
+def test_create_execution_record_grants_view_permission_to_executor():
+    executor = User.objects.create_user(f"executor-{uuid.uuid4().hex[:6]}", password="pass")
+
+    record = ExecutionRecordService.create_execution_record(
+        execution_type="quick_script",
+        name="quick-script",
+        executed_by=executor,
+    )
+
+    assert executor.has_perm("executor.view_executionrecord", record)
+
+
+def test_list_only_returns_execution_records_with_view_permission():
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    viewer = User.objects.create_user(f"viewer-{uuid.uuid4().hex[:6]}", password="pass")
+    visible_record = _create_quick_record(owner)
+    hidden_record = _create_quick_record(owner)
+    assign_perm("executor.view_executionrecord", viewer, visible_record)
+
+    response = _client_for(viewer).get("/api/executor/execution-records/")
+
+    assert response.status_code == 200
+    returned_ids = {item["id"] for item in response.data["content"]["results"]}
+    assert visible_record.id in returned_ids
+    assert hidden_record.id not in returned_ids
