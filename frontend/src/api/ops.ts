@@ -518,6 +518,9 @@ export const flowApi = {
     return http.get('/flows/schedules/', { params })
   },
 
+  getScheduleRuns(id: number): Promise<Array<{ id: number; scheduled_for: string; flow_run_id?: number; flow_run_status?: string; status: string; error_message?: string }>> {
+    return http.get(`/flows/schedules/${id}/runs/`)
+  },
   createSchedule(data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'is_active'>): Promise<FlowSchedule> {
     return http.post('/flows/schedules/', data)
   },

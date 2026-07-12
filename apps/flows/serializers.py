@@ -4,7 +4,7 @@ from rest_framework import serializers
 from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan
 
-from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowTemplate
+from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowScheduleRun, FlowTemplate
 from .plugins import validate_flow_node_config
 from .validators import get_execution_plan_resource_permission_error, get_file_source_errors, validate_flow_schedule_cron_expression
 
@@ -280,3 +280,12 @@ class FlowScheduleSerializer(serializers.ModelSerializer):
         if not isinstance(inputs, dict):
             raise serializers.ValidationError({'inputs': '流程启动变量必须是对象'})
         return attrs
+
+class FlowScheduleRunSerializer(serializers.ModelSerializer):
+    flow_run_id = serializers.IntegerField(source='flow_run.id', read_only=True)
+    flow_run_status = serializers.CharField(source='flow_run.status', read_only=True)
+
+    class Meta:
+        model = FlowScheduleRun
+        fields = ['id', 'scheduled_for', 'flow_run_id', 'flow_run_status', 'status', 'error_message', 'created_at', 'updated_at']
+        read_only_fields = fields

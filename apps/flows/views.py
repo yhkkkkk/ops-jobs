@@ -20,6 +20,7 @@ from .serializers import (
     FlowNodeSerializer,
     FlowRunSerializer,
     FlowScheduleSerializer,
+    FlowScheduleRunSerializer,
     FlowStartSerializer,
     FlowTemplateSerializer,
 )
@@ -1001,6 +1002,14 @@ class FlowScheduleViewSet(viewsets.ModelViewSet):
         schedule = serializer.save(updated_by=request.user)
         return SycResponse.success(content=self.get_serializer(schedule).data, message='流程调度更新成功')
 
+    @action(detail=True, methods=['get'])
+    def runs(self, request, pk=None):
+        schedule = self.get_object()
+        schedule_runs = schedule.runs.select_related('flow_run').all()
+        return SycResponse.success(
+            content=FlowScheduleRunSerializer(schedule_runs, many=True).data,
+            message='获取流程调度运行历史成功',
+        )
     def destroy(self, request, *args, **kwargs):
         self.get_object().delete()
         return SycResponse.success(message='流程调度删除成功')

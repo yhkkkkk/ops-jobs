@@ -34,7 +34,7 @@
         <template v-else>
           <a-empty v-if="schedules.length === 0" description="当前模板没有定时调度" />
           <a-table v-else row-key="id" class="schedule-table" :columns="scheduleColumns" :data="schedules" :pagination="false" :scroll="{ x: 560 }">
-            <template #rule="{ record }"><div class="schedule-rule-cell"><strong>{{ record.name }}</strong><span>{{ record.cron_expression }} / {{ record.timezone }}</span></div></template>
+            <template #rule="{ record }"><div class="schedule-rule-cell"><strong>{{ record.name }}</strong><span>{{ record.cron_expression }} / {{ record.timezone }}</span><small>最近启动：{{ recentRunText(record) }}</small></div></template>
             <template #inputs="{ record }"><span>{{ formatInputSummary(record.inputs) }}</span></template>
             <template #status="{ record }"><a-tag :color="record.is_active ? 'green' : 'gray'">{{ record.is_active ? '启用' : '停用' }}</a-tag></template>
             <template #actions="{ record }"><a-space v-if="!readonly" :size="2"><a-tooltip content="编辑"><a-button type="text" size="mini" aria-label="编辑调度" @click="startEdit(record)"><template #icon><icon-edit /></template></a-button></a-tooltip><a-tooltip :content="record.is_active ? '停用' : '启用'"><a-button type="text" size="mini" :aria-label="record.is_active ? '停用调度' : '启用调度'" @click="toggleSchedule(record)"><template #icon><icon-pause v-if="record.is_active" /><icon-play-arrow v-else /></template></a-button></a-tooltip><a-tooltip content="删除"><a-button type="text" status="danger" size="mini" aria-label="删除调度" @click="confirmDelete(record)"><template #icon><icon-delete /></template></a-button></a-tooltip></a-space><span v-else class="schedule-readonly">只读</span></template>
@@ -61,6 +61,7 @@ const editing = ref(false)
 const hostsLoading = ref(false)
 const schedules = ref<FlowSchedule[]>([])
 const hostOptions = ref<any[]>([])
+const scheduleHistories = ref<Record<number, any[]>>({})
 const opaqueSecretInputs = ref<Record<string, any>>({})
 const form = reactive({ id: null as number | null, name: '', cron_expression: '0 2 * * *', timezone: 'Asia/Shanghai', is_active: true, variableValues: {} as Record<string, any> })
 const variableDefinitions = computed(() => normalizeFlowVariables(props.template?.variables || {}))
@@ -69,10 +70,18 @@ const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : va
 const hostLabel = (host: any) => [host.name, host.internal_ip || host.public_ip].filter(Boolean).join(' / ')
 const formatInputSummary = (inputs: Record<string, any> = {}) => Object.keys(inputs || {}).length ? `已配置 ${Object.keys(inputs).length} 个变量` : '模板默认值'
 
+const recentRunText = (schedule: FlowSchedule) => {
+  const run = scheduleHistories.value[schedule.id]?.[0]
+  if (!run) return '暂无'
+  return run.flow_run_id ? `${run.status} / 实例 #${run.flow_run_id}` : run.status
+}
 const loadSchedules = async () => {
   if (!props.template?.id) return
   loading.value = true
-  try { schedules.value = normalizeList<FlowSchedule>(await flowApi.getSchedules({ template: props.template.id })) }
+  try {
+    schedules.value = normalizeList<FlowSchedule>(await flowApi.getSchedules({ template: props.template.id }))
+    scheduleHistories.value = Object.fromEntries(await Promise.all(schedules.value.map(async schedule => [schedule.id, await flowApi.getScheduleRuns(schedule.id)])))
+  }
   catch (error) { console.error('加载流水线定时调度失败:', error); Message.error('加载流水线定时调度失败') }
   finally { loading.value = false }
 }
@@ -125,7 +134,7 @@ watch(() => [props.visible, props.template?.id], ([visible]) => { if (!visible) 
 .schedule-variable-row__label { display: grid; gap: 2px; padding-top: 5px; min-width: 0; }
 .schedule-variable-row__label strong, .schedule-variable-row__label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-variable-row__label strong { color: var(--app-fg); font-size: 13px; }
-.schedule-variable-row__label span, .schedule-rule-cell span { color: var(--app-muted); font-family: var(--app-mono); font-size: 12px; }
+.schedule-variable-row__label span, .schedule-rule-cell small { color: var(--app-muted); font-size: 12px; }`r`n.schedule-rule-cell span { color: var(--app-muted); font-family: var(--app-mono); font-size: 12px; }
 .schedule-variable-row__secret { padding-top: 7px; color: var(--app-muted); font-size: 13px; }
 .schedule-rule-cell strong { overflow: hidden; color: var(--app-fg); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-readonly { color: var(--app-muted); font-size: 12px; }

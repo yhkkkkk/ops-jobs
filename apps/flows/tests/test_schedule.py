@@ -87,6 +87,27 @@ def test_flow_schedule_rejects_six_field_cron_expression():
             created_by=user,
         )
 
+def test_flow_schedule_api_returns_launch_history_with_flow_run_link():
+    from rest_framework.test import APIClient
+
+    schedule = _schedule()
+    flow_run = FlowRun.objects.create(template=schedule.template, started_by=schedule.created_by)
+    FlowScheduleRun.objects.create(
+        schedule=schedule,
+        scheduled_for=timezone.now(),
+        flow_run=flow_run,
+        status="launched",
+    )
+    client = APIClient()
+    client.force_authenticate(schedule.created_by)
+
+    response = client.get(f"/api/flows/schedules/{schedule.id}/runs/")
+
+    assert response.status_code == 200
+    assert response.data["content"][0]["flow_run_id"] == flow_run.id
+    assert response.data["content"][0]["flow_run_status"] == FlowRun.Status.PENDING
+    assert response.data["content"][0]["status"] == "launched"
+
 def test_flow_schedule_api_lists_only_the_requested_template_schedules():
     from rest_framework.test import APIClient
 
