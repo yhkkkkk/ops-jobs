@@ -591,30 +591,26 @@ class FabricSSHManager:
         
         username = account.username
         
-        # 解密密码（如果使用密码认证）
+        # Credentials are stored encrypted and must never fall back to raw values.
         password = None
         if account.password:
             try:
                 password = self._decrypt_password(account.password)
-            except Exception as e:
-                logger.warning(f"解密账号 {account.name} 密码失败: {e}")
-                password = account.password  # 如果解密失败，使用原始值
-        
-        # 处理私钥（如果使用密钥认证）
+            except Exception as exc:
+                raise FabricSSHError(f"账号 {account.name} 密码解密失败") from exc
+
         key_filename = None
         if account.private_key:
-            # 创建临时私钥文件
             try:
-                import tempfile
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as f:
-                    f.write(account.private_key)
-                    key_filename = f.name
-                # 设置私钥文件权限
+                private_key = self._decrypt_password(account.private_key)
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as key_file:
+                    key_file.write(private_key)
+                    key_filename = key_file.name
                 os.chmod(key_filename, 0o600)
-            except Exception as e:
-                logger.error(f"创建账号私钥文件失败: {e}")
-                raise FabricSSHError(f"账号私钥处理失败: {str(e)}")
-        
+            except Exception as exc:
+                if key_filename and os.path.exists(key_filename):
+                    os.unlink(key_filename)
+                raise FabricSSHError(f"账号 {account.name} 私钥解密失败") from exc
         logger.info(f"使用账号认证信息: 账号={account.name}, 用户名={username}, 主机={host.name}, IP={host_ip}")
         
         return {

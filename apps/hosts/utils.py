@@ -8,6 +8,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+class CredentialEncryptionError(RuntimeError):
+    """Credential encryption or decryption could not be completed safely."""
+
 
 def get_encryption_key():
     """获取加密密钥"""
@@ -29,39 +32,37 @@ def get_encryption_key():
 
 
 def encrypt_password(password: str) -> str:
-    """加密密码"""
+    """Encrypt a credential or fail without returning plaintext."""
     if not password:
         return password
-    
-    try:
-        f = get_encryption_key()
-        if f is None:
-            return password  # 如果加密失败，返回原密码
-        
-        encrypted = f.encrypt(password.encode())
-        return base64.urlsafe_b64encode(encrypted).decode()
-    except Exception as e:
-        logger.error(f"密码加密失败: {e}")
-        return password  # 如果加密失败，返回原密码
 
+    try:
+        cipher = get_encryption_key()
+        if cipher is None:
+            raise CredentialEncryptionError('凭据加密密钥不可用')
+        return base64.urlsafe_b64encode(cipher.encrypt(password.encode())).decode()
+    except CredentialEncryptionError:
+        raise
+    except Exception as exc:
+        logger.exception('凭据加密失败')
+        raise CredentialEncryptionError('凭据加密失败') from exc
 
 def decrypt_password(encrypted_password: str) -> str:
-    """解密密码"""
+    """Decrypt a credential or fail without returning the stored ciphertext."""
     if not encrypted_password:
         return encrypted_password
-    
-    try:
-        f = get_encryption_key()
-        if f is None:
-            return encrypted_password  # 如果解密失败，返回原密码
-        
-        encrypted_bytes = base64.urlsafe_b64decode(encrypted_password.encode())
-        decrypted = f.decrypt(encrypted_bytes)
-        return decrypted.decode()
-    except Exception as e:
-        logger.error(f"密码解密失败: {e}")
-        return encrypted_password  # 如果解密失败，返回原密码
 
+    try:
+        cipher = get_encryption_key()
+        if cipher is None:
+            raise CredentialEncryptionError('凭据解密密钥不可用')
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_password.encode())
+        return cipher.decrypt(encrypted_bytes).decode()
+    except CredentialEncryptionError:
+        raise
+    except Exception as exc:
+        logger.warning('凭据解密失败: %s', exc)
+        raise CredentialEncryptionError('凭据解密失败') from exc
 
 def test_ssh_connection(host_info: dict) -> dict:
     """测试SSH连接"""

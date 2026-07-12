@@ -101,7 +101,8 @@ class AgentExecutionService:
         try:
             account = ServerAccount.objects.get(id=account_id)
             if account.username and account.password:
-                auth = (account.username, account.password)
+                from apps.hosts.utils import decrypt_password
+                auth = (account.username, decrypt_password(account.password))
         except ServerAccount.DoesNotExist:
             logger.error(f"account_id 无效: {account_id}")
             return None

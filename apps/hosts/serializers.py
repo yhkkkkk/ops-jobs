@@ -4,7 +4,7 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import Host, HostGroup, ServerAccount
-from .utils import encrypt_password
+from .utils import CredentialEncryptionError, encrypt_password
 
 
 class HostGroupSerializer(serializers.ModelSerializer):
@@ -386,33 +386,37 @@ class ServerAccountSerializer(serializers.ModelSerializer):
         key = validated_data.get('private_key')
         if pwd and key:
             raise serializers.ValidationError("密码和私钥只能填一个")
-        if pwd:
-            validated_data['password'] = encrypt_password(pwd)
-        if key:
-            validated_data['private_key'] = encrypt_password(key)
+        try:
+            if pwd:
+                validated_data['password'] = encrypt_password(pwd)
+            if key:
+                validated_data['private_key'] = encrypt_password(key)
+        except CredentialEncryptionError as exc:
+            raise serializers.ValidationError({'credentials': '账号凭据加密失败，未保存'}) from exc
 
         return super().create(validated_data)
-
     def update(self, instance, validated_data):
         pwd = validated_data.get('password')
         key = validated_data.get('private_key')
         if pwd and key:
             raise serializers.ValidationError("密码和私钥只能填一个")
-        if 'password' in validated_data:
-            if pwd:
-                validated_data['password'] = encrypt_password(pwd)
-                validated_data['private_key'] = ''
-            else:
-                validated_data.pop('password')
-        if 'private_key' in validated_data:
-            if key:
-                validated_data['private_key'] = encrypt_password(key)
-                validated_data['password'] = ''
-            else:
-                validated_data.pop('private_key')
+        try:
+            if 'password' in validated_data:
+                if pwd:
+                    validated_data['password'] = encrypt_password(pwd)
+                    validated_data['private_key'] = ''
+                else:
+                    validated_data.pop('password')
+            if 'private_key' in validated_data:
+                if key:
+                    validated_data['private_key'] = encrypt_password(key)
+                    validated_data['password'] = ''
+                else:
+                    validated_data.pop('private_key')
+        except CredentialEncryptionError as exc:
+            raise serializers.ValidationError({'credentials': '账号凭据加密失败，未保存'}) from exc
 
         return super().update(instance, validated_data)
-
 
 class CloudSyncSerializer(serializers.Serializer):
     """云同步序列化器"""
