@@ -89,7 +89,7 @@ def cleanup_old_execution_logs():
         # 删除过期的执行记录
         deleted_count = ExecutionRecord.objects.filter(
             created_at__lt=cutoff_date,
-            status__in=['completed', 'failed', 'cancelled']
+            status__in=['success', 'failed', 'cancelled', 'timeout']
         ).delete()[0]
         
         logger.info(f"清理过期执行记录完成，删除了 {deleted_count} 条记录，保留天数: {cleanup_days}")
@@ -116,7 +116,7 @@ def check_system_health():
         
         # 检查主机状态
         total_hosts = Host.objects.count()
-        online_hosts = Host.objects.filter(is_online=True).count()
+        online_hosts = Host.objects.filter(status='online').count()
         
         # 检查系统负载
         health_status = {
