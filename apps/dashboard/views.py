@@ -11,11 +11,11 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from django.db.models import Count
+from guardian.shortcuts import get_objects_for_user
 from django.utils import timezone
 from datetime import timedelta, datetime
-from rest_framework_extensions.cache.decorators import cache_response
-from django.core.cache import cache
 from drf_spectacular.utils import extend_schema
 from utils.responses import SycResponse
 from .serializers import (
@@ -45,12 +45,75 @@ class DashboardViewSet(viewsets.ViewSet):
     """项目仪表盘ViewSet"""
     permission_classes = [IsAuthenticated]
 
+    def _has_global_dashboard_scope(self):
+        user = self.request.user
+        return user.is_superuser or user.has_perm('permissions.manage_hosts')
+
+    def _visible_queryset(self, model, permission_codename):
+        if self._has_global_dashboard_scope():
+            return model.objects.all()
+        permission = f'{model._meta.app_label}.{permission_codename}'
+        user = self.request.user
+        if user.has_perm(permission):
+            return model.objects.all()
+        return get_objects_for_user(
+            user,
+            permission_codename,
+            klass=model,
+            accept_global_perms=False,
+        )
+
+    def _execution_records(self):
+        from apps.executor.models import ExecutionRecord
+        return self._visible_queryset(ExecutionRecord, 'view_executionrecord')
+
+    def _hosts(self):
+        from apps.hosts.models import Host
+        return self._visible_queryset(Host, 'view_host')
+
+    def _job_templates(self):
+        from apps.job_templates.models import JobTemplate
+        return self._visible_queryset(JobTemplate, 'view_jobtemplate')
+
+    def _execution_plans(self):
+        from apps.job_templates.models import ExecutionPlan
+        return self._visible_queryset(ExecutionPlan, 'view_executionplan')
+
+    def _scheduled_jobs(self):
+        from apps.scheduler.models import ScheduledJob
+        return self._visible_queryset(ScheduledJob, 'view_scheduledjob')
+
+    def _host_groups(self):
+        from apps.hosts.models import HostGroup
+        return self._visible_queryset(HostGroup, 'view_hostgroup')
+
+    def _agents(self):
+        from apps.agents.models import Agent
+        if self._has_global_dashboard_scope():
+            return Agent.objects.all()
+        return Agent.objects.filter(host__in=self._hosts())
+
+    def _execution_steps(self):
+        from apps.executor.models import ExecutionStep
+        if self._has_global_dashboard_scope():
+            return ExecutionStep.objects.all()
+        return ExecutionStep.objects.filter(execution_record__in=self._execution_records())
+
+    def _audit_logs(self):
+        from apps.permissions.models import AuditLog
+        if self._has_global_dashboard_scope():
+            return AuditLog.objects.all()
+        return AuditLog.objects.filter(user=self.request.user)
+
+    def _require_operations_scope(self):
+        if not self._has_global_dashboard_scope():
+            raise PermissionDenied('需要主机运维管理权限')
+
     @extend_schema(
         summary="获取仪表盘概览数据",
         responses={200: DashboardOverviewSerializer},
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def overview(self, request):
         """获取仪表盘概览数据"""
@@ -65,7 +128,6 @@ class DashboardViewSet(viewsets.ViewSet):
         responses={200: DashboardStatisticsSerializer},
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """获取统计数据"""
@@ -80,7 +142,6 @@ class DashboardViewSet(viewsets.ViewSet):
         responses={200: DashboardRecentActivitySerializer},
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def recent_activities(self, request):
         """获取最近活动"""
@@ -95,7 +156,6 @@ class DashboardViewSet(viewsets.ViewSet):
         responses={200: DashboardSystemStatusSerializer},
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def system_status(self, request):
         """获取系统状态 - 使用 django-health-check"""
@@ -110,16 +170,16 @@ class DashboardViewSet(viewsets.ViewSet):
         responses={200: 'OpsOverviewSerializer'},
         tags=["运维台"]
     )
-    @cache_response(timeout=60)  # 缓存 60s
     @action(detail=False, methods=['get'], url_path='ops_overview')
     def ops_overview(self, request):
         """运维台概览：基于实时计算的 Agent 状态提供运维关注的 KPI"""
+        self._require_operations_scope()
         try:
             from apps.agents.models import Agent
             from apps.executor.models import ExecutionRecord
             from apps.agents.status import get_cached_agent_status
 
-            agents = Agent.objects.select_related('host').all()
+            agents = self._agents().select_related('host')
             total = agents.count()
             online = 0
             offline = 0
@@ -173,13 +233,13 @@ class DashboardViewSet(viewsets.ViewSet):
             # running tasks and 24h failure rate
             now = timezone.now()
             since_24h = now - timedelta(hours=24)
-            running_tasks = ExecutionRecord.objects.filter(status='running').count()
-            total_24h = ExecutionRecord.objects.filter(created_at__gte=since_24h).count()
-            failed_24h = ExecutionRecord.objects.filter(created_at__gte=since_24h, status='failed').count()
+            running_tasks = self._execution_records().filter(status='running').count()
+            total_24h = self._execution_records().filter(created_at__gte=since_24h).count()
+            failed_24h = self._execution_records().filter(created_at__gte=since_24h, status='failed').count()
             fail_rate = (failed_24h / total_24h * 100) if total_24h > 0 else 0.0
             # 计算任务时延分位（过去24小时已完成的任务）
             durations = []
-            finished_qs = ExecutionRecord.objects.filter(
+            finished_qs = self._execution_records().filter(
                 created_at__gte=since_24h,
                 started_at__isnull=False,
                 finished_at__isnull=False
@@ -216,7 +276,7 @@ class DashboardViewSet(viewsets.ViewSet):
             host_fail_counts = {}
             host_last_failed = {}
             try:
-                failed_steps = ExecutionStep.objects.filter(
+                failed_steps = self._execution_steps().filter(
                     created_at__gte=since_24h,
                     status='failed'
                 ).values('host_results', 'finished_at')
@@ -275,7 +335,6 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取执行趋势数据",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 5, key_func=lambda request, *args, **kwargs: f"execution_trend_{request.GET.get('time_range', 'week')}_{request.GET.get('plan_id', '')}_{request.GET.get('start_date', '')}_{request.GET.get('end_date', '')}")  # 缓存5分钟，包含查询参数
     @action(detail=False, methods=['get'])
     def execution_trend(self, request):
         """获取执行趋势数据，支持时间范围和执行方案过滤"""
@@ -320,7 +379,7 @@ class DashboardViewSet(viewsets.ViewSet):
             trend_data = []
             for date in dates:
                 # 基础查询
-                executions = ExecutionRecord.objects.filter(created_at__date=date)
+                executions = self._execution_records().filter(created_at__date=date)
 
                 # 添加执行方案过滤
                 if plan_filter:
@@ -353,7 +412,6 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="运维台：任务延时趋势（p50/p95）",
         tags=["运维台"]
     )
-    @cache_response(timeout=60 * 30, key_func=lambda request, *args, **kwargs: f"ops_latency_trend_{request.GET.get('time_range','7d')}_{request.GET.get('granularity','day')}_{request.GET.get('start_date','')}_{request.GET.get('end_date','')}")
     @action(detail=False, methods=['get'], url_path='ops_latency_trend')
     def ops_latency_trend(self, request):
         """
@@ -362,6 +420,7 @@ class DashboardViewSet(viewsets.ViewSet):
           - granularity: hour|day
           - start_date, end_date: 自定义范围 YYYY-MM-DD
         """
+        self._require_operations_scope()
         try:
             from apps.executor.models import ExecutionRecord
 
@@ -396,7 +455,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
 
             # 收集已完成的执行的 durations（ms）
-            records = ExecutionRecord.objects.filter(
+            records = self._execution_records().filter(
                 created_at__gte=start_dt,
                 created_at__lte=end_dt,
                 started_at__isnull=False,
@@ -455,7 +514,6 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取任务状态分布",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def status_distribution(self, request):
         """获取任务状态分布"""
@@ -465,7 +523,7 @@ class DashboardViewSet(viewsets.ViewSet):
             # 最近30天的执行状态分布
             thirty_days_ago = timezone.now() - timedelta(days=30)
 
-            status_stats = ExecutionRecord.objects.filter(
+            status_stats = self._execution_records().filter(
                 created_at__gte=thirty_days_ago
             ).values('status').annotate(
                 count=Count('id')
@@ -497,14 +555,13 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取模板分类统计",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def template_category_stats(self, request):
         """获取模板分类统计"""
         try:
             from apps.job_templates.models import JobTemplate
 
-            category_stats = JobTemplate.objects.values('category').annotate(
+            category_stats = self._job_templates().values('category').annotate(
                 count=Count('id')
             ).order_by('-count')
 
@@ -527,14 +584,13 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取主机状态统计",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def host_status_stats(self, request):
         """获取主机状态统计"""
         try:
             from apps.hosts.models import Host
 
-            host_stats = Host.objects.values('status').annotate(
+            host_stats = self._hosts().values('status').annotate(
                 count=Count('id')
             ).order_by('-count')
 
@@ -564,7 +620,6 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取执行方案列表",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 15)  # 缓存15分钟
     @action(detail=False, methods=['get'])
     def execution_plans(self, request):
         """获取执行方案列表，用于dashboard过滤"""
@@ -578,12 +633,12 @@ class DashboardViewSet(viewsets.ViewSet):
             execution_plan_ct = ContentType.objects.get_for_model(ExecutionPlan)
             
             # 获取有执行记录的方案ID列表
-            plan_ids_with_executions = ExecutionRecord.objects.filter(
+            plan_ids_with_executions = self._execution_records().filter(
                 content_type=execution_plan_ct
             ).values_list('object_id', flat=True).distinct()
 
             # 获取这些方案的详细信息
-            plans_with_executions = ExecutionPlan.objects.filter(
+            plans_with_executions = self._execution_plans().filter(
                 id__in=plan_ids_with_executions
             ).values(
                 'id', 'name', 'description', 'total_executions'
@@ -607,10 +662,6 @@ class DashboardViewSet(viewsets.ViewSet):
     @extend_schema(
         summary="获取执行热力图数据",
         tags=["仪表盘"]
-    )
-    @cache_response(
-        timeout=60 * 15,
-        key_func=lambda request, *args, **kwargs: f"execution_heatmap_{request.GET.get('time_range','')}_{request.GET.get('start_date','')}_{request.GET.get('end_date','')}"
     )
     @action(detail=False, methods=['get'])
     def execution_heatmap(self, request):
@@ -662,7 +713,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 end_dt = timezone.make_aware(datetime.combine(now.date(), datetime.max.time()))
 
             # 查询执行记录
-            executions = ExecutionRecord.objects.filter(
+            executions = self._execution_records().filter(
                 created_at__gte=start_dt,
                 created_at__lte=end_dt
             ).select_related()
@@ -765,7 +816,6 @@ class DashboardViewSet(viewsets.ViewSet):
         summary="获取Top20执行统计",
         tags=["仪表盘"]
     )
-    @cache_response(timeout=60 * 5, key_func=lambda request, *args, **kwargs: f"top_executions_{request.GET.get('time_range', 'week')}_{request.GET.get('sort_by', 'count')}_{request.GET.get('start_date', '')}_{request.GET.get('end_date', '')}")  # 缓存5分钟，包含查询参数
     @action(detail=False, methods=['get'])
     def top_executions(self, request):
         """获取Top20执行统计，支持时间范围和排序方式"""
@@ -799,7 +849,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 start_date = end_date - timedelta(days=6)
 
             # 查询执行记录统计 - 先获取基本统计
-            executions = ExecutionRecord.objects.filter(
+            executions = self._execution_records().filter(
                 created_at__date__gte=start_date,
                 created_at__date__lte=end_date
             ).values('name').annotate(
@@ -813,7 +863,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 success_rate = (item['success_count'] / item['count'] * 100) if item['count'] > 0 else 0
 
                 # 单独计算该任务名称的平均持续时间
-                task_records = ExecutionRecord.objects.filter(
+                task_records = self._execution_records().filter(
                     created_at__date__gte=start_date,
                     created_at__date__lte=end_date,
                     name=item['name'],
@@ -865,20 +915,20 @@ class DashboardViewSet(viewsets.ViewSet):
         # 基础资源统计
         resources = {
             'job_templates': {
-                'total': JobTemplate.objects.count(),
+                'total': self._job_templates().count(),
                 'description': '作业模板总数'
             },
             'execution_plans': {
-                'total': ExecutionPlan.objects.count(),
+                'total': self._execution_plans().count(),
                 'description': '执行方案总数'
             },
             'hosts': {
-                'total': Host.objects.count(),
-                'online': Host.objects.filter(status='online').count(),
+                'total': self._hosts().count(),
+                'online': self._hosts().filter(status='online').count(),
                 'description': '主机总数'
             },
             'host_groups': {
-                'total': HostGroup.objects.count(),
+                'total': self._host_groups().count(),
                 'description': '主机分组总数'
             }
         }
@@ -888,23 +938,23 @@ class DashboardViewSet(viewsets.ViewSet):
         today_start = timezone.make_aware(datetime.combine(today, datetime.min.time()))
 
         job_overview = {
-            'today_total': ExecutionRecord.objects.filter(created_at__gte=today_start).count(),
-            'today_success': ExecutionRecord.objects.filter(
+            'today_total': self._execution_records().filter(created_at__gte=today_start).count(),
+            'today_success': self._execution_records().filter(
                 created_at__gte=today_start,
                 status='success'
             ).count(),
-            'today_failed': ExecutionRecord.objects.filter(
+            'today_failed': self._execution_records().filter(
                 created_at__gte=today_start,
                 status='failed'
             ).count(),
-            'running': ExecutionRecord.objects.filter(status='running').count(),
+            'running': self._execution_records().filter(status='running').count(),
         }
 
         # 定时任务概览
         scheduled_overview = {
-            'total': ScheduledJob.objects.count(),
-            'active': ScheduledJob.objects.filter(is_active=True).count(),
-            'inactive': ScheduledJob.objects.filter(is_active=False).count(),
+            'total': self._scheduled_jobs().count(),
+            'active': self._scheduled_jobs().filter(is_active=True).count(),
+            'inactive': self._scheduled_jobs().filter(is_active=False).count(),
         }
 
         return {
@@ -929,12 +979,12 @@ class DashboardViewSet(viewsets.ViewSet):
             date_start = timezone.make_aware(datetime.combine(date, datetime.min.time()))
             date_end = timezone.make_aware(datetime.combine(date, datetime.max.time()))
 
-            daily_count = ExecutionRecord.objects.filter(
+            daily_count = self._execution_records().filter(
                 created_at__gte=date_start,
                 created_at__lte=date_end
             ).count()
 
-            success_count = ExecutionRecord.objects.filter(
+            success_count = self._execution_records().filter(
                 created_at__gte=date_start,
                 created_at__lte=date_end,
                 status='success'
@@ -949,15 +999,15 @@ class DashboardViewSet(viewsets.ViewSet):
 
         # 执行记录状态分布
         job_status_distribution = {
-            'success': ExecutionRecord.objects.filter(status='success').count(),
-            'failed': ExecutionRecord.objects.filter(status='failed').count(),
-            'running': ExecutionRecord.objects.filter(status='running').count(),
-            'pending': ExecutionRecord.objects.filter(status='pending').count(),
+            'success': self._execution_records().filter(status='success').count(),
+            'failed': self._execution_records().filter(status='failed').count(),
+            'running': self._execution_records().filter(status='running').count(),
+            'pending': self._execution_records().filter(status='pending').count(),
         }
 
         # 定时任务执行统计
         scheduled_stats = []
-        top_scheduled_jobs = ScheduledJob.objects.filter(
+        top_scheduled_jobs = self._scheduled_jobs().filter(
             total_runs__gt=0
         ).order_by('-total_runs')[:10]
 
@@ -971,7 +1021,7 @@ class DashboardViewSet(viewsets.ViewSet):
             })
 
         # 用户活动统计
-        user_activity = AuditLog.objects.filter(
+        user_activity = self._audit_logs().filter(
             created_at__gte=seven_days_ago
         ).values('action').annotate(count=Count('action')).order_by('-count')[:10]
 
@@ -992,7 +1042,7 @@ class DashboardViewSet(viewsets.ViewSet):
 
         try:
             # 最近的执行记录
-            recent_executions = ExecutionRecord.objects.select_related('executed_by').order_by('-created_at')[:20]
+            recent_executions = self._execution_records().select_related('executed_by').order_by('-created_at')[:20]
             for execution in recent_executions:
                 activities.append({
                     'id': execution.id,
@@ -1010,7 +1060,7 @@ class DashboardViewSet(viewsets.ViewSet):
         # 尝试获取操作日志（如果存在的话）
         try:
             from apps.permissions.models import AuditLog
-            recent_logs = AuditLog.objects.select_related('user').order_by('-created_at')[:10]
+            recent_logs = self._audit_logs().select_related('user').order_by('-created_at')[:10]
 
             for log in recent_logs:
                 activities.append({
@@ -1045,10 +1095,10 @@ class DashboardViewSet(viewsets.ViewSet):
         try:
             from apps.hosts.models import Host
             host_status = {
-                'total': Host.objects.count(),
-                'online': Host.objects.filter(status='online').count(),
-                'offline': Host.objects.filter(status='offline').count(),
-                'unknown': Host.objects.filter(status='unknown').count(),
+                'total': self._hosts().count(),
+                'online': self._hosts().filter(status='online').count(),
+                'offline': self._hosts().filter(status='offline').count(),
+                'unknown': self._hosts().filter(status='unknown').count(),
             }
         except Exception as e:
             logger.error(f"获取主机状态失败: {str(e)}")
@@ -1063,11 +1113,11 @@ class DashboardViewSet(viewsets.ViewSet):
         try:
             from apps.agents.models import Agent
             agent_status = {
-                'total': Agent.objects.count(),
-                'pending': Agent.objects.filter(status='pending').count(),
-                'online': Agent.objects.filter(status='online').count(),
-                'offline': Agent.objects.filter(status='offline').count(),
-                'disabled': Agent.objects.filter(status='disabled').count(),
+                'total': self._agents().count(),
+                'pending': self._agents().filter(status='pending').count(),
+                'online': self._agents().filter(status='online').count(),
+                'offline': self._agents().filter(status='offline').count(),
+                'disabled': self._agents().filter(status='disabled').count(),
             }
         except Exception as e:
             logger.error(f"获取 Agent 状态失败: {str(e)}")
@@ -1077,6 +1127,15 @@ class DashboardViewSet(viewsets.ViewSet):
                 'online': 0,
                 'offline': 0,
                 'disabled': 0,
+            }
+
+        if not self._has_global_dashboard_scope():
+            return {
+                'host_status': host_status,
+                'agent_status': agent_status,
+                'system_info': {},
+                'service_status': {},
+                'last_check': timezone.now().isoformat(),
             }
 
         # 系统信息
