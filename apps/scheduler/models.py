@@ -141,3 +141,18 @@ class ScheduledJobRun(models.Model):
 
     def __str__(self):
         return f'{self.scheduled_job_id}@{self.scheduled_for.isoformat()}'
+
+class SchedulerLease(models.Model):
+    """Database-backed ownership lease for the scheduler process."""
+
+    name = models.CharField(max_length=100, primary_key=True, verbose_name='租约名称')
+    holder = models.CharField(max_length=64, verbose_name='持有者')
+    expires_at = models.DateTimeField(verbose_name='过期时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '调度器租约'
+        verbose_name_plural = '调度器租约'
+
+    def __str__(self):
+        return f'{self.name}:{self.holder}'

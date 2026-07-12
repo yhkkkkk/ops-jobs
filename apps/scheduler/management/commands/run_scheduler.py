@@ -1,4 +1,6 @@
 import logging
+import time
+import uuid
 import pytz
 
 from django.conf import settings
@@ -9,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.jobstores.memory import MemoryJobStore
 from django_apscheduler.jobstores import DjangoJobStore, register_events
 
+from apps.scheduler.lease import SchedulerLeaseService
 from apps.scheduler.models import ScheduledJob
 
 logger = logging.getLogger(__name__)
@@ -61,10 +64,26 @@ class Command(BaseCommand):
     help = "Run APScheduler to execute ScheduledJob without Celery Beat"
 
     def handle(self, *args, **options):
+        lease_name = 'scheduler:leader'
+        lease_holder = uuid.uuid4().hex
+        lease_ttl = max(15, int(getattr(settings, 'SCHEDULER_LEASE_TTL_SECONDS', 30)))
+        retry_seconds = max(1, min(5, lease_ttl // 3))
+
+        while not SchedulerLeaseService.acquire(lease_name, lease_holder, lease_ttl):
+            logger.info('Scheduler standby waiting for leader lease')
+            time.sleep(retry_seconds)
+
         scheduler = BlockingScheduler(timezone=pytz.timezone("Asia/Shanghai"))
         scheduler.add_jobstore(DjangoJobStore(), "default")
         scheduler.add_jobstore(MemoryJobStore(), "runtime")
         _sync_jobs(scheduler)
+
+        def renew_lease():
+            if SchedulerLeaseService.renew(lease_name, lease_holder, lease_ttl):
+                return
+            logger.error('Scheduler leader lease lost; shutting down')
+            scheduler.shutdown(wait=False)
+
         scheduler.add_job(
             _sync_jobs,
             trigger=IntervalTrigger(seconds=int(getattr(settings, "SCHEDULER_SYNC_INTERVAL", 5))),
@@ -75,10 +94,21 @@ class Command(BaseCommand):
             max_instances=1,
             coalesce=True,
         )
+        scheduler.add_job(
+            renew_lease,
+            trigger=IntervalTrigger(seconds=max(1, lease_ttl // 3)),
+            id='renew_scheduler_lease',
+            jobstore='runtime',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
         register_events(scheduler)
-        logger.info("APS cheduler started (run_scheduler)")
+        logger.info("APS scheduler started (run_scheduler)")
         try:
             scheduler.start()
         except KeyboardInterrupt:
             scheduler.shutdown()
             logger.info("Scheduler stopped")
+        finally:
+            SchedulerLeaseService.release(lease_name, lease_holder)
