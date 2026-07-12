@@ -2,11 +2,14 @@ package config
 
 import (
 	"fmt"
-	"ops-job-agent/internal/constants"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"ops-job-agent/internal/constants"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
@@ -149,6 +152,14 @@ func reloadFromViper(v *viper.Viper) error {
 
 	if cfg.Connection.AgentServerURL == "" {
 		return fmt.Errorf("agent_server_url is required")
+	}
+	if err := validateAgentServerURL(cfg.Connection.AgentServerURL); err != nil {
+		return err
+	}
+	if cfg.Connection.AgentServerBackup != "" {
+		if err := validateAgentServerURL(cfg.Connection.AgentServerBackup); err != nil {
+			return fmt.Errorf("invalid agent_server_backup_url: %w", err)
+		}
 	}
 
 	// 设置默认值（如果未配置）
@@ -316,4 +327,27 @@ func getHostname() string {
 		return "unknown-agent"
 	}
 	return h
+}
+
+func validateAgentServerURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return fmt.Errorf("invalid agent_server_url")
+	}
+
+	switch parsed.Scheme {
+	case "wss":
+		return nil
+	case "ws":
+		hostname := parsed.Hostname()
+		if hostname == "localhost" {
+			return nil
+		}
+		if ip := net.ParseIP(hostname); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("remote agent_server_url must use wss://; ws:// is limited to loopback development")
+	default:
+		return fmt.Errorf("agent_server_url must use ws:// or wss://")
+	}
 }

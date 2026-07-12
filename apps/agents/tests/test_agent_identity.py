@@ -48,7 +48,7 @@ def test_agent_config_renders_stable_agent_uid():
         agent_uid=str(agent_uid),
         host_id=42,
         agent_name="host-a",
-        agent_server_url="ws://agent-server:8080",
+        agent_server_url="wss://agent-server:8443",
     )
 
     assert f"agent_uid: {agent_uid}" in rendered
@@ -147,12 +147,12 @@ def test_agent_config_renders_agent_server_backup_url():
         install_type="agent",
         agent_token="token",
         agent_uid=str(uuid.uuid4()),
-        agent_server_url="ws://primary:8080",
-        agent_server_backup_url="ws://backup:8080",
+        agent_server_url="wss://primary:8443",
+        agent_server_backup_url="wss://backup:8443",
     )
 
-    assert 'agent_server_url: "ws://primary:8080"' in rendered
-    assert 'agent_server_backup_url: "ws://backup:8080"' in rendered
+    assert 'agent_server_url: "wss://primary:8443"' in rendered
+    assert 'agent_server_backup_url: "wss://backup:8443"' in rendered
 
 def test_status_stream_requires_agent_uid_and_updates_matching_agent():
     agent = _create_agent(status="pending")
@@ -258,3 +258,34 @@ def test_agent_server_api_rejects_clearing_existing_shared_secret():
 
     assert not serializer.is_valid()
     assert "shared_secret" in serializer.errors
+
+def test_agent_install_serializer_rejects_remote_insecure_websocket_url():
+    serializer = GenerateInstallScriptSerializer(data={
+        "host_ids": [1],
+        "install_type": "agent",
+        "agent_server_url": "ws://agent-server.example.com/ws",
+    })
+
+    assert not serializer.is_valid()
+    assert "agent_server_url" in serializer.errors
+
+
+def test_agent_install_serializer_allows_loopback_insecure_websocket_url():
+    serializer = GenerateInstallScriptSerializer(data={
+        "host_ids": [1],
+        "install_type": "agent",
+        "agent_server_url": "ws://127.0.0.1:8080/ws",
+    })
+
+    assert serializer.is_valid(), serializer.errors
+
+def test_agent_install_serializer_reports_insecure_backup_url_on_backup_field():
+    serializer = GenerateInstallScriptSerializer(data={
+        "host_ids": [1],
+        "install_type": "agent",
+        "agent_server_url": "wss://agent-server.example.com/ws",
+        "agent_server_backup_url": "ws://agent-server-backup.example.com/ws",
+    })
+
+    assert not serializer.is_valid()
+    assert "agent_server_backup_url" in serializer.errors

@@ -803,6 +803,16 @@ class GenerateInstallScriptSerializer(serializers.Serializer):
         if install_type == 'agent':
             if not attrs.get('agent_server_url'):
                 raise serializers.ValidationError({'agent_server_url': ['安装 Agent 需要 agent_server_url']})
+            from apps.agents.utils import validate_agent_server_websocket_url
+            try:
+                validate_agent_server_websocket_url(attrs['agent_server_url'])
+            except ValueError as exc:
+                raise serializers.ValidationError({'agent_server_url': [str(exc)]})
+            if attrs.get('agent_server_backup_url'):
+                try:
+                    validate_agent_server_websocket_url(attrs['agent_server_backup_url'])
+                except ValueError as exc:
+                    raise serializers.ValidationError({'agent_server_backup_url': [str(exc)]})
         else:
             # Agent-Server 仅依赖控制面配置，忽略前端传入的 agent_server_url
             attrs['agent_server_url'] = ''
@@ -933,6 +943,16 @@ class BatchInstallSerializer(serializers.Serializer):
         if install_type == 'agent':
             if not attrs.get('agent_server_url'):
                 raise serializers.ValidationError({'agent_server_url': ['安装 Agent 需要 agent_server_url']})
+            from apps.agents.utils import validate_agent_server_websocket_url
+            try:
+                validate_agent_server_websocket_url(attrs['agent_server_url'])
+            except ValueError as exc:
+                raise serializers.ValidationError({'agent_server_url': [str(exc)]})
+            if attrs.get('agent_server_backup_url'):
+                try:
+                    validate_agent_server_websocket_url(attrs['agent_server_backup_url'])
+                except ValueError as exc:
+                    raise serializers.ValidationError({'agent_server_backup_url': [str(exc)]})
         else:
             attrs['agent_server_url'] = ''
             control_plane_url = getattr(settings, "CONTROL_PLANE_URL", "") or ""

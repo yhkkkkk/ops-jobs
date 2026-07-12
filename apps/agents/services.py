@@ -239,6 +239,10 @@ class AgentService:
             # Agent 安装配置
             if not agent_server_url:
                 raise ValueError("agent_server_url is required for agent installation")
+            from .utils import validate_agent_server_websocket_url
+            validate_agent_server_websocket_url(agent_server_url)
+            if agent_server_backup_url:
+                validate_agent_server_websocket_url(agent_server_backup_url)
             ws_backoff_initial_ms = max(100, min(ws_backoff_initial_ms or 1000, 60000))
             ws_backoff_max_ms = max(1000, min(ws_backoff_max_ms or 30000, 600000))
             ws_max_retries = max(1, min(ws_max_retries or 6, 20))

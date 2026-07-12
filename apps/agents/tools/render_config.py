@@ -153,6 +153,10 @@ def render_config_yaml(
     if install_type == "agent":
         if not agent_uid:
             raise ValueError("agent_uid is required for agent configuration")
+        from apps.agents.utils import validate_agent_server_websocket_url
+        validate_agent_server_websocket_url(agent_server_url)
+        if agent_server_backup_url:
+            validate_agent_server_websocket_url(agent_server_backup_url)
         overrides = {
             "connection": {
                 "agent_server_url": agent_server_url,
