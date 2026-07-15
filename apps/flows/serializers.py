@@ -27,7 +27,7 @@ class FlowNodeSerializer(serializers.ModelSerializer):
 
     def validate_template(self, template):
         request = self.context.get("request")
-        if request and not request.user.is_superuser and template.created_by_id != request.user.id:
+        if request and not request.user.is_superuser and template.created_by_id != request.user.id and not request.user.has_perm("flows.change_flowtemplate", template):
             raise serializers.ValidationError("无权操作该流程模板")
         return template
 
@@ -137,7 +137,7 @@ class FlowEdgeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"target": "目标节点必须属于同一个流程模板"})
 
         request = self.context.get("request")
-        if request and template and not request.user.is_superuser and template.created_by_id != request.user.id:
+        if request and template and not request.user.is_superuser and template.created_by_id != request.user.id and not request.user.has_perm("flows.change_flowtemplate", template):
             raise serializers.ValidationError({"template": "无权操作该流程模板"})
 
         return attrs
@@ -214,10 +214,17 @@ class FlowRunSerializer(serializers.ModelSerializer):
     started_by_name = serializers.CharField(source="started_by.username", read_only=True)
     node_runs = FlowNodeRunSerializer(many=True, read_only=True)
 
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.context.get("omit_definition_snapshot"):
+            fields.pop("definition_snapshot", None)
+        return fields
+
     class Meta:
         model = FlowRun
         fields = [
             "id",
+            "name",
             "template",
             "template_name",
             "status",
@@ -225,6 +232,7 @@ class FlowRunSerializer(serializers.ModelSerializer):
             "started_by",
             "started_by_name",
             "inputs",
+            "definition_snapshot",
             "outputs",
             "error_message",
             "started_at",
@@ -236,7 +244,13 @@ class FlowRunSerializer(serializers.ModelSerializer):
 
 
 class FlowStartSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, allow_blank=True, max_length=200)
     inputs = serializers.DictField(required=False, allow_empty=True)
+
+    def validate_inputs(self, inputs):
+        if "__node_overrides" in inputs:
+            raise serializers.ValidationError("不支持启动时覆盖节点参数，请通过流程全局变量传入执行值")
+        return inputs
 
 class FlowScheduleSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
@@ -252,6 +266,9 @@ class FlowScheduleSerializer(serializers.ModelSerializer):
             'cron_expression',
             'timezone',
             'inputs',
+            'overlap_policy',
+            'misfire_policy',
+            'misfire_grace_seconds',
             'is_active',
             'created_by',
             'created_by_name',
@@ -262,7 +279,7 @@ class FlowScheduleSerializer(serializers.ModelSerializer):
 
     def validate_template(self, template):
         request = self.context.get('request')
-        if request and not request.user.is_superuser and template.created_by_id != request.user.id:
+        if request and not request.user.is_superuser and template.created_by_id != request.user.id and not request.user.has_perm("flows.change_flowtemplate", template):
             raise serializers.ValidationError('无权调度该流程模板')
         return template
 

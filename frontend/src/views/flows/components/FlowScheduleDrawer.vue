@@ -14,17 +14,28 @@
             <a-form-item label="Cron 表达式" required><a-input v-model="form.cron_expression" :disabled="readonly" placeholder="0 2 * * *" /><span class="schedule-field-note">五段格式：分 时 日 月 周</span></a-form-item>
             <a-form-item label="时区"><a-select v-model="form.timezone" :disabled="readonly"><a-option value="Asia/Shanghai">Asia/Shanghai</a-option><a-option value="UTC">UTC</a-option><a-option value="America/New_York">America/New_York</a-option><a-option value="Europe/London">Europe/London</a-option></a-select></a-form-item>
           </div>
+          <div class="schedule-form__row schedule-form__row--policy">
+            <a-form-item label="重叠触发策略"><a-select v-model="form.overlap_policy" :disabled="readonly"><a-option value="skip">跳过本次</a-option><a-option value="allow">允许并发</a-option></a-select><span class="schedule-field-note">已有任务未结束时的处理方式</span></a-form-item>
+            <a-form-item label="错过触发策略"><a-select v-model="form.misfire_policy" :disabled="readonly"><a-option value="skip">跳过</a-option><a-option value="coalesce">合并为一次补跑</a-option></a-select><span class="schedule-field-note">调度恢复后如何处理错过的时间点</span></a-form-item>
+            <a-form-item label="宽限秒数"><a-input-number v-model="form.misfire_grace_seconds" :disabled="readonly" :min="1" :max="3600" :precision="0" /><span class="schedule-field-note">超过宽限不再补跑</span></a-form-item>
+          </div>
           <a-form-item label="状态"><a-switch v-model="form.is_active" :disabled="readonly" checked-text="启用" unchecked-text="停用" /></a-form-item>
           <section class="schedule-inputs">
-            <div class="schedule-section-title"><strong>预置全局变量</strong><span>定时触发始终执行完整拓扑，不包含临时节点范围或节点参数覆盖。</span></div>
+            <div class="schedule-section-title"><strong>预置全局变量</strong><span>定时触发始终执行完整拓扑，固定输入来自流水线全局变量。</span></div>
             <a-empty v-if="variableDefinitions.length === 0" description="当前模板没有全局变量" />
             <div v-else class="schedule-variable-list">
               <div v-for="variable in variableDefinitions" :key="variable.key" class="schedule-variable-row">
                 <div class="schedule-variable-row__label"><strong>{{ variable.name }}</strong><span>{{ flowVariableReference(variable.key) }}{{ variable.required ? ' / 必填' : '' }}</span></div>
-                <span v-if="variable.type === 'secret'" class="schedule-variable-row__secret">密文变量使用模板默认值</span>
-                <a-select v-else-if="variable.widget === 'host_list'" v-model="form.variableValues[variable.key]" multiple allow-search :disabled="readonly" :loading="hostsLoading" placeholder="选择目标主机">
-                  <a-option v-for="host in hostOptions" :key="host.id" :value="host.id">{{ hostLabel(host) }}</a-option>
-                </a-select>
+                <div v-if="variable.type === 'secret'" class="schedule-secret-input">
+                  <a-input-password v-model="form.variableValues[variable.key]" :disabled="readonly" :placeholder="secretPlaceholder(variable)" />
+                  <span v-if="secretConfigured[variable.key]">已配置；留空保持当前值</span>
+                </div>                <a-textarea
+                  v-else-if="variable.widget === 'host_list'"
+                  v-model="form.variableValues[variable.key]"
+                  :disabled="readonly"
+                  :placeholder="variable.placeholder || '每行一个 IP 或主机名，可粘贴多行'"
+                  :auto-size="{ minRows: 2, maxRows: 4 }"
+                />
                 <a-textarea v-else-if="variable.widget === 'textarea'" v-model="form.variableValues[variable.key]" :disabled="readonly" :placeholder="variable.placeholder || variable.description || variable.key" :auto-size="{ minRows: 2, maxRows: 4 }" />
                 <a-input v-else v-model="form.variableValues[variable.key]" :disabled="readonly" :placeholder="variable.placeholder || variable.description || variable.key" />
               </div>
@@ -48,7 +59,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
-import { flowApi, hostApi } from '@/api/ops'
+import { flowApi } from '@/api/ops'
 import type { FlowSchedule, FlowTemplate } from '@/types'
 import { buildScheduledInputs, flowVariableReference, normalizeFlowVariables } from '../flowUtils'
 
@@ -58,22 +69,19 @@ const drawerWidth = computed(() => window.innerWidth < 760 ? '100vw' : '640px')
 const loading = ref(false)
 const saving = ref(false)
 const editing = ref(false)
-const hostsLoading = ref(false)
 const schedules = ref<FlowSchedule[]>([])
-const hostOptions = ref<any[]>([])
 const scheduleHistories = ref<Record<number, any[]>>({})
-const opaqueSecretInputs = ref<Record<string, any>>({})
-const form = reactive({ id: null as number | null, name: '', cron_expression: '0 2 * * *', timezone: 'Asia/Shanghai', is_active: true, variableValues: {} as Record<string, any> })
+const secretConfigured = ref<Record<string, boolean>>({})
+const form = reactive({ id: null as number | null, name: '', cron_expression: '0 2 * * *', timezone: 'Asia/Shanghai', overlap_policy: 'skip' as 'skip' | 'allow', misfire_policy: 'skip' as 'skip' | 'coalesce', misfire_grace_seconds: 60, is_active: true, variableValues: {} as Record<string, any> })
 const variableDefinitions = computed(() => normalizeFlowVariables(props.template?.variables || {}))
 const scheduleColumns = [{ title: '调度规则', key: 'rule', slotName: 'rule', minWidth: 250 }, { title: '预置变量', key: 'inputs', slotName: 'inputs', width: 100 }, { title: '状态', key: 'status', slotName: 'status', width: 82 }, { title: '操作', key: 'actions', slotName: 'actions', width: 112, fixed: 'right' }]
 const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : value?.results || value?.data || []
-const hostLabel = (host: any) => [host.name, host.internal_ip || host.public_ip].filter(Boolean).join(' / ')
 const formatInputSummary = (inputs: Record<string, any> = {}) => Object.keys(inputs || {}).length ? `已配置 ${Object.keys(inputs).length} 个变量` : '模板默认值'
 
 const recentRunText = (schedule: FlowSchedule) => {
   const run = scheduleHistories.value[schedule.id]?.[0]
   if (!run) return '暂无'
-  return run.flow_run_id ? `${run.status} / 实例 #${run.flow_run_id}` : run.status
+  return run.flow_run_id ? `${run.status} / 已关联任务` : run.status
 }
 const loadSchedules = async () => {
   if (!props.template?.id) return
@@ -85,23 +93,32 @@ const loadSchedules = async () => {
   catch (error) { console.error('加载流水线定时调度失败:', error); Message.error('加载流水线定时调度失败') }
   finally { loading.value = false }
 }
-const loadHosts = async () => {
-  if (hostOptions.value.length || !variableDefinitions.value.some(variable => variable.widget === 'host_list')) return
-  hostsLoading.value = true
-  try { const response = await hostApi.getHosts({ page: 1, page_size: 500 }); hostOptions.value = response.results || [] }
-  catch (error) { console.error('加载可选主机失败:', error); Message.error('加载可选主机失败') }
-  finally { hostsLoading.value = false }
-}
 const resetForm = (schedule?: FlowSchedule) => {
-  form.id = schedule?.id || null; form.name = schedule?.name || ''; form.cron_expression = schedule?.cron_expression || '0 2 * * *'; form.timezone = schedule?.timezone || 'Asia/Shanghai'; form.is_active = schedule?.is_active ?? true
-  const values = { ...(schedule?.inputs || {}) }; opaqueSecretInputs.value = {}
-  variableDefinitions.value.filter(variable => variable.type === 'secret').forEach(variable => { if (Object.prototype.hasOwnProperty.call(values, variable.key)) opaqueSecretInputs.value[variable.key] = values[variable.key]; delete values[variable.key] })
+  form.id = schedule?.id || null; form.name = schedule?.name || ''; form.cron_expression = schedule?.cron_expression || '0 2 * * *'; form.timezone = schedule?.timezone || 'Asia/Shanghai'; form.overlap_policy = schedule?.overlap_policy || 'skip'; form.misfire_policy = schedule?.misfire_policy || 'skip'; form.misfire_grace_seconds = schedule?.misfire_grace_seconds || 60; form.is_active = schedule?.is_active ?? true
+  const values = { ...(schedule?.inputs || {}) }; secretConfigured.value = {}
+  variableDefinitions.value.filter(variable => variable.type === 'secret').forEach(variable => {
+    secretConfigured.value[variable.key] = Object.prototype.hasOwnProperty.call(values, variable.key)
+    delete values[variable.key]
+  })
+  variableDefinitions.value.filter(variable => variable.type === 'host_list').forEach(variable => {
+    const value = values[variable.key]
+    if (Array.isArray(value)) values[variable.key] = value.some(item => typeof item === 'number') ? '' : value.join('\n')
+  })
   form.variableValues = values
 }
-const startCreate = async () => { resetForm(); editing.value = true; await loadHosts() }
-const startEdit = async (schedule: FlowSchedule) => { resetForm(schedule); editing.value = true; await loadHosts() }
+const startCreate = async () => { resetForm(); editing.value = true }
+const startEdit = async (schedule: FlowSchedule) => { resetForm(schedule); editing.value = true }
 const closeEditor = () => { editing.value = false; resetForm() }
-const schedulePayload = () => ({ name: form.name.trim(), template: props.template!.id!, cron_expression: form.cron_expression.trim(), timezone: form.timezone, is_active: form.is_active, inputs: { ...buildScheduledInputs(variableDefinitions.value, form.variableValues), ...opaqueSecretInputs.value } })
+const secretPlaceholder = (variable: any) => secretConfigured.value[variable.key] || variable.has_default ? '已配置；输入新值可替换' : (variable.placeholder || '输入密文值')
+const schedulePayload = () => {
+  const inputs = buildScheduledInputs(variableDefinitions.value, form.variableValues)
+  variableDefinitions.value.filter(variable => variable.type === 'secret').forEach(variable => {
+    const value = form.variableValues[variable.key]
+    if (value) inputs[variable.key] = value
+    else delete inputs[variable.key]
+  })
+  return { name: form.name.trim(), template: props.template!.id!, cron_expression: form.cron_expression.trim(), timezone: form.timezone, overlap_policy: form.overlap_policy, misfire_policy: form.misfire_policy, misfire_grace_seconds: form.misfire_grace_seconds, is_active: form.is_active, inputs }
+}
 const saveSchedule = async () => {
   if (!props.template?.id || !form.name.trim() || !form.cron_expression.trim()) { Message.warning('请填写调度名称和 Cron 表达式'); return }
   saving.value = true
@@ -110,7 +127,7 @@ const saveSchedule = async () => {
   finally { saving.value = false }
 }
 const toggleSchedule = async (schedule: FlowSchedule) => {
-  try { await flowApi.updateSchedule(schedule.id, { name: schedule.name, template: schedule.template, cron_expression: schedule.cron_expression, timezone: schedule.timezone, inputs: schedule.inputs || {}, is_active: !schedule.is_active }); await loadSchedules() }
+  try { await flowApi.updateSchedule(schedule.id, { name: schedule.name, template: schedule.template, cron_expression: schedule.cron_expression, timezone: schedule.timezone, overlap_policy: schedule.overlap_policy, misfire_policy: schedule.misfire_policy, misfire_grace_seconds: schedule.misfire_grace_seconds, inputs: schedule.inputs || {}, is_active: !schedule.is_active }); await loadSchedules() }
   catch (error) { console.error('更新流水线定时调度状态失败:', error); Message.error('更新调度状态失败') }
 }
 const confirmDelete = (schedule: FlowSchedule) => Modal.warning({ title: '删除定时调度', content: `确认删除“${schedule.name}”？`, hideCancel: false, onOk: async () => { await flowApi.deleteSchedule(schedule.id); Message.success('定时调度已删除'); await loadSchedules() } })
@@ -127,6 +144,7 @@ watch(() => [props.visible, props.template?.id], ([visible]) => { if (!visible) 
 .schedule-form { display: grid; gap: 2px; min-width: 0; }
 .schedule-form__command { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .schedule-form__row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; }
+.schedule-form__row--policy { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .schedule-form :deep(.arco-form-item) { margin-bottom: 10px; }
 .schedule-inputs { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--app-border); }
 .schedule-variable-list { display: grid; gap: 10px; }
@@ -134,7 +152,8 @@ watch(() => [props.visible, props.template?.id], ([visible]) => { if (!visible) 
 .schedule-variable-row__label { display: grid; gap: 2px; padding-top: 5px; min-width: 0; }
 .schedule-variable-row__label strong, .schedule-variable-row__label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-variable-row__label strong { color: var(--app-fg); font-size: 13px; }
-.schedule-variable-row__label span, .schedule-rule-cell small { color: var(--app-muted); font-size: 12px; }`r`n.schedule-rule-cell span { color: var(--app-muted); font-family: var(--app-mono); font-size: 12px; }
+.schedule-variable-row__label span, .schedule-rule-cell small { color: var(--app-muted); font-size: 12px; }
+.schedule-rule-cell span { color: var(--app-muted); font-family: var(--app-mono); font-size: 12px; }
 .schedule-variable-row__secret { padding-top: 7px; color: var(--app-muted); font-size: 13px; }
 .schedule-rule-cell strong { overflow: hidden; color: var(--app-fg); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-readonly { color: var(--app-muted); font-size: 12px; }

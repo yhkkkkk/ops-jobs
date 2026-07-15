@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :visible="visible"
-    title="启动流水线"
+    title="创建执行任务"
     width="940px"
     :confirm-loading="starting"
     ok-text="启动执行"
@@ -27,6 +27,9 @@
 
       <main class="start-config">
         <a-form :model="startForm" layout="vertical">
+          <a-form-item label="任务名称">
+            <a-input v-model="startForm.name" :max-length="200" placeholder="默认使用流水线名称" />
+          </a-form-item>
           <a-form-item label="执行范围">
             <a-radio-group v-model="startForm.scope" type="button">
               <a-radio value="all">全量执行</a-radio>
@@ -57,11 +60,11 @@
                   v-model="startForm.variableValues[variable.key]"
                   :placeholder="variable.placeholder || variable.description || variable.key"
                 />
-                <a-input
+                <a-textarea
                   v-else-if="variable.widget === 'host_list'"
-                  :model-value="formatHostListValue(startForm.variableValues[variable.key])"
-                  :placeholder="variable.placeholder || '主机地址或主机标识，用逗号分隔'"
-                  @input="value => setHostListValue(variable.key, value)"
+                  v-model="startForm.variableValues[variable.key]"
+                  :placeholder="variable.placeholder || '每行一个 IP 或主机名，可粘贴多行'"
+                  :auto-size="{ minRows: 2, maxRows: 5 }"
                 />
                 <a-input
                   v-else
@@ -72,26 +75,11 @@
             </div>
           </section>
 
-          <section class="start-section">
-            <div class="start-section-head">
-              <strong>节点参数覆盖</strong>
-              <span>按需覆盖本次执行参数，不修改模板。</span>
-            </div>
-            <a-empty v-if="selectedStartNodes.length === 0" description="请至少选择一个执行节点" />
-            <a-collapse v-else :bordered="false">
-              <a-collapse-item v-for="node in selectedStartNodes" :key="node.uuid" :header="`${node.name} / ${flowNodeTypeText(node.node_type)}`">
-                <a-textarea
-                  v-model="startForm.nodeOverrides[node.uuid]"
-                  :auto-size="{ minRows: 4, maxRows: 8 }"
-                  placeholder='{"timeout":600}'
-                />
-              </a-collapse-item>
-            </a-collapse>
-          </section>
         </a-form>
       </main>
     </div>
   </a-modal>
+
 </template>
 
 <script setup lang="ts">
@@ -121,37 +109,32 @@ const emit = defineEmits<{
 }>()
 
 const startForm = reactive({
+  name: '',
   scope: 'all' as PipelineScope,
   selectedNodeUuids: [] as string[],
   variableValues: {} as Record<string, any>,
-  nodeOverrides: {} as Record<string, string>,
 })
 const starting = ref(false)
 const isSelectedScope = computed(() => startForm.scope === 'selected')
 
-const selectedStartNodes = computed(() => {
-  const templateNodes = props.template?.nodes || []
-  return templateNodes.filter(node => startForm.selectedNodeUuids.includes(node.uuid))
-})
-
 const variableDefinitions = computed<FlowVariableDefinition[]>(() => normalizeFlowVariables(props.template?.variables || {}))
 const visibleVariables = computed(() => variableDefinitions.value.filter(variable => variable.show_on_start !== false))
 
-const defaultVariableValues = () =>
-  Object.fromEntries(variableDefinitions.value.map(variable => [variable.key, variable.default]))
+const defaultVariableValues = () => Object.fromEntries(variableDefinitions.value.map(variable => {
+  const value = variable.default
+  if (variable.type === 'host_list') {
+    if (Array.isArray(value)) return [variable.key, value.some(item => typeof item === 'number') ? '' : value.join('\n')]
+    return [variable.key, value || '']
+  }
+  return [variable.key, value]
+}))
 
 const resetForm = () => {
   const nodes = props.template?.nodes || []
+  startForm.name = props.template?.name || ''
   startForm.scope = 'all'
   startForm.selectedNodeUuids = nodes.map(node => node.uuid)
   startForm.variableValues = defaultVariableValues()
-  startForm.nodeOverrides = Object.fromEntries(nodes.map(node => [node.uuid, '{}']))
-}
-
-const formatHostListValue = (value: any) => Array.isArray(value) ? value.join(',') : String(value || '')
-
-const setHostListValue = (key: string, value: string) => {
-  startForm.variableValues[key] = value.split(',').map(item => item.trim()).filter(Boolean).map(Number).filter(item => !Number.isNaN(item))
 }
 
 const startFlow = async () => {
@@ -168,10 +151,9 @@ const startFlow = async () => {
       selectedNodeUuids: startForm.selectedNodeUuids,
       variableDefinitions: variableDefinitions.value,
       variableValues: startForm.variableValues,
-      nodes: props.template.nodes || [],
-      nodeOverrides: startForm.nodeOverrides,
     })
     const run = await flowApi.startTemplate(props.template.id, {
+      name: startForm.name.trim(),
       inputs,
     })
     Message.success('流水线已启动')

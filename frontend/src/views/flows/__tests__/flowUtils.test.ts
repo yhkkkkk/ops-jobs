@@ -154,7 +154,7 @@ describe('flow utils', () => {
     ])
   })
 
-  it('builds start inputs with typed variables, selected scope, and node overrides', () => {
+  it('builds start inputs with typed variables and the selected execution scope only', () => {
     const inputs = buildStartInputs({
       scope: 'selected',
       selectedNodeUuids: ['script-1'],
@@ -164,11 +164,6 @@ describe('flow utils', () => {
         { key: 'dry_run', value: 'false' },
         { key: 'extra', value: '{"region":"cn"}' },
       ],
-      nodes: [makeNode({ uuid: 'script-1' }), makeNode({ uuid: 'file-1' })],
-      nodeOverrides: {
-        'script-1': '{"timeout":600}',
-        'file-1': '{"ignored":true}',
-      },
     })
 
     expect(inputs).toEqual({
@@ -178,9 +173,6 @@ describe('flow utils', () => {
       extra: { region: 'cn' },
       __execution_scope: 'selected',
       __selected_node_uuids: ['script-1'],
-      __node_overrides: {
-        'script-1': { timeout: 600 },
-      },
     })
   })
 
@@ -224,8 +216,6 @@ describe('flow utils', () => {
         CheckHost: [3],
         ReleaseVersion: 'v2.0.0',
       },
-      nodes: [],
-      nodeOverrides: {},
     })
 
     expect(inputs).toEqual({
@@ -234,7 +224,6 @@ describe('flow utils', () => {
       SecretToken: 'from-default',
       __execution_scope: 'all',
       __selected_node_uuids: [],
-      __node_overrides: {},
     })
   })
 
@@ -378,7 +367,7 @@ describe('flow utils', () => {
     expect(timeline[3]).toMatchObject({
       kind: 'node_status',
       title: '发布前检查 执行成功',
-      description: '脚本执行 / 关联执行记录 #101',
+      description: '脚本执行 / 已关联执行记录',
       status: 'success',
     })
   })
@@ -548,7 +537,7 @@ describe('flow utils', () => {
     expect(timeline.find(event => event.key === 'node-status-30')).toMatchObject({
       kind: 'node_status',
       title: '发布子流程 执行中',
-      description: '子流程 / 子流程实例 #88 / 执行中',
+      description: '子流程 / 已关联子流程任务 / 执行中',
       status: 'running',
     })
   })
@@ -724,14 +713,14 @@ describe('flow utils', () => {
 
     expect(summarizeFlowNode(script)).toBe('shell / 主机变量 ${CheckHost} / 60s')
     expect(summarizeFlowNode(file)).toBe('主机变量 ${CheckHost} / 1 个文件源 / 限速 10 MB/s')
-    expect(summarizeFlowNode(plan)).toBe('方案 #42 / 滚动')
+    expect(summarizeFlowNode(plan)).toBe('已选择执行方案 / 滚动')
     expect(summarizeFlowNode(condition)).toBe('按环境分支')
     expect(summarizeFlowNode(parallel)).toBe('并行检查')
     expect(summarizeFlowNode(join)).toBe('检查汇聚')
     expect(summarizeFlowNode(makeNode({
       node_type: 'sub_process',
       config: { template_id: 8, inherit_inputs: false },
-    }))).toBe('模板 #8 / 独立输入')
+    }))).toBe('已选择子流程 / 独立输入')
     expect(isNodeReady(script)).toBe(true)
     expect(isNodeReady(makeNode({ node_type: 'script', config: { script_content: '' } }))).toBe(false)
     expect(isNodeReady(file)).toBe(true)
@@ -766,7 +755,7 @@ describe('flow utils', () => {
         },
       },
     }))).toEqual([
-      { label: '执行方案', value: '#301' },
+      { label: '执行方案', value: '已选择执行方案' },
       { label: '执行模式', value: '滚动' },
       { label: '变量映射', value: 'env -> ${ReleaseEnv}\nhosts -> ${CheckHost}', multiline: true },
     ])
@@ -825,7 +814,7 @@ describe('flow utils', () => {
     expect(display).toEqual({
       目标主机: '已选 2 台主机',
       远端路径: '/data/releases/current/app.tar.gz',
-      作业执行方案: 301,
+      作业执行方案: '已选择执行方案',
       nested: {
         目标主机: '已选 2 台主机',
       },
@@ -838,6 +827,13 @@ describe('flow utils', () => {
     expect(json).not.toContain('[\n    1')
   })
 
+  it('masks internal run references in operator-facing node data', () => {
+    expect(formatFlowRunDisplayJson({ execution_plan_id: 301, execution_record_id: 9002, child_flow_run_id: 8804 })).toContain('已选择执行方案')
+    expect(formatFlowRunDisplayJson({ execution_plan_id: 301, execution_record_id: 9002, child_flow_run_id: 8804 })).toContain('已关联执行记录')
+    expect(formatFlowRunDisplayJson({ execution_plan_id: 301, execution_record_id: 9002, child_flow_run_id: 8804 })).toContain('已关联子流程任务')
+    expect(formatFlowRunDisplayJson({ execution_plan_id: 301, execution_record_id: 9002, child_flow_run_id: 8804 })).not.toContain('9002')
+    expect(formatFlowRunDisplayJson({ execution_plan_id: 301, execution_record_id: 9002, child_flow_run_id: 8804 })).not.toContain('8804')
+  })
   it('builds operator-facing display rows for run inputs and outputs', () => {
     expect(flowRunDisplayRows({
       host_ids: [1, 3],
@@ -995,7 +991,6 @@ describe('flow utils', () => {
       description: '',
       variables: {},
       is_active: true,
-      nodes: [],
       edges: [],
     }
 
@@ -1032,6 +1027,15 @@ describe('flow utils', () => {
     expect(serialized.config.execution_parameters).toBeUndefined()
   })
 
+  it('retains configured metadata for secret variable defaults without a plaintext default', () => {
+    const [variable] = normalizeFlowVariables({
+      ApiToken: { type: 'secret', widget: 'password', has_default: true },
+    })
+
+    expect(variable.widget).toBe('password')
+    expect(variable.has_default).toBe(true)
+    expect(variable.default).toBeUndefined()
+  })
   it('parses loose form values for start variables', () => {
     expect(parseLooseValue('true')).toBe(true)
     expect(parseLooseValue('12')).toBe(12)

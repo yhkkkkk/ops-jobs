@@ -19,13 +19,16 @@ describe('flow start modal layout', () => {
     expect(componentSource).not.toContain('agent_server_id')
   })
 
-  it('sends only flow inputs through the start template API payload', () => {
-    expect(apiSource).toContain('startTemplate(id: number, data: { inputs?: Record<string, any> })')
-    expect(apiSource).not.toContain('startTemplate(id: number, data: { inputs?: Record<string, any>; agent_server_id: number })')
+  it('sends a task name and flow inputs without any agent server selector', () => {
+    expect(apiSource).toContain('startTemplate(id: number, data: { name?: string; inputs?: Record<string, any> })')
+    expect(apiSource).not.toContain('agent_server_id')
   })
 
-  it('does not expose host ids as the default host-list variable prompt', () => {
+  it('uses a global host variable textarea instead of asset selection or ids', () => {
     expect(componentSource).not.toContain('主机 ID，用逗号分隔')
-    expect(componentSource).toContain('主机地址或主机标识，用逗号分隔')
+    expect(componentSource).not.toContain('HostSelector')
+    expect(componentSource).toContain('每行一个 IP 或主机名，可粘贴多行')
+    expect(componentSource).not.toContain('节点参数覆盖')
+    expect(componentSource).not.toContain('nodeOverrides')
   })
 })

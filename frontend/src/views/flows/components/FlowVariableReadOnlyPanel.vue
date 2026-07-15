@@ -45,9 +45,17 @@ const props = withDefaults(defineProps<{
   emptyText: '暂无变量',
 })
 
-const formatValue = (value: any) => {
+const variableDefinitionByKey = computed(() => new Map(
+  normalizeFlowVariables(props.variables).map(variable => [variable.key, variable]),
+))
+
+const formatValue = (value: any, key = '') => {
   if (value === undefined || value === null || value === '') return '-'
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '-'
+  if (variableDefinitionByKey.value.get(key)?.type === 'host_list') {
+    if (Array.isArray(value)) return value.length ? `已解析 ${value.length} 台主机` : '-'
+    return '已填写主机变量'
+  }
+  if (Array.isArray(value)) return value.length ? `已填写 ${value.length} 项` : '-'
   if (typeof value === 'object') return JSON.stringify(value)
   if (typeof value === 'boolean') return value ? '是' : '否'
   return String(value)
@@ -59,22 +67,26 @@ const definitionRows = computed(() => normalizeFlowVariables(props.variables).ma
   reference: flowVariableReference(variable.key),
   description: variable.description || '',
   primary: `${variable.type} / ${variable.widget}`,
-  secondary: `默认 ${formatValue(variable.default)}${variable.regex ? ` / ${variable.regex}` : ''}`,
+  secondary: `默认 ${variable.type === 'secret' && variable.has_default ? '已配置' : formatValue(variable.default, variable.key)}${variable.regex ? ` / ${variable.regex}` : ''}`,
   flags: `${variable.required ? '必填' : '选填'} / ${variable.show_on_start !== false ? '执行时显示' : '执行时隐藏'}${variable.placeholder ? ` / ${variable.placeholder}` : ''}`,
 })))
 
-const valueRows = computed(() => Object.entries(props.values || {}).map(([key, value]) => ({
+const valueRows = computed(() => Object.entries(props.values || {}).filter(([key]) => !key.startsWith('__')).map(([key, value]) => ({
   key,
   name: key,
   reference: flowVariableReference(key),
   description: '',
-  primary: formatValue(value),
+  primary: formatValue(value, key),
   secondary: flowVariableReference(key),
   flags: '-',
 })))
 
 const displayRows = computed(() => props.mode === 'value' ? valueRows.value : definitionRows.value)
-const jsonSource = computed(() => props.mode === 'value' ? props.values : props.variables)
+const jsonSource = computed(() => props.mode === 'value'
+  ? Object.fromEntries(Object.entries(props.values || {})
+      .filter(([key]) => !key.startsWith('__'))
+      .map(([key, value]) => [key, formatValue(value, key)]))
+  : props.variables)
 const formattedJson = computed(() => JSON.stringify(jsonSource.value || {}, null, 2))
 </script>
 

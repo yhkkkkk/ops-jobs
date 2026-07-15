@@ -1,24 +1,16 @@
 <template>
   <div class="app-page flows-page">
-    <header class="flows-page-head">
-      <div>
-        <p class="app-page-eyebrow">流程编排</p>
-        <h1 class="app-page-title">运维流水线</h1>
-        <p class="app-page-desc">管理标准运维流程模板，查看最近执行摘要并进入运行详情。</p>
-      </div>
-      <a-space class="flows-page-head__actions">
-        <a-button @click="loadData">
-          <template #icon><icon-refresh /></template>
-          刷新
-        </a-button>
-        <a-button type="primary" @click="router.push('/flows/create')">
-          <template #icon><icon-plus /></template>
-          新建流水线
-        </a-button>
-      </a-space>
-    </header>
+    <PageHeader eyebrow="标准运维" title="流程模板" description="">
+      <template #actions>
+        <a-space>
+          <a-button @click="router.push('/flows/tasks')"><template #icon><icon-history /></template>流水线任务</a-button>
+          <a-button @click="loadData"><template #icon><icon-refresh /></template>刷新</a-button>
+          <a-button type="primary" @click="router.push('/flows/create')"><template #icon><icon-plus /></template>新建流程</a-button>
+        </a-space>
+      </template>
+    </PageHeader>
 
-    <DataToolbar title="筛选条件" :active-count="activeFilterCount">
+    <DataToolbar title="筛选流程模板" description="按名称、状态和最近执行结果定位模板。" :active-count="activeFilterCount">
       <div class="app-filter-grid flows-filter-grid">
         <a-input v-model="filters.search" allow-clear placeholder="搜索模板名称、描述、负责人" @press-enter="loadData" @clear="loadData" />
         <a-select v-model="filters.status" allow-clear placeholder="模板状态" @change="loadData">
@@ -45,6 +37,7 @@
       </div>
     </DataToolbar>
 
+    <DetailPanel title="流程模板" :description="`共 ${templatePagination.total} 个模板，当前页 ${filteredTemplates.length} 个`">
     <a-table
       row-key="id"
       class="flow-standard-table pipeline-table"
@@ -124,6 +117,7 @@
         </div>
       </template>
     </a-table>
+    </DetailPanel>
 
     <FlowStartModal
       v-model:visible="startVisible"
@@ -139,7 +133,7 @@ import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { flowApi } from '@/api/ops'
 import type { FlowRun, FlowRunStatus, FlowTemplate } from '@/types'
-import { DataToolbar, StatusBadge } from '@/components/app'
+import { DataToolbar, DetailPanel, PageHeader, StatusBadge } from '@/components/app'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import FlowStartModal from './components/FlowStartModal.vue'
 import {

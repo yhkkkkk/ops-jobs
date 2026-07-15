@@ -28,14 +28,22 @@
             <a-option value="input">输入框</a-option>
             <a-option value="textarea">文本框</a-option>
             <a-option value="password">密码框</a-option>
-            <a-option value="host_list">主机选择</a-option>
+            <a-option value="host_list">主机文本</a-option>
           </a-select>
           <a-button size="small" status="danger" @click="removeVariable(index)">
             <template #icon><icon-delete /></template>
           </a-button>
         </div>
         <div class="variable-row__meta">
-          <a-input v-model="item.defaultText" placeholder="默认值；主机列表用逗号分隔 ID" @input="emitChange" />
+          <a-input-password v-if="item.type === 'secret'" v-model="item.defaultText" :placeholder="item.has_default ? '已配置；输入新值可替换' : '密文默认值（可选）'" @input="emitChange" />
+          <a-textarea
+            v-else-if="item.type === 'host_list'"
+            v-model="item.defaultText"
+            placeholder="每行一个 IP 或主机名（可选）"
+            :auto-size="{ minRows: 1, maxRows: 3 }"
+            @input="emitChange"
+          />
+          <a-input v-else v-model="item.defaultText" placeholder="默认值" @input="emitChange" />
           <a-input v-model="item.regex" placeholder="正则校验，例如 ^v\\d+" @input="emitChange" />
           <a-input v-model="item.placeholder" placeholder="提示文本" @input="emitChange" />
           <a-checkbox v-model="item.required" @change="emitChange">必填</a-checkbox>
@@ -51,6 +59,7 @@
       </section>
     </div>
   </div>
+
 </template>
 
 <script setup lang="ts">
@@ -79,26 +88,28 @@ const emit = defineEmits<{
 
 const draft = reactive<DraftVariable[]>([])
 let syncing = false
+let draftSequence = 0
+let pendingModelSignature: string | null = null
 
 const stringifyDefault = (value: any) => {
-  if (Array.isArray(value)) return value.join(',')
+  if (Array.isArray(value)) return value.some(item => typeof item === 'number') ? '' : value.join('\n')
   if (value === undefined || value === null) return ''
   return String(value)
 }
 
 const parseDefault = (item: DraftVariable) => {
   const raw = item.defaultText
-  if (item.type === 'host_list') {
-    return raw.split(',').map(part => part.trim()).filter(Boolean).map(Number).filter(value => !Number.isNaN(value))
-  }
+  if (item.type === 'host_list') return raw.split(/[\s,]+/).map(value => value.trim()).filter(Boolean)
   if (item.type === 'number') return raw.trim() ? Number(raw) : undefined
   if (item.type === 'boolean') return raw === 'true'
   return raw
 }
 
+const createDraftId = () => `flow-variable-${++draftSequence}`
+
 const toDraft = (definition: FlowVariableDefinition): DraftVariable => ({
   ...definition,
-  id: `${definition.key}-${Math.random().toString(16).slice(2)}`,
+  id: createDraftId(),
   defaultText: stringifyDefault(definition.default),
 })
 
@@ -116,20 +127,23 @@ const emitChange = () => {
     type: item.type,
     widget: item.widget,
     default: parseDefault(item),
+    has_default: item.type === 'secret' && (item.has_default || Boolean(item.defaultText.trim())),
     required: item.required,
     regex: item.regex,
     show_on_start: item.show_on_start,
     placeholder: item.placeholder,
     description: item.description,
   }))
-  emit('update:modelValue', serializeFlowVariables(definitions))
+  const nextValue = serializeFlowVariables(definitions)
+  pendingModelSignature = JSON.stringify(nextValue)
+  emit('update:modelValue', nextValue)
 }
 
 const variableReference = (key: string) => key?.trim() ? flowVariableReference(key.trim()) : '${Key}'
 
 const addVariable = () => {
   draft.push({
-    id: `var-${Date.now()}`,
+    id: createDraftId(),
     key: '',
     name: '',
     type: 'text' as FlowVariableType,
@@ -141,7 +155,6 @@ const addVariable = () => {
     placeholder: '',
     description: '',
   })
-  emitChange()
 }
 
 const removeVariable = (index: number) => {
@@ -156,7 +169,15 @@ const handleTypeChange = (item: DraftVariable) => {
   emitChange()
 }
 
-watch(() => props.modelValue, syncFromModel, { immediate: true, deep: true })
+watch(() => props.modelValue, value => {
+  const signature = JSON.stringify(value || {})
+  if (signature === pendingModelSignature) {
+    pendingModelSignature = null
+    return
+  }
+  pendingModelSignature = null
+  syncFromModel()
+}, { immediate: true, deep: true })
 </script>
 
 <style scoped>

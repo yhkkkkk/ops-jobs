@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -10,6 +11,7 @@ class FlowTemplate(models.Model):
     name = models.CharField(max_length=200, unique=True, verbose_name="流程名称")
     description = models.TextField(blank=True, verbose_name="描述")
     variables = models.JSONField(default=dict, blank=True, verbose_name="变量定义")
+    encrypted_secret_defaults = models.JSONField(default=dict, blank=True, verbose_name="加密敏感变量默认值")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -20,6 +22,18 @@ class FlowTemplate(models.Model):
         ordering = ["-created_at"]
         verbose_name = "流程模板"
         verbose_name_plural = "流程模板"
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if self._state.adding or update_fields is None or "variables" in update_fields:
+            from .secret_service import prepare_flow_secret_defaults
+
+            self.variables, self.encrypted_secret_defaults = prepare_flow_secret_defaults(
+                self.variables, self.encrypted_secret_defaults
+            )
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"variables", "encrypted_secret_defaults"}
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -130,6 +144,7 @@ class FlowRun(models.Model):
         PAUSED = "paused", "已暂停"
         CANCELLED = "cancelled", "已取消"
 
+    name = models.CharField(max_length=200, blank=True, verbose_name="任务名称")
     template = models.ForeignKey(
         FlowTemplate,
         on_delete=models.CASCADE,
@@ -140,6 +155,8 @@ class FlowRun(models.Model):
     trigger_type = models.CharField(max_length=20, default="manual", verbose_name="触发类型")
     started_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="执行人")
     inputs = models.JSONField(default=dict, blank=True, verbose_name="输入")
+    encrypted_secret_inputs = models.JSONField(default=dict, blank=True, verbose_name="加密敏感输入")
+    definition_snapshot = models.JSONField(default=dict, blank=True, verbose_name="流程定义快照")
     outputs = models.JSONField(default=dict, blank=True, verbose_name="输出")
     error_message = models.TextField(blank=True, verbose_name="错误信息")
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
@@ -151,6 +168,7 @@ class FlowRun(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["template", "status"]),
+            models.Index(fields=["status", "created_at"]),
             models.Index(fields=["started_by", "created_at"]),
         ]
         verbose_name = "流程执行实例"
@@ -202,11 +220,23 @@ class FlowNodeRun(models.Model):
 class FlowSchedule(models.Model):
     """Cron schedule that starts a FlowTemplate with predefined global inputs."""
 
+    class OverlapPolicy(models.TextChoices):
+        SKIP = "skip", "跳过重叠触发"
+        ALLOW = "allow", "允许并发运行"
+
+    class MisfirePolicy(models.TextChoices):
+        SKIP = "skip", "跳过错过触发"
+        COALESCE = "coalesce", "合并为一次补跑"
+
     name = models.CharField(max_length=200, unique=True, verbose_name='调度名称')
     template = models.ForeignKey(FlowTemplate, on_delete=models.CASCADE, related_name='schedules', verbose_name='流程模板')
     cron_expression = models.CharField(max_length=100, verbose_name='Cron表达式')
     timezone = models.CharField(max_length=50, default='Asia/Shanghai', verbose_name='时区')
     inputs = models.JSONField(default=dict, blank=True, verbose_name='启动变量')
+    encrypted_secret_inputs = models.JSONField(default=dict, blank=True, verbose_name='加密敏感启动变量')
+    overlap_policy = models.CharField(max_length=16, choices=OverlapPolicy.choices, default=OverlapPolicy.SKIP, verbose_name='重叠触发策略')
+    misfire_policy = models.CharField(max_length=16, choices=MisfirePolicy.choices, default=MisfirePolicy.SKIP, verbose_name='错过触发策略')
+    misfire_grace_seconds = models.PositiveIntegerField(default=60, validators=[MinValueValidator(1)], verbose_name='错过触发宽限秒数')
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_flow_schedules', verbose_name='创建人')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_flow_schedules', verbose_name='更新人')
@@ -234,6 +264,16 @@ class FlowSchedule(models.Model):
             raise ValidationError({'inputs': '流程启动变量必须是对象'})
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if self._state.adding or update_fields is None or "inputs" in update_fields:
+            from .secret_service import flow_secret_variable_keys, split_flow_secret_values
+
+            secret_keys = flow_secret_variable_keys(self.template.variables or {})
+            self.inputs, self.encrypted_secret_inputs = split_flow_secret_values(
+                self.inputs, secret_keys, self.encrypted_secret_inputs
+            )
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"inputs", "encrypted_secret_inputs"}
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -245,6 +285,7 @@ class FlowScheduleRun(models.Model):
         ('starting', '启动中'),
         ('launched', '已启动'),
         ('failed', '启动失败'),
+        ('skipped', '已跳过'),
     ]
 
     schedule = models.ForeignKey(FlowSchedule, on_delete=models.CASCADE, related_name='runs', verbose_name='流程调度')

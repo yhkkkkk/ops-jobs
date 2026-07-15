@@ -3,8 +3,8 @@
     <header class="run-head app-card">
       <div>
         <p>流水线执行</p>
-        <h1>{{ run ? run.template_name : '执行详情' }}</h1>
-        <span>{{ run ? `执行 #${run.id} / ${triggerText(run.trigger_type)} / ${run.started_by_name || '-'}` : '查看节点状态、输出和关联执行记录。' }}</span>
+        <h1>{{ runTitle }}</h1>
+        <span>{{ run ? `流程模板：${run.template_name} / ${triggerText(run.trigger_type)} / ${run.started_by_name || '-'}` : '查看节点状态、输出和关联执行记录。' }}</span>
       </div>
       <a-space>
         <a-button @click="router.push('/flows')">返回流水线</a-button>
@@ -60,14 +60,15 @@
             当前定位：{{ blockingNode.node_name }}（{{ statusText(blockingNode.status) }}）
           </template>
           <span>
-            {{ blockingNode.error_message || (blockingNode.execution_record_id ? `关联执行记录 #${blockingNode.execution_record_id}，等待结果回写后推进。` : '请关注节点输出和调度状态。') }}
+            {{ blockingNode.error_message || (blockingNode.execution_record_id ? '作业任务已提交，等待结果回写后推进。' : '请关注节点输出和调度状态。') }}
           </span>
         </a-alert>
 
         <div class="run-layout">
           <DetailPanel title="执行上下文" dense>
             <a-descriptions :column="2" bordered size="medium">
-              <a-descriptions-item label="执行 ID">#{{ run.id }}</a-descriptions-item>
+              <a-descriptions-item label="任务名称">{{ runTitle }}</a-descriptions-item>
+              <a-descriptions-item label="流程模板">{{ run.template_name }}</a-descriptions-item>
               <a-descriptions-item label="触发方式">{{ triggerText(run.trigger_type) }}</a-descriptions-item>
               <a-descriptions-item label="开始时间">{{ formatTime(run.started_at || run.created_at) }}</a-descriptions-item>
               <a-descriptions-item label="结束时间">{{ formatTime(run.finished_at) }}</a-descriptions-item>
@@ -79,7 +80,7 @@
           <DetailPanel title="运行输入 / 汇总输出" dense>
             <a-tabs size="small">
               <a-tab-pane key="inputs" title="输入变量">
-                <FlowVariableReadOnlyPanel mode="value" :values="run.inputs || {}" empty-text="本次执行没有输入变量" />
+                <FlowVariableReadOnlyPanel mode="value" :variables="topologyTemplate?.variables || {}" :values="run.inputs || {}" empty-text="本次执行没有输入变量" />
               </a-tab-pane>
               <a-tab-pane key="outputs" title="输出结果">
                 <FlowRunDataView :value="run.outputs || {}" empty-text="本次执行暂无汇总输出" />
@@ -88,7 +89,7 @@
           </DetailPanel>
         </div>
 
-        <DetailPanel title="执行拓扑" description="基于模板拓扑展示本次执行实际覆盖的节点和条件分支。" dense>
+        <DetailPanel title="执行拓扑" description="基于任务创建时固化的流程定义展示本次执行覆盖的节点和条件分支。" dense>
           <div class="readonly-run-topology">
             <a-alert v-if="templateLoadError" class="topology-alert" type="warning" show-icon>
               {{ templateLoadError }}
@@ -124,7 +125,7 @@
                     <span>{{ nodeTypeText(node.nodeType) }}</span>
                     <strong>{{ node.name }}</strong>
                     <em>{{ topologyNodeMeta(node) }}</em>
-                    <a-link v-if="childFlowRunId(node.run)" class="sub-run-link" @click="openChildFlowRun(node.run!)">子流程 #{{ childFlowRunId(node.run) }}</a-link>
+                    <a-link v-if="childFlowRunId(node.run)" class="sub-run-link" @click="openChildFlowRun(node.run!)">查看子流程任务</a-link>
                   </div>
                   <StatusBadge
                     v-if="node.status !== 'not_run'"
@@ -209,27 +210,27 @@
                   <div>
                     <dt>关联执行记录</dt>
                     <dd>
-                      <a-link v-if="nodeRun.execution_record_id" @click="router.push(`/execution-records/${nodeRun.execution_record_id}`)">#{{ nodeRun.execution_record_id }}</a-link>
+                      <a-link v-if="nodeRun.execution_record_id" @click="router.push(`/execution-records/${nodeRun.execution_record_id}`)">查看执行记录</a-link>
                       <span v-else>-</span>
                     </dd>
                   </div>
                   <div>
                     <dt>子流程实例</dt>
                     <dd>
-                      <a-link v-if="childFlowRunId(nodeRun)" @click="openChildFlowRun(nodeRun)">#{{ childFlowRunId(nodeRun) }}</a-link>
+                      <a-link v-if="childFlowRunId(nodeRun)" @click="openChildFlowRun(nodeRun)">查看子流程任务</a-link>
                       <span v-else>-</span>
                     </dd>
                   </div>
                 </dl>
                 <a-alert v-if="nodeRun.error_message" type="error" show-icon>{{ nodeRun.error_message }}</a-alert>
                 <a-alert v-else-if="nodeRun.node_type === 'sub_process' && childFlowRunId(nodeRun)" type="info" show-icon>
-                  子流程实例 #{{ childFlowRunId(nodeRun) }} / {{ statusText(childFlowStatus(nodeRun) || nodeRun.status) }}
+                  已关联子流程任务 / {{ statusText(childFlowStatus(nodeRun) || nodeRun.status) }}
                 </a-alert>
                 <a-alert v-else-if="nodeRun.status === 'paused' && nodeRun.node_type === 'manual'" type="warning" show-icon>
                   {{ nodeRun.inputs.instructions || '人工确认节点等待确认。确认后流水线会继续执行后续节点。' }}
                 </a-alert>
                 <a-alert v-else-if="nodeRun.status === 'paused' && nodeRun.execution_record_id" type="warning" show-icon>
-                  作业执行方案已提交，等待执行记录 #{{ nodeRun.execution_record_id }} 完成后继续推进流水线。
+                  作业执行方案已提交，等待关联任务完成后继续推进流水线。
                 </a-alert>
                 <div v-if="nodeRun.node_type === 'condition'" class="condition-branch-summary">
                   <div class="condition-branch-summary__head">
@@ -306,13 +307,13 @@
               </a-table-column>
               <a-table-column title="关联执行记录" :width="130">
                 <template #cell="{ record }">
-                  <a-link v-if="record.execution_record_id" @click="router.push(`/execution-records/${record.execution_record_id}`)">#{{ record.execution_record_id }}</a-link>
+                  <a-link v-if="record.execution_record_id" @click="router.push(`/execution-records/${record.execution_record_id}`)">查看执行记录</a-link>
                   <span v-else>-</span>
                 </template>
               </a-table-column>
               <a-table-column title="子流程实例" :width="130">
                 <template #cell="{ record }">
-                  <a-link v-if="childFlowRunId(record)" @click="openChildFlowRun(record)">#{{ childFlowRunId(record) }}</a-link>
+                  <a-link v-if="childFlowRunId(record)" @click="openChildFlowRun(record)">查看子流程任务</a-link>
                   <span v-else>-</span>
                 </template>
               </a-table-column>
@@ -324,7 +325,7 @@
         </DetailPanel>
       </template>
       <template v-else>
-        <DetailPanel title="执行拓扑" description="基于模板拓扑展示本次执行实际覆盖的节点和条件分支。" dense>
+        <DetailPanel title="执行拓扑" description="基于任务创建时固化的流程定义展示本次执行覆盖的节点和条件分支。" dense>
           <div class="readonly-run-topology">
             <a-empty description="未找到流水线执行实例或暂无访问权限" />
           </div>
@@ -380,7 +381,23 @@ const blockingNode = computed(() =>
   run.value?.node_runs.find(item => ['failed', 'paused', 'running'].includes(item.status)) || null
 )
 const canCancelCurrentRun = computed(() => canCancelFlowRun(run.value))
-const runTopology = computed(() => buildRunTopology(template.value, run.value))
+const runTitle = computed(() => run.value?.name?.trim() || run.value?.template_name || '执行详情')
+const topologyTemplate = computed<FlowTemplate | null>(() => {
+  const snapshot = run.value?.definition_snapshot
+  if (snapshot && Array.isArray(snapshot.nodes) && Array.isArray(snapshot.edges)) {
+    return {
+      id: snapshot.template.id,
+      name: snapshot.template.name,
+      description: snapshot.template.description,
+      variables: snapshot.template.variables || {},
+      is_active: true,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+    }
+  }
+  return template.value
+})
+const runTopology = computed(() => buildRunTopology(topologyTemplate.value, run.value))
 const runTimeline = computed(() => buildFlowRunTimeline(run.value, operationLogs.value))
 
 const countByStatus = (status: FlowRunStatus) => run.value?.node_runs.filter(item => item.status === status).length || 0
@@ -426,9 +443,9 @@ const nodeNameByUuid = (uuid: string) => {
 const topologyNodeMeta = (node: RunTopologyNode) => {
   const pieces = [topologyStatusText(node.status)]
   const recordId = node.run?.execution_record_id
-  if (recordId) pieces.push(`执行记录 #${recordId}`)
+  if (recordId) pieces.push('已关联执行记录')
   const childId = childFlowRunId(node.run)
-  if (childId) pieces.push(`子流程 #${childId}`)
+  if (childId) pieces.push('已关联子流程任务')
   return pieces.join(' / ')
 }
 const triggerText = (trigger: string) => {
@@ -486,12 +503,16 @@ const loadRun = async () => {
       operationLogs.value = []
       operationLogLoadError.value = '操作审计加载失败，当前展示由运行数据推导的时间线。'
     }
-    try {
-      template.value = await flowApi.getTemplate(currentRun.template)
-    } catch (error) {
-      console.error('加载流水线模板拓扑失败:', error)
+    if (currentRun.definition_snapshot) {
       template.value = null
-      templateLoadError.value = '模板拓扑加载失败，已保留节点运行路径和原始输出用于排查。'
+    } else {
+      try {
+        template.value = await flowApi.getTemplate(currentRun.template)
+      } catch (error) {
+        console.error('加载流水线模板拓扑失败:', error)
+        template.value = null
+        templateLoadError.value = '任务创建时没有定义快照，且当前模板拓扑加载失败。'
+      }
     }
   } catch (error) {
     console.error('加载流水线执行详情失败:', error)
@@ -576,7 +597,7 @@ const handleCancelRun = () => {
   if (!run.value || !canCancelCurrentRun.value) return
   Modal.confirm({
     title: '确认取消流程',
-    content: `确定要取消流水线执行 #${run.value.id} 吗？正在运行或暂停的节点会被标记为已取消。`,
+    content: `确定要取消流水线任务“${runTitle.value}”吗？正在运行或暂停的节点会被标记为已取消。`,
     okText: '取消流程',
     okButtonProps: { status: 'danger' },
     onOk: async () => {

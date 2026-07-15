@@ -17,6 +17,7 @@ export interface FlowVariableDefinition {
   type: FlowVariableType
   widget: FlowVariableWidget
   default?: any
+  has_default?: boolean
   required: boolean
   regex?: string
   show_on_start: boolean
@@ -30,8 +31,6 @@ export interface BuildStartInputsParams {
   variables?: StartVariable[]
   variableDefinitions?: FlowVariableDefinition[]
   variableValues?: Record<string, any>
-  nodes: FlowNode[]
-  nodeOverrides: Record<string, string>
 }
 
 export interface FlowNodeJsonValidation {
@@ -171,6 +170,10 @@ const displayKeyMap: Record<string, string> = {
   upload_path: '上传路径',
   script_content: '脚本内容',
   execution_plan_id: '作业执行方案',
+  execution_record: '关联执行记录',
+  execution_record_id: '关联执行记录',
+  child_flow_run_id: '关联子流程任务',
+  child_run_id: '关联子流程任务',
   execution_parameters: '作业参数',
   current_node: '当前节点',
 }
@@ -202,6 +205,18 @@ export const sanitizeFlowRunDisplayData = (value: any): any => {
 
   return Object.entries(value).reduce<Record<string, any>>((acc, [key, item]) => {
     const displayKey = displayKeyMap[key] || key
+    if (key === 'execution_plan_id') {
+      acc[displayKey] = '已选择执行方案'
+      return acc
+    }
+    if (key === 'execution_record' || key === 'execution_record_id') {
+      acc[displayKey] = '已关联执行记录'
+      return acc
+    }
+    if (key === 'child_flow_run_id' || key === 'child_run_id') {
+      acc[displayKey] = '已关联子流程任务'
+      return acc
+    }
     if (hostBindingKeys.has(key)) {
       if (typeof item === 'string' && /^\s*\$\{[^}]+\}\s*$/.test(item)) {
         acc[displayKey] = `主机变量 ${item.trim()}`
@@ -481,11 +496,11 @@ const statusEventDescription = (nodeRun: FlowNodeRun) => {
     const childRunId = nodeRun.outputs?.child_flow_run_id || nodeRun.outputs?.child_run_id
     const childStatus = nodeRun.outputs?.child_flow_status || nodeRun.outputs?.child_status
     const pieces = [flowNodeTypeText(nodeRun.node_type)]
-    if (childRunId) pieces.push(`子流程实例 #${childRunId}`)
+    if (childRunId) pieces.push('已关联子流程任务')
     if (childStatus) pieces.push(flowRunStatusText(childStatus))
     return pieces.join(' / ')
   }
-  if (nodeRun.execution_record_id) return `${flowNodeTypeText(nodeRun.node_type)} / 关联执行记录 #${nodeRun.execution_record_id}`
+  if (nodeRun.execution_record_id) return `${flowNodeTypeText(nodeRun.node_type)} / 已关联执行记录`
   return flowNodeTypeText(nodeRun.node_type)
 }
 
@@ -505,7 +520,7 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
     key: `flow-created-${run.id}`,
     kind: 'flow',
     timestamp: run.created_at,
-    title: `流程实例 #${run.id} 创建`,
+    title: `${run.name || run.template_name || '流水线任务'} 已创建`,
     description: `${run.template_name} / ${run.started_by_name || '-'}`,
     status: 'info',
   })
@@ -513,7 +528,7 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
     key: `flow-started-${run.id}`,
     kind: 'flow',
     timestamp: timelineTime(run.started_at),
-    title: `流程实例 #${run.id} 启动`,
+    title: `${run.name || run.template_name || '流水线任务'} 已启动`,
     description: `${run.trigger_type || 'manual'} 触发`,
     status: 'running',
   })
@@ -615,7 +630,7 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
     key: `flow-finished-${run.id}`,
     kind: 'flow',
     timestamp: timelineTime(run.finished_at),
-    title: `流程实例 #${run.id} ${flowRunStatusText(run.status)}`,
+    title: `${run.name || run.template_name || '流水线任务'} ${flowRunStatusText(run.status)}`,
     description: run.error_message || run.template_name,
     status: run.status,
   })
@@ -746,7 +761,8 @@ export const flowVariableReference = (key: string) => `\${${key}}`
 export const normalizeFlowVariables = (variables: Record<string, any> = {}): FlowVariableDefinition[] =>
   Object.entries(variables).map(([key, raw]) => {
     const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
-    const type = (value.type || 'text') as FlowVariableType
+    const rawType = String(value.type || 'text')
+    const type = (rawType === 'password' ? 'secret' : rawType) as FlowVariableType
     const widget = (value.widget || (type === 'secret' ? 'password' : type === 'host_list' ? 'host_list' : 'input')) as FlowVariableWidget
     return {
       key,
@@ -754,6 +770,7 @@ export const normalizeFlowVariables = (variables: Record<string, any> = {}): Flo
       type,
       widget,
       default: value.default,
+      has_default: Boolean(value.has_default),
       required: Boolean(value.required),
       regex: value.regex ? String(value.regex) : undefined,
       show_on_start: value.show_on_start !== false,
@@ -771,6 +788,7 @@ export const serializeFlowVariables = (definitions: FlowVariableDefinition[] = [
       type: item.type || 'text',
       widget: item.widget || 'input',
       default: item.default,
+      has_default: Boolean(item.has_default),
       required: Boolean(item.required),
       regex: item.regex || '',
       show_on_start: item.show_on_start !== false,
@@ -806,8 +824,6 @@ export const buildStartInputs = ({
   variables,
   variableDefinitions,
   variableValues,
-  nodes,
-  nodeOverrides,
 }: BuildStartInputsParams) => {
   const variableInputs = variableDefinitions
     ? buildStandardVariableInputs(variableDefinitions, variableValues)
@@ -818,20 +834,11 @@ export const buildStartInputs = ({
         return acc
       }, {})
 
-  const selected = new Set(selectedNodeUuids)
-  const selectedNodes = nodes.filter(node => selected.has(node.uuid))
-  const overrides = selectedNodes.reduce<Record<string, any>>((acc, node) => {
-    const raw = nodeOverrides[node.uuid]?.trim()
-    if (!raw || raw === '{}') return acc
-    acc[node.uuid] = JSON.parse(raw)
-    return acc
-  }, {})
 
   return {
     ...variableInputs,
     __execution_scope: scope,
     __selected_node_uuids: scope === 'selected' ? [...selectedNodeUuids] : [],
-    __node_overrides: overrides,
   }
 }
 
@@ -887,10 +894,10 @@ export const summarizeFlowNode = (node: FlowNode) => {
     return `${targetHostText} / ${validFileSources(config).length} 个文件源 / 限速 ${config.bandwidth_limit || 0} MB/s`
   }
   if (node.node_type === 'job_plan') {
-    return `方案 #${config.execution_plan_id || '-'} / ${executionModeText(config.execution_mode)}`
+    return `${config.execution_plan_id ? '已选择执行方案' : '未选择执行方案'} / ${executionModeText(config.execution_mode)}`
   }
   if (node.node_type === 'sub_process') {
-    return `模板 #${config.template_id || '-'} / ${config.inherit_inputs === false ? '独立输入' : '继承输入'}`
+    return `${config.template_id ? '已选择子流程' : '未选择子流程'} / ${config.inherit_inputs === false ? '独立输入' : '继承输入'}`
   }
   if (node.node_type === 'manual') {
     return config.instructions?.trim() || '等待人工确认后继续'
@@ -935,14 +942,14 @@ export const flowNodeConfigDisplayRows = (node: FlowNode): FlowNodeConfigDisplay
   }
   if (node.node_type === 'job_plan') {
     return [
-      { label: '执行方案', value: config.execution_plan_id ? `#${config.execution_plan_id}` : '未选择' },
+      { label: '执行方案', value: config.execution_plan_id ? '已选择执行方案' : '未选择' },
       { label: '执行模式', value: executionModeText(config.execution_mode) },
       { label: '变量映射', value: formatBindings(config.execution_parameter_bindings), multiline: true },
     ]
   }
   if (node.node_type === 'sub_process') {
     return [
-      { label: '子流程模板', value: config.template_id ? `#${config.template_id}` : '未选择' },
+      { label: '子流程模板', value: config.template_id ? '已选择子流程' : '未选择' },
       { label: '输入继承', value: config.inherit_inputs === false ? '独立输入' : '继承父流程输入' },
       { label: '输入映射', value: config.inputs ? JSON.stringify(config.inputs, null, 2) : '未配置', multiline: true },
     ]

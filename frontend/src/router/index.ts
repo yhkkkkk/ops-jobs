@@ -215,6 +215,14 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/flows/tasks',
+        name: 'FlowTasks',
+        component: () => import('@/views/flows/tasks.vue'),
+        meta: {
+          title: '流水线任务',
+          icon: 'icon-history',
+        },
+      },      {
         path: '/flows/create',
         name: 'FlowCreate',
         component: () => import('@/views/flows/editor.vue'),

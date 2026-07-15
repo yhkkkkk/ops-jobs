@@ -3,6 +3,7 @@ import re
 from collections import defaultdict, deque
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.agents.execution_service import AgentExecutionService
@@ -12,6 +13,12 @@ from apps.hosts.models import Host
 from apps.job_templates.models import ExecutionPlan
 
 from .models import FlowNode, FlowNodeRun, FlowRun, FlowTemplate
+from .secret_service import (
+    SECRET_MASK,
+    decrypt_flow_secret_values,
+    flow_secret_variable_keys,
+    split_flow_secret_values,
+)
 from .validators import get_execution_plan_resource_permission_error, get_file_source_errors
 
 
@@ -25,7 +32,6 @@ class FlowRunner:
         {
             "__execution_scope",
             "__selected_node_uuids",
-            "__node_overrides",
             "__parent_flow_run_id",
             "__parent_node_run_id",
             "__flow_template_stack",
@@ -34,16 +40,23 @@ class FlowRunner:
     )
 
     @classmethod
-    def start(cls, template: FlowTemplate, user, inputs=None, trigger_type="manual") -> FlowRun:
-        prepared_inputs = cls._prepare_flow_inputs(template, inputs or {})
+    def start(cls, template: FlowTemplate, user, inputs=None, trigger_type="manual", run_name="") -> FlowRun:
+        if "__node_overrides" in (inputs or {}):
+            raise ValueError("node parameter overrides are not supported")
         with transaction.atomic():
             locked_template = FlowTemplate.objects.select_for_update().get(pk=template.pk)
+            prepared_inputs = cls._prepare_flow_inputs(locked_template, inputs or {})
+            secret_keys = flow_secret_variable_keys(locked_template.variables or {})
+            public_inputs, encrypted_secret_inputs = split_flow_secret_values(prepared_inputs, secret_keys)
             flow_run = FlowRun.objects.create(
                 template=locked_template,
+                name=str(run_name or locked_template.name).strip()[:200],
                 status=FlowRun.Status.RUNNING,
                 trigger_type=trigger_type,
                 started_by=user,
-                inputs=prepared_inputs,
+                inputs=public_inputs,
+                encrypted_secret_inputs=encrypted_secret_inputs,
+                definition_snapshot=cls._build_definition_snapshot(locked_template),
                 started_at=timezone.now(),
             )
 
@@ -52,6 +65,39 @@ class FlowRunner:
         except Exception as exc:
             flow_run.mark_finished(FlowRun.Status.FAILED, str(exc))
             raise
+
+    @classmethod
+    def _build_definition_snapshot(cls, template: FlowTemplate):
+        nodes = list(template.nodes.all().order_by("id"))
+        return {
+            "template": {
+                "id": template.id,
+                "name": template.name,
+                "description": template.description,
+                "variables": copy.deepcopy(template.variables or {}),
+            },
+            "nodes": [
+                {
+                    "id": node.id,
+                    "uuid": node.uuid,
+                    "name": node.name,
+                    "node_type": node.node_type,
+                    "config": copy.deepcopy(node.config or {}),
+                    "position": copy.deepcopy(node.position or {}),
+                }
+                for node in nodes
+            ],
+            "edges": [
+                {
+                    "source_id": edge.source_id,
+                    "target_id": edge.target_id,
+                    "source_uuid": edge.source.uuid,
+                    "target_uuid": edge.target.uuid,
+                    "condition": copy.deepcopy(edge.condition or {}),
+                }
+                for edge in template.edges.select_related("source", "target").order_by("id")
+            ],
+        }
 
     @classmethod
     def skip_node(cls, flow_run: FlowRun, node_run: FlowNodeRun, user=None, reason="") -> FlowRun:
@@ -239,7 +285,8 @@ class FlowRunner:
 
         node_runs_by_node_id = {node_run.node_id: node_run for node_run in flow_run.node_runs.all()}
         incoming_edges_by_target = cls._incoming_edges_by_target(flow_run.template)
-        selected_node_uuids = cls._selected_node_uuids(flow_run.inputs)
+        runtime_inputs = cls._runtime_inputs(flow_run)
+        selected_node_uuids = cls._selected_node_uuids(runtime_inputs)
         has_blocking_nodes = False
         for node in cls._topological_nodes(flow_run.template):
             if selected_node_uuids is not None and node.uuid not in selected_node_uuids:
@@ -276,7 +323,7 @@ class FlowRunner:
                     flow_run,
                     node,
                     user,
-                    config=cls._node_config_for_run(node, flow_run.inputs),
+                    config=cls._node_config_for_run(node, runtime_inputs),
                 )
                 node_runs_by_node_id[node.id] = node_run
 
@@ -486,13 +533,6 @@ class FlowRunner:
     @classmethod
     def _node_config_for_run(cls, node: FlowNode, inputs):
         config = copy.deepcopy(node.config or {})
-        overrides = (inputs or {}).get("__node_overrides") or {}
-        if not isinstance(overrides, dict):
-            overrides = {}
-
-        override = overrides.get(node.uuid) or overrides.get(str(node.id))
-        if isinstance(override, dict):
-            config.update(copy.deepcopy(override))
         config = cls._resolve_config_variables(config, cls._business_inputs(inputs))
         if node.node_type == FlowNode.NodeType.SCRIPT:
             config["global_variables"] = {
@@ -506,9 +546,16 @@ class FlowRunner:
         return {key: value for key, value in (inputs or {}).items() if key not in cls.CONTROL_INPUT_KEYS}
 
     @classmethod
+    def _runtime_inputs(cls, flow_run: FlowRun):
+        runtime_inputs = dict(flow_run.inputs or {})
+        runtime_inputs.update(decrypt_flow_secret_values(flow_run.encrypted_secret_inputs or {}))
+        return runtime_inputs
+
+    @classmethod
     def _prepare_flow_inputs(cls, template: FlowTemplate, inputs):
         inputs = copy.deepcopy(inputs or {})
         variables = template.variables or {}
+        secret_defaults = decrypt_flow_secret_values(template.encrypted_secret_defaults or {})
         if not variables:
             return inputs
         if not isinstance(variables, dict):
@@ -521,7 +568,11 @@ class FlowRunner:
         for key, definition in variables.items():
             if not isinstance(definition, dict):
                 raise ValueError(f"flow variable {key} definition must be an object")
-            value = provided_inputs[key] if key in provided_inputs else copy.deepcopy(definition.get("default"))
+            value = provided_inputs[key] if key in provided_inputs else copy.deepcopy(
+                secret_defaults.get(key, definition.get("default"))
+            )
+            if value == SECRET_MASK and key in secret_defaults:
+                value = copy.deepcopy(secret_defaults[key])
             value = cls._coerce_variable_value(key, definition, value)
             if cls._is_empty_value(value):
                 if definition.get("required"):
@@ -546,14 +597,35 @@ class FlowRunner:
         if cls._is_empty_value(value):
             return value
         if value_type == "host_list":
-            if not isinstance(value, list):
-                raise ValueError(f"flow variable {key} must be a host_list")
+            raw_values = value if isinstance(value, list) else re.split(r"[\s,]+", str(value))
+            identifiers = [str(item).strip() for item in raw_values if str(item).strip()]
+            if not identifiers:
+                return []
+
+            hosts = list(
+                Host.objects.filter(
+                    Q(name__in=identifiers)
+                    | Q(internal_ip__in=identifiers)
+                    | Q(public_ip__in=identifiers)
+                    | Q(id__in=[item for item in raw_values if isinstance(item, int)])
+                )
+            )
+            matches = defaultdict(list)
+            for host in hosts:
+                for identifier in (str(host.id), host.name, host.internal_ip, host.public_ip):
+                    if identifier:
+                        matches[str(identifier)].append(host)
+
             host_ids = []
-            for item in value:
-                try:
-                    host_ids.append(int(item))
-                except (TypeError, ValueError):
-                    raise ValueError(f"flow variable {key} contains invalid host id")
+            for identifier in identifiers:
+                matched_hosts = matches.get(identifier, [])
+                if not matched_hosts:
+                    raise ValueError(f"flow variable {key} contains unknown host: {identifier}")
+                if len(matched_hosts) > 1:
+                    raise ValueError(f"flow variable {key} contains ambiguous host: {identifier}")
+                host_id = matched_hosts[0].id
+                if host_id not in host_ids:
+                    host_ids.append(host_id)
             return host_ids
         if value_type in ("number", "integer"):
             try:
@@ -622,12 +694,12 @@ class FlowRunner:
 
     @classmethod
     def _execute_node(cls, flow_run: FlowRun, node: FlowNode, user, config=None) -> FlowNodeRun:
-        config = copy.deepcopy(config if config is not None else node.config or {})
+        public_config = cls._node_config_for_run(node, flow_run.inputs)
         node_run = FlowNodeRun.objects.create(
             flow_run=flow_run,
             node=node,
             status=FlowRun.Status.RUNNING,
-            inputs=config,
+            inputs=public_config,
             started_at=timezone.now(),
         )
 
@@ -636,6 +708,7 @@ class FlowRunner:
     @classmethod
     def _dispatch_node_run(cls, node_run: FlowNodeRun, user) -> FlowNodeRun:
         node = node_run.node
+        config = cls._node_config_for_run(node, cls._runtime_inputs(node_run.flow_run))
         if node.node_type in (
             FlowNode.NodeType.SCRIPT,
             FlowNode.NodeType.FILE_TRANSFER,
@@ -648,18 +721,18 @@ class FlowRunner:
         ):
             try:
                 if node.node_type == FlowNode.NodeType.SUB_PROCESS:
-                    return cls._execute_sub_process_node(node_run, user)
+                    return cls._execute_sub_process_node(node_run, user, config)
                 if node.node_type in (FlowNode.NodeType.PARALLEL, FlowNode.NodeType.JOIN):
                     return cls._execute_gateway_node(node_run)
                 if node.node_type == FlowNode.NodeType.CONDITION:
                     return cls._execute_condition_node(node_run, user)
                 if node.node_type == FlowNode.NodeType.MANUAL:
-                    return cls._execute_manual_node(node_run, user)
+                    return cls._execute_manual_node(node_run, user, config)
                 if node.node_type == FlowNode.NodeType.SCRIPT:
-                    return cls._execute_script_node(node_run, user)
+                    return cls._execute_script_node(node_run, user, config)
                 if node.node_type == FlowNode.NodeType.FILE_TRANSFER:
-                    return cls._execute_file_transfer_node(node_run, user)
-                return cls._execute_job_plan_node(node_run, user)
+                    return cls._execute_file_transfer_node(node_run, user, config)
+                return cls._execute_job_plan_node(node_run, user, config)
             except Exception as exc:
                 node_run.status = FlowRun.Status.FAILED
                 node_run.error_message = str(exc)
@@ -679,8 +752,7 @@ class FlowRunner:
         return node_run
 
     @classmethod
-    def _execute_sub_process_node(cls, node_run: FlowNodeRun, user) -> FlowNodeRun:
-        config = node_run.inputs or {}
+    def _execute_sub_process_node(cls, node_run: FlowNodeRun, user, config) -> FlowNodeRun:
         child_template = cls._get_sub_process_template_or_fail(node_run, config, user)
         if child_template is None:
             return node_run
@@ -695,7 +767,7 @@ class FlowRunner:
 
         child_inputs = {}
         if config.get("inherit_inputs", True):
-            child_inputs.update(copy.deepcopy(cls._business_inputs(node_run.flow_run.inputs)))
+            child_inputs.update(copy.deepcopy(cls._business_inputs(cls._runtime_inputs(node_run.flow_run))))
         child_inputs.update(copy.deepcopy(config.get("inputs") or {}))
         child_inputs.update(
             {
@@ -895,12 +967,12 @@ class FlowRunner:
         return node_run
 
     @staticmethod
-    def _execute_manual_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
+    def _execute_manual_node(node_run: FlowNodeRun, user, config) -> FlowNodeRun:
         node_run.status = FlowRun.Status.PAUSED
         node_run.outputs = {
             "manual": True,
             "confirmed": False,
-            "instructions": (node_run.inputs or {}).get("instructions", ""),
+            "instructions": config.get("instructions", ""),
         }
         node_run.error_message = ""
         node_run.finished_at = None
@@ -980,7 +1052,7 @@ class FlowRunner:
 
         path = str(variable).strip()
         if path.startswith("inputs."):
-            return cls._get_path(cls._business_inputs(flow_run.inputs), path.removeprefix("inputs."))
+            return cls._get_path(cls._business_inputs(cls._runtime_inputs(flow_run)), path.removeprefix("inputs."))
         if path.startswith("outputs."):
             parts = path.split(".", 2)
             if len(parts) < 3:
@@ -989,7 +1061,7 @@ class FlowRunner:
             if not node_run:
                 return None
             return cls._get_path(node_run.outputs or {}, parts[2])
-        return cls._get_path(cls._business_inputs(flow_run.inputs), path)
+        return cls._get_path(cls._business_inputs(cls._runtime_inputs(flow_run)), path)
 
     @staticmethod
     def _get_path(data, path):
@@ -1071,8 +1143,7 @@ class FlowRunner:
         return target_hosts
 
     @staticmethod
-    def _execute_script_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
-        config = node_run.inputs or {}
+    def _execute_script_node(node_run: FlowNodeRun, user, config) -> FlowNodeRun:
         host_ids = config.get("target_host_ids") or []
         target_hosts = FlowRunner._get_target_hosts_or_fail(node_run, config, user)
         if target_hosts is None:
@@ -1143,8 +1214,7 @@ class FlowRunner:
         return node_run
 
     @staticmethod
-    def _execute_file_transfer_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
-        config = node_run.inputs or {}
+    def _execute_file_transfer_node(node_run: FlowNodeRun, user, config) -> FlowNodeRun:
         target_hosts = FlowRunner._get_target_hosts_or_fail(node_run, config, user)
         if target_hosts is None:
             return node_run
@@ -1177,7 +1247,7 @@ class FlowRunner:
                 "timeout": config.get("timeout", 300),
                 "bandwidth_limit": config.get("bandwidth_limit", 0),
                 "target_host_ids": config.get("target_host_ids") or [],
-                "file_sources": file_sources,
+                "file_sources": (node_run.inputs or {}).get("file_sources") or [],
             },
         )
         execution_record.status = "running"
@@ -1250,8 +1320,7 @@ class FlowRunner:
         return get_file_source_errors(file_sources)
 
     @staticmethod
-    def _execute_job_plan_node(node_run: FlowNodeRun, user) -> FlowNodeRun:
-        config = node_run.inputs or {}
+    def _execute_job_plan_node(node_run: FlowNodeRun, user, config) -> FlowNodeRun:
         plan_id = config.get("execution_plan_id")
         if not plan_id:
             node_run.status = FlowRun.Status.FAILED
@@ -1285,6 +1354,7 @@ class FlowRunner:
         from apps.job_templates.services import ExecutionPlanService
 
         execution_parameter_bindings = config.get("execution_parameter_bindings")
+        public_config = node_run.inputs or {}
         if execution_parameter_bindings is not None:
             if not isinstance(execution_parameter_bindings, dict):
                 node_run.status = FlowRun.Status.FAILED
@@ -1293,13 +1363,16 @@ class FlowRunner:
                 node_run.save(update_fields=["status", "error_message", "finished_at"])
                 return node_run
             execution_parameters = execution_parameter_bindings
+            record_execution_parameters = public_config.get("execution_parameter_bindings") or {}
         else:
             execution_parameters = config.get("execution_parameters") or {}
+            record_execution_parameters = public_config.get("execution_parameters") or {}
         result = ExecutionPlanService.execute_plan(
             execution_plan=execution_plan,
             user=user,
             trigger_type=node_run.flow_run.trigger_type,
             execution_parameters=execution_parameters,
+            record_execution_parameters=record_execution_parameters,
             name=f"流程节点: {node_run.node.name}",
             description=f"流程 {node_run.flow_run.template.name} 执行方案 {execution_plan.name}",
             execution_mode=config.get("execution_mode", "parallel"),

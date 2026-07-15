@@ -935,60 +935,53 @@ def test_flow_runner_selected_scope_executes_only_selected_nodes():
     assert execute_script.call_args.kwargs["script_content"] == "echo second"
 
 
-def test_flow_runner_node_overrides_apply_to_run_without_mutating_template():
+def test_flow_runner_resolves_text_host_list_variables_before_execution():
     user = _create_user()
     host = _create_host(user)
+    host.internal_ip = "10.10.10.10"
+    host.save(update_fields=["internal_ip"])
     template = FlowTemplate.objects.create(
         name=f"flow-{uuid.uuid4().hex[:8]}",
         created_by=user,
+        variables={"CheckHost": {"type": "host_list", "required": True}},
     )
-    node = FlowNode.objects.create(
+    FlowNode.objects.create(
         template=template,
         uuid="script-1",
         name="run script",
         node_type=FlowNode.NodeType.SCRIPT,
-        config={
-            "script_content": "echo original",
-            "script_type": "shell",
-            "target_host_ids": [host.id],
-            "timeout": 30,
-        },
+        config={"script_content": "hostname", "target_host_ids": "${CheckHost}"},
     )
 
     with patch(
         "apps.agents.execution_service.AgentExecutionService.execute_script_via_agent",
-        return_value={
-            "success": True,
-            "success_count": 1,
-            "failed_count": 0,
-            "results": [{"host_id": host.id, "host_name": host.name, "success": True}],
-        },
+        return_value={"success": True, "success_count": 1, "failed_count": 0, "results": []},
     ) as execute_script:
         flow_run = FlowRunner.start(
             template=template,
             user=user,
-            inputs={
-                "__node_overrides": {
-                    "script-1": {
-                        "script_content": "echo override",
-                        "timeout": 99,
-                    }
-                }
-            },
+            inputs={"CheckHost": f"{host.internal_ip}\n{host.name}"},
         )
 
-    flow_run.refresh_from_db()
-    node_run = flow_run.node_runs.get(node=node)
-    assert node_run.status == FlowRun.Status.SUCCESS
-    assert node_run.inputs["script_content"] == "echo override"
-    assert node_run.inputs["timeout"] == 99
-    assert execute_script.call_args.kwargs["script_content"] == "echo override"
-    assert execute_script.call_args.kwargs["timeout"] == 99
-    node.refresh_from_db()
-    assert node.config["script_content"] == "echo original"
-    assert node.config["timeout"] == 30
+    assert flow_run.status == FlowRun.Status.SUCCESS
+    assert flow_run.inputs["CheckHost"] == [host.id]
+    assert execute_script.call_args.kwargs["target_hosts"] == [host]
 
+def test_flow_runner_rejects_arbitrary_node_parameter_overrides():
+    user = _create_user()
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+    )
 
+    with pytest.raises(ValueError, match="node parameter overrides are not supported"):
+        FlowRunner.start(
+            template=template,
+            user=user,
+            inputs={"__node_overrides": {"script-1": {"timeout": 99}}},
+        )
+
+    assert not FlowRun.objects.filter(template=template).exists()
 def test_flow_runner_strips_control_inputs_from_job_plan_parameters():
     user = _create_user()
     host = _create_host(user)
@@ -1030,7 +1023,6 @@ def test_flow_runner_strips_control_inputs_from_job_plan_parameters():
                 "business_param": "business-value",
                 "__execution_scope": "selected",
                 "__selected_node_uuids": ["job-plan-1"],
-                "__node_overrides": {},
             },
         )
 

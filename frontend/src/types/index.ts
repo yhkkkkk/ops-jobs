@@ -575,6 +575,17 @@ export interface FlowEdge {
   condition?: Record<string, any>
 }
 
+export interface FlowDefinitionSnapshot {
+  template: {
+    id?: number
+    name: string
+    description?: string
+    variables: Record<string, any>
+  }
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+}
+
 export interface FlowTemplate {
   id?: number
   name: string
@@ -614,6 +625,9 @@ export interface FlowSchedule {
   cron_expression: string
   timezone: string
   inputs: Record<string, any>
+  overlap_policy: 'skip' | 'allow'
+  misfire_policy: 'skip' | 'coalesce'
+  misfire_grace_seconds: number
   is_active: boolean
   created_by?: number
   created_by_name?: string
@@ -622,6 +636,7 @@ export interface FlowSchedule {
 }
 export interface FlowRun {
   id: number
+  name?: string
   template: number
   template_name: string
   status: FlowRunStatus
@@ -629,6 +644,7 @@ export interface FlowRun {
   started_by: number
   started_by_name: string
   inputs: Record<string, any>
+  definition_snapshot?: FlowDefinitionSnapshot
   outputs: Record<string, any>
   error_message?: string
   started_at?: string | null

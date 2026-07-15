@@ -1271,3 +1271,124 @@ def test_flow_edge_api_updates_nodes_by_uuid_without_template_payload():
     edge.refresh_from_db()
     assert edge.source == second
     assert edge.target == third
+
+
+def test_flow_template_object_view_permission_exposes_template_and_its_runs():
+    from guardian.shortcuts import assign_perm
+
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    viewer = User.objects.create_user(f"viewer-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    flow_run = FlowRun.objects.create(template=template, started_by=owner)
+    assign_perm("flows.view_flowtemplate", viewer, template)
+
+    client = _client_for(viewer)
+    templates_response = client.get("/api/flows/templates/")
+    detail_response = client.get(f"/api/flows/templates/{template.id}/")
+    runs_response = client.get("/api/flows/runs/")
+
+    assert templates_response.status_code == 200
+    assert template.id in {item["id"] for item in templates_response.data["content"]}
+    assert detail_response.status_code == 200
+    assert runs_response.status_code == 200
+    assert flow_run.id in {item["id"] for item in runs_response.data["content"]}
+
+def test_flow_template_mutation_requires_change_object_permission():
+    from guardian.shortcuts import assign_perm
+
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    operator = User.objects.create_user(f"operator-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    assign_perm("flows.view_flowtemplate", operator, template)
+    client = _client_for(operator)
+
+    denied = client.patch(
+        f"/api/flows/templates/{template.id}/",
+        {"description": "should be denied"},
+        format="json",
+    )
+
+    assert denied.status_code == 403
+    assign_perm("flows.change_flowtemplate", operator, template)
+    client = _client_for(User.objects.get(pk=operator.pk))
+    allowed = client.patch(
+        f"/api/flows/templates/{template.id}/",
+        {"description": "allowed"},
+        format="json",
+    )
+    assert allowed.status_code == 200
+    template.refresh_from_db()
+    assert template.description == "allowed"
+
+def test_flow_template_change_permission_allows_node_and_schedule_management():
+    from guardian.shortcuts import assign_perm
+
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    operator = User.objects.create_user(f"operator-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    assign_perm("flows.view_flowtemplate", operator, template)
+    assign_perm("flows.change_flowtemplate", operator, template)
+    client = _client_for(User.objects.get(pk=operator.pk))
+
+    node_response = client.post(
+        "/api/flows/nodes/",
+        {
+            "template": template.id,
+            "uuid": "shared-script",
+            "name": "shared script",
+            "node_type": "script",
+            "config": {"script_content": "echo shared"},
+        },
+        format="json",
+    )
+    schedule_response = client.post(
+        "/api/flows/schedules/",
+        {
+            "name": f"schedule-{uuid.uuid4().hex[:8]}",
+            "template": template.id,
+            "cron_expression": "0 2 * * *",
+            "inputs": {},
+        },
+        format="json",
+    )
+
+    assert node_response.status_code == 200
+    assert schedule_response.status_code == 200
+
+def test_flow_run_control_requires_template_change_object_permission():
+    from guardian.shortcuts import assign_perm
+
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    operator = User.objects.create_user(f"operator-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=owner)
+    flow_run = FlowRun.objects.create(template=template, started_by=owner, status=FlowRun.Status.RUNNING)
+    assign_perm("flows.view_flowtemplate", operator, template)
+    client = _client_for(operator)
+
+    denied = client.post(f"/api/flows/runs/{flow_run.id}/cancel/", format="json")
+    assert denied.status_code == 403
+
+    assign_perm("flows.change_flowtemplate", operator, template)
+    client = _client_for(User.objects.get(pk=operator.pk))
+    allowed = client.post(f"/api/flows/runs/{flow_run.id}/cancel/", format="json")
+    assert allowed.status_code == 200
+
+def test_flow_start_creates_named_task_and_filters_task_list_by_template_and_status():
+    user = User.objects.create_user(f"task-{uuid.uuid4().hex[:6]}", password="pass")
+    first_template = FlowTemplate.objects.create(name=f"first-{uuid.uuid4().hex[:8]}", created_by=user)
+    second_template = FlowTemplate.objects.create(name=f"second-{uuid.uuid4().hex[:8]}", created_by=user)
+    FlowRun.objects.create(template=first_template, started_by=user, status=FlowRun.Status.SUCCESS, name="历史任务")
+    FlowRun.objects.create(template=second_template, started_by=user, status=FlowRun.Status.FAILED, name="失败任务")
+    client = _client_for(user)
+
+    response = client.post(
+        f"/api/flows/templates/{first_template.id}/start/",
+        {"name": "发布前检查", "inputs": {}},
+        format="json",
+    )
+    task_list = client.get(f"/api/flows/runs/?template={first_template.id}&status=success")
+
+    assert response.status_code == 200
+    assert response.data["content"]["name"] == "发布前检查"
+    assert task_list.status_code == 200
+    assert {item["name"] for item in task_list.data["content"]} == {"历史任务", "发布前检查"}

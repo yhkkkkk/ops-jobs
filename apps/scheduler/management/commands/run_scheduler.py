@@ -72,6 +72,11 @@ def _sync_flow_schedules(scheduler: BlockingScheduler):
         except Exception:
             tz = pytz.timezone("Asia/Shanghai")
         trigger = CronTrigger.from_crontab(schedule.cron_expression, timezone=tz)
+        job_options = {
+            "max_instances": 1,
+            "coalesce": schedule.misfire_policy == FlowSchedule.MisfirePolicy.COALESCE,
+            "misfire_grace_time": schedule.misfire_grace_seconds,
+        }
         existing = scheduler.get_job(scheduler_job_id)
         if existing is None:
             scheduler.add_job(
@@ -80,9 +85,12 @@ def _sync_flow_schedules(scheduler: BlockingScheduler):
                 args=[schedule.id],
                 id=scheduler_job_id,
                 replace_existing=True,
+                **job_options,
             )
-        elif str(existing.trigger) != str(trigger):
-            scheduler.reschedule_job(scheduler_job_id, trigger=trigger)
+        else:
+            scheduler.modify_job(scheduler_job_id, **job_options)
+            if str(existing.trigger) != str(trigger):
+                scheduler.reschedule_job(scheduler_job_id, trigger=trigger)
 
     for scheduled_job in scheduler.get_jobs():
         if scheduled_job.id.startswith("flow_schedule_") and scheduled_job.id not in active_schedule_ids:

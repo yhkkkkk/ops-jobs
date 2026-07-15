@@ -73,7 +73,7 @@
         </aside>
 
         <main class="flow-canvas-stage">
-          <div class="flow-canvas-toolbar">
+          <div class="flow-canvas-toolbar flow-canvas-toolbar--compact">
             <div>
               <h2>可视化编排</h2>
               <p>{{ isReadonly ? '只读查看模板 DAG 拓扑，点击节点打开配置抽屉。' : '拖拽标准插件，按 DAG 串并行、分支、子流程组织执行路径。' }}</p>
@@ -497,7 +497,7 @@ const props = withDefaults(defineProps<{
   mode: 'edit',
 })
 
-const FLOW_PROPERTY_DRAWER_WIDTH = '1050px'
+const FLOW_PROPERTY_DRAWER_WIDTH = '760px'
 const route = useRoute()
 const router = useRouter()
 const isReadonly = computed(() => props.mode === 'readonly')

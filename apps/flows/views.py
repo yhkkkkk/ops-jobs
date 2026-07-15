@@ -1,9 +1,11 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
+from django.db.models import Q
+from guardian.shortcuts import get_objects_for_user
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 
 import logging
@@ -34,6 +36,35 @@ ACTIVE_FLOW_RUN_STATUSES = [
     FlowRun.Status.PAUSED,
 ]
 
+
+def _filter_visible_flow_templates(queryset, user):
+    if user.is_superuser:
+        return queryset
+    permitted_template_ids = get_objects_for_user(
+        user,
+        "flows.view_flowtemplate",
+        klass=FlowTemplate,
+        accept_global_perms=True,
+    ).values("pk")
+    return queryset.filter(Q(created_by=user) | Q(pk__in=permitted_template_ids)).distinct()
+
+def _filter_manageable_flow_templates(queryset, user):
+    if user.is_superuser:
+        return queryset
+    permitted_template_ids = get_objects_for_user(
+        user,
+        "flows.change_flowtemplate",
+        klass=FlowTemplate,
+        accept_global_perms=True,
+    ).values("pk")
+    return queryset.filter(Q(created_by=user) | Q(pk__in=permitted_template_ids)).distinct()
+
+def _require_flow_template_change_permission(user, template):
+    if user.is_superuser or template.created_by_id == user.id:
+        return
+    if user.has_perm("flows.change_flowtemplate", template):
+        return
+    raise PermissionDenied("无权修改该流程模板")
 
 def _flow_run_resource_name(flow_run):
     return f"{flow_run.template.name} #{flow_run.id}"
@@ -121,9 +152,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("created_by").prefetch_related("nodes", "edges")
-        if self.request.user.is_superuser:
-            return queryset
-        return queryset.filter(created_by=self.request.user)
+        return _filter_visible_flow_templates(queryset, self.request.user)
 
     def list(self, request, *args, **kwargs):
         serializer = self.get_serializer(self.get_queryset(), many=True)
@@ -156,7 +185,9 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
-        serializer = self.get_serializer(self.get_object(), data=request.data, partial=partial)
+        template = self.get_object()
+        _require_flow_template_change_permission(request.user, template)
+        serializer = self.get_serializer(template, data=request.data, partial=partial)
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
         nodes_data = serializer.validated_data.pop("nodes", None)
@@ -182,6 +213,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         template = self.get_object()
+        _require_flow_template_change_permission(request.user, template)
         try:
             with transaction.atomic():
                 _lock_template_for_graph_change(template)
@@ -272,6 +304,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
             name=name,
             description=source.description,
             variables=source.variables or {},
+            encrypted_secret_defaults=source.encrypted_secret_defaults or {},
             is_active=False,
             created_by=user,
         )
@@ -418,6 +451,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
         template = self.get_object()
+        _require_flow_template_change_permission(request.user, template)
         serializer = FlowStartSerializer(data=request.data)
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
@@ -427,6 +461,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
                 template=template,
                 user=request.user,
                 inputs=serializer.validated_data.get("inputs") or {},
+                run_name=serializer.validated_data.get("name") or "",
             )
             _log_flow_run_action(
                 request,
@@ -456,8 +491,10 @@ class FlowNodeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("template")
-        if not self.request.user.is_superuser:
-            queryset = queryset.filter(template__created_by=self.request.user)
+        manageable_template_ids = _filter_manageable_flow_templates(
+            FlowTemplate.objects.all(), self.request.user
+        ).values("pk")
+        queryset = queryset.filter(template_id__in=manageable_template_ids)
         template_id = self.request.query_params.get("template")
         if template_id:
             queryset = queryset.filter(template_id=template_id)
@@ -489,7 +526,9 @@ class FlowNodeViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
-        serializer = self.get_serializer(self.get_object(), data=request.data, partial=partial)
+        instance = self.get_object()
+        _require_flow_template_change_permission(request.user, instance.template)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
         try:
@@ -526,8 +565,10 @@ class FlowEdgeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("template", "source", "target")
-        if not self.request.user.is_superuser:
-            queryset = queryset.filter(template__created_by=self.request.user)
+        manageable_template_ids = _filter_manageable_flow_templates(
+            FlowTemplate.objects.all(), self.request.user
+        ).values("pk")
+        queryset = queryset.filter(template_id__in=manageable_template_ids)
         template_id = self.request.query_params.get("template")
         if template_id:
             queryset = queryset.filter(template_id=template_id)
@@ -611,8 +652,7 @@ class FlowEdgeViewSet(viewsets.ModelViewSet):
         template_queryset = FlowTemplate.objects.all()
         if for_update:
             template_queryset = template_queryset.select_for_update()
-        if not request.user.is_superuser:
-            template_queryset = template_queryset.filter(created_by=request.user)
+        template_queryset = _filter_manageable_flow_templates(template_queryset, request.user)
         template = template_queryset.filter(id=parsed_template_id).first()
         if not template:
             raise DjangoValidationError({"template": "流程模板不存在或无权操作"})
@@ -663,12 +703,27 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
             .select_related("template", "started_by")
             .prefetch_related("node_runs__node", "node_runs__execution_record")
         )
-        if self.request.user.is_superuser:
-            return queryset
-        return queryset.filter(template__created_by=self.request.user)
+        visible_template_ids = _filter_visible_flow_templates(
+            FlowTemplate.objects.all(), self.request.user
+        ).values("pk")
+        queryset = queryset.filter(template_id__in=visible_template_ids)
+        template_id = self.request.query_params.get("template")
+        status = self.request.query_params.get("status")
+        trigger_type = self.request.query_params.get("trigger_type")
+        if template_id:
+            queryset = queryset.filter(template_id=template_id)
+        if status:
+            queryset = queryset.filter(status=status)
+        if trigger_type:
+            queryset = queryset.filter(trigger_type=trigger_type)
+        return queryset
 
     def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
+        serializer = self.get_serializer(
+            self.get_queryset(),
+            many=True,
+            context={**self.get_serializer_context(), "omit_definition_snapshot": True},
+        )
         return SycResponse.success(content=serializer.data, message="获取流程执行列表成功")
 
     def retrieve(self, request, *args, **kwargs):
@@ -697,6 +752,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def skip_node(self, request, pk=None):
         flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
         node_run_id = request.data.get("node_run_id")
         if not node_run_id:
             _log_flow_run_action(
@@ -778,6 +834,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def retry_node(self, request, pk=None):
         flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
         node_run_id = request.data.get("node_run_id")
         if not node_run_id:
             _log_flow_run_action(
@@ -856,6 +913,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def confirm_manual_node(self, request, pk=None):
         flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
         node_run_id = request.data.get("node_run_id")
         if not node_run_id:
             _log_flow_run_action(
@@ -937,6 +995,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
 
         try:
             previous_status = flow_run.status
@@ -975,8 +1034,10 @@ class FlowScheduleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related('template', 'created_by')
-        if not self.request.user.is_superuser:
-            queryset = queryset.filter(created_by=self.request.user)
+        manageable_template_ids = _filter_manageable_flow_templates(
+            FlowTemplate.objects.all(), self.request.user
+        ).values('pk')
+        queryset = queryset.filter(template_id__in=manageable_template_ids)
         template_id = self.request.query_params.get('template')
         if template_id:
             queryset = queryset.filter(template_id=template_id)

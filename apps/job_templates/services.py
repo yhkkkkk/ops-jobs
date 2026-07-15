@@ -183,7 +183,7 @@ class ExecutionPlanService:
     
     @staticmethod
     def execute_plan(execution_plan, user, trigger_type='manual', execution_parameters=None,
-                    client_ip=None, user_agent=None, execution_type='job_workflow',
+                    record_execution_parameters=None, client_ip=None, user_agent=None, execution_type='job_workflow',
                     related_object=None, **kwargs):
         """执行执行方案 - 创建ExecutionRecord并执行"""
         try:
@@ -228,6 +228,11 @@ class ExecutionPlanService:
                 # 然后用传入的执行参数覆盖（定时任务的execution_parameters会覆盖默认值）
                 global_parameters = {**default_global_parameters, **(execution_parameters or {})}
                 global_parameters.pop('agent_server_id', None)
+                record_global_parameters = {
+                    **default_global_parameters,
+                    **(record_execution_parameters if record_execution_parameters is not None else execution_parameters or {}),
+                }
+                record_global_parameters.pop('agent_server_id', None)
 
 
                 # 创建统一的执行记录
@@ -238,7 +243,7 @@ class ExecutionPlanService:
                     executed_by=user,
                     related_object=related_object or execution_plan,
                     trigger_type=trigger_type,
-                    execution_parameters=global_parameters,
+                    execution_parameters=record_global_parameters,
                     target_hosts=[{
                         'id': host.id,
                         'name': host.name,

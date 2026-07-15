@@ -41,7 +41,13 @@ def test_flow_schedule_launches_once_per_scheduled_minute_with_defined_inputs():
 
     assert first["success"] is True
     assert second == {"success": True, "skipped": True, "reason": "duplicate_schedule"}
-    start.assert_called_once_with(schedule.template, schedule.created_by, inputs={"ReleaseVersion": "v1.2.3"}, trigger_type="scheduled")
+    start.assert_called_once_with(
+        schedule.template,
+        schedule.created_by,
+        inputs={"ReleaseVersion": "v1.2.3"},
+        trigger_type="scheduled",
+        run_name=schedule.name,
+    )
     schedule_run = FlowScheduleRun.objects.get(schedule=schedule, scheduled_for=scheduled_for)
     assert schedule_run.flow_run == flow_run
     assert schedule_run.status == "launched"
@@ -192,3 +198,44 @@ def test_flow_schedule_api_creates_schedule_only_for_owned_template():
         format="json",
     )
     assert denied.status_code == 400
+
+def test_flow_schedule_skips_new_tick_when_its_previous_run_is_active():
+    schedule = _schedule()
+    active_run = FlowRun.objects.create(
+        template=schedule.template,
+        started_by=schedule.created_by,
+        status=FlowRun.Status.RUNNING,
+    )
+    FlowScheduleRun.objects.create(
+        schedule=schedule,
+        scheduled_for=timezone.now().replace(second=0, microsecond=0) - timezone.timedelta(minutes=1),
+        flow_run=active_run,
+        status="launched",
+    )
+    scheduled_for = timezone.now().replace(second=0, microsecond=0)
+
+    with patch("apps.flows.schedule_service.FlowRunner.start") as start:
+        result = execute_flow_schedule(schedule.id, scheduled_for=scheduled_for)
+
+    assert result == {"success": True, "skipped": True, "reason": "overlap"}
+    start.assert_not_called()
+    schedule_run = FlowScheduleRun.objects.get(schedule=schedule, scheduled_for=scheduled_for)
+    assert schedule_run.status == "skipped"
+    assert schedule_run.error_message == "previous scheduled flow run is still active"
+
+def test_scheduler_applies_flow_schedule_misfire_and_single_instance_policy():
+    from apscheduler.schedulers.blocking import BlockingScheduler
+    from apps.scheduler.management.commands.run_scheduler import _sync_flow_schedules
+
+    schedule = _schedule()
+    schedule.misfire_policy = "coalesce"
+    schedule.misfire_grace_seconds = 120
+    schedule.save(update_fields=["misfire_policy", "misfire_grace_seconds", "updated_at"])
+    scheduler = BlockingScheduler(timezone="Asia/Shanghai")
+
+    _sync_flow_schedules(scheduler)
+
+    job = scheduler.get_job(f"flow_schedule_{schedule.id}")
+    assert job.max_instances == 1
+    assert job.coalesce is True
+    assert job.misfire_grace_time == 120

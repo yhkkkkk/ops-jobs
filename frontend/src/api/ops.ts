@@ -470,7 +470,7 @@ export const flowApi = {
     return http.post(`/flows/templates/${id}/copy/`, data || {})
   },
 
-  startTemplate(id: number, data: { inputs?: Record<string, any> }): Promise<FlowRun> {
+  startTemplate(id: number, data: { name?: string; inputs?: Record<string, any> }): Promise<FlowRun> {
     return http.post(`/flows/templates/${id}/start/`, data)
   },
 
@@ -521,11 +521,11 @@ export const flowApi = {
   getScheduleRuns(id: number): Promise<Array<{ id: number; scheduled_for: string; flow_run_id?: number; flow_run_status?: string; status: string; error_message?: string }>> {
     return http.get(`/flows/schedules/${id}/runs/`)
   },
-  createSchedule(data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'is_active'>): Promise<FlowSchedule> {
+  createSchedule(data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'overlap_policy' | 'misfire_policy' | 'misfire_grace_seconds' | 'is_active'>): Promise<FlowSchedule> {
     return http.post('/flows/schedules/', data)
   },
 
-  updateSchedule(id: number, data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'is_active'>): Promise<FlowSchedule> {
+  updateSchedule(id: number, data: Pick<FlowSchedule, 'name' | 'template' | 'cron_expression' | 'timezone' | 'inputs' | 'overlap_policy' | 'misfire_policy' | 'misfire_grace_seconds' | 'is_active'>): Promise<FlowSchedule> {
     return http.put(`/flows/schedules/${id}/`, data)
   },
 
