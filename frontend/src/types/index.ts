@@ -23,7 +23,13 @@ export interface User {
   last_name: string
   is_staff: boolean
   is_superuser: boolean
-  profile: any
+  date_joined?: string
+  last_login?: string | null
+  profile?: {
+    phone?: string
+    department?: string
+    position?: string
+  } | null
 }
 
 // 认证配置类型

@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <h2>定时任务详情</h2>
+      <h2>执行方案定时任务详情</h2>
       <div class="page-actions">
         <a-button @click="handleBack">返回</a-button>
         <a-button type="outline" @click="handleRefresh">

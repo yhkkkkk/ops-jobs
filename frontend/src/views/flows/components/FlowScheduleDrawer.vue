@@ -1,6 +1,6 @@
 <template>
   <a-drawer :visible="visible" :width="drawerWidth" placement="right" :footer="false" class="flow-schedule-drawer" @update:visible="emit('update:visible', $event)">
-    <template #title>定时调度</template>
+    <template #title>流水线定时调度</template>
     <section class="schedule-workbench">
       <header class="schedule-workbench__head">
         <div><strong>{{ template?.name || '-' }}</strong><span>按 Cron 自动启动完整流水线，固定输入来自当前模板的全局变量。</span></div>
@@ -43,7 +43,7 @@
           </section>
         </a-form>
         <template v-else>
-          <a-empty v-if="schedules.length === 0" description="当前模板没有定时调度" />
+          <a-empty v-if="schedules.length === 0" description="当前模板没有流水线定时调度" />
           <a-table v-else row-key="id" class="schedule-table" :columns="scheduleColumns" :data="schedules" :pagination="false" :scroll="{ x: 560 }">
             <template #rule="{ record }"><div class="schedule-rule-cell"><strong>{{ record.name }}</strong><span>{{ record.cron_expression }} / {{ record.timezone }}</span><small>最近启动：{{ recentRunText(record) }}</small></div></template>
             <template #inputs="{ record }"><span>{{ formatInputSummary(record.inputs) }}</span></template>
@@ -122,7 +122,7 @@ const schedulePayload = () => {
 const saveSchedule = async () => {
   if (!props.template?.id || !form.name.trim() || !form.cron_expression.trim()) { Message.warning('请填写调度名称和 Cron 表达式'); return }
   saving.value = true
-  try { if (form.id) await flowApi.updateSchedule(form.id, schedulePayload()); else await flowApi.createSchedule(schedulePayload()); Message.success('定时调度已保存'); editing.value = false; await loadSchedules() }
+  try { if (form.id) await flowApi.updateSchedule(form.id, schedulePayload()); else await flowApi.createSchedule(schedulePayload()); Message.success('流水线定时调度已保存'); editing.value = false; await loadSchedules() }
   catch (error) { console.error('保存流水线定时调度失败:', error); Message.error('保存失败，请检查 Cron 表达式和变量输入') }
   finally { saving.value = false }
 }
@@ -130,7 +130,7 @@ const toggleSchedule = async (schedule: FlowSchedule) => {
   try { await flowApi.updateSchedule(schedule.id, { name: schedule.name, template: schedule.template, cron_expression: schedule.cron_expression, timezone: schedule.timezone, overlap_policy: schedule.overlap_policy, misfire_policy: schedule.misfire_policy, misfire_grace_seconds: schedule.misfire_grace_seconds, inputs: schedule.inputs || {}, is_active: !schedule.is_active }); await loadSchedules() }
   catch (error) { console.error('更新流水线定时调度状态失败:', error); Message.error('更新调度状态失败') }
 }
-const confirmDelete = (schedule: FlowSchedule) => Modal.warning({ title: '删除定时调度', content: `确认删除“${schedule.name}”？`, hideCancel: false, onOk: async () => { await flowApi.deleteSchedule(schedule.id); Message.success('定时调度已删除'); await loadSchedules() } })
+const confirmDelete = (schedule: FlowSchedule) => Modal.warning({ title: '删除流水线定时调度', content: `确认删除“${schedule.name}”？`, hideCancel: false, onOk: async () => { await flowApi.deleteSchedule(schedule.id); Message.success('流水线定时调度已删除'); await loadSchedules() } })
 watch(() => [props.visible, props.template?.id], ([visible]) => { if (!visible) return; editing.value = false; resetForm(); loadSchedules() })
 </script>
 

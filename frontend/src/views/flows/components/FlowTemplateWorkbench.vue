@@ -34,7 +34,7 @@
         </a-button>
         <a-button v-if="currentTemplate?.id" @click="scheduleDrawerVisible = true">
           <template #icon><icon-schedule /></template>
-          定时调度
+          流水线定时调度
         </a-button>        <a-button v-if="isReadonly && currentTemplate?.id" @click="router.push(`/flows/${currentTemplate.id}/edit`)">
           <template #icon><icon-edit /></template>
           编辑
@@ -599,6 +599,8 @@ const flowEdges = computed<Edge[]>(() => edges.value.filter(edge => edge.source_
 })))
 
 const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : value?.results || value?.data || []
+const normalizePaginatedList = <T,>(value: any): T[] =>
+  value && !Array.isArray(value) && Array.isArray(value.results) ? value.results as T[] : []
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '-'
 const createUuid = (type: string) => `node-${type}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 const defaultConfig = (type: FlowNodeType) => {
@@ -780,11 +782,11 @@ const loadData = async () => {
   try {
     const [planResult, templateListResult, pluginResult] = await Promise.allSettled([
       executionPlanApi.getPlans({ page_size: 200 }),
-      flowApi.getTemplates(),
+      flowApi.getTemplates({ page: 1, page_size: 200 }),
       flowApi.getNodePlugins(),
     ])
     executionPlans.value = planResult.status === 'fulfilled' ? normalizeList<ExecutionPlan>(planResult.value) : []
-    flowTemplates.value = templateListResult.status === 'fulfilled' ? normalizeList<FlowTemplate>(templateListResult.value) : []
+    flowTemplates.value = templateListResult.status === 'fulfilled' ? normalizePaginatedList<FlowTemplate>(templateListResult.value) : []
     plugins.value = pluginResult.status === 'fulfilled' ? normalizeList<FlowNodePlugin>(pluginResult.value) : []
 
     if (isEdit.value || isReadonly.value) {

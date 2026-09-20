@@ -16,6 +16,8 @@ from .serializers import (
     TaskConfigSerializer,
     NotificationConfigSerializer,
     AgentConfigSerializer,
+    SENSITIVE_CONFIG_VALUE,
+    is_sensitive_config_key,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
@@ -130,7 +132,9 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
                 
                 try:
                     config = SystemConfig.objects.get(key=key)
-                    config.value = value
+                    # 批量更新与单项更新保持一致：敏感配置的空串/掩码表示保留原值。
+                    if not (is_sensitive_config_key(key) and value in ('', SENSITIVE_CONFIG_VALUE, None)):
+                        config.value = value
                     if description:
                         config.description = description
                     config.updated_by = request.user
@@ -218,6 +222,10 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
             'levels': configs.get('notification.levels', ['error', 'warning']),
         }
         
+        for key in ('dingtalk_webhook', 'feishu_webhook', 'wechatwork_webhook'):
+            if notification_config.get(key):
+                notification_config[key] = SENSITIVE_CONFIG_VALUE
+
         return SycResponse.success(content=notification_config, message="获取通知配置成功")
     
     @extend_schema(
@@ -236,6 +244,9 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
         
         with transaction.atomic():
             for key, value in config_data.items():
+                # Webhook 属于凭据类配置：空值/掩码回传表示保持服务端原值。
+                if key.endswith('_webhook') and value in ('', SENSITIVE_CONFIG_VALUE, None):
+                    continue
                 full_key = f'notification.{key}'
                 ConfigManager.set(
                     key=full_key,
@@ -244,7 +255,11 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
                     user=request.user
                 )
         
-        return SycResponse.success(content=config_data, message="通知配置更新成功")
+        response_data = dict(config_data)
+        for key in ('dingtalk_webhook', 'feishu_webhook', 'wechatwork_webhook'):
+            if response_data.get(key):
+                response_data[key] = SENSITIVE_CONFIG_VALUE
+        return SycResponse.success(content=response_data, message="通知配置更新成功")
     
     @extend_schema(
         summary="获取Agent配置",

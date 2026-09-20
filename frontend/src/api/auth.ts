@@ -22,9 +22,22 @@ export const authApi = {
     return http.get<User>('/auth/users/profile/')
   },
 
-  // 获取用户列表（用于下拉选择）
-  getUsers() {
-    return http.get('/auth/users/')
+  // 获取用户列表（管理页和下拉选择共用）
+  getUsers(params?: { page?: number; page_size?: number; search?: string }) {
+    // 后端生产接口返回分页对象；保留 any 兼容旧的下拉选择 mock 数组响应。
+    return http.get<any>('/auth/users/', { params })
+  },
+
+  // 更新用户资料（后端仅允许资料字段，管理员状态不会通过此接口修改）
+  updateUser(id: number, data: {
+    first_name?: string
+    last_name?: string
+    email?: string
+    phone?: string
+    department?: string
+    position?: string
+  }) {
+    return http.patch<User>(`/auth/users/${id}/`, data)
   },
 
   // 获取认证配置

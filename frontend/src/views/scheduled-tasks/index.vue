@@ -9,8 +9,8 @@
   >
     <PageHeader
       eyebrow="调度任务"
-      title="定时任务"
-      description="创建和管理基于执行方案的定时调度任务，跟踪最近执行结果和稳定性。"
+      title="执行方案定时任务"
+      description="创建和管理执行方案定时任务，跟踪最近执行结果和稳定性。"
     >
       <template #actions>
         <a-space>
@@ -35,7 +35,7 @@
     </PageHeader>
 
     <DataToolbar
-      title="筛选定时任务"
+      title="筛选执行方案定时任务"
       description="按任务、执行方案、状态和维护人定位调度配置。"
       :active-count="scheduledTaskActiveFilterCount"
     >
@@ -594,7 +594,7 @@ const handleUpdaterSearch = (searchValue: string) => {
   filteredUpdaters.value = filterUsers(searchValue)
 }
 
-// 获取定时任务列表
+// 获取执行方案定时任务列表
 const fetchTasks = async () => {
   loading.value = true
   try {
@@ -624,8 +624,8 @@ const fetchTasks = async () => {
     // 提取用户列表
     await fetchAvailableUsers()
   } catch (error) {
-    Message.error('获取定时任务列表失败')
-    console.error('获取定时任务列表失败:', error)
+    Message.error('获取执行方案定时任务列表失败')
+    console.error('获取执行方案定时任务列表失败:', error)
   } finally {
     loading.value = false
   }

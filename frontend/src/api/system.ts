@@ -16,6 +16,13 @@ export interface SystemConfig {
   updated_by_name: string
 }
 
+/** 配置值仅在服务端使用的敏感键，不应在管理界面回显。 */
+export const SENSITIVE_CONFIG_VALUE = '********'
+const SENSITIVE_CONFIG_KEY_PATTERN = /(?:secret|password|token|private[_-]?key|access[_-]?key|api[_-]?key|credential|webhook)/i
+
+export const isSensitiveConfigKey = (key: string): boolean =>
+  SENSITIVE_CONFIG_KEY_PATTERN.test(key)
+
 export interface TaskConfig {
   // Fabric执行配置
   fabric_max_concurrent_hosts?: number
@@ -67,7 +74,8 @@ export const systemConfigApi = {
 
   // 更新配置
   updateConfig: (id: number, data: Partial<SystemConfig>) => {
-    return http.put<SystemConfig>(`/system/configs/${id}/`, data)
+    // PATCH 允许敏感配置在留空时省略 value，从而保持服务端原值。
+    return http.patch<SystemConfig>(`/system/configs/${id}/`, data)
   },
 
   // 删除配置

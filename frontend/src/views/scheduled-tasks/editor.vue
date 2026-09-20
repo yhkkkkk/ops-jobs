@@ -10,7 +10,7 @@
             返回
           </a-button>
           <div class="header-info">
-            <h2>{{ isEdit ? '编辑定时任务' : '创建定时任务' }}</h2>
+            <h2>{{ isEdit ? '编辑执行方案定时任务' : '创建执行方案定时任务' }}</h2>
             <p class="header-desc">
               {{ isEdit ? '调整触发规则与执行方案' : '配置周期规则并选择执行方案' }}
             </p>
@@ -697,7 +697,7 @@ onMounted(() => {
       await handleExecutionPlanChange(presetPlanId.value)
       if (!form.name) {
         const matched = executionPlans.value.find(p => p.id === presetPlanId.value)
-        form.name = matched ? `${matched.name}-定时任务` : '定时任务'
+        form.name = matched ? `${matched.name}-执行方案定时任务` : '执行方案定时任务'
       }
     }
   })

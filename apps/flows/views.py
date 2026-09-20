@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from guardian.shortcuts import get_objects_for_user
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -14,6 +14,7 @@ from apps.permissions.models import AuditLog
 from apps.permissions.serializers import AuditLogSerializer
 from utils.audit_service import AuditLogService
 from utils.responses import SycResponse
+from utils.pagination import CustomPagination
 
 from .models import FlowEdge, FlowNode, FlowNodeRun, FlowRun, FlowSchedule, FlowTemplate
 from .plugins import list_flow_node_plugins
@@ -149,14 +150,34 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
     queryset = FlowTemplate.objects.all()
     serializer_class = FlowTemplateSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("created_by").prefetch_related("nodes", "edges")
-        return _filter_visible_flow_templates(queryset, self.request.user)
+        queryset = _filter_visible_flow_templates(queryset, self.request.user)
+        search = self.request.query_params.get("search")
+        status = self.request.query_params.get("status")
+        if search:
+            queryset = queryset.filter(Q(name__icontains=search) | Q(description__icontains=search) | Q(created_by__username__icontains=search))
+        if status in {"active", "inactive"}:
+            queryset = queryset.filter(is_active=status == "active")
+        run_status = self.request.query_params.get("run_status")
+        if run_status:
+            latest_run_status = (
+                FlowRun.objects.filter(template_id=OuterRef("pk"))
+                .order_by("-created_at", "-id")
+                .values("status")[:1]
+            )
+            queryset = queryset.annotate(latest_run_status=Subquery(latest_run_status)).filter(
+                latest_run_status=run_status
+            )
+        return queryset
 
     def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-        return SycResponse.success(content=serializer.data, message="获取流程模板列表成功")
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
         serializer = self.get_serializer(self.get_object())
@@ -695,6 +716,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = FlowRun.objects.all()
     serializer_class = FlowRunSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = (
@@ -716,15 +738,27 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(status=status)
         if trigger_type:
             queryset = queryset.filter(trigger_type=trigger_type)
+        template_ids = self.request.query_params.get("template_ids")
+        if template_ids:
+            try:
+                requested_template_ids = [int(value) for value in template_ids.split(",") if value.strip()]
+            except ValueError:
+                requested_template_ids = []
+            queryset = queryset.filter(template_id__in=requested_template_ids)
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(Q(name__icontains=search) | Q(template__name__icontains=search))
+        if self.request.query_params.get("latest_per_template") in {"1", "true", "yes"}:
+            latest_run_id = FlowRun.objects.filter(template_id=OuterRef("template_id")).order_by("-created_at", "-id").values("id")[:1]
+            queryset = queryset.filter(id=Subquery(latest_run_id))
         return queryset
 
     def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(
-            self.get_queryset(),
-            many=True,
-            context={**self.get_serializer_context(), "omit_definition_snapshot": True},
-        )
-        return SycResponse.success(content=serializer.data, message="获取流程执行列表成功")
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        context = {**self.get_serializer_context(), "omit_definition_snapshot": True}
+        serializer = self.get_serializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
         serializer = self.get_serializer(self.get_object())

@@ -1,7 +1,7 @@
 """
 用户认证相关视图 - 支持Session + JWT混合认证
 """
-from rest_framework import serializers, viewsets
+from rest_framework import filters, serializers, viewsets
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import (
     action,
@@ -33,6 +33,7 @@ from .serializers import (
     UserUpdateSerializer,
 )
 from .utils import get_user_profile_data
+from apps.permissions.permissions import IsSuperUser
 
 # 条件导入 2FA 相关模块
 TWO_FACTOR_ENABLED = getattr(settings, 'TWO_FACTOR_ENABLED', False)
@@ -124,6 +125,8 @@ class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = UserPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['username', 'email', 'first_name', 'last_name']
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -136,6 +139,9 @@ class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
         """注册接口和auth_config接口允许匿名访问"""
         if self.action == 'auth_config':
             permission_classes = [AllowAny]
+        elif self.action in ['list', 'retrieve', 'create', 'update', 'partial_update', 'destroy']:
+            # 用户管理是平台管理入口，不能只依赖前端菜单隐藏。
+            permission_classes = [IsAuthenticated, IsSuperUser]
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
@@ -150,6 +156,19 @@ class UserViewSet(CacheResponseMixin, viewsets.ModelViewSet):
             content=serializer.data,
             message="获取用户详情成功"
         )
+
+    def update(self, request, *args, **kwargs):
+        """更新用户资料并返回统一响应格式。"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return SycResponse.success(content=serializer.data, message="用户信息更新成功")
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
     def profile(self, request):

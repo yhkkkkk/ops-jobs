@@ -68,6 +68,31 @@
       </div>
     </div>
 
+    <div
+      v-if="contextMenuVisible"
+      class="group-context-menu"
+      :style="contextMenuStyle"
+      role="menu"
+      @click.stop
+    >
+      <button type="button" role="menuitem" @click="selectContextMenu('edit')">
+        <icon-edit />
+        编辑
+      </button>
+      <button type="button" role="menuitem" @click="selectContextMenu('add-subgroup')">
+        <icon-folder-add />
+        添加子分组
+      </button>
+      <button type="button" role="menuitem" @click="selectContextMenu('test-connection')">
+        <icon-wifi />
+        测试连接
+      </button>
+      <button type="button" role="menuitem" class="danger" @click="selectContextMenu('delete')">
+        <icon-delete />
+        删除
+      </button>
+    </div>
+
     <!-- 子分组 -->
     <div v-if="hasChildren && isExpanded" class="children">
       <HostGroupTreeNode
@@ -90,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { 
   IconDown, 
   IconFolder, 
@@ -101,6 +126,8 @@ import {
   IconDelete 
 } from '@arco-design/web-vue/es/icon'
 import type { HostGroup } from '@/types'
+
+const HOST_GROUP_CONTEXT_MENU_OPEN_EVENT = 'host-group-context-menu-open'
 
 interface Props {
   group: HostGroup
@@ -133,8 +160,25 @@ const isExpanded = computed(() => {
   return props.expandedGroups.includes(props.group.id)
 })
 
+const contextMenuVisible = ref(false)
+const contextMenuStyle = ref<Record<string, string>>({})
+const closeContextMenu = () => {
+  contextMenuVisible.value = false
+}
+const handleGlobalKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') closeContextMenu()
+}
+const handleOtherContextMenuOpen = (event: Event) => {
+  const groupId = (event as CustomEvent<number>).detail
+  if (groupId !== props.group.id) closeContextMenu()
+}
+watch(() => props.readOnly, (readOnly) => {
+  if (readOnly) closeContextMenu()
+})
+
 // 处理菜单选择
 const handleMenuSelect = (value: string) => {
+  closeContextMenu()
   switch (value) {
     case 'edit':
       emit('edit-group', props.group)
@@ -154,9 +198,33 @@ const handleMenuSelect = (value: string) => {
 // 显示右键菜单
 const showContextMenu = (event: MouseEvent) => {
   if (props.readOnly) return
-  // TODO: 实现右键菜单
-  console.log('Right click on group:', props.group.name)
+  window.dispatchEvent(new CustomEvent<number>(HOST_GROUP_CONTEXT_MENU_OPEN_EVENT, {
+    detail: props.group.id,
+  }))
+  contextMenuStyle.value = {
+    left: `${event.clientX}px`,
+    top: `${event.clientY}px`,
+  }
+  contextMenuVisible.value = true
 }
+
+const selectContextMenu = (value: string) => {
+  handleMenuSelect(value)
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeContextMenu)
+  document.addEventListener('scroll', closeContextMenu, true)
+  document.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener(HOST_GROUP_CONTEXT_MENU_OPEN_EVENT, handleOtherContextMenuOpen)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('scroll', closeContextMenu, true)
+  document.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener(HOST_GROUP_CONTEXT_MENU_OPEN_EVENT, handleOtherContextMenuOpen)
+})
 </script>
 
 <style scoped>
@@ -248,6 +316,40 @@ const showContextMenu = (event: MouseEvent) => {
 
 .children {
   /* 子节点容器 */
+}
+
+.group-context-menu {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  min-width: 148px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  box-shadow: 0 8px 24px rgba(31, 35, 41, .14);
+}
+
+.group-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  color: var(--app-fg);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.group-context-menu button:hover {
+  background: var(--app-surface-soft);
+}
+
+.group-context-menu button.danger {
+  color: #f53f3f;
 }
 
 /* 危险操作样式 */

@@ -23,7 +23,7 @@
     </DataToolbar>
 
     <DetailPanel title="执行任务" :description="`共 ${pagination.total} 个任务，当前页 ${filteredTasks.length} 个`">
-      <a-table class="flow-task-table" row-key="id" :loading="loading" :columns="columns" :data="filteredTasks" :pagination="pagination" :scroll="{ x: 960 }">
+      <a-table class="flow-task-table" row-key="id" :loading="loading" :columns="columns" :data="filteredTasks" :pagination="pagination" :scroll="{ x: 960 }" @page-change="handlePageChange" @page-size-change="handlePageSizeChange">
         <template #task="{ record }"><div class="task-name-cell"><a-link @click="openTask(record)">{{ record.name || record.template_name || '未命名任务' }}</a-link><span>{{ triggerText(record.trigger_type) }} / {{ record.started_by_name || '-' }}</span></div></template>
         <template #template="{ record }"><a-link @click="router.push(`/flows/${record.template}/detail`)">{{ record.template_name || '-' }}</a-link></template>
         <template #status="{ record }"><StatusBadge :status="record.status" :text="statusText(record.status)" /></template>
@@ -57,7 +57,13 @@ const columns = [
   { title: '状态', key: 'status', slotName: 'status', width: 110 }, { title: '开始时间', key: 'startedAt', slotName: 'startedAt', width: 180 },
   { title: '操作', key: 'actions', slotName: 'actions', width: 92, fixed: 'right' },
 ]
-const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : value?.results || value?.data || []
+const normalizePage = <T,>(value: any) => {
+  const content = value?.results ? value : value?.data?.results ? value.data : value?.data
+  return {
+    items: (content?.results || []) as T[],
+    total: Number(content?.total ?? content?.results?.length ?? 0),
+  }
+}
 const statusText = (status: FlowRunStatus) => flowRunStatusText(status)
 const triggerText = (value: string) => ({ manual: '手动触发', scheduled: '定时触发', api: 'API 触发' }[value] || value || '-')
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '-'
@@ -66,11 +72,31 @@ const filteredTasks = computed(() => {
   return tasks.value.filter(task => (!keyword || `${task.name || ''} ${task.template_name || ''}`.toLowerCase().includes(keyword)) && (!filters.status || task.status === filters.status) && (!filters.trigger || task.trigger_type === filters.trigger))
 })
 const activeFilterCount = computed(() => Number(Boolean(filters.search)) + Number(Boolean(filters.status)) + Number(Boolean(filters.trigger)))
-const resetPage = () => { pagination.current = 1 }
+const resetPage = () => { pagination.current = 1; loadTasks() }
 const resetFilters = () => { filters.search = ''; filters.status = ''; filters.trigger = ''; resetPage() }
 const openTask = (task: FlowRun) => router.push(`/flows/runs/${task.id}`)
-const loadTasks = async () => { loading.value = true; try { tasks.value = normalizeList<FlowRun>(await flowApi.getRuns()) } catch (error) { console.error('加载流水线任务失败:', error); Message.error('加载流水线任务失败') } finally { loading.value = false } }
-watch(filteredTasks, value => { pagination.total = value.length }, { immediate: true })
+const loadTasks = async () => {
+  loading.value = true
+  try {
+    const response = await flowApi.getRuns({
+      search: filters.search,
+      status: filters.status,
+      trigger_type: filters.trigger,
+      page: pagination.current,
+      page_size: pagination.pageSize,
+    })
+    const page = normalizePage<FlowRun>(response)
+    tasks.value = page.items
+    pagination.total = page.total
+  } catch (error) {
+    console.error('加载流水线任务失败:', error)
+    Message.error('加载流水线任务失败')
+  } finally {
+    loading.value = false
+  }
+}
+const handlePageChange = (page: number) => { pagination.current = page; loadTasks() }
+const handlePageSizeChange = (pageSize: number) => { pagination.pageSize = pageSize; pagination.current = 1; loadTasks() }
 onMounted(loadTasks)
 </script>
 

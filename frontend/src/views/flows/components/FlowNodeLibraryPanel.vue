@@ -6,7 +6,10 @@
         <p>标准插件 / 场景模板</p>
       </div>
     </div>
-    <a-input v-model="search" class="node-search" allow-clear placeholder="搜索脚本、文件、作业、子流程" />
+    <a-input v-model="search" class="node-search" allow-clear placeholder="搜索执行动作或流程控制" />
+    <div class="node-library-note">
+      控制节点由流程引擎处理，不是 Agent 执行动作。
+    </div>
     <div class="scenario-box">
       <div class="scenario-box__head">
         <h3>标准场景</h3>
@@ -17,23 +20,29 @@
         <em>{{ scenario.description }}</em>
       </button>
     </div>
-    <button
-      v-for="plugin in filteredPlugins"
-      :key="plugin.type"
-      class="plugin-card"
-      type="button"
-      :disabled="readonly"
-      :draggable="!readonly"
-      @click="handlePluginClick(plugin.type)"
-      @dragstart="handlePluginDragStart($event, plugin)"
-    >
-      <span class="plugin-card__icon"><component :is="plugin.icon" /></span>
-      <span>
-        <strong>{{ plugin.name }}</strong>
-        <small>{{ plugin.category }} / {{ plugin.risk }}</small>
-      </span>
-    </button>
-    <a-empty v-if="filteredPlugins.length === 0" description="没有匹配的节点类型" />
+    <section v-for="group in groupedPlugins" :key="group.key" class="plugin-group">
+      <div class="plugin-group__head">
+        <h3>{{ group.title }}</h3>
+        <span>{{ group.description }}</span>
+      </div>
+      <button
+        v-for="plugin in group.plugins"
+        :key="plugin.type"
+        class="plugin-card"
+        type="button"
+        :disabled="readonly"
+        :draggable="!readonly"
+        @click="handlePluginClick(plugin.type)"
+        @dragstart="handlePluginDragStart($event, plugin)"
+      >
+        <span class="plugin-card__icon"><component :is="plugin.icon" /></span>
+        <span>
+          <strong>{{ plugin.name }}</strong>
+          <small>{{ plugin.category }} / {{ plugin.risk }}</small>
+        </span>
+      </button>
+    </section>
+    <a-empty v-if="groupedPlugins.every(group => group.plugins.length === 0)" description="没有匹配的节点类型" />
 
     <div class="status-legend">
       <span><i class="legend-dot legend-dot--success" /> 成功</span>
@@ -84,6 +93,22 @@ const filteredPlugins = computed(() => {
     plugin.type.includes(keyword)
   )
 })
+const executionNodeTypes: SupportedFlowNodeType[] = ['script', 'file_transfer', 'job_plan']
+const controlNodeTypes: SupportedFlowNodeType[] = ['manual', 'condition', 'parallel', 'join', 'sub_process']
+const groupedPlugins = computed(() => [
+  {
+    key: 'execution',
+    title: '执行动作',
+    description: '由 Agent 执行脚本、文件和作业方案',
+    plugins: filteredPlugins.value.filter(plugin => executionNodeTypes.includes(plugin.type)),
+  },
+  {
+    key: 'control',
+    title: '流程控制',
+    description: '由流程引擎负责暂停、分支、并行和汇聚',
+    plugins: filteredPlugins.value.filter(plugin => controlNodeTypes.includes(plugin.type)),
+  },
+])
 
 const handlePluginDragStart = (event: DragEvent, plugin: FlowNodePluginOption) => {
   if (readonly.value) {
@@ -133,6 +158,15 @@ const handleScenarioClick = (key: 'release' | 'dispatch') => {
   height: 30px;
   font-size: 12px;
 }
+.node-library-note {
+  margin: 0 0 6px;
+  padding: 6px 7px;
+  color: var(--app-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  background: var(--app-surface-soft);
+  border-left: 2px solid var(--app-accent);
+}
 .scenario-box {
   display: grid;
   gap: 3px;
@@ -178,6 +212,27 @@ const handleScenarioClick = (key: 'release' | 'dispatch') => {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   cursor: pointer;
+}
+.plugin-group {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 5px;
+}
+.plugin-group__head {
+  display: grid;
+  gap: 1px;
+  padding: 4px 2px 3px;
+}
+.plugin-group__head h3 {
+  margin: 0;
+  color: var(--app-fg);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.plugin-group__head span {
+  color: var(--app-muted);
+  font-size: 10px;
+  line-height: 1.3;
 }
 .plugin-card:hover { border-color: var(--app-accent); background: var(--app-accent-soft); }
 .plugin-card:active { cursor: grabbing; }

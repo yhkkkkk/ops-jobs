@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
@@ -132,5 +132,9 @@ export default defineConfig({
         drop_debugger: true,
       },
     },
+  },
+  test: {
+    include: ['src/**/*.{test,spec}.*'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
 })

@@ -46,6 +46,8 @@
       :loading="loading"
       :pagination="templatePagination"
       :scroll="{ x: 980 }"
+      @page-change="handlePageChange"
+      @page-size-change="handlePageSizeChange"
     >
       <template #name="{ record }">
         <div class="pipeline-name-cell">
@@ -167,12 +169,25 @@ const activeFilterCount = computed(() => Number(Boolean(filters.search)) + Numbe
 const latestRunMap = computed(() => buildLatestRunMap(runs.value))
 const filteredTemplates = computed(() => filterFlowTemplates(templates.value, filters, latestRunMap.value))
 
-watch(filteredTemplates, value => { templatePagination.total = value.length }, { immediate: true })
+watch(filteredTemplates, value => {
+  if (!templatePagination.total) templatePagination.total = value.length
+}, { immediate: true })
 watch(() => [filters.search, filters.status, filters.runStatus], () => {
   templatePagination.current = 1
 })
 
-const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : value?.results || value?.data || []
+const normalizePage = <T,>(value: any, fallbackPageSize: number) => {
+  const content = value?.results ? value : value?.data?.results ? value.data : value?.data
+  if (content && Array.isArray(content.results)) {
+    return {
+      items: content.results as T[],
+      total: Number(content.total ?? content.results.length),
+      page: Number(content.page ?? 1),
+      pageSize: Number(content.page_size ?? fallbackPageSize),
+    }
+  }
+  return { items: [] as T[], total: 0, page: 1, pageSize: fallbackPageSize }
+}
 const latestRun = (templateId?: number) => templateId ? latestRunMap.value.get(templateId) : undefined
 const statusText = (status?: FlowRunStatus) => flowRunStatusText(status)
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '-'
@@ -194,12 +209,28 @@ const templateNodeTypeSummary = (template: FlowTemplate) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [templateList, runList] = await Promise.all([
-      flowApi.getTemplates({ search: filters.search, status: filters.status }),
-      flowApi.getRuns(),
-    ])
-    templates.value = normalizeList<FlowTemplate>(templateList)
-    runs.value = normalizeList<FlowRun>(runList)
+    const templateList = await flowApi.getTemplates({
+      search: filters.search,
+      status: filters.status,
+      run_status: filters.runStatus,
+      page: templatePagination.current,
+      page_size: templatePagination.pageSize,
+    })
+    const templatePage = normalizePage<FlowTemplate>(templateList, templatePagination.pageSize)
+    templates.value = templatePage.items
+    templatePagination.total = templatePage.total
+    const templateIds = templatePage.items.map(template => template.id).filter(Boolean)
+    if (templateIds.length) {
+      const runList = await flowApi.getRuns({
+        template_ids: templateIds.join(','),
+        page: 1,
+        page_size: templateIds.length,
+        latest_per_template: 1,
+      })
+      runs.value = normalizePage<FlowRun>(runList, templateIds.length).items
+    } else {
+      runs.value = []
+    }
   } catch (error) {
     console.error('加载流水线失败:', error)
     Message.error('加载流水线失败')
@@ -208,10 +239,22 @@ const loadData = async () => {
   }
 }
 
+const handlePageChange = (page: number) => {
+  templatePagination.current = page
+  loadData()
+}
+
+const handlePageSizeChange = (pageSize: number) => {
+  templatePagination.pageSize = pageSize
+  templatePagination.current = 1
+  loadData()
+}
+
 const resetFilters = () => {
   filters.search = ''
   filters.status = ''
   filters.runStatus = ''
+  templatePagination.current = 1
   loadData()
 }
 

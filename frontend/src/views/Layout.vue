@@ -57,6 +57,14 @@
         >
           <icon-eye />
         </button>
+        <button
+          type="button"
+          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'system' }]"
+          title="平台管理"
+          @click="onMenuClick('/permissions')"
+        >
+          <icon-settings />
+        </button>
       </nav>
 
       <a-menu
@@ -150,7 +158,7 @@
             <template #icon>
               <icon-clock-circle />
             </template>
-            定时任务
+            执行方案定时任务
           </a-menu-item>
         </a-sub-menu>
 
@@ -173,6 +181,28 @@
               <icon-eye-invisible />
             </template>
             审计日志
+          </a-menu-item>
+        </a-sub-menu>
+
+        <!-- 平台管理分组 -->
+        <a-sub-menu key="system">
+          <template #icon>
+            <icon-settings />
+          </template>
+          <template #title>平台管理</template>
+
+          <a-menu-item key="/permissions">
+            <template #icon>
+              <icon-safe />
+            </template>
+            权限管理
+          </a-menu-item>
+
+          <a-menu-item v-if="authStore.user?.is_superuser" key="/users">
+            <template #icon>
+              <icon-user-group />
+            </template>
+            用户管理
           </a-menu-item>
         </a-sub-menu>
       </a-menu>
@@ -261,6 +291,8 @@ const menuConfig = {
   '/dashboard': { key: '/dashboard', parent: null },
   '/hosts': { key: '/hosts', parent: 'resource' },
   '/accounts': { key: '/accounts', parent: 'resource' },
+  '/permissions': { key: '/permissions', parent: 'system' },
+  '/users': { key: '/users', parent: 'system' },
   '/script-templates': { key: '/script-templates', parent: 'job' },
   '/job-templates': { key: '/job-templates', parent: 'job' },
   '/execution-plans': { key: '/execution-plans', parent: 'job' },

@@ -78,7 +78,7 @@
                   v-model="notificationConfig.dingtalk_webhook"
                   placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx"
                 />
-                <div class="form-help">钉钉机器人Webhook地址</div>
+                <div class="form-help">钉钉机器人Webhook地址；已配置时服务端不回显，留空保存表示保持原值</div>
               </a-form-item>
 
               <a-form-item label="关键词" field="dingtalk_keyword">
@@ -102,7 +102,7 @@
                   v-model="notificationConfig.feishu_webhook"
                   placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
                 />
-                <div class="form-help">飞书机器人Webhook地址</div>
+                <div class="form-help">飞书机器人Webhook地址；已配置时服务端不回显，留空保存表示保持原值</div>
               </a-form-item>
 
               <a-form-item label="关键词" field="feishu_keyword">
@@ -126,7 +126,7 @@
                   v-model="notificationConfig.wechatwork_webhook"
                   placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
                 />
-                <div class="form-help">企业微信机器人Webhook地址</div>
+                <div class="form-help">企业微信机器人Webhook地址；已配置时服务端不回显，留空保存表示保持原值</div>
               </a-form-item>
 
               <a-form-item label="关键词" field="wechatwork_keyword">
@@ -259,7 +259,7 @@
 
               <template #value="{ record }">
                 <div class="config-value">
-                  <pre>{{ formatValue(record.value) }}</pre>
+                  <pre>{{ formatConfigValue(record) }}</pre>
                 </div>
               </template>
 
@@ -310,13 +310,21 @@
         </a-form-item>
 
         <a-form-item label="配置值" field="value">
+          <a-input-password
+            v-if="isSensitiveConfigKey(editForm.key)"
+            v-model="editForm.valueText"
+            allow-clear
+            placeholder="留空表示保持当前 Secret"
+          />
           <a-textarea
+            v-else
             v-model="editForm.valueText"
             :rows="6"
             placeholder="字符串直接输入，对象/数组请输入json格式（如: {&quot;key&quot;: &quot;value&quot;} 或 [1, 2, 3]）"
           />
           <div class="form-help">
-            提示：字符串直接输入即可，无需引号；对象或数组请输入有效的json格式
+            <template v-if="isSensitiveConfigKey(editForm.key)">敏感值不会在列表或编辑框回显；留空保存表示保持原值。</template>
+            <template v-else>提示：字符串直接输入即可，无需引号；对象或数组请输入有效的json格式</template>
           </div>
         </a-form-item>
 
@@ -340,7 +348,15 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 // @ts-ignore - IDE path alias resolution in this environment
-import { systemConfigApi, type SystemConfig, type TaskConfig, type NotificationConfig, type AgentConfig } from '@/api/system'
+import {
+  systemConfigApi,
+  isSensitiveConfigKey,
+  SENSITIVE_CONFIG_VALUE,
+  type SystemConfig,
+  type TaskConfig,
+  type NotificationConfig,
+  type AgentConfig
+} from '@/api/system'
 
 // 响应式数据
 const activeTab = ref('task')
@@ -528,7 +544,13 @@ const fetchTaskConfig = async () => {
 const fetchNotificationConfig = async () => {
   try {
     const response = await systemConfigApi.getNotificationConfig()
-    notificationConfig.value = response
+    notificationConfig.value = {
+      ...response,
+      // 掩码只作为服务端状态标记，输入框留空表示保存时保持原值。
+      dingtalk_webhook: response.dingtalk_webhook === SENSITIVE_CONFIG_VALUE ? '' : response.dingtalk_webhook,
+      feishu_webhook: response.feishu_webhook === SENSITIVE_CONFIG_VALUE ? '' : response.feishu_webhook,
+      wechatwork_webhook: response.wechatwork_webhook === SENSITIVE_CONFIG_VALUE ? '' : response.wechatwork_webhook,
+    }
   } catch (error) {
     Message.error('获取通知配置失败')
   }
@@ -584,7 +606,10 @@ const handleEdit = (record: SystemConfig) => {
   editForm.key = record.key
   editForm.value = record.value
   // 智能格式化显示：字符串直接显示（不带引号），其他类型显示格式化的JSON
-  if (typeof record.value === 'string') {
+  if (isSensitiveConfigKey(record.key)) {
+    // Secret 不把服务端回传值放进可编辑控件；空值在保存时表示保持原值。
+    editForm.valueText = ''
+  } else if (typeof record.value === 'string') {
     editForm.valueText = record.value
   } else {
   editForm.valueText = JSON.stringify(record.value, null, 2)
@@ -600,6 +625,19 @@ const handleSaveEdit = async () => {
     
     // 智能解析：先尝试解析JSON，如果失败且不是JSON格式，当作字符串处理
     const trimmedText = editForm.valueText.trim()
+    const isSensitive = isSensitiveConfigKey(editForm.key)
+
+    // 敏感配置留空时不提交 value，后端 PATCH 会保留旧值。
+    if (isSensitive && !trimmedText) {
+      await systemConfigApi.updateConfig(editForm.id, {
+        description: editForm.description,
+        is_active: editForm.is_active
+      })
+      Message.success('配置更新成功')
+      editModalVisible.value = false
+      fetchConfigs()
+      return
+    }
     
     // 如果以 { 或 [ 开头，尝试解析为JSON
     if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
@@ -677,6 +715,11 @@ const formatValue = (value: any) => {
     return JSON.stringify(value, null, 2)
   }
   return String(value)
+}
+
+const formatConfigValue = (config: SystemConfig) => {
+  if (isSensitiveConfigKey(config.key)) return SENSITIVE_CONFIG_VALUE
+  return formatValue(config.value)
 }
 
 const formatDate = (dateString: string) => {

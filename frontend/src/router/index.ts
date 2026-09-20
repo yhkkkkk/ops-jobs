@@ -80,6 +80,25 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/permissions',
+        name: 'Permissions',
+        component: () => import('@/views/permissions/index.vue'),
+        meta: {
+          title: '权限管理',
+          icon: 'icon-safe',
+        },
+      },
+      {
+        path: '/users',
+        name: 'Users',
+        component: () => import('@/views/users/index.vue'),
+        meta: {
+          title: '用户管理',
+          icon: 'icon-user-group',
+          requiresSuperUser: true,
+        },
+      },
+      {
         path: '/script-templates',
         name: 'ScriptTemplates',
         component: () => import('@/views/script-templates/index.vue'),
@@ -284,7 +303,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ScheduledTasks',
         component: () => import('@/views/scheduled-tasks/index.vue'),
         meta: {
-          title: '定时任务',
+          title: '执行方案定时任务',
           icon: 'icon-schedule',
         },
       },
@@ -293,7 +312,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ScheduledTaskCreate',
         component: () => import('@/views/scheduled-tasks/editor.vue'),
         meta: {
-          title: '创建定时任务',
+          title: '创建执行方案定时任务',
           hideInMenu: true,
         },
       },
@@ -302,7 +321,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ScheduledTaskDetail',
         component: () => import('@/views/scheduled-tasks/detail.vue'),
         meta: {
-          title: '定时任务详情',
+          title: '执行方案定时任务详情',
           hideInMenu: true,
         },
       },
@@ -311,7 +330,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ScheduledTaskEdit',
         component: () => import('@/views/scheduled-tasks/editor.vue'),
         meta: {
-          title: '编辑定时任务',
+          title: '编辑执行方案定时任务',
           hideInMenu: true,
         },
       },

@@ -1016,7 +1016,7 @@ def test_flow_api_scopes_templates_nodes_edges_and_runs_to_owner():
 
     list_resp = client.get("/api/flows/templates/")
     assert list_resp.status_code == 200
-    assert list_resp.data["content"] == []
+    assert list_resp.data["content"]["results"] == []
 
     detail_resp = client.get(f"/api/flows/templates/{template.id}/")
     assert detail_resp.status_code == 404
@@ -1288,10 +1288,10 @@ def test_flow_template_object_view_permission_exposes_template_and_its_runs():
     runs_response = client.get("/api/flows/runs/")
 
     assert templates_response.status_code == 200
-    assert template.id in {item["id"] for item in templates_response.data["content"]}
+    assert template.id in {item["id"] for item in templates_response.data["content"]["results"]}
     assert detail_response.status_code == 200
     assert runs_response.status_code == 200
-    assert flow_run.id in {item["id"] for item in runs_response.data["content"]}
+    assert flow_run.id in {item["id"] for item in runs_response.data["content"]["results"]}
 
 def test_flow_template_mutation_requires_change_object_permission():
     from guardian.shortcuts import assign_perm
@@ -1391,4 +1391,4 @@ def test_flow_start_creates_named_task_and_filters_task_list_by_template_and_sta
     assert response.status_code == 200
     assert response.data["content"]["name"] == "发布前检查"
     assert task_list.status_code == 200
-    assert {item["name"] for item in task_list.data["content"]} == {"历史任务", "发布前检查"}
+    assert {item["name"] for item in task_list.data["content"]["results"]} == {"历史任务", "发布前检查"}

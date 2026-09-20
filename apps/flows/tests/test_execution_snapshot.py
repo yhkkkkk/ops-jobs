@@ -69,6 +69,6 @@ def test_flow_run_list_omits_definition_snapshot_but_detail_keeps_it():
     detail_response = client.get(f"/api/flows/runs/{flow_run.id}/")
 
     assert list_response.status_code == 200
-    assert "definition_snapshot" not in list_response.data["content"][0]
+    assert "definition_snapshot" not in list_response.data["content"]["results"][0]
     assert detail_response.status_code == 200
     assert detail_response.data["content"]["definition_snapshot"] == flow_run.definition_snapshot

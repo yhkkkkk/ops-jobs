@@ -445,8 +445,28 @@ export const scheduledTaskApi = {
 }
 
 // 流程编排API
+export interface FlowPageParams {
+  page: number
+  page_size: number
+}
+
+export interface FlowRunPageParams extends FlowPageParams {
+  search?: string
+  status?: string
+  trigger_type?: string
+  template?: number
+  template_ids?: string
+  latest_per_template?: number
+}
+
+export interface FlowTemplatePageParams extends FlowPageParams {
+  search?: string
+  status?: string
+  run_status?: string
+}
+
 export const flowApi = {
-  getTemplates(params?: any): Promise<FlowTemplate[]> {
+  getTemplates(params: FlowTemplatePageParams): Promise<PaginatedResponse<FlowTemplate>> {
     return http.get('/flows/templates/', { params })
   },
 
@@ -486,7 +506,7 @@ export const flowApi = {
     return http.get('/flows/edges/', { params })
   },
 
-  getRuns(params?: any): Promise<FlowRun[]> {
+  getRuns(params: FlowRunPageParams): Promise<PaginatedResponse<FlowRun>> {
     return http.get('/flows/runs/', { params })
   },
 

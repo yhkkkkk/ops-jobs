@@ -5,6 +5,18 @@ from rest_framework import serializers
 from .models import SystemConfig
 
 
+SENSITIVE_CONFIG_VALUE = '********'
+
+
+def is_sensitive_config_key(key):
+    """Return whether a config key contains a credential or secret value."""
+    key = str(key or '')
+    return any(token in key.lower() for token in (
+        'secret', 'password', 'token', 'private_key', 'private-key',
+        'access_key', 'access-key', 'api_key', 'api-key', 'credential', 'webhook',
+    ))
+
+
 class SystemConfigSerializer(serializers.ModelSerializer):
     """系统配置序列化器"""
     
@@ -18,6 +30,12 @@ class SystemConfigSerializer(serializers.ModelSerializer):
             'is_active', 'created_at', 'updated_at', 'updated_by_name'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'updated_by_name']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if is_sensitive_config_key(instance.key):
+            data['value'] = SENSITIVE_CONFIG_VALUE
+        return data
     
     def validate_key(self, value):
         """验证配置键格式"""
@@ -28,10 +46,24 @@ class SystemConfigSerializer(serializers.ModelSerializer):
 
 class SystemConfigUpdateSerializer(serializers.ModelSerializer):
     """系统配置更新序列化器"""
+    value = serializers.JSONField(required=False, allow_null=True)
     
     class Meta:
         model = SystemConfig
         fields = ['value', 'description', 'is_active']
+
+    def validate(self, attrs):
+        # 所有客户端都遵循同一 Secret 语义：空值或固定掩码表示保持当前值。
+        if is_sensitive_config_key(getattr(self.instance, 'key', '')):
+            if attrs.get('value', serializers.empty) in ('', None, SENSITIVE_CONFIG_VALUE):
+                attrs.pop('value', None)
+        return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if is_sensitive_config_key(instance.key):
+            data['value'] = SENSITIVE_CONFIG_VALUE
+        return data
 
 
 class SystemConfigBatchUpdateSerializer(serializers.Serializer):
@@ -90,22 +122,31 @@ class TaskConfigSerializer(serializers.Serializer):
     )
 
 
+class MaskedURLField(serializers.URLField):
+    """URL field that accepts the API's non-secret placeholder value."""
+
+    def run_validation(self, data=serializers.empty):
+        if data == SENSITIVE_CONFIG_VALUE:
+            return data
+        return super().run_validation(data)
+
+
 class NotificationConfigSerializer(serializers.Serializer):
     """通知配置序列化器"""
 
     # 钉钉配置
     dingtalk_enabled = serializers.BooleanField(help_text="是否启用钉钉通知")
-    dingtalk_webhook = serializers.URLField(help_text="钉钉Webhook地址", required=False, allow_blank=True)
+    dingtalk_webhook = MaskedURLField(help_text="钉钉Webhook地址", required=False, allow_blank=True)
     dingtalk_keyword = serializers.CharField(help_text="钉钉关键词", required=False, allow_blank=True)
     
     # 飞书配置
     feishu_enabled = serializers.BooleanField(help_text="是否启用飞书通知")
-    feishu_webhook = serializers.URLField(help_text="飞书Webhook地址", required=False, allow_blank=True)
+    feishu_webhook = MaskedURLField(help_text="飞书Webhook地址", required=False, allow_blank=True)
     feishu_keyword = serializers.CharField(help_text="飞书关键词", required=False, allow_blank=True)
     
     # 企业微信配置
     wechatwork_enabled = serializers.BooleanField(help_text="是否启用企业微信通知")
-    wechatwork_webhook = serializers.URLField(help_text="企业微信Webhook地址", required=False, allow_blank=True)
+    wechatwork_webhook = MaskedURLField(help_text="企业微信Webhook地址", required=False, allow_blank=True)
     wechatwork_keyword = serializers.CharField(help_text="企业微信关键词", required=False, allow_blank=True)
     
     # 通知级别
@@ -113,7 +154,6 @@ class NotificationConfigSerializer(serializers.Serializer):
         child=serializers.ChoiceField(choices=['info', 'warning', 'error', 'critical']),
         help_text="通知级别"
     )
-
 
 class AgentConfigSerializer(serializers.Serializer):
     """Agent配置序列化器"""
