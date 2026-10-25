@@ -1447,3 +1447,63 @@ def test_flow_start_creates_named_task_and_filters_task_list_by_template_and_sta
     assert response.data["content"]["name"] == "发布前检查"
     assert task_list.status_code == 200
     assert {item["name"] for item in task_list.data["content"]["results"]} == {"历史任务", "发布前检查"}
+
+def test_public_template_start_allowed_for_viewer_without_change_perm():
+    owner = User.objects.create_user(f"owner-{uuid.uuid4().hex[:6]}", password="pass")
+    viewer = User.objects.create_user(f"viewer-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(
+        name=f"public-{uuid.uuid4().hex[:8]}",
+        created_by=owner,
+        is_public=True,
+        is_active=True,
+    )
+    FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="wait",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "ok"},
+    )
+    client = _client_for(viewer)
+    resp = client.post(f"/api/flows/templates/{template.id}/start/", {"name": "viewer-run", "inputs": {}}, format="json")
+    assert resp.status_code == 200
+    assert resp.data["content"]["started_by"] == viewer.id
+
+
+def test_public_template_edit_still_denied_without_change_perm():
+    owner = User.objects.create_user(f"owner2-{uuid.uuid4().hex[:6]}", password="pass")
+    viewer = User.objects.create_user(f"viewer2-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(
+        name=f"public-edit-{uuid.uuid4().hex[:8]}",
+        created_by=owner,
+        is_public=True,
+        is_active=True,
+    )
+    client = _client_for(viewer)
+    resp = client.patch(f"/api/flows/templates/{template.id}/", {"name": "hacked"}, format="json")
+    assert resp.status_code in (403, 404)
+
+
+def test_public_template_runs_are_not_listed_to_unrelated_viewers():
+    owner = User.objects.create_user(f"owner3-{uuid.uuid4().hex[:6]}", password="pass")
+    viewer = User.objects.create_user(f"viewer3-{uuid.uuid4().hex[:6]}", password="pass")
+    template = FlowTemplate.objects.create(
+        name=f"public-runs-{uuid.uuid4().hex[:8]}",
+        created_by=owner,
+        is_public=True,
+        is_active=True,
+    )
+    secret_run = FlowRun.objects.create(
+        template=template,
+        started_by=owner,
+        status=FlowRun.Status.SUCCESS,
+        name="owner-secret-run",
+        inputs={"secret": "do-not-leak"},
+    )
+    client = _client_for(viewer)
+    listed = client.get("/api/flows/runs/")
+    assert listed.status_code == 200
+    ids = {item["id"] for item in listed.data["content"]["results"]}
+    assert secret_run.id not in ids
+    detail = client.get(f"/api/flows/runs/{secret_run.id}/")
+    assert detail.status_code in (403, 404)

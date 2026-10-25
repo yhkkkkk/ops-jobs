@@ -72,6 +72,37 @@ def _require_flow_template_change_permission(user, template):
         return
     raise PermissionDenied("无权修改该流程模板")
 
+
+def _can_manage_flow_template(user, template) -> bool:
+    if user.is_superuser or template.created_by_id == user.id:
+        return True
+    return bool(user.has_perm("flows.change_flowtemplate", template))
+
+
+def _can_start_flow_template(user, template) -> bool:
+    """Owner/change-perm can start any active template; anyone can start public active ones."""
+    if not template.is_active:
+        return False
+    if _can_manage_flow_template(user, template):
+        return True
+    return bool(template.is_public)
+
+
+def _require_flow_template_start_permission(user, template):
+    if _can_start_flow_template(user, template):
+        return
+    raise PermissionDenied("无权启动该流程模板")
+
+
+def _filter_visible_flow_runs(queryset, user):
+    """Own runs always; others only for templates the user can manage (not mere public view)."""
+    if user.is_superuser:
+        return queryset
+    manageable_template_ids = _filter_manageable_flow_templates(
+        FlowTemplate.objects.all(), user
+    ).values("pk")
+    return queryset.filter(Q(started_by=user) | Q(template_id__in=manageable_template_ids)).distinct()
+
 def _flow_run_resource_name(flow_run):
     return f"{flow_run.template.name} #{flow_run.id}"
 
@@ -488,7 +519,7 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
         template = self.get_object()
-        _require_flow_template_change_permission(request.user, template)
+        _require_flow_template_start_permission(request.user, template)
         serializer = FlowStartSerializer(data=request.data)
         if not serializer.is_valid():
             return SycResponse.validation_error(serializer.errors)
@@ -741,10 +772,7 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
             .select_related("template", "started_by")
             .prefetch_related("node_runs__node", "node_runs__execution_record")
         )
-        visible_template_ids = _filter_visible_flow_templates(
-            FlowTemplate.objects.all(), self.request.user
-        ).values("pk")
-        queryset = queryset.filter(template_id__in=visible_template_ids)
+        queryset = _filter_visible_flow_runs(queryset, self.request.user)
         template_id = self.request.query_params.get("template")
         status = self.request.query_params.get("status")
         trigger_type = self.request.query_params.get("trigger_type")

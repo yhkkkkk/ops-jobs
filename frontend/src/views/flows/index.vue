@@ -87,15 +87,21 @@
           <div v-else class="pipeline-template-card__run pipeline-template-card__run--empty">暂无执行</div>
           <footer class="pipeline-template-card__actions">
             <n-button
+              v-if="canStartTemplate(record)"
               type="primary"
               size="small"
-              :disabled="!record.is_active"
               @click="openStartModal(record)"
             >
               <template #icon><Play :size="14" /></template>
               新建任务
             </n-button>
-            <n-button size="small" @click="router.push(`/flows/${record.id}/edit`)">编辑</n-button>
+            <n-button
+              v-if="canManageTemplate(record)"
+              size="small"
+              @click="router.push(`/flows/${record.id}/edit`)"
+            >
+              编辑
+            </n-button>
             <n-dropdown
               trigger="click"
               :options="pipelineRowActions(record)"
@@ -151,10 +157,12 @@ import {
   type SupportedFlowNodeType,
 } from './flowUtils'
 import { Copy, FileText, History, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/auth'
 
 const message = useMessage()
 const dialog = useDialog()
 const router = useRouter()
+const authStore = useAuthStore()
 const loading = ref(false)
 const listViewMode = ref<'table' | 'card'>('table')
 const catalogScope = ref<'mine' | 'public'>('mine')
@@ -274,7 +282,23 @@ const openDetailDrawer = (record: FlowTemplate) => {
   openTemplateDetail(record)
 }
 
+const canManageTemplate = (record: FlowTemplate) => {
+  if (authStore.isAdmin) return true
+  const userId = authStore.user?.id
+  return Boolean(userId && record.created_by === userId)
+}
+
+const canStartTemplate = (record: FlowTemplate) => {
+  if (!record.is_active) return false
+  if (canManageTemplate(record)) return true
+  return Boolean(record.is_public)
+}
+
 const openStartModal = (record: FlowTemplate) => {
+  if (!canStartTemplate(record)) {
+    message.warning('无权启动该流程模板')
+    return
+  }
   selectedTemplate.value = record
   startVisible.value = true
 }
@@ -320,18 +344,37 @@ const withPerm = (vnode: VNode, value: unknown) => {
   return perm ? withDirectives(vnode, [[perm, value]]) : vnode
 }
 
-const pipelineRowActions = (record: FlowTemplate) => [
-  { label: '详情', key: 'detail', icon: () => h(FileText, { size: 14 }) },
-  { label: '编辑', key: 'edit', icon: () => h(Pencil, { size: 14 }) },
-  { label: '复制', key: 'copy', icon: () => h(Copy, { size: 14 }) },
-  { label: '删除', key: 'delete', icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } },
-]
+const pipelineRowActions = (record: FlowTemplate) => {
+  const actions = [
+    { label: '详情', key: 'detail', icon: () => h(FileText, { size: 14 }) },
+  ]
+  if (canManageTemplate(record)) {
+    actions.push({ label: '编辑', key: 'edit', icon: () => h(Pencil, { size: 14 }) })
+  }
+  actions.push({ label: '复制', key: 'copy', icon: () => h(Copy, { size: 14 }) })
+  if (canManageTemplate(record)) {
+    actions.push({ label: '删除', key: 'delete', icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } } as any)
+  }
+  return actions
+}
 
 const onPipelineRowAction = (key: string, record: FlowTemplate) => {
   if (key === 'detail') openTemplateDetail(record)
-  if (key === 'edit') router.push(`/flows/${record.id}/edit`)
+  if (key === 'edit') {
+    if (!canManageTemplate(record)) {
+      message.warning('无权编辑该流程模板')
+      return
+    }
+    router.push(`/flows/${record.id}/edit`)
+  }
   if (key === 'copy') copyTemplate(record)
-  if (key === 'delete') confirmDeleteTemplate(record)
+  if (key === 'delete') {
+    if (!canManageTemplate(record)) {
+      message.warning('无权删除该流程模板')
+      return
+    }
+    confirmDeleteTemplate(record)
+  }
 }
 
 const templateColumns: DataTableColumns<any> = [
@@ -405,10 +448,12 @@ const templateColumns: DataTableColumns<any> = [
     width: 140,
     render: (row) =>
       h('div', { class: 'table-row-actions pipeline-actions' }, [
-        h(NButton, {
-          text: true, size: 'small', disabled: !row.is_active,
-          onClick: () => openStartModal(row),
-        }, { icon: () => h(Play, { size: 14 }), default: () => '新建任务' }),
+        canStartTemplate(row)
+          ? h(NButton, {
+              text: true, size: 'small',
+              onClick: () => openStartModal(row),
+            }, { icon: () => h(Play, { size: 14 }), default: () => '新建任务' })
+          : null,
         h(NDropdown, {
           trigger: 'click',
           options: pipelineRowActions(row),
@@ -418,7 +463,7 @@ const templateColumns: DataTableColumns<any> = [
             icon: () => h(MoreHorizontal, { size: 16 }),
           }),
         }),
-      ]),
+      ].filter(Boolean)),
   },
 ]
 

@@ -769,9 +769,9 @@ class FlowRunner:
     @staticmethod
     def _emit_notify(flow_run: FlowRun, event: str) -> None:
         try:
-            from .notify import notify_flow_run
+            from .notify import schedule_notify_flow_run
 
-            notify_flow_run(flow_run, event)
+            schedule_notify_flow_run(flow_run, event)
         except Exception:  # pragma: no cover - notify must not break runner
             pass
 

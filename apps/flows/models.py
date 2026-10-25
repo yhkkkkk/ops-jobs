@@ -193,9 +193,9 @@ class FlowRun(models.Model):
             event = "failed"
         if event:
             try:
-                from .notify import notify_flow_run
+                from .notify import schedule_notify_flow_run
 
-                notify_flow_run(self, event)
+                schedule_notify_flow_run(self, event)
             except Exception:
                 pass
 
