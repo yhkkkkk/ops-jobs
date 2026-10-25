@@ -24,10 +24,11 @@ describe('flow start modal layout', () => {
     expect(apiSource).not.toContain('agent_server_id')
   })
 
-  it('uses a global host variable textarea instead of asset selection or ids', () => {
+  it('uses IP selector field for host_list variables in a stepped start wizard', () => {
     expect(componentSource).not.toContain('主机 ID，用逗号分隔')
-    expect(componentSource).not.toContain('HostSelector')
-    expect(componentSource).toContain('每行一个 IP 或主机名，可粘贴多行')
+    expect(componentSource).toContain('FlowIpSelectorField')
+    expect(componentSource).toContain('<n-steps')
+    expect(componentSource).toContain('全局变量')
     expect(componentSource).not.toContain('节点参数覆盖')
     expect(componentSource).not.toContain('nodeOverrides')
   })

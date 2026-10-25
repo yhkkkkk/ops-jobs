@@ -13,58 +13,37 @@
     >
       <div class="group-info">
         <!-- 展开/收起按钮 -->
-        <a-button
+        <n-button
           v-if="hasChildren"
-          type="text"
-          size="mini"
+          text
+          size="tiny"
           @click.stop="$emit('toggle-expand', group.id)"
           class="expand-btn"
         >
-          <icon-down
+          <ChevronDown 
             :class="{ 'expanded': isExpanded }"
             class="expand-icon"
           />
-        </a-button>
+        </n-button>
         <div v-else class="expand-placeholder"></div>
         
         <!-- 分组图标和名称 -->
-        <icon-folder class="group-icon" />
+        <Folder  class="group-icon" />
         <span class="group-name">{{ group.name }}</span>
       </div>
       
       <div class="group-actions">
         <span class="group-count">{{ group.total_host_count ?? group.host_count ?? 0 }}</span>
-        <a-dropdown v-if="!readOnly" @select="handleMenuSelect">
-          <a-button type="text" size="mini" @click.stop>
-            <icon-more />
-          </a-button>
-          <template #content>
-            <a-doption value="edit">
-              <template #icon>
-                <icon-edit />
-              </template>
-              编辑
-            </a-doption>
-            <a-doption value="add-subgroup">
-              <template #icon>
-                <icon-folder-add />
-              </template>
-              添加子分组
-            </a-doption>
-            <a-doption value="test-connection">
-              <template #icon>
-                <icon-wifi />
-              </template>
-              测试连接
-            </a-doption>
-            <a-doption value="delete" class="danger">
-              <template #icon>
-                <icon-delete />
-              </template>
-              删除
-            </a-doption>
-          </template>
-        </a-dropdown>
+        <n-dropdown
+          v-if="!readOnly"
+          trigger="click"
+          :options="nodeMenuOptions"
+          @select="handleMenuSelect"
+        >
+          <n-button text size="tiny" @click.stop>
+            <MoreHorizontal  />
+          </n-button>
+        </n-dropdown>
       </div>
     </div>
 
@@ -76,19 +55,19 @@
       @click.stop
     >
       <button type="button" role="menuitem" @click="selectContextMenu('edit')">
-        <icon-edit />
+        <Pencil  />
         编辑
       </button>
       <button type="button" role="menuitem" @click="selectContextMenu('add-subgroup')">
-        <icon-folder-add />
+        <FolderPlus  />
         添加子分组
       </button>
       <button type="button" role="menuitem" @click="selectContextMenu('test-connection')">
-        <icon-wifi />
+        <Wifi  />
         测试连接
       </button>
       <button type="button" role="menuitem" class="danger" @click="selectContextMenu('delete')">
-        <icon-delete />
+        <Trash2  />
         删除
       </button>
     </div>
@@ -115,16 +94,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { 
-  IconDown, 
-  IconFolder, 
-  IconMore, 
-  IconEdit, 
-  IconFolderAdd, 
-  IconWifi, 
-  IconDelete 
-} from '@arco-design/web-vue/es/icon'
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ChevronDown, Folder, FolderPlus, MoreHorizontal, Pencil, Trash2, Wifi } from 'lucide-vue-next'
+import { NButton, NDropdown } from 'naive-ui'
 import type { HostGroup } from '@/types'
 
 const HOST_GROUP_CONTEXT_MENU_OPEN_EVENT = 'host-group-context-menu-open'
@@ -225,6 +197,13 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener(HOST_GROUP_CONTEXT_MENU_OPEN_EVENT, handleOtherContextMenuOpen)
 })
+
+const nodeMenuOptions = [
+  { label: '编辑', key: 'edit', icon: () => h(Pencil, { size: 14 }) },
+  { label: '添加子分组', key: 'add-subgroup', icon: () => h(FolderPlus, { size: 14 }) },
+  { label: '测试连接', key: 'test-connection', icon: () => h(Wifi, { size: 14 }) },
+  { label: '删除', key: 'delete', icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } },
+]
 </script>
 
 <style scoped>
@@ -353,11 +332,11 @@ onBeforeUnmount(() => {
 }
 
 /* 危险操作样式 */
-:deep(.arco-dropdown-option.danger) {
+:deep(.n-dropdown-option.danger) {
   color: #f53f3f;
 }
 
-:deep(.arco-dropdown-option.danger:hover) {
+:deep(.n-dropdown-option.danger:hover) {
   background-color: #ffece8;
   color: #f53f3f;
 }

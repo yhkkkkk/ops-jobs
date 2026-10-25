@@ -100,6 +100,44 @@ def test_flow_runner_executes_script_node_with_agent_service():
     assert execute_script.call_args.kwargs["script_content"] == "echo hello"
 
 
+def test_flow_runner_injects_system_variables_on_start():
+    user = _create_user()
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+        variables={
+            "ReleaseVersion": {
+                "name": "版本",
+                "type": "text",
+                "default": "v1",
+                "required": False,
+                "show_on_start": True,
+            }
+        },
+    )
+    FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="wait",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "ok"},
+    )
+
+    flow_run = FlowRunner.start(template=template, user=user, inputs={"ReleaseVersion": "v2"}, run_name="sys-task")
+
+    assert flow_run.inputs["_system.operator"] == user.username
+    assert flow_run.inputs["_system.executor"] == user.username
+    assert flow_run.inputs["_system.task_id"] == str(flow_run.id)
+    assert flow_run.inputs["_system.task_name"] == "sys-task"
+    assert flow_run.inputs["_system.task_url"] == f"/flows/runs/{flow_run.id}"
+    assert flow_run.inputs["_system.language"]
+    assert "_system.task_start_time" in flow_run.inputs
+    assert "_system.bk_biz_id" in flow_run.inputs
+    assert "_system.bk_biz_name" in flow_run.inputs
+    assert "_system.start_time" not in flow_run.inputs
+    assert flow_run.inputs["ReleaseVersion"] == "v2"
+
+
 def test_flow_runner_resolves_script_node_variables_from_flow_inputs():
     user = _create_user()
     host = _create_host(user)
@@ -1293,6 +1331,147 @@ def test_flow_runner_confirms_manual_node_and_continues_downstream_nodes():
     assert manual_run.finished_at is not None
     assert flow_run.node_runs.get(node=script).status == FlowRun.Status.SUCCESS
     execute_script.assert_called_once()
+
+
+def test_flow_runner_rejects_manual_node_and_fails_flow():
+    user = _create_user()
+    host = _create_host(user)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+    )
+    manual = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "确认后继续"},
+    )
+    script = FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="second script",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo second", "target_host_ids": [host.id]},
+    )
+    FlowEdge.objects.create(template=template, source=manual, target=script)
+
+    flow_run = FlowRunner.start(template=template, user=user, inputs={})
+    manual_run = flow_run.node_runs.get(node=manual)
+    assert flow_run.status == FlowRun.Status.PAUSED
+
+    flow_run = FlowRunner.reject_manual_node(
+        flow_run=flow_run,
+        node_run=manual_run,
+        user=user,
+        remark="window blocked",
+    )
+
+    flow_run.refresh_from_db()
+    manual_run.refresh_from_db()
+    assert flow_run.status == FlowRun.Status.FAILED
+    assert flow_run.error_message == "window blocked"
+    assert manual_run.status == FlowRun.Status.FAILED
+    assert manual_run.outputs["rejected"] is True
+    assert manual_run.outputs["confirmed"] is False
+    assert manual_run.outputs["rejected_by"] == user.username
+    assert manual_run.outputs["reject_remark"] == "window blocked"
+    assert manual_run.finished_at is not None
+    assert not flow_run.node_runs.filter(node=script).exists()
+
+
+def test_flow_runner_force_fails_paused_non_manual_node_and_stops_flow():
+    user = _create_user()
+    host = _create_host(user)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+    )
+    script = FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="paused script",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={
+            "script_content": "echo hi",
+            "target_host_ids": [host.id],
+            "failure_policy": "stop",
+        },
+    )
+    flow_run = FlowRun.objects.create(
+        template=template,
+        started_by=user,
+        status=FlowRun.Status.PAUSED,
+    )
+    node_run = FlowNodeRun.objects.create(
+        flow_run=flow_run,
+        node=script,
+        status=FlowRun.Status.PAUSED,
+        inputs={"failure_policy": "stop", "script_content": "echo hi", "target_host_ids": [host.id]},
+        started_at=timezone.now(),
+    )
+
+    flow_run = FlowRunner.force_fail_node(
+        flow_run=flow_run,
+        node_run=node_run,
+        user=user,
+        remark="operator force fail",
+    )
+
+    flow_run.refresh_from_db()
+    node_run.refresh_from_db()
+    assert flow_run.status == FlowRun.Status.FAILED
+    assert flow_run.error_message == "operator force fail"
+    assert node_run.status == FlowRun.Status.FAILED
+    assert node_run.outputs["force_failed"] is True
+    assert node_run.outputs["force_fail_remark"] == "operator force fail"
+
+
+def test_flow_runner_reject_cancels_sibling_active_node_runs():
+    user = _create_user()
+    host = _create_host(user)
+    template = FlowTemplate.objects.create(
+        name=f"flow-{uuid.uuid4().hex[:8]}",
+        created_by=user,
+    )
+    manual = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "确认后继续"},
+    )
+    sibling = FlowNode.objects.create(
+        template=template,
+        uuid="script-sibling",
+        name="并行脚本",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo sibling", "target_host_ids": [host.id]},
+    )
+    FlowEdge.objects.create(template=template, source=manual, target=sibling)
+
+    flow_run = FlowRunner.start(template=template, user=user, inputs={})
+    manual_run = flow_run.node_runs.get(node=manual)
+    sibling_run = FlowNodeRun.objects.create(
+        flow_run=flow_run,
+        node=sibling,
+        status=FlowRun.Status.RUNNING,
+        started_at=timezone.now(),
+    )
+
+    flow_run = FlowRunner.reject_manual_node(
+        flow_run=flow_run,
+        node_run=manual_run,
+        user=user,
+        remark="reject siblings",
+    )
+
+    manual_run.refresh_from_db()
+    sibling_run.refresh_from_db()
+    assert flow_run.status == FlowRun.Status.FAILED
+    assert manual_run.status == FlowRun.Status.FAILED
+    assert sibling_run.status == FlowRun.Status.CANCELLED
+    assert sibling_run.error_message == "reject siblings"
 
 
 def test_flow_runner_subprocess_success_continues_parent_downstream_nodes():

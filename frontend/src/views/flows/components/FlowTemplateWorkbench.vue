@@ -2,65 +2,42 @@
   <div :class="['flow-editor-shell', { 'flow-editor-shell--readonly': isReadonly }]">
     <header class="flow-editor-command">
       <div class="flow-editor-command__title">
-        <a-button size="small" @click="router.push('/flows')">
-          <template #icon><icon-left /></template>
-        </a-button>
-        <div>
-          <h1>{{ workbenchTitle }}</h1>
-          <p>{{ nodes.length }} 个节点 / {{ edges.length }} 条连线 / {{ form.is_active ? '启用' : '停用' }}</p>
-        </div>
+        <n-button size="tiny" quaternary @click="router.push('/flows')">
+          <template #icon><ChevronLeft :size="16" /></template>
+        </n-button>
+        <h1>{{ workbenchTitle }}</h1>
+        <n-input
+          v-if="!isReadonly"
+          v-model:value="form.name"
+          size="small"
+          placeholder="流水线名称"
+          style="width: 220px"
+        />
+        <span class="flow-editor-command__meta">{{ nodes.length }} 节点 · {{ edges.length }} 连线</span>
       </div>
 
-      <a-form v-if="!isReadonly" :model="form" layout="inline" class="flow-editor-command__form">
-        <a-form-item label="名称" required>
-          <a-input v-model="form.name" placeholder="生产发布前置检查" />
-        </a-form-item>
-        <a-form-item label="说明">
-          <a-input v-model="form.description" placeholder="用途、窗口、负责人" />
-        </a-form-item>
-        <a-form-item label="状态">
-          <a-switch v-model="form.is_active" checked-text="启用" unchecked-text="停用" />
-        </a-form-item>
-      </a-form>
-      <div v-else class="readonly-template-meta">
-        <span>{{ form.description || '查看流程模板拓扑、全局变量和节点配置。' }}</span>
-        <em>负责人 {{ currentTemplate?.created_by_name || '-' }} / 更新 {{ formatTime(currentTemplate?.updated_at || currentTemplate?.created_at) }}</em>
-      </div>
-
-      <a-space class="flow-editor-command__actions">
-        <a-button @click="variablesDrawerVisible = true">
-          <template #icon><icon-code /></template>
-          全局变量
-        </a-button>
-        <a-button v-if="currentTemplate?.id" @click="scheduleDrawerVisible = true">
-          <template #icon><icon-schedule /></template>
-          流水线定时调度
-        </a-button>        <a-button v-if="isReadonly && currentTemplate?.id" @click="router.push(`/flows/${currentTemplate.id}/edit`)">
-          <template #icon><icon-edit /></template>
-          编辑
-        </a-button>
-        <a-button v-if="isReadonly" type="primary" :disabled="!form.is_active" @click="startVisible = true">
-          <template #icon><icon-play-arrow /></template>
-          启动
-        </a-button>
-        <a-button v-if="!isReadonly" @click="layoutNodes">
-          <template #icon><icon-sort /></template>
-          自动排布
-        </a-button>
-        <a-button v-if="!isReadonly" type="primary" :loading="saving" @click="saveTemplate">
-          <template #icon><icon-save /></template>
-          保存
-        </a-button>
-      </a-space>
+      <n-space class="flow-editor-command__actions" :size="6">
+        <n-button size="small" @click="openSettingTab('variables')">全局变量</n-button>
+        <n-button size="small" @click="openSettingTab('base')">基础信息</n-button>
+        <n-button v-if="!isReadonly" size="small" @click="openSettingTab('notify')">通知</n-button>
+        <n-button v-if="currentTemplate?.id" size="small" @click="scheduleDrawerVisible = true">定时调度</n-button>
+        <n-button v-if="isReadonly && currentTemplate?.id" size="small" @click="router.push(`/flows/${currentTemplate.id}/edit`)">编辑</n-button>
+        <n-button v-if="isReadonly" size="small" type="primary" :disabled="!form.is_active" @click="startVisible = true">启动</n-button>
+        <n-button v-if="!isReadonly" size="small" @click="layoutNodes">排布</n-button>
+        <n-button v-if="!isReadonly" size="small" type="primary" :loading="saving" @click="saveTemplate">保存</n-button>
+      </n-space>
     </header>
 
-    <a-spin :loading="loading" class="flow-editor-spin">
+    <n-spin :show="loading" class="flow-editor-spin">
       <section class="flow-editor-workbench">
         <aside class="flow-plugin-rail" :class="{ 'flow-plugin-rail--collapsed': pluginRailCollapsed }">
           <div class="flow-plugin-rail__toggle">
-            <a-button size="mini" @click="pluginRailCollapsed = !pluginRailCollapsed">
-              <template #icon><icon-menu-fold v-if="!pluginRailCollapsed" /><icon-menu-unfold v-else /></template>
-            </a-button>
+            <n-button size="tiny" @click="pluginRailCollapsed = !pluginRailCollapsed">
+              <template #icon>
+                <PanelLeftClose v-if="!pluginRailCollapsed" />
+                <PanelLeftOpen v-else />
+              </template>
+            </n-button>
           </div>
           <FlowNodeLibraryPanel
             v-show="!pluginRailCollapsed"
@@ -76,18 +53,12 @@
           <div class="flow-canvas-toolbar flow-canvas-toolbar--compact">
             <div>
               <h2>可视化编排</h2>
-              <p>{{ isReadonly ? '只读查看模板 DAG 拓扑，点击节点打开配置抽屉。' : '拖拽标准插件，按 DAG 串并行、分支、子流程组织执行路径。' }}</p>
+              <p>{{ isReadonly ? '只读查看模板 DAG；点击节点或条件连线查看配置。' : '拖拽标准插件；点击条件出边配置分支表达式。' }}</p>
             </div>
-            <a-space v-if="!isReadonly">
-              <a-button size="small" @click="selectFirstInvalidNode">
-                <template #icon><icon-search /></template>
-                定位问题
-              </a-button>
-              <a-button size="small" status="danger" :disabled="!selectedNode" @click="removeSelectedNode">
-                <template #icon><icon-delete /></template>
-                删除节点
-              </a-button>
-            </a-space>
+            <n-space v-if="!isReadonly">
+              <n-button size="small" @click="selectFirstInvalidNode">定位问题</n-button>
+              <n-button size="small" type="error" :disabled="!selectedNode" @click="removeSelectedNode">删除节点</n-button>
+            </n-space>
           </div>
 
           <div class="flow-validation-strip">
@@ -110,6 +81,7 @@
               elevate-edges-on-select
               class="ops-flow"
               @node-click="handleFlowNodeClick"
+              @edge-click="handleFlowEdgeClick"
               @node-drag-stop="handleNodeDragStop"
               @connect="handleConnect"
             >
@@ -131,33 +103,53 @@
             </VueFlow>
 
             <div v-if="nodes.length === 0" class="flow-canvas-empty">
-              <icon-branch />
+              <GitBranch  />
               <p>{{ isReadonly ? '当前模板暂无节点' : '从左侧插件库添加节点' }}</p>
             </div>
           </div>
         </main>
-      </section>
-    </a-spin>
 
-    <a-drawer
-      v-model:visible="propertyDrawerVisible"
+        <FlowSettingPanel
+          v-model:collapsed="settingPanelCollapsed"
+          :readonly="isReadonly"
+          :name="form.name"
+          :description="form.description"
+          :category="form.category"
+          :is-active="form.is_active"
+          :is-public="form.is_public"
+          :variables="form.variables"
+          :notify-config="form.notify_config"
+          :initial-tab="settingInitialTab"
+          @update:name="form.name = $event"
+          @update:description="form.description = $event"
+          @update:category="form.category = $event"
+          @update:is-active="form.is_active = $event"
+          @update:is-public="form.is_public = $event"
+          @update:variables="form.variables = $event"
+          @update:notify-config="form.notify_config = $event"
+        />
+      </section>
+    </n-spin>
+
+    <n-drawer
+      v-model:show="propertyDrawerVisible"
       :width="propertyDrawerWidth"
       placement="right"
-      :footer="false"
+     
       class="flow-property-drawer"
       @cancel="closePropertyDrawer"
-    >
-      <template #title>节点配置</template>
+    ><n-drawer-content>
+      <template #header>节点配置</template>
       <div v-if="selectedNode" class="property-panel">
         <div class="property-panel-head">
           <div>
             <h2>{{ selectedNode.name }}</h2>
             <p>{{ flowNodeTypeText(selectedNode.node_type) }}</p>
           </div>
-          <a-button v-if="!isReadonly" size="small" @click="duplicateSelectedNode">
-            <template #icon><icon-copy /></template>
+          <n-button v-if="!isReadonly" size="small" @click="duplicateSelectedNode">
+            <template #icon><Copy  /></template>
             复制节点
-          </a-button>
+          </n-button>
         </div>
 
         <div v-if="isReadonly" class="readonly-config-rows">
@@ -185,94 +177,120 @@
           </section>
         </div>
 
-        <a-form v-else :model="selectedNode" layout="vertical" class="node-form">
+        <n-form v-else :model="selectedNode" label-placement="top" class="node-form">
           <section class="node-config-section">
             <div class="node-config-section__head">
               <div>
                 <h3>基础信息</h3>
-                <p>节点名称、插件类型和失败处理策略。</p>
+                <p>节点名称与插件类型。</p>
               </div>
             </div>
-            <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item label="节点名称" required>
-                  <a-input v-model="selectedNode.name" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="节点类型">
-                  <a-select v-model="selectedNode.node_type" @change="resetNodeConfig(selectedNode)">
-                    <a-option v-for="plugin in libraryPlugins" :key="plugin.type" :value="plugin.type">{{ plugin.name }}</a-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-form-item label="失败策略">
-              <a-radio-group v-model="selectedNode.config.failure_policy" type="button">
-                <a-radio value="stop">失败终止</a-radio>
-                <a-radio value="pause">暂停处理</a-radio>
-                <a-radio value="ignore">忽略继续</a-radio>
-              </a-radio-group>
-            </a-form-item>
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="节点名称" required>
+                  <n-input v-model:value="selectedNode.name" />
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="节点类型">
+                  <n-select v-model:value="selectedNode.node_type" @update:value="resetNodeConfig(selectedNode)" :options="(libraryPlugins || []).map((plugin: any) => ({ label: String(plugin.name), value: String(plugin.type) }))" />
+                </n-form-item>
+              </div>
+            </div>
+          </section>
+
+          <section class="node-config-section">
+            <div class="node-config-section__head">
+              <div>
+                <h3>失败处理</h3>
+                <p>节点执行失败时的模板策略；运行态另有重试 / 跳过 / 强制失败。</p>
+              </div>
+            </div>
+            <n-form-item label="失败策略">
+              <n-radio-group v-model:value="selectedNode.config.failure_policy" size="small">
+                <n-radio-button value="pause">失败时暂停</n-radio-button>
+                <n-radio-button value="ignore">自动忽略继续</n-radio-button>
+                <n-radio-button value="stop">失败终止</n-radio-button>
+              </n-radio-group>
+            </n-form-item>
+          </section>
+
+          <section
+            v-if="!isReadonly && selectedNodeOutputHooks.length"
+            class="node-config-section"
+          >
+            <div class="node-config-section__head">
+              <div>
+                <h3>输出</h3>
+                <p>勾选后生成全局变量，可在后续节点用 ${KEY} 或 outputs.节点.字段 引用。</p>
+              </div>
+            </div>
+            <div class="output-hook-list">
+              <n-checkbox
+                v-for="hook in selectedNodeOutputHooks"
+                :key="hook.field"
+                :checked="isOutputHooked(hook.field)"
+                @update:checked="checked => toggleOutputHook(hook, checked)"
+              >
+                {{ hook.name }}（{{ hook.field }}）
+              </n-checkbox>
+            </div>
           </section>
 
           <template v-if="selectedNode.node_type === 'script'">
             <section class="node-config-section">
               <div class="node-config-section__head">
                 <div>
-                  <h3>脚本执行配置</h3>
-                  <p>对齐作业模板步骤：脚本类型、目标主机变量、超时和脚本内容。</p>
+                  <h3>输入</h3>
+                  <p>脚本类型、目标主机变量、超时和脚本内容。</p>
                 </div>
               </div>
-              <a-row :gutter="16">
-                <a-col :span="16">
-                  <a-form-item label="脚本类型">
-                    <a-radio-group v-model="selectedNode.config.script_type" @change="handleSelectedScriptTypeChange">
-                      <a-radio value="shell">Shell</a-radio>
-                      <a-radio value="python">Python</a-radio>
-                      <a-radio value="powershell">PowerShell</a-radio>
-                      <a-radio value="perl">Perl</a-radio>
-                      <a-radio value="javascript">JavaScript</a-radio>
-                      <a-radio value="go">Go</a-radio>
-                    </a-radio-group>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="超时秒数">
-                    <a-input-number v-model="selectedNode.config.timeout" :min="1" />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-form-item label="目标主机" required>
-                <a-input-group compact class="variable-binding-input">
-                  <a-input v-model="selectedNode.config.target_host_ids" placeholder="例如 ${CheckHost}" />
-                  <a-dropdown trigger="click" @select="value => bindSelectedNodeHostVariable(String(value))">
-                    <a-button>插入变量</a-button>
-                    <template #content>
-                      <a-doption v-for="option in hostVariableOptions" :key="option.key" :value="option.value">{{ option.label }}</a-doption>
-                    </template>
-                  </a-dropdown>
-                </a-input-group>
-              </a-form-item>
-              <a-form-item label="脚本内容" required>
-                <template #extra>
-                  <a-button size="small" @click="insertSelectedScriptExample">
-                    <template #icon><icon-code /></template>
+              <div class="form-grid-row">
+                <div class="form-grid-col" style="grid-column: span 16">
+                  <n-form-item label="脚本类型">
+                    <n-radio-group v-model:value="selectedNode.config.script_type" @update:value="handleSelectedScriptTypeChange">
+                      <n-radio value="shell">Shell</n-radio>
+                      <n-radio value="python">Python</n-radio>
+                      <n-radio value="powershell">PowerShell</n-radio>
+                      <n-radio value="perl">Perl</n-radio>
+                      <n-radio value="javascript">JavaScript</n-radio>
+                      <n-radio value="go">Go</n-radio>
+                    </n-radio-group>
+                  </n-form-item>
+                </div>
+                <div class="form-grid-col" style="grid-column: span 8">
+                  <n-form-item label="超时秒数">
+                    <n-input-number v-model:value="selectedNode.config.timeout" :min="1" />
+                  </n-form-item>
+                </div>
+              </div>
+              <n-form-item label="目标主机" required>
+                <div class="naive-input-group">
+                  <n-input v-model:value="selectedNode.config.target_host_ids" placeholder="例如 ${CheckHost}" />
+                  <n-dropdown trigger="click" :options="(hostVariableOptions || []).map((o: any) => ({ label: o.label, key: String(o.value) }))" @select="value => bindSelectedNodeHostVariable(String(value))">
+                    <n-button>插入变量</n-button>
+                  </n-dropdown>
+                </div>
+              </n-form-item>
+              <n-form-item label="脚本内容" required>
+                <div class="script-editor-block">
+                  <n-button size="small" @click="insertSelectedScriptExample">
+                    <template #icon><Code2  /></template>
                     插入示例
-                  </a-button>
-                </template>
-                <ScriptEditorWithValidation
-                  v-model="selectedNode.config.script_content"
-                  class="script-monaco-editor"
-                  :language="scriptEditorLanguage"
-                  theme="vs-dark"
-                  :height="560"
-                  :readonly="isReadonly"
-                  :auto-validate="true"
-                />
-              </a-form-item>
+                  </n-button>
+                  <ScriptEditorWithValidation
+                    v-model="selectedNode.config.script_content"
+                    class="script-monaco-editor"
+                    :language="scriptEditorLanguage"
+                    theme="vs-dark"
+                    :height="560"
+                    :readonly="isReadonly"
+                    :auto-validate="true"
+                  />
+                </div>
+              </n-form-item>
               <div class="node-config-hint">
-                <icon-info-circle />
+                <Info  />
                 <div>
                   <strong>变量绑定</strong>
                   <span>目标主机必须绑定 host_list 全局变量；脚本内容可插入 ${Key}。</span>
@@ -285,61 +303,52 @@
             <section class="node-config-section">
               <div class="node-config-section__head">
                 <div>
-                  <h3>文件分发配置</h3>
+                  <h3>输入</h3>
                   <p>文件来源、远端路径、目标主机都通过变量引用串联。</p>
                 </div>
               </div>
-              <a-form-item label="目标主机" required>
-                <a-input-group compact class="variable-binding-input">
-                  <a-input v-model="selectedNode.config.target_host_ids" placeholder="例如 ${CheckHost}" />
-                  <a-dropdown trigger="click" @select="value => bindSelectedNodeHostVariable(String(value))">
-                    <a-button>插入变量</a-button>
-                    <template #content>
-                      <a-doption v-for="option in hostVariableOptions" :key="option.key" :value="option.value">{{ option.label }}</a-doption>
-                    </template>
-                  </a-dropdown>
-                </a-input-group>
-              </a-form-item>
-              <a-row :gutter="16">
-                <a-col :span="12">
-                  <a-form-item label="超时秒数">
-                    <a-input-number v-model="selectedNode.config.timeout" :min="1" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="限速 MB/s">
-                    <a-input-number v-model="selectedNode.config.bandwidth_limit" :min="0" />
-                  </a-form-item>
-                </a-col>
-              </a-row>
+              <n-form-item label="目标主机" required>
+                <div class="naive-input-group">
+                  <n-input v-model:value="selectedNode.config.target_host_ids" placeholder="例如 ${CheckHost}" />
+                  <n-dropdown trigger="click" :options="(hostVariableOptions || []).map((o: any) => ({ label: o.label, key: String(o.value) }))" @select="value => bindSelectedNodeHostVariable(String(value))">
+                    <n-button>插入变量</n-button>
+                  </n-dropdown>
+                </div>
+              </n-form-item>
+              <div class="form-grid-row">
+                <div class="form-grid-col" style="grid-column: span 12">
+                  <n-form-item label="超时秒数">
+                    <n-input-number v-model:value="selectedNode.config.timeout" :min="1" />
+                  </n-form-item>
+                </div>
+                <div class="form-grid-col" style="grid-column: span 12">
+                  <n-form-item label="限速 MB/s">
+                    <n-input-number v-model:value="selectedNode.config.bandwidth_limit" :min="0" />
+                  </n-form-item>
+                </div>
+              </div>
               <div class="file-source-list">
                 <div v-for="(source, index) in selectedNode.config.file_sources" :key="index" class="file-source-row">
-                  <a-input-group compact class="variable-binding-input">
-                    <a-input v-model="source.download_url" placeholder="下载地址，支持 ${PackageUrl}" />
-                    <a-dropdown trigger="click" @select="value => insertFileSourceVariable(source, 'download_url', String(value))">
-                      <a-button>插入变量</a-button>
-                      <template #content>
-                        <a-doption v-for="option in allVariableOptions" :key="option.key" :value="option.value">{{ option.label }}</a-doption>
-                      </template>
-                    </a-dropdown>
-                  </a-input-group>
-                  <a-input-group compact class="variable-binding-input">
-                    <a-input v-model="source.remote_path" placeholder="远端路径，支持 ${DeployPath}" />
-                    <a-dropdown trigger="click" @select="value => insertFileSourceVariable(source, 'remote_path', String(value))">
-                      <a-button>插入变量</a-button>
-                      <template #content>
-                        <a-doption v-for="option in allVariableOptions" :key="option.key" :value="option.value">{{ option.label }}</a-doption>
-                      </template>
-                    </a-dropdown>
-                  </a-input-group>
-                  <a-button size="small" status="danger" :disabled="selectedNode.config.file_sources.length <= 1" @click="removeFileSource(index)">
-                    <template #icon><icon-delete /></template>
-                  </a-button>
+                  <div class="naive-input-group">
+                    <n-input v-model:value="source.download_url" placeholder="下载地址，支持 ${PackageUrl}" />
+                    <n-dropdown trigger="click" :options="(allVariableOptions || []).map((o: any) => ({ label: o.label, key: String(o.value) }))" @select="value => insertFileSourceVariable(source, 'download_url', String(value))">
+                      <n-button>插入变量</n-button>
+                    </n-dropdown>
+                  </div>
+                  <div class="naive-input-group">
+                    <n-input v-model:value="source.remote_path" placeholder="远端路径，支持 ${DeployPath}" />
+                    <n-dropdown trigger="click" :options="(allVariableOptions || []).map((o: any) => ({ label: o.label, key: String(o.value) }))" @select="value => insertFileSourceVariable(source, 'remote_path', String(value))">
+                      <n-button>插入变量</n-button>
+                    </n-dropdown>
+                  </div>
+                  <n-button size="small" type="error" :disabled="selectedNode.config.file_sources.length <= 1" @click="removeFileSource(index)">
+                    <template #icon><Trash2  /></template>
+                  </n-button>
                 </div>
-                <a-button size="small" @click="addFileSource">
-                  <template #icon><icon-plus /></template>
+                <n-button size="small" @click="addFileSource">
+                  <template #icon><Plus  /></template>
                   添加文件来源
-                </a-button>
+                </n-button>
               </div>
             </section>
           </template>
@@ -348,19 +357,17 @@
             <section class="node-config-section">
               <div class="node-config-section__head">
                 <div>
-                  <h3>作业执行方案配置</h3>
-                  <p>只选择执行方案，方案变量映射到流水线全局变量。</p>
+                  <h3>输入</h3>
+                  <p>选择执行方案，方案变量映射到流水线全局变量。</p>
                 </div>
-                <a-button size="small" :loading="executionPlanDetailLoading" @click="refreshSelectedExecutionPlan">
-                  <template #icon><icon-refresh /></template>
+                <n-button size="small" :loading="executionPlanDetailLoading" @click="refreshSelectedExecutionPlan">
+                  <template #icon><RefreshCw  /></template>
                   刷新方案
-                </a-button>
+                </n-button>
               </div>
-              <a-form-item label="作业执行方案" required>
-                <a-select v-model="selectedNode.config.execution_plan_id" allow-search placeholder="选择作业执行方案" @change="handleExecutionPlanChange">
-                  <a-option v-for="plan in executionPlans" :key="plan.id" :value="plan.id">{{ plan.name }}</a-option>
-                </a-select>
-              </a-form-item>
+              <n-form-item label="作业执行方案" required>
+                <n-select v-model:value="selectedNode.config.execution_plan_id" filterable placeholder="选择作业执行方案" @update:value="handleExecutionPlanChange" :options="(executionPlans || []).map((plan: any) => ({ label: String(plan.name), value: Number(plan.id) }))" />
+              </n-form-item>
               <div class="execution-parameter-block">
                 <div class="execution-parameter-block__head">
                   <div>
@@ -374,21 +381,18 @@
                       <strong>{{ item.key }}</strong>
                       <span>{{ item.description || item.defaultDisplay || '方案变量' }}</span>
                     </div>
-                    <a-input-group compact class="variable-binding-input">
-                      <a-input
+                    <div class="naive-input-group">
+                      <n-input
                         :model-value="getExecutionParameterBinding(item.key)"
                         placeholder="例如 ${DeployPath}"
-                        @input="value => setExecutionParameterBinding(item.key, value)"
+                        @update:value="value => setExecutionParameterBinding(item.key, value)"
                       />
-                      <a-dropdown trigger="click" @select="value => insertExecutionParameterVariable(item.key, String(value))">
-                        <a-button>插入变量</a-button>
-                        <template #content>
-                          <a-doption v-for="option in allVariableOptions" :key="option.key" :value="option.value">{{ option.label }}</a-doption>
-                        </template>
-                      </a-dropdown>
-                    </a-input-group>
+                      <n-dropdown trigger="click" :options="(allVariableOptions || []).map((o: any) => ({ label: o.label, key: String(o.value) }))" @select="value => insertExecutionParameterVariable(item.key, String(value))">
+                        <n-button>插入变量</n-button>
+                      </n-dropdown>
+                    </div>
                   </div>
-                  <a-empty v-if="selectedExecutionPlanVariables.length === 0" description="选择执行方案后加载变量" />
+                  <n-empty v-if="selectedExecutionPlanVariables.length === 0" description="选择执行方案后加载变量" />
                 </div>
               </div>
             </section>
@@ -398,18 +402,86 @@
             <section class="node-config-section">
               <div class="node-config-section__head">
                 <div>
-                  <h3>子流程配置</h3>
-                  <p>选择另一个流程模板作为子流程，输入由全局变量传递。</p>
+                  <h3>输入</h3>
+                  <p>嵌套执行另一个流程模板。子流程结束后按失败策略回传本节点结果。</p>
+                </div>
+                <n-button
+                  v-if="selectedSubProcessTemplateId"
+                  size="small"
+                  @click="openSelectedSubProcessTemplate"
+                >
+                  查看子流程
+                </n-button>
+              </div>
+              <n-form-item label="子流程模板" required>
+                <n-select
+                  v-model:value="selectedNode.config.template_id"
+                  filterable
+                  clearable
+                  placeholder="选择子流程模板"
+                  :options="subProcessTemplateOptions"
+                />
+              </n-form-item>
+              <n-alert
+                v-if="selectedSubProcessTemplate"
+                type="info"
+                :bordered="false"
+                style="margin-bottom: 12px"
+              >
+                将启动「{{ selectedSubProcessTemplate.name }}」作为子任务；父流程在本节点等待子任务结束。
+              </n-alert>
+              <n-form-item label="输入继承">
+                <div class="sub-process-inherit">
+                  <n-switch v-model:value="selectedNode.config.inherit_inputs" />
+                  <span>{{ selectedNode.config.inherit_inputs === false ? '独立输入：用下方 JSON 覆盖父流程变量' : '继承输入：把父流程全局变量原样传入子流程' }}</span>
+                </div>
+              </n-form-item>
+              <n-form-item
+                v-if="selectedNode.config.inherit_inputs === false"
+                label="独立输入 JSON"
+                required
+              >
+                <n-input
+                  type="textarea"
+                  v-model:value="selectedNode.config.inputs_text"
+                  :autosize="{ minRows: 4, maxRows: 10 }"
+                  placeholder='例如 {"DeployPath":"/opt/app"}'
+                />
+              </n-form-item>
+            </section>
+          </template>
+
+          <template v-else-if="selectedNode.node_type === 'parallel'">
+            <section class="node-config-section">
+              <div class="node-config-section__head">
+                <div>
+                  <h3>并行网关</h3>
+                  <p>从本节点拉出多条出边，下游分支会同时启动；每条分支最终应汇入汇聚网关。</p>
                 </div>
               </div>
-              <a-form-item label="子流程模板" required>
-                <a-select v-model="selectedNode.config.template_id" allow-search placeholder="选择子流程模板">
-                  <a-option v-for="template in flowTemplates" :key="template.id" :value="template.id">{{ template.name }}</a-option>
-                </a-select>
-              </a-form-item>
-              <a-form-item label="输入继承">
-                <a-switch v-model="selectedNode.config.inherit_inputs" checked-text="继承" unchecked-text="独立" />
-              </a-form-item>
+              <n-alert type="info" :bordered="false">
+                建议至少 2 条出边。失败策略决定任一分支失败时本节点如何处理。
+              </n-alert>
+              <n-form-item label="说明">
+                <n-input type="textarea" v-model:value="selectedNode.config.description" :autosize="{ minRows: 3, maxRows: 5 }" placeholder="例如：检查与分发并行" />
+              </n-form-item>
+            </section>
+          </template>
+
+          <template v-else-if="selectedNode.node_type === 'join'">
+            <section class="node-config-section">
+              <div class="node-config-section__head">
+                <div>
+                  <h3>汇聚网关</h3>
+                  <p>等待所有入边分支完成后，再继续唯一下游。通常承接并行网关的各条分支。</p>
+                </div>
+              </div>
+              <n-alert type="info" :bordered="false">
+                建议至少 2 条入边、1 条出边。未汇齐前父流程在本节点等待。
+              </n-alert>
+              <n-form-item label="说明">
+                <n-input type="textarea" v-model:value="selectedNode.config.description" :autosize="{ minRows: 3, maxRows: 5 }" placeholder="例如：等待检查与分发完成" />
+              </n-form-item>
             </section>
           </template>
 
@@ -417,34 +489,31 @@
             <section class="node-config-section">
               <div class="node-config-section__head">
                 <div>
-                  <h3>{{ flowNodeTypeText(selectedNode.node_type) }}</h3>
-                  <p>网关、条件和人工确认节点只维护执行控制语义。</p>
+                  <h3>{{ selectedNode.node_type === 'manual' ? '人工审批' : flowNodeTypeText(selectedNode.node_type) }}</h3>
+                  <p>{{ selectedNode.node_type === 'manual' ? '暂停等待审批：通过后继续，拒绝后流水线失败。' : '条件节点按出边表达式选择下游分支。' }}</p>
                 </div>
               </div>
-              <a-form-item label="说明">
-                <a-textarea v-model="selectedNode.config.description" :auto-size="{ minRows: 3, maxRows: 5 }" />
-              </a-form-item>
-              <a-form-item v-if="selectedNode.node_type === 'manual'" label="确认说明">
-                <a-textarea v-model="selectedNode.config.instructions" :auto-size="{ minRows: 3, maxRows: 5 }" />
-              </a-form-item>
+              <n-form-item label="说明">
+                <n-input type="textarea" v-model:value="selectedNode.config.description" :autosize="{ minRows: 3, maxRows: 5 }" />
+              </n-form-item>
+              <n-form-item v-if="selectedNode.node_type === 'manual'" label="审批说明">
+                <n-input type="textarea" v-model:value="selectedNode.config.instructions" :autosize="{ minRows: 3, maxRows: 5 }" placeholder="展示给审批人的检查要点" />
+              </n-form-item>
             </section>
           </template>
-        </a-form>
+        </n-form>
       </div>
-      <a-empty v-else description="请选择画布节点" />
-    </a-drawer>
+      <n-empty v-else description="请选择画布节点" />
+    </n-drawer-content></n-drawer>
 
-    <a-drawer
-      v-model:visible="variablesDrawerVisible"
-      width="760px"
-      placement="right"
-      :footer="false"
-      class="flow-variable-drawer"
-    >
-      <template #title>全局变量</template>
-      <FlowVariableEditor v-if="!isReadonly" v-model="form.variables" />
-      <FlowVariableReadOnlyPanel v-else :variables="form.variables" empty-text="暂无全局变量" />
-    </a-drawer>
+    <FlowEdgeConditionDrawer
+      v-model:visible="edgeConditionVisible"
+      :readonly="isReadonly"
+      :source-label="selectedEdgeSourceLabel"
+      :target-label="selectedEdgeTargetLabel"
+      :condition="selectedEdge?.condition || null"
+      @save="saveEdgeCondition"
+    />
 
     <FlowScheduleDrawer
       v-model:visible="scheduleDrawerVisible"
@@ -462,7 +531,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -473,24 +541,33 @@ import type { ExecutionPlan, FlowEdge, FlowNode, FlowNodePlugin, FlowNodeType, F
 import FlowNodeLibraryPanel, { type FlowNodePluginOption, type FlowScenarioOption } from './FlowNodeLibraryPanel.vue'
 import FlowScheduleDrawer from './FlowScheduleDrawer.vue'
 import FlowStartModal from './FlowStartModal.vue'
-import FlowVariableEditor from './FlowVariableEditor.vue'
-import FlowVariableReadOnlyPanel from './FlowVariableReadOnlyPanel.vue'
+import FlowSettingPanel from './FlowSettingPanel.vue'
+import FlowEdgeConditionDrawer from './FlowEdgeConditionDrawer.vue'
+import { useMessage, NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NDropdown, NEmpty, NForm, NFormItem, NInput, NInputNumber, NRadio, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NSwitch } from 'naive-ui'
 import {
   evaluateFlowGraph,
+  FLOW_NODE_OUTPUT_HOOKS,
   flowNodeConfigDisplayRows,
   flowNodeTypeText,
   flowVariableSelectOptions,
+  listHookedOutputFields,
+  makeComponentOutputVariable,
   normalizeFlowVariables,
   normalizeFlowNode,
+  removeFlowVariable,
   resolveFlowTemplateTopology,
   serializeFlowNode,
+  summarizeEdgeCondition,
   summarizeFlowNode,
+  upsertFlowVariable,
   validateFlowNodeConfigJson,
   type SupportedFlowNodeType,
 } from '../flowUtils'
+import { ArrowUpDown, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, Code2, Copy, GitBranch, GitMerge, Info, Layers, LayoutGrid, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RefreshCw, Save, Search, Share2, Trash2, Upload } from 'lucide-vue-next'
 
 const ScriptEditorWithValidation = defineAsyncComponent(() => import('@/components/ScriptEditorWithValidation.vue'))
 
+const message = useMessage()
 const props = withDefaults(defineProps<{
   mode?: 'edit' | 'readonly'
 }>(), {
@@ -507,7 +584,10 @@ const saving = ref(false)
 const startVisible = ref(false)
 const scheduleDrawerVisible = ref(false)
 const propertyDrawerVisible = ref(false)
-const variablesDrawerVisible = ref(false)
+const settingPanelCollapsed = ref(false)
+const settingInitialTab = ref<'variables' | 'base' | 'notify'>('variables')
+const edgeConditionVisible = ref(false)
+const selectedEdgeKey = ref('')
 const pluginRailCollapsed = ref(false)
 const propertyDrawerWidth = computed(() => window.innerWidth < 1180 ? '100vw' : FLOW_PROPERTY_DRAWER_WIDTH)
 const selectedUuid = ref('')
@@ -521,8 +601,15 @@ const executionPlanDetailLoading = ref(false)
 const form = reactive({
   name: '',
   description: '',
+  category: '',
   variables: {} as Record<string, any>,
+  notify_config: {
+    enabled: false,
+    events: ['success', 'failed'] as string[],
+    webhook_url: '',
+  },
   is_active: true,
+  is_public: false,
 })
 const nodes = ref<FlowNode[]>([])
 const edges = ref<FlowEdge[]>([])
@@ -532,14 +619,14 @@ const workbenchTitle = computed(() => {
 })
 
 const fallbackPlugins: FlowNodePluginOption[] = [
-  { type: 'script', name: '脚本执行', description: '快速执行脚本', category: '作业原子', risk: '中', icon: 'icon-code' },
-  { type: 'file_transfer', name: '文件分发', description: '上传或下载文件', category: '作业原子', risk: '中', icon: 'icon-upload' },
-  { type: 'job_plan', name: '作业执行方案', description: '调用作业方案', category: '作业编排', risk: '高', icon: 'icon-calendar' },
-  { type: 'manual', name: '人工确认', description: '暂停等待确认', category: '控制节点', risk: '低', icon: 'icon-check-circle' },
-  { type: 'condition', name: '条件分支', description: '按变量选择分支', category: '控制节点', risk: '低', icon: 'icon-branch' },
-  { type: 'parallel', name: '并行网关', description: '并行启动下游', category: '控制节点', risk: '低', icon: 'icon-share-alt' },
-  { type: 'join', name: '汇聚网关', description: '等待分支汇聚', category: '控制节点', risk: '低', icon: 'icon-relation' },
-  { type: 'sub_process', name: '子流程', description: '嵌套执行模板', category: '流程编排', risk: '中', icon: 'icon-layers' },
+  { type: 'script', name: '脚本执行', description: '快速执行脚本', category: '作业原子', risk: '中', icon: Code2 },
+  { type: 'file_transfer', name: '文件分发', description: '上传或下载文件', category: '作业原子', risk: '中', icon: Upload },
+  { type: 'job_plan', name: '作业执行方案', description: '调用作业方案', category: '作业编排', risk: '高', icon: CalendarDays },
+  { type: 'manual', name: '人工审批', description: '暂停等待通过或拒绝', category: '控制节点', risk: '低', icon: CheckCircle2 },
+  { type: 'condition', name: '条件分支', description: '按变量选择分支', category: '控制节点', risk: '低', icon: GitBranch },
+  { type: 'parallel', name: '并行网关', description: '并行启动下游', category: '控制节点', risk: '低', icon: Share2 },
+  { type: 'join', name: '汇聚网关', description: '等待分支汇聚', category: '控制节点', risk: '低', icon: GitMerge },
+  { type: 'sub_process', name: '子流程', description: '嵌套执行模板', category: '流程编排', risk: '中', icon: Layers },
 ]
 const scenarios: FlowScenarioOption[] = [
   { key: 'release', name: '发布检查', description: '检查 -> 分发 -> 执行方案 -> 确认' },
@@ -554,11 +641,33 @@ const libraryPlugins = computed<FlowNodePluginOption[]>(() => {
     description: plugin.description || flowNodeTypeText(plugin.type),
     category: plugin.category || '标准插件',
     risk: plugin.type === 'job_plan' ? '高' : '中',
-    icon: fallbackPlugins.find(item => item.type === plugin.type)?.icon || 'icon-apps',
+    icon: fallbackPlugins.find(item => item.type === plugin.type)?.icon || LayoutGrid,
   }))
 })
 const selectedNode = computed(() => nodes.value.find(item => item.uuid === selectedUuid.value) || null)
 const selectedNodeConfigRows = computed(() => selectedNode.value ? flowNodeConfigDisplayRows(selectedNode.value) : [])
+const subProcessTemplateOptions = computed(() =>
+  (flowTemplates.value || [])
+    .filter(template => template.id && template.id !== currentTemplate.value?.id)
+    .map(template => ({
+      label: template.name,
+      value: template.id as number,
+    })),
+)
+const selectedSubProcessTemplateId = computed(() => {
+  const raw = selectedNode.value?.config?.template_id
+  const id = Number(raw)
+  return Number.isFinite(id) && id > 0 ? id : null
+})
+const selectedSubProcessTemplate = computed(() =>
+  selectedSubProcessTemplateId.value
+    ? flowTemplates.value.find(template => template.id === selectedSubProcessTemplateId.value) || null
+    : null,
+)
+const openSelectedSubProcessTemplate = () => {
+  if (!selectedSubProcessTemplateId.value) return
+  router.push(`/flows/${selectedSubProcessTemplateId.value}/detail`)
+}
 const validation = computed(() => evaluateFlowGraph(nodes.value, edges.value))
 const normalizedVariableDefinitions = computed(() => normalizeFlowVariables(form.variables || {}))
 const allVariableOptions = computed(() => flowVariableSelectOptions(normalizedVariableDefinitions.value))
@@ -585,18 +694,71 @@ const flowNodes = computed<Node[]>(() => nodes.value.map(node => ({
     label: node.name || '未知节点',
     typeText: flowNodeTypeText(node.node_type),
     summary: summarizeFlowNode(node),
-    icon: libraryPlugins.value.find(plugin => plugin.type === node.node_type)?.icon || 'icon-apps',
+    icon: libraryPlugins.value.find(plugin => plugin.type === node.node_type)?.icon || LayoutGrid,
     selected: selectedUuid.value === node.uuid,
   },
 })))
-const flowEdges = computed<Edge[]>(() => edges.value.filter(edge => edge.source_uuid && edge.target_uuid).map((edge, index) => ({
-  id: `${edge.source_uuid}-${edge.target_uuid}-${index}`,
-  source: edge.source_uuid!,
-  target: edge.target_uuid!,
-  type: 'smoothstep',
-  markerEnd: MarkerType.ArrowClosed,
-  label: edge.condition?.default ? '默认' : '',
-})))
+const flowEdges = computed<Edge[]>(() => edges.value.filter(edge => edge.source_uuid && edge.target_uuid).map((edge, index) => {
+  const id = `${edge.source_uuid}-${edge.target_uuid}-${index}`
+  const label = edge.condition?.default
+    ? '默认'
+    : (edge.condition && Object.keys(edge.condition).length
+      ? summarizeEdgeCondition(edge.condition)
+      : '')
+  return {
+    id,
+    source: edge.source_uuid!,
+    target: edge.target_uuid!,
+    type: 'smoothstep',
+    markerEnd: MarkerType.ArrowClosed,
+    label,
+    data: { edgeIndex: index },
+  }
+}))
+const selectedEdge = computed(() => {
+  if (!selectedEdgeKey.value) return null
+  const index = edges.value.findIndex((edge, edgeIndex) =>
+    `${edge.source_uuid}-${edge.target_uuid}-${edgeIndex}` === selectedEdgeKey.value,
+  )
+  return index >= 0 ? edges.value[index] : null
+})
+const selectedEdgeSourceLabel = computed(() => {
+  const edge = selectedEdge.value
+  if (!edge) return '-'
+  return nodes.value.find(item => item.uuid === edge.source_uuid)?.name || edge.source_uuid || '-'
+})
+const selectedEdgeTargetLabel = computed(() => {
+  const edge = selectedEdge.value
+  if (!edge) return '-'
+  return nodes.value.find(item => item.uuid === edge.target_uuid)?.name || edge.target_uuid || '-'
+})
+const selectedNodeOutputHooks = computed(() => {
+  const type = selectedNode.value?.node_type || ''
+  return FLOW_NODE_OUTPUT_HOOKS[type] || []
+})
+const openSettingTab = (tab: 'variables' | 'base' | 'notify') => {
+  settingInitialTab.value = tab
+  settingPanelCollapsed.value = false
+}
+const isOutputHooked = (field: string) => {
+  if (!selectedNode.value) return false
+  return listHookedOutputFields(form.variables, selectedNode.value.uuid).includes(field)
+}
+const toggleOutputHook = (
+  hook: { field: string; name: string; type?: 'text' | 'number' | 'boolean' | 'secret' | 'host_list' | 'select' },
+  checked: boolean,
+) => {
+  if (!selectedNode.value) return
+  if (checked) {
+    form.variables = upsertFlowVariable(
+      form.variables,
+      makeComponentOutputVariable(selectedNode.value, hook.field, hook.name, hook.type || 'text'),
+    )
+    return
+  }
+  const key = makeComponentOutputVariable(selectedNode.value, hook.field, hook.name, hook.type || 'text').key
+  form.variables = removeFlowVariable(form.variables, key)
+}
 
 const normalizeList = <T,>(value: any): T[] => Array.isArray(value) ? value : value?.results || value?.data || []
 const normalizePaginatedList = <T,>(value: any): T[] =>
@@ -630,7 +792,24 @@ const closePropertyDrawer = () => {
 }
 const handleFlowNodeClick = ({ node }: { node: Node }) => {
   selectedUuid.value = node.id
+  selectedEdgeKey.value = ''
   openPropertyDrawer()
+}
+const handleFlowEdgeClick = ({ edge }: { edge: Edge }) => {
+  const sourceNode = nodes.value.find(item => item.uuid === edge.source)
+  if (sourceNode?.node_type !== 'condition') {
+    message.info('仅条件分支节点的出边可配置表达式')
+    return
+  }
+  selectedEdgeKey.value = edge.id
+  edgeConditionVisible.value = true
+}
+const saveEdgeCondition = (condition: Record<string, any>) => {
+  const index = edges.value.findIndex((edge, edgeIndex) =>
+    `${edge.source_uuid}-${edge.target_uuid}-${edgeIndex}` === selectedEdgeKey.value,
+  )
+  if (index < 0) return
+  edges.value[index] = { ...edges.value[index], condition }
 }
 const handleNodeDragStop = ({ node }: { node: Node }) => {
   if (isReadonly.value) return
@@ -706,7 +885,7 @@ const selectFirstInvalidNode = () => {
     selectedUuid.value = issue.nodeUuid
     openPropertyDrawer()
   } else {
-    Message.info('当前没有需要定位的节点问题')
+    message.info('当前没有需要定位的节点问题')
   }
 }
 const bindSelectedNodeHostVariable = (value: string) => {
@@ -758,7 +937,7 @@ const refreshSelectedExecutionPlan = async () => {
   } catch (error) {
     console.error('加载执行方案变量失败:', error)
     selectedExecutionPlanDetail.value = null
-    Message.warning('加载执行方案变量失败')
+    message.warning('加载执行方案变量失败')
   } finally {
     executionPlanDetailLoading.value = false
   }
@@ -772,7 +951,7 @@ const validateVariableBindingsBeforeSave = () => {
   if (badNode) {
     selectedUuid.value = badNode.uuid
     openPropertyDrawer()
-    Message.warning(`${badNode.name} 的目标主机必须绑定 host_list 全局变量`)
+    message.warning(`${badNode.name} 的目标主机必须绑定 host_list 全局变量`)
     return false
   }
   return true
@@ -803,8 +982,17 @@ const loadData = async () => {
       )
       form.name = template.name
       form.description = template.description || ''
+      form.category = template.category || ''
       form.variables = template.variables || {}
+      form.notify_config = {
+        enabled: Boolean(template.notify_config?.enabled),
+        events: Array.isArray(template.notify_config?.events) && template.notify_config.events.length
+          ? [...template.notify_config.events]
+          : ['success', 'failed'],
+        webhook_url: template.notify_config?.webhook_url || '',
+      }
       form.is_active = template.is_active
+      form.is_public = Boolean(template.is_public)
       nodes.value = topology.nodes.map(normalizeFlowNode)
       edges.value = topology.edges
       currentTemplate.value = {
@@ -815,8 +1003,11 @@ const loadData = async () => {
     } else {
       form.name = '新建运维流水线'
       form.description = ''
+      form.category = ''
       form.variables = {}
+      form.notify_config = { enabled: false, events: ['success', 'failed'], webhook_url: '' }
       form.is_active = true
+      form.is_public = false
       nodes.value = []
       edges.value = []
       currentTemplate.value = null
@@ -828,7 +1019,7 @@ const loadData = async () => {
     }
   } catch (error) {
     console.error('加载流水线编辑数据失败:', error)
-    Message.error('加载流水线编辑数据失败')
+    message.error('加载流水线编辑数据失败')
   } finally {
     loading.value = false
   }
@@ -836,13 +1027,13 @@ const loadData = async () => {
 const saveTemplate = async () => {
   if (isReadonly.value) return
   if (!form.name.trim()) {
-    Message.warning('请填写流水线名称')
+    message.warning('请填写流水线名称')
     return
   }
   const blockingIssue = validation.value.issues.find(issue => issue.severity === 'error')
   if (blockingIssue) {
     selectFirstInvalidNode()
-    Message.warning(blockingIssue.message)
+    message.warning(blockingIssue.message)
     return
   }
   for (const node of nodes.value) {
@@ -850,7 +1041,7 @@ const saveTemplate = async () => {
     if (!jsonValidation.valid) {
       selectedUuid.value = node.uuid
       openPropertyDrawer()
-      Message.warning(jsonValidation.message || '节点配置格式不正确')
+      message.warning(jsonValidation.message || '节点配置格式不正确')
       return
     }
   }
@@ -865,11 +1056,11 @@ const saveTemplate = async () => {
     const result = isEdit.value
       ? await flowApi.updateTemplate(Number(route.params.id), payload)
       : await flowApi.createTemplate(payload)
-    Message.success('流水线已保存')
+    message.success('流水线已保存')
     if (!isEdit.value && result.id) router.replace(`/flows/${result.id}/edit`)
   } catch (error) {
     console.error('保存流水线失败:', error)
-    Message.error('保存流水线失败')
+    message.error('保存流水线失败')
   } finally {
     saving.value = false
   }
@@ -883,23 +1074,33 @@ onMounted(loadData)
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
+  flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
-  height: calc(100vh - 88px);
-  min-height: 640px;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
   padding: 0;
   overflow: hidden;
   background: #f5f7fb;
 }
+.header-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--app-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
 .flow-editor-command {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-width: 0;
-  min-height: 58px;
-  padding: 9px 12px;
+  height: 44px;
+  padding: 0 10px;
   background: #fff;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -907,63 +1108,65 @@ onMounted(loadData)
 .flow-editor-command__title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .flow-editor-command__title h1 {
   margin: 0;
   color: var(--app-fg);
-  font-size: 16px;
-  line-height: 1.25;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
-.flow-editor-command__title p {
-  margin: 3px 0 0;
+.flow-editor-command__meta {
   color: var(--app-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 .flow-editor-command__form {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(220px, 360px) auto;
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
 }
-.flow-editor-command__form :deep(.arco-form-item) {
-  margin-bottom: 0;
+.flow-editor-command__form :deep(.n-form-item) {
+  margin: 0;
 }
 .readonly-template-meta {
-  display: grid;
-  gap: 4px;
   min-width: 0;
-}
-.readonly-template-meta span,
-.readonly-template-meta em {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.readonly-template-meta span {
-  color: var(--app-fg);
-  font-size: 13px;
-}
-.readonly-template-meta em {
   color: var(--app-muted);
   font-size: 12px;
-  font-style: normal;
 }
 .flow-editor-command__actions {
   justify-content: flex-end;
+  flex-wrap: nowrap;
 }
-.flow-editor-spin,
-.flow-editor-spin :deep(.arco-spin-children) {
+.flow-editor-spin {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.flow-editor-spin :deep(.n-spin-container),
+.flow-editor-spin :deep(.n-spin-content) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 .flow-editor-workbench {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 420px);
   gap: 8px;
+  flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
   height: 100%;
@@ -971,9 +1174,27 @@ onMounted(loadData)
   min-width: 0;
   overflow: hidden;
 }
+.flow-editor-workbench:has(.flow-setting-panel--collapsed) {
+  grid-template-columns: 220px minmax(0, 1fr) 44px;
+}
+.output-hook-list {
+  display: grid;
+  gap: 8px;
+}
 .flow-plugin-rail {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+}
+.flow-plugin-rail :deep(.node-library) {
+  flex: 1 1 auto;
   min-height: 0;
 }
 .flow-plugin-rail--collapsed {
@@ -1049,6 +1270,7 @@ onMounted(loadData)
 }
 .flow-canvas-frame {
   position: relative;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1059,7 +1281,14 @@ onMounted(loadData)
 .ops-flow {
   width: 100%;
   height: 100%;
-  min-height: 520px;
+  min-height: 0;
+}
+.ops-flow :deep(.vue-flow__controls) {
+  margin: 0 0 12px 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+.ops-flow :deep(.vue-flow__minimap) {
+  margin: 0 12px 12px 0;
 }
 .ops-node-card {
   display: grid;
@@ -1137,6 +1366,20 @@ onMounted(loadData)
 .node-config-section {
   display: grid;
   gap: 12px;
+  min-width: 0;
+}
+.sub-process-inherit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--app-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.script-editor-block {
+  display: grid;
+  gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 .property-panel-head,
@@ -1292,22 +1535,29 @@ onMounted(loadData)
   font-size: 12px;
 }
 @media (max-width: 1180px) {
-  .flow-editor-shell {
-    height: auto;
-    min-height: 0;
-  }
   .flow-editor-command {
+    height: auto;
+    min-height: 44px;
+    padding: 6px 10px;
     grid-template-columns: 1fr;
   }
   .flow-editor-command__form {
-    grid-template-columns: 1fr 1fr auto;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 1180px) {
+  .flow-editor-workbench {
+    grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 360px);
   }
 }
 @media (max-width: 780px) {
   .flow-editor-workbench {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 28vh) minmax(0, 1fr) minmax(220px, 36vh);
   }
-  .flow-editor-command__form,
+  .flow-plugin-rail {
+    min-height: 0;
+  }
   .file-source-row,
   .execution-parameter-row {
     grid-template-columns: 1fr;

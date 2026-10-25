@@ -234,7 +234,7 @@
 
 - Python 3.10+
 - Redis 6.4+
-- Node.js 16+ (前端开发)
+- Node.js 18+ (前端开发，Vite 6 基线)
 - Go 1.24+ (Agent开发，可选)
 - Docker & Docker Compose (推荐)
 

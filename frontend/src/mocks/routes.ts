@@ -47,6 +47,7 @@ const hosts = [
     memory_gb: 32,
     disk_gb: 500,
     tags: [{ key: 'env', value: 'prod' }],
+    groups_info: [{ id: 1, name: '生产环境' }],
     created_at: iso(-40),
     updated_at: iso(-1),
   },
@@ -67,6 +68,7 @@ const hosts = [
     memory_gb: 64,
     disk_gb: 1000,
     tags: [{ key: 'env', value: 'prod' }],
+    groups_info: [{ id: 1, name: '生产环境' }],
     created_at: iso(-35),
     updated_at: iso(-2),
   },
@@ -87,6 +89,7 @@ const hosts = [
     memory_gb: 16,
     disk_gb: 200,
     tags: [{ key: 'env', value: 'staging' }],
+    groups_info: [{ id: 2, name: '预发环境' }],
     created_at: iso(-24),
     updated_at: iso(0),
   },
@@ -133,6 +136,12 @@ const jobTemplates = [
       target_hosts: { type: 'host_list', value: [1, 2], description: '发布目标主机' },
       release_version: { type: 'string', value: '2026.06.11', description: '发布版本号' },
     },
+    steps: [
+      { id: 1, name: '检查 CPU 负载', step_type: 'script', script_type: 'shell', script_content: 'uptime', order: 1 },
+      { id: 2, name: '检查内存', step_type: 'script', script_type: 'shell', script_content: 'free -h', order: 2 },
+      { id: 3, name: '检查磁盘', step_type: 'script', script_type: 'shell', script_content: 'df -h', order: 3 },
+      { id: 4, name: '检查 Agent 心跳', step_type: 'script', script_type: 'shell', script_content: 'systemctl is-active ops-agent', order: 4 },
+    ],
     step_count: 4,
     plan_count: 3,
     has_unsync_plans: false,
@@ -147,6 +156,11 @@ const jobTemplates = [
     description: '按目录策略归档大日志并回写执行摘要。',
     category: 'maintenance',
     tags: [{ key: 'window', value: 'nightly' }],
+    steps: [
+      { id: 5, name: '扫描大日志', step_type: 'script', script_type: 'shell', script_content: 'find /var/log -size +100M', order: 1 },
+      { id: 6, name: '压缩归档', step_type: 'script', script_type: 'shell', script_content: 'gzip -k /var/log/app.log', order: 2 },
+      { id: 7, name: '回写摘要', step_type: 'script', script_type: 'shell', script_content: 'echo done', order: 3 },
+    ],
     step_count: 3,
     plan_count: 2,
     has_unsync_plans: true,
@@ -323,9 +337,18 @@ const scheduledTasks = [
     id: 701,
     name: '夜间日志归档',
     execution_plan: 302,
+    plan_name: '夜间日志归档',
     execution_plan_name: '夜间日志归档',
+    template_id: 202,
+    template_name: '日志归档与压缩',
     cron_expression: '0 1 * * *',
+    timezone: 'Asia/Shanghai',
     is_active: true,
+    total_runs: 28,
+    success_runs: 26,
+    failed_runs: 2,
+    success_rate: 93,
+    created_by_name: 'SRE',
     next_run_time: iso(1, 1),
     created_at: iso(-14),
     updated_at: iso(-1),
@@ -334,9 +357,18 @@ const scheduledTasks = [
     id: 702,
     name: '每日主机健康巡检',
     execution_plan: 301,
+    plan_name: '生产网关发布前检查',
     execution_plan_name: '生产网关发布前检查',
+    template_id: 201,
+    template_name: '发布前主机健康检查',
     cron_expression: '30 8 * * *',
+    timezone: 'Asia/Shanghai',
     is_active: true,
+    total_runs: 40,
+    success_runs: 39,
+    failed_runs: 1,
+    success_rate: 98,
+    created_by_name: '平台工程',
     next_run_time: iso(1, 8),
     created_at: iso(-12),
     updated_at: iso(-1),
@@ -546,7 +578,10 @@ let flowTemplates: any[] = [
         show_on_start: false,
       },
     },
+    category: '发布',
+    notify_config: { enabled: false, events: ['success', 'failed'], webhook_url: '' },
     is_active: true,
+    is_public: true,
     created_by: 1,
     created_by_name: '平台工程',
     created_at: iso(-8, 14),
@@ -1185,8 +1220,11 @@ const normalizeFlowTemplate = (data: any, id: number) => {
     id,
     name: data?.name || '未命名流水线',
     description: data?.description || '',
+    category: data?.category || '',
     variables: data?.variables || {},
+    notify_config: data?.notify_config || { enabled: false, events: ['success', 'failed'], webhook_url: '' },
     is_active: data?.is_active ?? true,
+    is_public: Boolean(data?.is_public),
     created_by: data?.created_by || 1,
     created_by_name: data?.created_by_name || 'demo-admin',
     created_at: data?.created_at || iso(0),
@@ -2017,13 +2055,18 @@ export const mockRoutes: MockRoute[] = [
     handler: ({ query }) => {
       const search = String(query.search || '').trim().toLowerCase()
       const status = String(query.status || '')
+      const isPublic = String(query.is_public || '')
       return flowTemplates.filter((item) => {
         const matchesSearch = !search || item.name.toLowerCase().includes(search) || item.description.toLowerCase().includes(search)
         const matchesStatus =
           !status ||
           (status === 'active' && item.is_active) ||
           (status === 'inactive' && !item.is_active)
-        return matchesSearch && matchesStatus
+        const matchesPublic =
+          !isPublic ||
+          (['1', 'true', 'True'].includes(isPublic) && item.is_public) ||
+          (['0', 'false', 'False'].includes(isPublic) && !item.is_public)
+        return matchesSearch && matchesStatus && matchesPublic
       })
     },
   },
@@ -2240,6 +2283,68 @@ export const mockRoutes: MockRoute[] = [
   },
   {
     method: 'post',
+    pattern: '/flows/runs/:id/force_fail_node/',
+    handler: ({ params, data }) => {
+      const run = byId(flowRuns, params.id)
+      const nodeRun = run.node_runs.find((item: any) => item.id === Number(data?.node_run_id))
+      if (!nodeRun) {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: '节点执行不存在或不属于该流程' },
+        })
+      }
+      if (nodeRun.node_type === 'manual') {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: 'use reject_manual_node for manual nodes' },
+        })
+      }
+      if (!['running', 'paused'].includes(nodeRun.status)) {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: `cannot force-fail ${nodeRun.status} node` },
+        })
+      }
+      const previousStatus = nodeRun.status
+      const remark = (data?.remark || '').trim() || 'node force failed'
+      nodeRun.status = 'failed'
+      nodeRun.outputs = {
+        ...(nodeRun.outputs || {}),
+        force_failed: true,
+        force_failed_by: 'demo-admin',
+        force_failed_at: iso(0, 10),
+        force_fail_remark: remark,
+      }
+      nodeRun.error_message = remark
+      nodeRun.finished_at = iso(0, 10)
+      run.status = 'failed'
+      run.error_message = remark
+      run.finished_at = iso(0, 10)
+      run.node_runs = run.node_runs.map((item: any) => {
+        if (item.id === nodeRun.id) return nodeRun
+        if (['pending', 'running', 'paused'].includes(item.status)) {
+          return {
+            ...item,
+            status: 'cancelled',
+            error_message: remark,
+            finished_at: iso(0, 10),
+          }
+        }
+        return item
+      })
+      appendFlowOperationLog(run, 'force_fail_flow_node', `强制失败节点: ${nodeRun.node_name}`, nodeRun, {
+        previous_status: previousStatus,
+        new_status: nodeRun.status,
+        remark,
+      })
+      return run
+    },
+  },
+  {
+    method: 'post',
     pattern: '/flows/runs/:id/confirm_manual_node/',
     handler: ({ params, data }) => {
       const run = byId(flowRuns, params.id)
@@ -2283,6 +2388,59 @@ export const mockRoutes: MockRoute[] = [
         previous_status: previousStatus,
         new_status: nodeRun.status,
         remark: data?.remark || '',
+      })
+      return run
+    },
+  },
+  {
+    method: 'post',
+    pattern: '/flows/runs/:id/reject_manual_node/',
+    handler: ({ params, data }) => {
+      const run = byId(flowRuns, params.id)
+      const nodeRun = run.node_runs.find((item: any) => item.id === Number(data?.node_run_id))
+      if (!nodeRun) {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: '节点执行不存在或不属于该流程' },
+        })
+      }
+      if (nodeRun.node_type !== 'manual') {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: 'only manual nodes can be rejected' },
+        })
+      }
+      if (nodeRun.status !== 'paused') {
+        return mockHttpResponse(400, {
+          success: false,
+          message: 'mock validation error',
+          content: { node_run_id: `cannot reject ${nodeRun.status} manual node` },
+        })
+      }
+      const previousStatus = nodeRun.status
+      const remark = (data?.remark || '').trim() || 'manual node rejected'
+      nodeRun.status = 'failed'
+      nodeRun.outputs = {
+        ...(nodeRun.outputs || {}),
+        manual: true,
+        confirmed: false,
+        rejected: true,
+        rejected_by: 'demo-admin',
+        rejected_by_id: 1,
+        rejected_at: iso(0, 10),
+        reject_remark: remark,
+      }
+      nodeRun.error_message = remark
+      nodeRun.finished_at = iso(0, 10)
+      run.status = 'failed'
+      run.error_message = remark
+      run.finished_at = iso(0, 10)
+      appendFlowOperationLog(run, 'reject_flow_node', `拒绝人工节点: ${nodeRun.node_name}`, nodeRun, {
+        previous_status: previousStatus,
+        new_status: nodeRun.status,
+        remark,
       })
       return run
     },
@@ -2697,7 +2855,19 @@ export const mockRoutes: MockRoute[] = [
   {
     method: 'post',
     pattern: '/agents/:id/:action/',
-    handler: ({ params }) => ({ id: Number(params.id), status: 'accepted', action: params.action }),
+    handler: ({ params }) => {
+      if (params.action === 'issue_token') {
+        const token = `mock-agent-token-${params.id}-${Date.now()}`
+        return {
+          id: Number(params.id),
+          action: params.action,
+          token,
+          token_last4: token.slice(-4),
+          expired_at: null,
+        }
+      }
+      return { id: Number(params.id), status: 'accepted', action: params.action }
+    },
   },
   {
     method: 'post',

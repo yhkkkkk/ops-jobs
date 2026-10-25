@@ -6,25 +6,25 @@
         <h1>{{ runTitle }}</h1>
         <span>{{ run ? `流程模板：${run.template_name} / ${triggerText(run.trigger_type)} / ${run.started_by_name || '-'}` : '查看节点状态、输出和关联执行记录。' }}</span>
       </div>
-      <a-space>
-        <a-button @click="router.push('/flows')">返回流水线</a-button>
-        <a-button
+      <n-space>
+        <n-button @click="router.push('/flows')">返回流水线</n-button>
+        <n-button
           v-if="canCancelCurrentRun"
-          status="danger"
+         type="error"
           :loading="cancelingRun"
           @click="handleCancelRun"
         >
-          <template #icon><icon-close /></template>
+          <template #icon><X  /></template>
           取消流程
-        </a-button>
-        <a-button @click="loadRun">
-          <template #icon><icon-refresh /></template>
+        </n-button>
+        <n-button @click="loadRun">
+          <template #icon><RefreshCw  /></template>
           刷新
-        </a-button>
-      </a-space>
+        </n-button>
+      </n-space>
     </header>
 
-    <a-spin :loading="loading" class="run-spin">
+    <n-spin :show="loading" class="run-spin">
       <template v-if="run">
         <section class="run-status app-card">
           <StatusBadge :status="run.status" :text="statusText(run.status)" />
@@ -50,50 +50,50 @@
           </div>
         </section>
 
-        <a-alert
+        <n-alert
           v-if="blockingNode"
           class="run-focus-alert"
           :type="blockingNode.status === 'failed' ? 'error' : 'warning'"
           show-icon
         >
-          <template #title>
+          <template #header>
             当前定位：{{ blockingNode.node_name }}（{{ statusText(blockingNode.status) }}）
           </template>
           <span>
             {{ blockingNode.error_message || (blockingNode.execution_record_id ? '作业任务已提交，等待结果回写后推进。' : '请关注节点输出和调度状态。') }}
           </span>
-        </a-alert>
+        </n-alert>
 
         <div class="run-layout">
           <DetailPanel title="执行上下文" dense>
-            <a-descriptions :column="2" bordered size="medium">
-              <a-descriptions-item label="任务名称">{{ runTitle }}</a-descriptions-item>
-              <a-descriptions-item label="流程模板">{{ run.template_name }}</a-descriptions-item>
-              <a-descriptions-item label="触发方式">{{ triggerText(run.trigger_type) }}</a-descriptions-item>
-              <a-descriptions-item label="开始时间">{{ formatTime(run.started_at || run.created_at) }}</a-descriptions-item>
-              <a-descriptions-item label="结束时间">{{ formatTime(run.finished_at) }}</a-descriptions-item>
-              <a-descriptions-item label="发起人">{{ run.started_by_name || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="错误信息">{{ run.error_message || '-' }}</a-descriptions-item>
-            </a-descriptions>
+            <n-descriptions :column="2" bordered size="medium">
+              <n-descriptions-item label="任务名称">{{ runTitle }}</n-descriptions-item>
+              <n-descriptions-item label="流程模板">{{ run.template_name }}</n-descriptions-item>
+              <n-descriptions-item label="触发方式">{{ triggerText(run.trigger_type) }}</n-descriptions-item>
+              <n-descriptions-item label="开始时间">{{ formatTime(run.started_at || run.created_at) }}</n-descriptions-item>
+              <n-descriptions-item label="结束时间">{{ formatTime(run.finished_at) }}</n-descriptions-item>
+              <n-descriptions-item label="发起人">{{ run.started_by_name || '-' }}</n-descriptions-item>
+              <n-descriptions-item label="错误信息">{{ run.error_message || '-' }}</n-descriptions-item>
+            </n-descriptions>
           </DetailPanel>
 
           <DetailPanel title="运行输入 / 汇总输出" dense>
-            <a-tabs size="small">
-              <a-tab-pane key="inputs" title="输入变量">
+            <n-tabs size="small">
+              <n-tab-pane name="inputs" tab="输入变量">
                 <FlowVariableReadOnlyPanel mode="value" :variables="topologyTemplate?.variables || {}" :values="run.inputs || {}" empty-text="本次执行没有输入变量" />
-              </a-tab-pane>
-              <a-tab-pane key="outputs" title="输出结果">
+              </n-tab-pane>
+              <n-tab-pane name="outputs" tab="输出结果">
                 <FlowRunDataView :value="run.outputs || {}" empty-text="本次执行暂无汇总输出" />
-              </a-tab-pane>
-            </a-tabs>
+              </n-tab-pane>
+            </n-tabs>
           </DetailPanel>
         </div>
 
-        <DetailPanel title="执行拓扑" description="基于任务创建时固化的流程定义展示本次执行覆盖的节点和条件分支。" dense>
+        <DetailPanel title="执行拓扑" description="执行态画布：节点颜色表示状态；点击节点定位下方运行路径。真正执行的是任务绑定的主机集合，画布只反映编排与状态。" dense>
           <div class="readonly-run-topology">
-            <a-alert v-if="templateLoadError" class="topology-alert" type="warning" show-icon>
+            <n-alert v-if="templateLoadError" class="topology-alert" type="warning" show-icon>
               {{ templateLoadError }}
-            </a-alert>
+            </n-alert>
             <template v-else>
             <div class="topology-summary">
               <div>
@@ -114,52 +114,28 @@
               </div>
             </div>
 
-            <div class="topology-grid">
-              <div class="topology-nodes">
-                <article
-                  v-for="node in runTopology.nodes"
-                  :key="node.uuid"
-                  :class="['topology-node', `topology-node--${node.status}`]"
-                >
-                  <div class="topology-node__main">
-                    <span>{{ nodeTypeText(node.nodeType) }}</span>
-                    <strong>{{ node.name }}</strong>
-                    <em>{{ topologyNodeMeta(node) }}</em>
-                    <a-link v-if="childFlowRunId(node.run)" class="sub-run-link" @click="openChildFlowRun(node.run!)">查看子流程任务</a-link>
-                  </div>
-                  <StatusBadge
-                    v-if="node.status !== 'not_run'"
-                    :status="node.status"
-                    :text="topologyStatusText(node.status)"
-                  />
-                  <span v-else class="topology-status topology-status--not-run">未运行</span>
-                </article>
-              </div>
-
-              <div class="topology-edges">
-                <div v-if="runTopology.edges.length === 0" class="topology-empty">
-                  当前模板没有连线
-                </div>
-                <article
-                  v-for="edge in runTopology.edges"
-                  :key="edge.key"
-                  :class="['topology-edge', `topology-edge--${edge.state}`]"
-                >
-                  <span class="topology-edge__state">{{ edgeStateText(edge.state) }}</span>
-                  <div>
-                    <strong>{{ edge.sourceName }} -> {{ edge.targetName }}</strong>
-                    <em>{{ edge.conditionText }}</em>
-                  </div>
-                </article>
-              </div>
-            </div>
+            <FlowRunCanvas
+              :nodes="topologyTemplate?.nodes || []"
+              :edges="topologyTemplate?.edges || []"
+              :run="run"
+              :selected-uuid="selectedTopologyUuid"
+              :busy-node-id="canvasBusyNodeId"
+              :busy-action="canvasBusyAction"
+              @select-node="handleCanvasSelectNode"
+              @node-action="handleCanvasNodeAction"
+            />
             </template>
           </div>
         </DetailPanel>
 
         <DetailPanel title="节点运行路径" description="按节点运行顺序展示状态、耗时、输出和关联执行记录。" dense>
           <div class="run-path run-path-table">
-            <article v-for="(nodeRun, index) in run.node_runs" :key="nodeRun.id" :class="['run-node', `run-node--${nodeRun.status}`]">
+            <article
+              v-for="(nodeRun, index) in run.node_runs"
+              :key="nodeRun.id"
+              :data-node-run-uuid="nodeRun.node_uuid"
+              :class="['run-node', `run-node--${nodeRun.status}`, { 'run-node--canvas-selected': selectedTopologyUuid === nodeRun.node_uuid }]"
+            >
               <div class="run-node__index">{{ index + 1 }}</div>
               <div class="run-node__main">
                 <div class="run-node__head">
@@ -169,33 +145,51 @@
                   </div>
                   <div class="run-node__actions">
                     <StatusBadge :status="nodeRun.status" :text="statusText(nodeRun.status)" />
-                    <a-button
+                    <n-button
                       v-if="canRetryNodeRun(nodeRun)"
-                      size="mini"
+                      size="tiny"
                       :loading="retryingNodeId === nodeRun.id"
                       @click="handleRetryNode(nodeRun)"
                     >
-                      <template #icon><icon-refresh /></template>
+                      <template #icon><RefreshCw  /></template>
                       重试
-                    </a-button>
-                    <a-button
+                    </n-button>
+                    <n-button
                       v-if="canSkipNodeRun(nodeRun)"
-                      size="mini"
-                      status="warning"
+                      size="tiny"
+                     type="warning"
                       :loading="skippingNodeId === nodeRun.id"
                       @click="handleSkipNode(nodeRun)"
                     >
                       跳过继续
-                    </a-button>
-                    <a-button
+                    </n-button>
+                    <n-button
+                      v-if="canForceFailNodeRun(nodeRun)"
+                      size="tiny"
+                      type="error"
+                      :loading="forceFailingNodeId === nodeRun.id"
+                      @click="handleForceFailNode(nodeRun)"
+                    >
+                      强制失败
+                    </n-button>
+                    <n-button
                       v-if="canConfirmNodeRun(nodeRun)"
-                      size="mini"
+                      size="tiny"
                       type="primary"
                       :loading="confirmingNodeId === nodeRun.id"
                       @click="handleConfirmManualNode(nodeRun)"
                     >
-                      确认继续
-                    </a-button>
+                      审批通过
+                    </n-button>
+                    <n-button
+                      v-if="canRejectNodeRun(nodeRun)"
+                      size="tiny"
+                      type="error"
+                      :loading="rejectingNodeId === nodeRun.id"
+                      @click="handleRejectManualNode(nodeRun)"
+                    >
+                      审批拒绝
+                    </n-button>
                   </div>
                 </div>
                 <dl>
@@ -210,28 +204,35 @@
                   <div>
                     <dt>关联执行记录</dt>
                     <dd>
-                      <a-link v-if="nodeRun.execution_record_id" @click="router.push(`/execution-records/${nodeRun.execution_record_id}`)">查看执行记录</a-link>
+                      <n-button text size="small" v-if="nodeRun.execution_record_id" @click="router.push(`/execution-records/${nodeRun.execution_record_id}`)">查看执行记录</n-button>
                       <span v-else>-</span>
                     </dd>
                   </div>
                   <div>
                     <dt>子流程实例</dt>
                     <dd>
-                      <a-link v-if="childFlowRunId(nodeRun)" @click="openChildFlowRun(nodeRun)">查看子流程任务</a-link>
+                      <n-button text size="small" v-if="childFlowRunId(nodeRun)" @click="openChildFlowRun(nodeRun)">查看子流程任务</n-button>
                       <span v-else>-</span>
                     </dd>
                   </div>
                 </dl>
-                <a-alert v-if="nodeRun.error_message" type="error" show-icon>{{ nodeRun.error_message }}</a-alert>
-                <a-alert v-else-if="nodeRun.node_type === 'sub_process' && childFlowRunId(nodeRun)" type="info" show-icon>
-                  已关联子流程任务 / {{ statusText(childFlowStatus(nodeRun) || nodeRun.status) }}
-                </a-alert>
-                <a-alert v-else-if="nodeRun.status === 'paused' && nodeRun.node_type === 'manual'" type="warning" show-icon>
-                  {{ nodeRun.inputs.instructions || '人工确认节点等待确认。确认后流水线会继续执行后续节点。' }}
-                </a-alert>
-                <a-alert v-else-if="nodeRun.status === 'paused' && nodeRun.execution_record_id" type="warning" show-icon>
+                <n-alert v-if="nodeRun.error_message" type="error" show-icon>{{ nodeRun.error_message }}</n-alert>
+                <n-alert v-else-if="nodeRun.node_type === 'sub_process' && childFlowRunId(nodeRun)" type="info" show-icon>
+                  已关联子流程任务 / {{ statusText(childFlowStatus(nodeRun) || nodeRun.status) }}。可打开子任务查看节点进度。
+                </n-alert>
+                <n-alert
+                  v-else-if="nodeRun.node_type === 'sub_process' && (nodeRun.status === 'running' || nodeRun.status === 'paused')"
+                  type="warning"
+                  show-icon
+                >
+                  子流程执行中，父流程在本节点等待。子任务结束后按失败策略继续或暂停。
+                </n-alert>
+                <n-alert v-else-if="nodeRun.status === 'paused' && nodeRun.node_type === 'manual'" type="warning" show-icon>
+                  {{ nodeRun.inputs.instructions || '人工审批节点等待处理。通过后继续执行；拒绝后流水线失败并停止。' }}
+                </n-alert>
+                <n-alert v-else-if="nodeRun.status === 'paused' && nodeRun.execution_record_id" type="warning" show-icon>
                   作业执行方案已提交，等待关联任务完成后继续推进流水线。
-                </a-alert>
+                </n-alert>
                 <div v-if="nodeRun.node_type === 'condition'" class="condition-branch-summary">
                   <div class="condition-branch-summary__head">
                     <span>分支结果</span>
@@ -247,7 +248,7 @@
                       <em>{{ row.conditionText }}</em>
                     </div>
                   </div>
-                  <a-empty v-else description="没有命中的条件，也没有默认分支" />
+                  <n-empty v-else description="没有命中的条件，也没有默认分支" />
                 </div>
                 <div class="node-host-summary">
                   <span>目标主机</span>
@@ -269,9 +270,9 @@
         </DetailPanel>
 
         <DetailPanel title="操作时间线" description="按时间展示流程实例、节点状态、人工确认、跳过和分支决策。" dense>
-          <a-alert v-if="operationLogLoadError" class="timeline-alert" type="warning" show-icon>
+          <n-alert v-if="operationLogLoadError" class="timeline-alert" type="warning" show-icon>
             {{ operationLogLoadError }}
-          </a-alert>
+          </n-alert>
           <div class="run-timeline">
             <article
               v-for="event in runTimeline"
@@ -296,64 +297,47 @@
         </DetailPanel>
 
         <DetailPanel title="节点运行表" dense>
-          <a-table row-key="id" :data="run.node_runs" :pagination="false">
-            <template #columns>
-              <a-table-column title="节点" data-index="node_name" />
-              <a-table-column title="类型" :width="132">
-                <template #cell="{ record }">{{ nodeTypeText(record.node_type) }}</template>
-              </a-table-column>
-              <a-table-column title="状态" :width="116">
-                <template #cell="{ record }"><StatusBadge :status="record.status" :text="statusText(record.status)" /></template>
-              </a-table-column>
-              <a-table-column title="关联执行记录" :width="130">
-                <template #cell="{ record }">
-                  <a-link v-if="record.execution_record_id" @click="router.push(`/execution-records/${record.execution_record_id}`)">查看执行记录</a-link>
-                  <span v-else>-</span>
-                </template>
-              </a-table-column>
-              <a-table-column title="子流程实例" :width="130">
-                <template #cell="{ record }">
-                  <a-link v-if="childFlowRunId(record)" @click="openChildFlowRun(record)">查看子流程任务</a-link>
-                  <span v-else>-</span>
-                </template>
-              </a-table-column>
-              <a-table-column title="错误信息">
-                <template #cell="{ record }">{{ record.error_message || '-' }}</template>
-              </a-table-column>
-            </template>
-          </a-table>
+          <n-data-table
+            :columns="nodeRunColumns"
+            :data="run.node_runs"
+            :pagination="false"
+            :row-key="(row: any) => row.id"
+          />
         </DetailPanel>
       </template>
       <template v-else>
         <DetailPanel title="执行拓扑" description="基于任务创建时固化的流程定义展示本次执行覆盖的节点和条件分支。" dense>
           <div class="readonly-run-topology">
-            <a-empty description="未找到流水线执行实例或暂无访问权限" />
+            <n-empty description="未找到流水线执行实例或暂无访问权限" />
           </div>
         </DetailPanel>
         <DetailPanel title="节点运行路径" description="按节点运行顺序展示状态、耗时、输出和关联执行记录。" dense>
           <div class="run-path-table">
-            <a-empty description="暂无节点运行路径" />
+            <n-empty description="暂无节点运行路径" />
           </div>
         </DetailPanel>
       </template>
-    </a-spin>
+    </n-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { flowApi } from '@/api/ops'
 import type { FlowAuditLog, FlowNodeRun, FlowNodeType, FlowRun, FlowRunStatus, FlowTemplate } from '@/types'
 import { DetailPanel, StatusBadge } from '@/components/app'
+import FlowRunCanvas, { type FlowRunCanvasAction } from './components/FlowRunCanvas.vue'
 import FlowRunDataView from './components/FlowRunDataView.vue'
 import FlowVariableReadOnlyPanel from './components/FlowVariableReadOnlyPanel.vue'
+import { NAlert, NButton, NDataTable, NDescriptions, NDescriptionsItem, NEmpty, NInput, NSpace, NSpin, NTabPane, NTabs, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
 import {
   buildFlowRunTimeline,
   buildRunTopology,
   canCancelFlowRun,
   canConfirmManualNodeRun,
+  canForceFailFlowNodeRun,
+  canRejectManualNodeRun,
   canRetryFlowNodeRun,
   canSkipFlowNodeRun,
   flowNodeTypeText,
@@ -364,7 +348,10 @@ import {
   type RunTopologyNodeStatus,
   summarizeConditionNodeRun,
 } from './flowUtils'
+import { RefreshCw } from 'lucide-vue-next'
 
+const dialog = useDialog()
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -372,6 +359,23 @@ const cancelingRun = ref(false)
 const retryingNodeId = ref<number | null>(null)
 const skippingNodeId = ref<number | null>(null)
 const confirmingNodeId = ref<number | null>(null)
+const rejectingNodeId = ref<number | null>(null)
+const forceFailingNodeId = ref<number | null>(null)
+const canvasBusyNodeId = computed(() =>
+  retryingNodeId.value
+  || skippingNodeId.value
+  || confirmingNodeId.value
+  || rejectingNodeId.value
+  || forceFailingNodeId.value,
+)
+const canvasBusyAction = computed<FlowRunCanvasAction | null>(() => {
+  if (retryingNodeId.value) return 'retry'
+  if (skippingNodeId.value) return 'skip'
+  if (forceFailingNodeId.value) return 'force_fail'
+  if (confirmingNodeId.value) return 'confirm'
+  if (rejectingNodeId.value) return 'reject'
+  return null
+})
 const run = ref<FlowRun | null>(null)
 const template = ref<FlowTemplate | null>(null)
 const operationLogs = ref<FlowAuditLog[]>([])
@@ -399,6 +403,24 @@ const topologyTemplate = computed<FlowTemplate | null>(() => {
 })
 const runTopology = computed(() => buildRunTopology(topologyTemplate.value, run.value))
 const runTimeline = computed(() => buildFlowRunTimeline(run.value, operationLogs.value))
+const selectedTopologyUuid = ref<string | null>(null)
+
+const handleCanvasSelectNode = (payload: { uuid: string; nodeRun?: FlowNodeRun }) => {
+  selectedTopologyUuid.value = payload.uuid
+  const el = document.querySelector(`[data-node-run-uuid="${payload.uuid}"]`)
+  if (el instanceof HTMLElement) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+}
+
+const handleCanvasNodeAction = (payload: { action: FlowRunCanvasAction; nodeRun: FlowNodeRun }) => {
+  selectedTopologyUuid.value = payload.nodeRun.node_uuid
+  if (payload.action === 'retry') handleRetryNode(payload.nodeRun)
+  if (payload.action === 'skip') handleSkipNode(payload.nodeRun)
+  if (payload.action === 'force_fail') handleForceFailNode(payload.nodeRun)
+  if (payload.action === 'confirm') handleConfirmManualNode(payload.nodeRun)
+  if (payload.action === 'reject') handleRejectManualNode(payload.nodeRun)
+}
 
 const countByStatus = (status: FlowRunStatus) => run.value?.node_runs.filter(item => item.status === status).length || 0
 const statusText = (status: FlowRunStatus) => ({ pending: '等待中', running: '执行中', success: '成功', failed: '失败', paused: '已暂停', cancelled: '已取消' }[status] || status)
@@ -425,7 +447,9 @@ const eventKindText = (kind: FlowRunTimelineEventKind) => {
 }
 const canSkipNodeRun = (nodeRun: FlowNodeRun) => nodeRun.node_type !== 'manual' && canSkipFlowNodeRun(nodeRun)
 const canRetryNodeRun = (nodeRun: FlowNodeRun) => nodeRun.node_type !== 'manual' && canRetryFlowNodeRun(nodeRun)
+const canForceFailNodeRun = (nodeRun: FlowNodeRun) => canForceFailFlowNodeRun(nodeRun)
 const canConfirmNodeRun = (nodeRun: FlowNodeRun) => canConfirmManualNodeRun(nodeRun)
+const canRejectNodeRun = (nodeRun: FlowNodeRun) => canRejectManualNodeRun(nodeRun)
 const conditionSummary = (nodeRun: FlowNodeRun) => summarizeConditionNodeRun(nodeRun)
 const childFlowRunId = (nodeRun?: Pick<FlowNodeRun, 'outputs'> | null) =>
   nodeRun?.outputs?.child_flow_run_id || nodeRun?.outputs?.child_run_id
@@ -516,7 +540,7 @@ const loadRun = async () => {
     }
   } catch (error) {
     console.error('加载流水线执行详情失败:', error)
-    Message.error('加载流水线执行详情失败')
+    message.error('加载流水线执行详情失败')
   } finally {
     loading.value = false
   }
@@ -524,21 +548,22 @@ const loadRun = async () => {
 
 const handleSkipNode = (nodeRun: FlowNodeRun) => {
   if (!run.value || !canSkipNodeRun(nodeRun)) return
-  Modal.confirm({
+  dialog.warning({
     title: '确认跳过节点',
     content: `确定要跳过节点"${nodeRun.node_name}"并继续执行后续节点吗？`,
-    okText: '跳过继续',
-    onOk: async () => {
+    positiveText: '跳过继续',
+    onPositiveClick: async () => {
       skippingNodeId.value = nodeRun.id
       try {
         run.value = await flowApi.skipRunNode(run.value!.id, {
           node_run_id: nodeRun.id,
           reason: 'manual skip',
         })
-        Message.success('已跳过节点，流水线继续执行')
+        message.success('已跳过节点，流水线继续执行')
       } catch (error) {
         console.error('跳过流水线节点失败:', error)
-        Message.error('跳过流水线节点失败')
+        message.error('跳过流水线节点失败')
+        return false
       } finally {
         skippingNodeId.value = null
       }
@@ -548,20 +573,21 @@ const handleSkipNode = (nodeRun: FlowNodeRun) => {
 
 const handleRetryNode = (nodeRun: FlowNodeRun) => {
   if (!run.value || !canRetryNodeRun(nodeRun)) return
-  Modal.confirm({
+  dialog.warning({
     title: '确认重试节点',
     content: `确定要重试节点"${nodeRun.node_name}"吗？成功后流水线会继续执行后续节点。`,
-    okText: '重试节点',
-    onOk: async () => {
+    positiveText: '重试节点',
+    onPositiveClick: async () => {
       retryingNodeId.value = nodeRun.id
       try {
         run.value = await flowApi.retryRunNode(run.value!.id, {
           node_run_id: nodeRun.id,
         })
-        Message.success('节点已重试')
+        message.success('节点已重试')
       } catch (error) {
         console.error('重试流水线节点失败:', error)
-        Message.error('重试流水线节点失败')
+        message.error('重试流水线节点失败')
+        return false
       } finally {
         retryingNodeId.value = null
       }
@@ -569,23 +595,78 @@ const handleRetryNode = (nodeRun: FlowNodeRun) => {
   })
 }
 
+const handleForceFailNode = (nodeRun: FlowNodeRun) => {
+  if (!run.value || !canForceFailNodeRun(nodeRun)) return
+  let remarkText = ''
+  dialog.error({
+    title: '强制失败节点',
+    content: () =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:12px;' }, [
+        h('p', { style: 'margin:0;' }, `将节点「${nodeRun.node_name}」强制标为失败，并按该节点失败策略处理后续流程。`),
+        h(NInput, {
+          type: 'textarea',
+          rows: 2,
+          placeholder: '失败原因（可选）',
+          maxlength: 500,
+          showCount: true,
+          onUpdateValue: (value: string) => {
+            remarkText = value
+          },
+        }),
+      ]),
+    positiveText: '确认强制失败',
+    positiveButtonProps: { type: 'error' },
+    onPositiveClick: async () => {
+      forceFailingNodeId.value = nodeRun.id
+      try {
+        run.value = await flowApi.forceFailNode(run.value!.id, {
+          node_run_id: nodeRun.id,
+          remark: remarkText.trim() || 'node force failed',
+        })
+        message.success('节点已强制失败')
+      } catch (error) {
+        console.error('强制失败节点失败:', error)
+        message.error('强制失败节点失败')
+        return false
+      } finally {
+        forceFailingNodeId.value = null
+      }
+    },
+  })
+}
+
 const handleConfirmManualNode = (nodeRun: FlowNodeRun) => {
   if (!run.value || !canConfirmNodeRun(nodeRun)) return
-  Modal.confirm({
-    title: '确认继续执行',
-    content: `确认节点"${nodeRun.node_name}"已完成人工检查，并继续执行后续节点吗？`,
-    okText: '确认继续',
-    onOk: async () => {
+  let remarkText = ''
+  dialog.warning({
+    title: '审批通过',
+    content: () =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:12px;' }, [
+        h('p', { style: 'margin:0;' }, `确认节点「${nodeRun.node_name}」审批通过，并继续执行后续节点吗？`),
+        h(NInput, {
+          type: 'textarea',
+          rows: 2,
+          placeholder: '通过备注（可选）',
+          maxlength: 500,
+          showCount: true,
+          onUpdateValue: (value: string) => {
+            remarkText = value
+          },
+        }),
+      ]),
+    positiveText: '审批通过',
+    onPositiveClick: async () => {
       confirmingNodeId.value = nodeRun.id
       try {
         run.value = await flowApi.confirmManualNode(run.value!.id, {
           node_run_id: nodeRun.id,
-          remark: 'manual confirm',
+          remark: remarkText.trim() || 'manual confirm',
         })
-        Message.success('人工确认完成，流水线继续执行')
+        message.success('审批通过，流水线继续执行')
       } catch (error) {
         console.error('确认人工节点失败:', error)
-        Message.error('确认人工节点失败')
+        message.error('确认人工节点失败')
+        return false
       } finally {
         confirmingNodeId.value = null
       }
@@ -593,21 +674,61 @@ const handleConfirmManualNode = (nodeRun: FlowNodeRun) => {
   })
 }
 
+const handleRejectManualNode = (nodeRun: FlowNodeRun) => {
+  if (!run.value || !canRejectNodeRun(nodeRun)) return
+  let remarkText = ''
+  dialog.error({
+    title: '审批拒绝',
+    content: () =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:12px;' }, [
+        h('p', { style: 'margin:0;' }, `拒绝节点「${nodeRun.node_name}」后，流水线将失败并停止。`),
+        h(NInput, {
+          type: 'textarea',
+          rows: 3,
+          placeholder: '请填写拒绝原因（可选）',
+          maxlength: 500,
+          showCount: true,
+          onUpdateValue: (value: string) => {
+            remarkText = value
+          },
+        }),
+      ]),
+    positiveText: '确认拒绝',
+    positiveButtonProps: { type: 'error' },
+    onPositiveClick: async () => {
+      rejectingNodeId.value = nodeRun.id
+      try {
+        run.value = await flowApi.rejectManualNode(run.value!.id, {
+          node_run_id: nodeRun.id,
+          remark: remarkText.trim() || 'manual node rejected',
+        })
+        message.success('已拒绝，流水线已失败')
+      } catch (error) {
+        console.error('拒绝人工节点失败:', error)
+        message.error('拒绝人工节点失败')
+        return false
+      } finally {
+        rejectingNodeId.value = null
+      }
+    },
+  })
+}
+
 const handleCancelRun = () => {
   if (!run.value || !canCancelCurrentRun.value) return
-  Modal.confirm({
+  dialog.warning({
     title: '确认取消流程',
     content: `确定要取消流水线任务“${runTitle.value}”吗？正在运行或暂停的节点会被标记为已取消。`,
-    okText: '取消流程',
-    okButtonProps: { status: 'danger' },
-    onOk: async () => {
+    positiveText: '取消流程',
+    positiveButtonProps: { type: 'error' },
+    onPositiveClick: async () => {
       cancelingRun.value = true
       try {
         run.value = await flowApi.cancelRun(run.value!.id)
-        Message.success('流程已取消')
+        message.success('流程已取消')
       } catch (error) {
         console.error('取消流水线失败:', error)
-        Message.error('取消流水线失败')
+        message.error('取消流水线失败')
       } finally {
         cancelingRun.value = false
       }
@@ -616,6 +737,34 @@ const handleCancelRun = () => {
 }
 
 onMounted(loadRun)
+
+const nodeRunColumns: DataTableColumns<any> = [
+  { title: '节点', key: 'node_name', render: (row) => row.node_name },
+  { title: '类型', key: 'node_type', width: 132, render: (row) => nodeTypeText(row.node_type) },
+  {
+    title: '状态',
+    key: 'status',
+    width: 116,
+    render: (row) => h(StatusBadge, { status: row.status, text: statusText(row.status) }),
+  },
+  {
+    title: '关联执行记录',
+    key: 'execution_record',
+    width: 130,
+    render: (row) => row.execution_record_id
+      ? h(NButton, { text: true, size: 'small', onClick: () => router.push(`/execution-records/${row.execution_record_id}`) }, { default: () => '查看执行记录' })
+      : h('span', '-'),
+  },
+  {
+    title: '子流程实例',
+    key: 'child_flow',
+    width: 130,
+    render: (row) => childFlowRunId(row)
+      ? h(NButton, { text: true, size: 'small', onClick: () => openChildFlowRun(row) }, { default: () => '查看子流程任务' })
+      : h('span', '-'),
+  },
+  { title: '错误信息', key: 'error_message', render: (row) => row.error_message || '-' },
+]
 </script>
 
 <style scoped>
@@ -871,6 +1020,11 @@ onMounted(loadRun)
 .run-path { display: grid; gap: 8px; }
 .run-path-table { min-width: 0; }
 .run-node { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+.run-node--canvas-selected {
+  outline: 2px solid color-mix(in srgb, var(--app-accent, #2080f0) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
 .run-node__index {
   display: grid;
   place-items: center;

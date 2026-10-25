@@ -13,73 +13,73 @@
       description="统一管理执行目标、主机分组、账号配置和连通性状态。"
     >
       <template #actions>
-        <a-space>
-          <a-button @click="refreshAll">
+        <n-space>
+          <n-button @click="refreshAll">
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             刷新
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-permission="{ resourceType: 'host', permission: 'add' }"
             v-if="!isReadOnly"
             @click="openImportModal"
           >
             <template #icon>
-              <icon-upload />
+              <Upload  />
             </template>
             导入主机
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-permission="{ resourceType: 'host', permission: 'add' }"
             v-if="!isReadOnly"
             @click="handleCreateGroup"
           >
             <template #icon>
-              <icon-folder-add />
+              <FolderPlus  />
             </template>
             新增分组
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-permission="{ resourceType: 'host', permission: 'add' }"
             v-if="!isReadOnly"
             type="primary"
             @click="handleCreate"
           >
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             新增主机
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
     <div class="app-metric-grid hosts-summary-grid">
       <MetricCard label="主机总量" :value="totalHostCount" note="按当前权限可见资源统计">
-        <template #icon><icon-desktop /></template>
+        <template #icon><Monitor  /></template>
       </MetricCard>
       <MetricCard label="当前页在线" :value="hostSummary.online" note="可直接执行作业的主机" variant="success">
-        <template #icon><icon-wifi /></template>
+        <template #icon><Wifi  /></template>
       </MetricCard>
       <MetricCard label="当前页离线" :value="hostSummary.offline" note="需检查 Agent 或网络状态" variant="danger">
-        <template #icon><icon-exclamation-circle /></template>
+        <template #icon><CircleAlert  /></template>
       </MetricCard>
       <MetricCard label="已选择" :value="selectedRowKeys.length" note="用于批量移动、测试和编辑" variant="muted">
-        <template #icon><icon-check-square /></template>
+        <template #icon><CheckSquare  /></template>
       </MetricCard>
     </div>
 
     <div class="hosts-content">
       <!-- 左侧分组面板 -->
       <div class="groups-panel" :style="{ width: sidebarWidth + 'px' }">
-        <a-card title="主机分组" size="small">
-          <template #extra>
-            <a-button type="text" size="small" @click="refreshGroups">
+        <n-card title="主机分组" size="small">
+          <template #header-extra>
+            <n-button text size="small" @click="refreshGroups">
               <template #icon>
-                <icon-refresh />
+                <RefreshCw  />
               </template>
-            </a-button>
+            </n-button>
           </template>
 
           <div class="group-list">
@@ -90,7 +90,7 @@
               @click="selectGroup(null)"
             >
               <div class="group-info">
-                <icon-desktop class="group-icon" />
+                <Monitor  class="group-icon" />
                 <span class="group-name">全部主机</span>
               </div>
               <span class="group-count">{{ totalHostCount }}</span>
@@ -110,7 +110,7 @@
               @test-connection="handleTestGroupConnection"
             />
           </div>
-        </a-card>
+        </n-card>
       </div>
 
       <!-- 可拖拽的分隔条 -->
@@ -138,228 +138,202 @@
           <!-- 基础搜索栏 -->
           <div class="search-container">
             <div class="search-form">
-              <a-form :model="searchForm" layout="inline" class="mb-3">
+              <n-form :model="searchForm" layout="inline" class="mb-3">
                 <!-- 第一行：主机名称和IP地址 -->
                 <div class="search-row">
-                  <a-form-item label="主机名称">
-                    <a-input
-                      v-model="searchForm.name"
+                  <n-form-item label="主机名称">
+                    <n-input
+                      v-model:value="searchForm.name"
                       placeholder="请输入主机名称"
-                      allow-clear
+                      clearable
                       @press-enter="handleSearch"
                       class="filter-control"
                     />
-                  </a-form-item>
-                  <a-form-item label="IP地址">
-                    <a-textarea
-                      v-model="displayIpAddress"
+                  </n-form-item>
+                  <n-form-item label="IP地址">
+                    <n-input type="textarea"
+                      v-model:value="displayIpAddress"
                       placeholder="支持多IP(内外网IP混合)，可直接粘贴多行IP地址"
-                      allow-clear
+                      clearable
                       @press-enter="handleSearch"
                       @paste="handleIpPaste"
                       @input="handleIpInput"
-                      :auto-size="{ minRows: 1, maxRows: 6 }"
+                      :autosize="{ minRows: 1, maxRows: 6 }"
                       class="filter-control filter-control--wide"
                     />
-                  </a-form-item>
+                  </n-form-item>
                 </div>
                 <!-- 第二行：操作系统和状态 -->
                 <div class="search-row">
-                  <a-form-item label="操作系统">
-                    <a-select
-                      v-model="searchForm.os_type"
+                  <n-form-item label="操作系统">
+                <n-select
+                      v-model:value="searchForm.os_type"
                       placeholder="请选择操作系统"
-                      allow-clear
-                      @change="handleSearch"
-                      @clear="handleSearch"
+                      clearable
+                      :options="osTypeOptions"
+                      @update:value="handleSearch"
                       class="filter-control"
-                    >
-                      <a-option value="linux">Linux</a-option>
-                      <a-option value="windows">Windows</a-option>
-                    </a-select>
-                  </a-form-item>
-                  <a-form-item label="状态">
-                    <a-select
-                      v-model="searchForm.status"
+                    />
+                  </n-form-item>
+                  <n-form-item label="状态">
+                <n-select
+                      v-model:value="searchForm.status"
                       placeholder="请选择状态"
-                      allow-clear
-                      @change="handleSearch"
-                      @clear="handleSearch"
+                      clearable
+                      :options="hostStatusOptions"
+                      @update:value="handleSearch"
                       class="filter-control filter-control--compact"
-                    >
-                      <a-option value="online">在线</a-option>
-                      <a-option value="offline">离线</a-option>
-                      <a-option value="unknown">未知</a-option>
-                    </a-select>
-                  </a-form-item>
-                  <a-form-item label="标签">
-                  <a-select
-                    v-model="searchForm.tags"
-                    mode="tags"
-                    placeholder="输入/选择标签"
-                    allow-clear
-                    allow-search
-                    :options="tagOptions"
-                    class="filter-control"
-                  />
-                  </a-form-item>
+                    />
+                  </n-form-item>
+                  <n-form-item label="标签">
+                <n-select
+                  v-model:value="searchForm.tags"
+                  multiple
+                  tag
+                  placeholder="输入/选择标签"
+                  clearable
+                  filterable
+                  :options="tagOptions"
+                  class="filter-control"
+                />
+              </n-form-item>
                 </div>
-              </a-form>
+              </n-form>
             </div>
             <div class="search-actions">
-              <a-space>
-                <a-button type="primary" @click="handleSearch">
+              <n-space>
+                <n-button type="primary" @click="handleSearch">
                   <template #icon>
-                    <icon-search />
+                    <Search  />
                   </template>
                   搜索
-                </a-button>
-                <a-button @click="handleReset">
+                </n-button>
+                <n-button @click="handleReset">
                   <template #icon>
-                    <icon-refresh />
+                    <RefreshCw  />
                   </template>
                   重置
-                </a-button>
-                <a-button type="text" @click="toggleAdvancedFilter">
+                </n-button>
+                <n-button text @click="toggleAdvancedFilter">
                   <template #icon>
-                    <icon-filter />
+                    <Filter  />
                   </template>
                   高级筛选
-                  <icon-down v-if="!showAdvancedFilter" />
-                  <icon-up v-else />
-                </a-button>
-              </a-space>
+                  <ChevronDown v-if="!showAdvancedFilter"  />
+                  <ChevronUp v-else  />
+                </n-button>
+              </n-space>
             </div>
           </div>
-
-          <!-- 高级筛选栏 -->
           <div v-if="showAdvancedFilter" class="advanced-filter">
-            <a-divider orientation="left">高级筛选</a-divider>
-            <a-form :model="searchForm" layout="inline">
-              <a-form-item label="云厂商">
-                <a-select
-                  v-model="searchForm.cloud_provider"
+            <n-divider title-placement="left">高级筛选</n-divider>
+            <n-form :model="searchForm">
+              <n-form-item label="云厂商">
+                <n-select
+                  v-model:value="searchForm.cloud_provider"
                   placeholder="请选择云厂商"
-                  allow-clear
-                  @change="handleSearch"
-                  @clear="handleSearch"
+                  clearable
+                  :options="cloudProviderOptions"
+                  @update:value="handleSearch"
                   class="filter-control"
-                >
-                  <a-option value="aliyun">阿里云</a-option>
-                  <a-option value="tencent">腾讯云</a-option>
-                  <a-option value="aws">AWS</a-option>
-                  <a-option value="azure">Azure</a-option>
-                  <a-option value="huawei">华为云</a-option>
-                  <a-option value="baidu">百度云</a-option>
-                  <a-option value="ucloud">UCloud</a-option>
-                  <a-option value="qiniu">七牛云</a-option>
-                  <a-option value="idc">自建机房</a-option>
-                  <a-option value="other">其他</a-option>
-                </a-select>
-              </a-form-item>
-              <a-form-item label="内网IP">
-                <a-textarea
-                  v-model="displayInternalIp"
+                />
+              </n-form-item>
+              <n-form-item label="内网IP">
+                <n-input type="textarea"
+                  v-model:value="displayInternalIp"
                   placeholder="支持多IP，可直接粘贴多行IP地址"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   @paste="handleInternalIpPaste"
                   @input="handleInternalIpInput"
-                  :auto-size="{ minRows: 1, maxRows: 4 }"
+                  :autosize="{ minRows: 1, maxRows: 4 }"
                   class="filter-control filter-control--wide"
                 />
-              </a-form-item>
-              <a-form-item label="外网IP">
-                <a-textarea
-                  v-model="displayPublicIp"
+              </n-form-item>
+              <n-form-item label="外网IP">
+                <n-input type="textarea"
+                  v-model:value="displayPublicIp"
                   placeholder="支持多IP，可直接粘贴多行IP地址"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   @paste="handlePublicIpPaste"
                   @input="handlePublicIpInput"
-                  :auto-size="{ minRows: 1, maxRows: 4 }"
+                  :autosize="{ minRows: 1, maxRows: 4 }"
                   class="filter-control filter-control--wide"
                 />
-              </a-form-item>
-              <a-form-item label="CPU架构">
-                <a-select
-                  v-model="searchForm.cpu_arch"
+              </n-form-item>
+              <n-form-item label="CPU架构">
+                <n-select
+                  v-model:value="searchForm.cpu_arch"
                   placeholder="请选择CPU架构"
-                  allow-clear
-                  allow-search
-                  @change="handleSearch"
-                  @clear="handleSearch"
+                  clearable
+                  filterable
+                  :options="cpuArchOptions"
+                  @update:value="handleSearch"
                   class="filter-control"
-                >
-                  <a-option value="x86_64">x86_64</a-option>
-                  <a-option value="arm64">arm64</a-option>
-                  <a-option value="aarch64">aarch64</a-option>
-                  <a-option value="mips">mips</a-option>
-                  <a-option value="ppc64le">ppc64le</a-option>
-                  <a-option value="other">其他</a-option>
-                </a-select>
-              </a-form-item>
-              <a-form-item label="CPU逻辑核心数">
-                <a-input-number
-                  v-model="searchForm.cpu_cores_min"
+                />
+              </n-form-item>
+              <n-form-item label="CPU逻辑核心数">
+                <n-input-number
+                  v-model:value="searchForm.cpu_cores_min"
                   placeholder="最小值"
                   :min="0"
-                  @change="handleSearch"
+                  @update:value="handleSearch"
                   class="filter-control filter-control--number"
                 />
                 <span class="range-separator">~</span>
-                <a-input-number
-                  v-model="searchForm.cpu_cores_max"
+                <n-input-number
+                  v-model:value="searchForm.cpu_cores_max"
                   placeholder="最大值"
                   :min="0"
-                  @change="handleSearch"
+                  @update:value="handleSearch"
                   class="filter-control filter-control--number"
                 />
-              </a-form-item>
-              <a-form-item label="负责人">
-                <a-input
-                  v-model="searchForm.owner"
+              </n-form-item>
+              <n-form-item label="负责人">
+                <n-input
+                  v-model:value="searchForm.owner"
                   placeholder="请输入负责人"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   class="filter-control"
                 />
-              </a-form-item>
-              <a-form-item label="所属部门">
-                <a-input
-                  v-model="searchForm.department"
+              </n-form-item>
+              <n-form-item label="所属部门">
+                <n-input
+                  v-model:value="searchForm.department"
                   placeholder="请输入所属部门"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   class="filter-control"
                 />
-              </a-form-item>
-              <a-form-item label="地域">
-                <a-input
-                  v-model="searchForm.region"
+              </n-form-item>
+              <n-form-item label="地域">
+                <n-input
+                  v-model:value="searchForm.region"
                   placeholder="请输入地域"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   class="filter-control"
                 />
-              </a-form-item>
-              <a-form-item label="可用区">
-                <a-input
-                  v-model="searchForm.zone"
+              </n-form-item>
+              <n-form-item label="可用区">
+                <n-input
+                  v-model:value="searchForm.zone"
                   placeholder="请输入可用区"
-                  allow-clear
+                  clearable
                   @press-enter="handleSearch"
                   class="filter-control"
                 />
-              </a-form-item>
-            </a-form>
+              </n-form-item>
+            </n-form>
           </div>
 
           <!-- 高级筛选下方的操作按钮 -->
           <div class="advanced-actions" v-if="showAdvancedFilter">
             <div class="advanced-actions-right">
-              <a-space>
-                <a-button
+              <n-space>
+                <n-button
                   v-permission="{ resourceType: 'host', permission: 'execute' }"
                   v-if="!isReadOnly"
                   @click="handleBatchTest"
@@ -367,51 +341,31 @@
                   :loading="batchTesting"
                 >
                   <template #icon>
-                    <icon-wifi />
+                    <Wifi  />
                   </template>
                   批量测试连接 ({{ selectedRowKeys.length }})
-                </a-button>
-                <a-dropdown v-if="!isReadOnly" @select="handleCloudSync">
-                  <a-button
+                </n-button>
+                <n-dropdown v-if="!isReadOnly" trigger="click" :options="cloudSyncOptions" @select="handleCloudSync">
+                  <n-button
                     v-permission="{ resourceType: 'host', permission: 'add' }"
                     :loading="cloudSyncing"
                   >
                     <template #icon>
-                      <icon-cloud />
+                      <Cloud  />
                     </template>
                     云同步
-                    <icon-down />
-                  </a-button>
-                  <template #content>
-                    <a-doption value="aliyun">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      阿里云
-                    </a-doption>
-                    <a-doption value="tencent">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      腾讯云
-                    </a-doption>
-                    <a-doption value="aws">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      AWS
-                    </a-doption>
-                  </template>
-                </a-dropdown>
-              </a-space>
+                    <ChevronDown  />
+                  </n-button>
+                </n-dropdown>
+              </n-space>
             </div>
           </div>
 
           <!-- 基础状态下的操作按钮（右对齐） -->
           <div class="basic-actions" v-if="!showAdvancedFilter">
             <div class="basic-actions-right">
-              <a-space>
-                <a-button
+              <n-space>
+                <n-button
                   v-permission="{ resourceType: 'host', permission: 'execute' }"
                   v-if="!isReadOnly"
                   @click="handleBatchTest"
@@ -419,43 +373,23 @@
                   :loading="batchTesting"
                 >
                   <template #icon>
-                    <icon-wifi />
+                    <Wifi  />
                   </template>
                   批量测试连接 ({{ selectedRowKeys.length }})
-                </a-button>
-                <a-dropdown v-if="!isReadOnly" @select="handleCloudSync">
-                  <a-button
+                </n-button>
+                <n-dropdown v-if="!isReadOnly" trigger="click" :options="cloudSyncOptions" @select="handleCloudSync">
+                  <n-button
                     v-permission="{ resourceType: 'host', permission: 'add' }"
                     :loading="cloudSyncing"
                   >
                     <template #icon>
-                      <icon-cloud />
+                      <Cloud  />
                     </template>
                     云同步
-                    <icon-down />
-                  </a-button>
-                  <template #content>
-                    <a-doption value="aliyun">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      阿里云
-                    </a-doption>
-                    <a-doption value="tencent">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      腾讯云
-                    </a-doption>
-                    <a-doption value="aws">
-                      <template #icon>
-                        <icon-cloud />
-                      </template>
-                      AWS
-                    </a-doption>
-                  </template>
-                </a-dropdown>
-              </a-space>
+                    <ChevronDown  />
+                  </n-button>
+                </n-dropdown>
+              </n-space>
             </div>
           </div>
         </DataToolbar>
@@ -466,282 +400,122 @@
         >
           <!-- 批量操作区域 -->
           <div class="batch-actions">
-            <a-alert
+            <n-alert
               v-if="selectedRowKeys.length > 0"
               type="info"
-              :message="`已选择 ${selectedRowKeys.length} 个主机`"
-              show-icon
               closable
               @close="clearSelection"
             >
-              <template #action>
-                <a-space>
-                  <a-dropdown @select="handleBatchCopy">
-                    <a-button 
+              <template #header>已选择 {{ selectedRowKeys.length }} 个主机</template>
+              <n-space>
+                  <n-dropdown trigger="click" :options="batchCopyOptions" @select="handleBatchCopy">
+                    <n-button
                       size="small"
                     >
                       <template #icon>
-                        <icon-copy />
+                        <Copy  />
                       </template>
                       批量复制
-                      <icon-down />
-                    </a-button>
-                    <template #content>
-                      <a-doption value="ip">
-                        复制 IP
-                      </a-doption>
-                      <a-doption value="internal_ip">
-                        复制内网 IP
-                      </a-doption>
-                      <a-doption value="hostname">
-                        复制主机名
-                      </a-doption>
-                      <a-doption value="instance_id">
-                        复制实例 ID / 固资号
-                      </a-doption>
-                    </template>
-                  </a-dropdown>
-                  <a-dropdown v-if="!isReadOnly">
-                    <a-button 
+                      <ChevronDown  />
+                    </n-button>
+                  </n-dropdown>
+                  <n-dropdown
+                    v-if="!isReadOnly"
+                    trigger="click"
+                    :options="batchMoveGroupOptions"
+                    @select="(key: string) => handleBatchMoveToGroup(key === 'none' ? null : Number(key))"
+                  >
+                    <n-button
                       v-permission="{ resourceType: 'host', permission: 'change' }"
-                      type="primary" 
+                      type="primary"
                       size="small"
                     >
                       <template #icon>
-                        <icon-swap />
+                        <ArrowLeftRight  />
                       </template>
                       移动到分组
-                      <icon-down />
-                    </a-button>
-                    <template #content>
-                      <a-doption
-                        v-for="group in hostGroups"
-                        :key="group.id"
-                        @click="handleBatchMoveToGroup(group.id)"
-                      >
-                        {{ group.name }}
-                      </a-doption>
-                      <a-doption @click="handleBatchMoveToGroup(null)">
-                        移出所有分组
-                      </a-doption>
-                    </template>
-                  </a-dropdown>
-                  <a-button 
+                      <ChevronDown  />
+                    </n-button>
+                  </n-dropdown>
+                  <n-button 
                     v-permission="{ resourceType: 'host', permission: 'change' }"
                     v-if="!isReadOnly"
                     size="small"
                     @click="openBatchEdit"
                   >
                     <template #icon>
-                      <icon-edit />
+                      <Pencil  />
                     </template>
                     批量编辑
-                  </a-button>
-                  <a-button 
+                  </n-button>
+                  <n-button 
                     v-permission="{ resourceType: 'host', permission: 'execute' }"
                     v-if="!isReadOnly"
                     size="small" 
                     @click="handleBatchTest"
                   >
                     <template #icon>
-                      <icon-wifi />
+                      <Wifi  />
                     </template>
                     批量测试
-                  </a-button>
-                  <a-popconfirm
+                  </n-button>
+                  <n-popconfirm
                     v-if="!isReadOnly"
                     content="确定要删除选中的主机吗？"
                     @ok="handleBatchDelete"
                   >
-                    <a-button 
+                    <n-button 
                       v-permission="{ resourceType: 'host', permission: 'delete' }"
                       size="small" 
-                      status="danger"
+                     type="error"
                     >
                       <template #icon>
-                        <icon-delete />
+                        <Trash2  />
                       </template>
                       批量删除
-                    </a-button>
-                  </a-popconfirm>
-                </a-space>
-              </template>
-            </a-alert>
+                    </n-button>
+                  </n-popconfirm>
+                </n-space>
+            </n-alert>
             
             <!-- 页面选择操作 -->
             <div v-if="hosts.length > 0" class="page-selection-actions">
-              <a-space>
-                <a-button 
+              <n-space>
+                <n-button 
                   v-if="!isAllCurrentPageSelected"
                   size="small" 
                   @click="selectAllCurrentPage"
                 >
                   <template #icon>
-                    <icon-check-square />
+                    <CheckSquare  />
                   </template>
                   全选当前页 ({{ hosts.length }})
-                </a-button>
-                <a-button 
+                </n-button>
+                <n-button 
                   v-if="selectedRowKeys.length > 0"
                   size="small" 
                   @click="clearSelection"
                 >
                   <template #icon>
-                    <icon-close-circle />
+                    <CircleX  />
                   </template>
                   清空选择
-                </a-button>
-              </a-space>
+                </n-button>
+              </n-space>
             </div>
           </div>
 
-          <a-table
+          <n-data-table
+            class="hosts-table"
             :columns="columns"
             :data="hosts"
             :loading="loading"
-            :pagination="pagination"
-            v-model:selectedKeys="selectedRowKeys" :row-selection="{ type: 'checkbox' }"
-            row-key="id"
-            @page-change="handlePageChange"
-            @page-size-change="handlePageSizeChange"
-          >
-        <template #ip_address="{ record }">
-          <div class="ip-address-cell">
-            <div v-if="record.internal_ip" class="ip-display">
-              <span class="ip-label">内网:</span>
-              <a-typography-text copyable style="font-size: 12px;">
-                {{ record.internal_ip }}
-              </a-typography-text>
-            </div>
-            <div v-if="record.public_ip" class="ip-display">
-              <span class="ip-label">外网:</span>
-              <a-typography-text copyable style="font-size: 12px;">
-                {{ record.public_ip }}
-              </a-typography-text>
-            </div>
-            <span v-if="!record.internal_ip && !record.public_ip" class="text-gray-400">--</span>
-          </div>
-        </template>
-
-        <template #os_type="{ record }">
-          <a-tag v-if="record.os_type === 'windows'" class="os-windows" size="small">
-            Windows
-          </a-tag>
-          <a-tag v-else class="os-linux" size="small">
-            Linux
-          </a-tag>
-        </template>
-
-        <template #account="{ record }">
-          <div v-if="record.account_info">
-            <a-tag color="blue" size="small">
-              {{ record.account_info.name }}
-            </a-tag>
-            <div class="text-gray-400" style="font-size: 12px; margin-top: 2px;">
-              {{ record.account_info.username }}
-            </div>
-          </div>
-          <span v-else class="text-gray-400">未配置</span>
-        </template>
-
-        <template #status="{ record }">
-          <StatusBadge :status="record.status" :text="getHostStatusText(record.status)" />
-        </template>
-
-        <template #tags="{ record }">
-          <div v-if="record.tags && record.tags.length">
-            <a-tag
-              v-for="tag in record.tags"
-              :key="tag.key || tag"
-              color="arcoblue"
-              size="small"
-              class="mr-1 mb-1"
-            >
-              {{ tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag }}
-            </a-tag>
-          </div>
-          <span v-else class="text-gray-400">--</span>
-        </template>
-
-        <template #groups="{ record }">
-          <div v-if="record.groups_info && record.groups_info.length > 0">
-            <a-tag
-              v-for="group in record.groups_info"
-              :key="group.id"
-              color="blue"
-              size="small"
-              class="mr-1 mb-1"
-            >
-              {{ group.name }}
-            </a-tag>
-          </div>
-          <span v-else class="text-gray-400">未分组</span>
-        </template>
-
-        <template #cloud_provider="{ record }">
-          <a-tag v-if="record.cloud_provider_display" color="green" size="small">
-            {{ record.cloud_provider_display }}
-          </a-tag>
-          <span v-else class="text-gray-400">--</span>
-        </template>
-
-        <template #actions="{ record }">
-          <a-space>
-            <a-button
-              v-permission="{ resourceType: 'host', permission: 'execute', resourceId: record.id }"
-              v-if="!isReadOnly"
-              type="text"
-              size="small"
-              @click="handleTest(record)"
-              :loading="record.testing"
-            >
-              <template #icon>
-                <icon-wifi />
-              </template>
-              测试连接
-            </a-button>
-            <a-button
-              v-permission="{ resourceType: 'host', permission: 'view', resourceId: record.id }"
-              type="text"
-              size="small"
-              @click="handleView(record)"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              查看
-            </a-button>
-            <a-dropdown v-if="!isReadOnly">
-              <a-button type="text" size="small">
-                <template #icon>
-                  <icon-more />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption
-                  :class="{ 'disabled-option': !canEditHost(record.id) }"
-                  @click="handleClickEditHost(record)"
-                >
-                  <template #icon>
-                    <icon-edit />
-                  </template>
-                  编辑
-                </a-doption>
-                <a-divider style="margin: 4px 0;" />
-                <a-doption
-                  :class="['danger', { 'disabled-option': !canDeleteHost(record.id) }]"
-                  @click="handleClickDeleteHost(record)"
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                  删除
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
-        </template>
-      </a-table>
+            :pagination="tablePagination"
+            :checked-row-keys="selectedRowKeys"
+            :row-key="(row: any) => row.id"
+            remote
+            @update:checked-row-keys="(keys: any[]) => selectedRowKeys = keys"
+          />
         </DetailPanel>
       </div>
     </div>
@@ -763,19 +537,17 @@
     />
 
     <!-- 导入主机 -->
-    <a-modal
-      v-model:visible="importModalVisible"
+    <n-modal
+      v-model:show="importModalVisible"
+      preset="card"
       title="导入主机（Excel）"
-      width="640px"
+      :style="{ width: '640px' }"
       :mask-closable="false"
       :closable="!importing"
-      unmount-on-close
-      destroy-on-close
-      :footer="false"
     >
-      <a-alert type="info" class="mb-3">
+      <n-alert type="info" class="mb-3">
         支持 .xlsx / .xlsm 文件，必填列包含：主机名称、IP地址、服务器账号。可选列：端口、操作系统、分组。
-      </a-alert>
+      </n-alert>
 
       <ul class="import-instructions">
         <li>服务器账号列填写账号名称，认证方式由账号配置决定。</li>
@@ -783,27 +555,25 @@
         <li>启用"覆盖已有主机"后，将按 IP + 端口覆盖更新已有记录。</li>
       </ul>
 
-      <a-form layout="vertical" :model="importForm">
-        <a-form-item label="Excel 文件">
-          <a-upload
+      <n-form layout="vertical" :model="importForm">
+        <n-form-item label="Excel 文件">
+          <n-upload
             :file-list="importFileList"
-            :auto-upload="false"
-            :limit="1"
+            :default-upload="false"
+            :max="1"
             accept=".xlsx,.xlsm"
             :show-file-list="false"
-            @change="handleImportFileChange"
+            @change="(data: any) => handleImportFileChange(data.fileList)"
             @remove="handleImportFileRemove"
             class="import-upload"
           >
-            <template #upload-button>
-              <a-button type="outline">
-                <template #icon>
-                  <icon-upload />
-                </template>
-                选择文件
-              </a-button>
-            </template>
-          </a-upload>
+            <n-button secondary>
+              <template #icon>
+                <Upload  />
+              </template>
+              选择文件
+            </n-button>
+          </n-upload>
           <!-- 自定义文件列表，包含删除按钮 -->
           <div v-if="importFileList.length > 0" class="custom-import-file-list">
             <div
@@ -812,188 +582,202 @@
               class="custom-import-file-item"
             >
               <div class="import-file-info">
-                <icon-file class="import-file-icon" />
+                <FileText  class="import-file-icon" />
                 <div class="import-file-details">
                   <div class="import-file-name">{{ fileItem.name }}</div>
                   <div class="import-file-size">{{ formatFileSize(fileItem.file?.size || 0) }}</div>
                 </div>
               </div>
               <div class="import-file-actions">
-                <a-button
-                  type="text"
+                <n-button
+                  text
                   size="small"
                   @click="handleImportFileRemove"
                   class="import-remove-btn"
                 >
                   <template #icon>
-                    <icon-close />
+                    <X  />
                   </template>
-                </a-button>
+                </n-button>
               </div>
             </div>
           </div>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="默认分组（可选）">
-          <a-select
-            v-model="importForm.default_group_id"
+        <n-form-item label="默认分组（可选）">
+          <n-select
+            v-model:value="importForm.default_group_id"
             placeholder="导入时未匹配到分组将加入此分组"
-            allow-clear
+            clearable
             :options="groupOptions"
             :disabled="groupOptions.length === 0"
           />
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item>
-          <a-checkbox v-model="importForm.overwrite_existing">
+        <n-form-item>
+          <n-checkbox v-model:checked="importForm.overwrite_existing">
             覆盖已有主机（按 IP + 端口）
-          </a-checkbox>
-          <a-button type="text" size="small" class="download-template-btn" @click="downloadImportTemplate">
+          </n-checkbox>
+          <n-button text size="small" class="download-template-btn" @click="downloadImportTemplate">
             <template #icon>
-              <icon-download />
+              <Download  />
             </template>
             下载模板
-          </a-button>
-        </a-form-item>
-      </a-form>
+          </n-button>
+        </n-form-item>
+      </n-form>
 
       <div v-if="importResult" class="import-result">
-        <a-divider orientation="left">导入结果</a-divider>
-        <a-descriptions :column="2" size="small" layout="vertical">
-          <a-descriptions-item label="总行数">{{ importResult.summary?.total ?? 0 }}</a-descriptions-item>
-          <a-descriptions-item label="新增">{{ importResult.summary?.created ?? 0 }}</a-descriptions-item>
-          <a-descriptions-item label="更新">{{ importResult.summary?.updated ?? 0 }}</a-descriptions-item>
-          <a-descriptions-item label="跳过">{{ importResult.summary?.skipped ?? 0 }}</a-descriptions-item>
-          <a-descriptions-item label="失败" :span="2">
-            <a-tag :color="(importResult.summary?.failed ?? 0) > 0 ? 'red' : 'green'">
+        <n-divider title-placement="left">导入结果</n-divider>
+        <n-descriptions :column="2" size="small" label-placement="top">
+          <n-descriptions-item label="总行数">{{ importResult.summary?.total ?? 0 }}</n-descriptions-item>
+          <n-descriptions-item label="新增">{{ importResult.summary?.created ?? 0 }}</n-descriptions-item>
+          <n-descriptions-item label="更新">{{ importResult.summary?.updated ?? 0 }}</n-descriptions-item>
+          <n-descriptions-item label="跳过">{{ importResult.summary?.skipped ?? 0 }}</n-descriptions-item>
+          <n-descriptions-item label="失败" :span="2">
+            <n-tag :type="(importResult.summary?.failed ?? 0) > 0 ? 'error' : 'success'">
               {{ importResult.summary?.failed ?? 0 }}
-            </a-tag>
-          </a-descriptions-item>
-        </a-descriptions>
+            </n-tag>
+          </n-descriptions-item>
+        </n-descriptions>
 
         <p class="import-message">{{ importResult.message }}</p>
         <p v-if="importResult.limit_note" class="import-message muted">{{ importResult.limit_note }}</p>
 
-        <a-table
+        <n-data-table
           v-if="importResult.details && importResult.details.length > 0"
           :data="importResult.details"
+          :columns="importDetailColumns"
           :pagination="false"
           size="small"
           class="import-detail-table"
-          row-key="row"
-        >
-          <a-table-column title="行号" data-index="row" width="70" />
-          <a-table-column title="主机名" data-index="name" />
-          <a-table-column title="IP地址" data-index="ip_address" />
-          <a-table-column title="状态" data-index="status">
-            <template #cell="{ record }">
-              <a-tag
-                :color="record.status === 'failed' ? 'red' : (record.status === 'skipped' ? 'orange' : 'green')"
-              >
-                {{ record.status }}
-              </a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="说明" data-index="message">
-            <template #cell="{ record }">
-              <span>{{ record.message || '-' }}</span>
-              <span v-if="record.missing_groups?.length" class="missing-groups">
-                （缺少分组：{{ record.missing_groups.join(', ') }}）
-              </span>
-            </template>
-          </a-table-column>
-        </a-table>
+          :row-key="(row: any) => row.row"
+        />
       </div>
 
       <div class="import-modal-footer">
-        <a-space>
-          <a-button @click="closeImportModal" :disabled="importing">取消</a-button>
-          <a-button type="primary" @click="submitImportHosts" :loading="importing">
+        <n-space>
+          <n-button @click="closeImportModal" :disabled="importing">取消</n-button>
+          <n-button type="primary" @click="submitImportHosts" :loading="importing">
             开始导入
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
-    </a-modal>
+    </n-modal>
 
     <!-- 批量编辑主机 -->
-    <a-modal
-      v-model:visible="batchEditVisible"
+    <n-modal
+      v-model:show="batchEditVisible"
+      preset="card"
       title="批量编辑主机"
-      width="520px"
+      :style="{ width: '520px' }"
       :mask-closable="false"
-      :footer="false"
     >
-      <a-alert type="info" class="mb-3">
+      <n-alert type="info" class="mb-3">
         仅会修改下方表单中<strong>填写了值</strong>的字段，其余字段保持不变。当前选中 {{ selectedRowKeys.length }} 台主机。
-      </a-alert>
-      <a-form :model="batchEditForm" layout="vertical">
-        <a-form-item label="标签">
+      </n-alert>
+      <n-form :model="batchEditForm" layout="vertical">
+        <n-form-item label="标签">
           <div class="tags-editor">
             <div v-for="(t, idx) in batchTagEntries" :key="idx" class="tag-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-              <a-input v-model="t.key" placeholder="键" style="width:40%" />
-              <a-input v-model="t.value" placeholder="值（可选）" style="width:45%" />
-              <a-button type="text" status="danger" @click="batchTagEntries.splice(idx,1)" style="width:10%">
-                <template #icon><icon-delete /></template>
-              </a-button>
+              <n-input v-model:value="t.key" placeholder="键" style="width:40%" />
+              <n-input v-model:value="t.value" placeholder="值（可选）" style="width:45%" />
+              <n-button type="error" @click="batchTagEntries.splice(idx,1)" style="width:10%">
+                <template #icon><Trash2  /></template>
+              </n-button>
             </div>
             <div class="tags-input-row">
-              <a-button type="outline" size="small" @click="batchTagEntries.push({ key: '', value: '' })">
-                <template #icon><icon-plus /></template>
+              <n-button secondary size="small" @click="batchTagEntries.push({ key: '', value: '' })">
+                <template #icon><Plus  /></template>
                 添加标签
-              </a-button>
+              </n-button>
             </div>
           </div>
           <div class="form-tip" style="margin-top: 4px">
-            <icon-info-circle />
+            <Info  />
             将完全替换选中主机的标签（键=值 格式）
           </div>
-        </a-form-item>
-        <a-form-item label="负责人">
-          <a-input
-            v-model="batchEditForm.owner"
-            allow-clear
+        </n-form-item>
+        <n-form-item label="负责人">
+          <n-input
+            v-model:value="batchEditForm.owner"
+            clearable
             placeholder="填写负责人（可选）"
           />
-        </a-form-item>
-        <a-form-item label="所属部门">
-          <a-input
-            v-model="batchEditForm.department"
-            allow-clear
+        </n-form-item>
+        <n-form-item label="所属部门">
+          <n-input
+            v-model:value="batchEditForm.department"
+            clearable
             placeholder="填写所属部门（可选）"
           />
-        </a-form-item>
-        <a-form-item label="服务角色">
-          <a-input
-            v-model="batchEditForm.service_role"
-            allow-clear
+        </n-form-item>
+        <n-form-item label="服务角色">
+          <n-input
+            v-model:value="batchEditForm.service_role"
+            clearable
             placeholder="填写服务角色（可选）"
           />
-        </a-form-item>
-        <a-form-item label="备注">
-          <a-textarea
-            v-model="batchEditForm.remarks"
-            allow-clear
-            :auto-size="{ minRows: 2, maxRows: 4 }"
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input type="textarea"
+            v-model:value="batchEditForm.remarks"
+            clearable
+            :autosize="{ minRows: 2, maxRows: 4 }"
             placeholder="如需统一增加备注，可在此填写（可选）"
           />
-        </a-form-item>
-      </a-form>
+        </n-form-item>
+      </n-form>
       <div style="text-align: right; margin-top: 16px">
-        <a-space>
-          <a-button @click="cancelBatchEdit" :disabled="batchEditLoading">取消</a-button>
-          <a-button type="primary" @click="submitBatchEdit" :loading="batchEditLoading">
+        <n-space>
+          <n-button @click="cancelBatchEdit" :disabled="batchEditLoading">取消</n-button>
+          <n-button type="primary" @click="submitBatchEdit" :loading="batchEditLoading">
             保存
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, h, onMounted, nextTick, resolveDirective, watch, withDirectives, type VNode } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
+import { NAlert, NButton, NCard, NCheckbox, NDataTable, NDescriptions, NDescriptionsItem, NDivider, NDropdown, NForm, NFormItem, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag, NText, NUpload, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import {
+  ArrowLeftRight,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  CircleX,
+  Cloud,
+  Copy,
+  Download,
+  Eye,
+  FileText,
+  Filter,
+  FolderPlus,
+  Info,
+  Monitor,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  Wifi,
+  X,
+} from 'lucide-vue-next'
+
+const message = useMessage()
+const dialog = useDialog()
+
+const withPerm = (vnode: VNode, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
 import { hostApi, hostGroupApi } from '@/api/ops'
 import type { Host, HostGroup, HostImportResult } from '@/types'
 import { useAuthStore } from '@/stores/auth'
@@ -1318,84 +1102,248 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   ]
 })
 
-const columns = [
+const renderTags = (tags: any[] | undefined | null) => {
+  if (tags && tags.length) {
+    return h('div', {}, tags.map((tag: any) =>
+      h(NTag, { type: 'primary', size: 'small', class: 'mr-1 mb-1' }, {
+        default: () => (tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag)
+      })
+    ))
+  }
+  return h('span', { class: 'text-gray-400' }, '--')
+}
+
+const rowActionOptions = (row: Host) => [
+  {
+    label: '编辑',
+    key: 'edit',
+    disabled: !canEditHost(row.id),
+    icon: () => h(Pencil, { size: 14 }),
+  },
+  { type: 'divider', key: 'd1' },
+  {
+    label: '删除',
+    key: 'delete',
+    disabled: !canDeleteHost(row.id),
+    icon: () => h(Trash2, { size: 14 }),
+    props: { class: 'danger' },
+  },
+]
+
+const onRowAction = (key: string, row: Host) => {
+  if (key === 'edit') handleClickEditHost(row)
+  if (key === 'delete') handleClickDeleteHost(row)
+}
+
+const columns: DataTableColumns<Host> = [
   {
     title: '主机名',
-    dataIndex: 'name',
     key: 'name',
-    ellipsis: true,
-    tooltip: true,
+    ellipsis: { tooltip: true },
+    render: (row: Host) => row.name,
   },
   {
     title: 'IP地址',
-    dataIndex: 'ip_address',
     key: 'ip_address',
-    slotName: 'ip_address',
-    ellipsis: true,
+    ellipsis: { tooltip: true },
+    render: (row: Host) => h('div', { class: 'ip-address-cell' }, [
+      row.internal_ip
+        ? h('div', { class: 'ip-display' }, [
+            h('span', { class: 'ip-label' }, '内网:'),
+            h(NText, { copyable: true, style: 'font-size: 12px;' }, { default: () => row.internal_ip }),
+          ])
+        : null,
+      row.public_ip
+        ? h('div', { class: 'ip-display' }, [
+            h('span', { class: 'ip-label' }, '外网:'),
+            h(NText, { copyable: true, style: 'font-size: 12px;' }, { default: () => row.public_ip }),
+          ])
+        : null,
+      !row.internal_ip && !row.public_ip ? h('span', { class: 'text-gray-400' }, '--') : null,
+    ]),
   },
   {
     title: '端口',
-    dataIndex: 'port',
     key: 'port',
     width: 72,
     align: 'center',
+    render: (row: Host) => String(row.port ?? '-'),
   },
   {
     title: '操作系统',
-    dataIndex: 'os_type',
     key: 'os_type',
-    slotName: 'os_type',
     width: 96,
     align: 'center',
+    render: (row: Host) =>
+      row.os_type === 'windows'
+        ? h(NTag, { class: 'os-windows', size: 'small' }, { default: () => 'Windows' })
+        : h(NTag, { class: 'os-linux', size: 'small' }, { default: () => 'Linux' }),
   },
   {
     title: '服务器账号',
-    dataIndex: 'account_info',
     key: 'account',
-    slotName: 'account',
-    ellipsis: true,
-    tooltip: true,
+    ellipsis: { tooltip: true },
+    render: (row: Host) => row.account_info
+      ? h('div', {}, [
+          h(NTag, { type: 'info', size: 'small' }, { default: () => row.account_info.name }),
+          h('div', { class: 'text-gray-400', style: 'font-size: 12px; margin-top: 2px;' }, row.account_info.username),
+        ])
+      : h('span', { class: 'text-gray-400' }, '未配置'),
   },
   {
     title: '状态',
-    dataIndex: 'status',
     key: 'status',
-    slotName: 'status',
     width: 92,
     align: 'center',
+    render: (row: Host) => h(StatusBadge, { status: row.status, text: getHostStatusText(row.status) }),
   },
   {
     title: '标签',
-    dataIndex: 'tags',
     key: 'tags',
-    slotName: 'tags',
-    ellipsis: true,
-    tooltip: true,
+    ellipsis: { tooltip: true },
+    render: (row: Host) => renderTags(row.tags),
   },
   {
     title: '所属分组',
-    dataIndex: 'groups_info',
     key: 'groups_info',
-    slotName: 'groups',
-    ellipsis: true,
-    tooltip: true,
+    ellipsis: { tooltip: true },
+    render: (row: Host) => row.groups_info && row.groups_info.length > 0
+      ? h('div', {}, row.groups_info.map((group: any) =>
+          h(NTag, { type: 'info', size: 'small', class: 'mr-1 mb-1' }, { default: () => group.name })))
+      : h('span', { class: 'text-gray-400' }, '未分组'),
   },
   {
     title: '云厂商',
-    dataIndex: 'cloud_provider_display',
     key: 'cloud_provider_display',
-    slotName: 'cloud_provider',
     width: 96,
     align: 'center',
+    render: (row: Host) => row.cloud_provider_display
+      ? h(NTag, { type: 'success', size: 'small' }, { default: () => row.cloud_provider_display })
+      : h('span', { class: 'text-gray-400' }, '--'),
   },
   {
     title: '操作',
     key: 'actions',
-    slotName: 'actions',
     width: 190,
     align: 'center',
+    render: (row: Host) => {
+      const buttons = [
+        ...(!isReadOnly.value
+          ? [withPerm(
+              h(NButton, {
+                text: true, size: 'small', loading: row.testing,
+                onClick: () => handleTest(row),
+              }, { icon: () => h(Wifi, { size: 14 }), default: () => '测试连接' }),
+              { resourceType: 'host', permission: 'execute', resourceId: row.id },
+            )]
+          : []),
+        withPerm(
+          h(NButton, { text: true, size: 'small', onClick: () => handleView(row) }, {
+            icon: () => h(Eye, { size: 14 }), default: () => '查看',
+          }),
+          { resourceType: 'host', permission: 'view', resourceId: row.id },
+        ),
+        ...(!isReadOnly.value
+          ? [h(NDropdown, {
+              trigger: 'click',
+              options: rowActionOptions(row),
+              onSelect: (key: string) => onRowAction(key, row),
+            }, {
+              default: () => h(NButton, { text: true, size: 'small' }, {
+                icon: () => h(MoreHorizontal, { size: 16 }),
+              }),
+            })]
+          : []),
+      ]
+      return h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, { default: () => buttons })
+    },
   },
 ]
+
+// 导入结果明细列
+const importDetailColumns = [
+  { title: '行号', key: 'row', width: 70, render: (row: any) => String(row.row) },
+  { title: '主机名', key: 'name', render: (row: any) => row.name },
+  { title: 'IP地址', key: 'ip_address', render: (row: any) => row.ip_address },
+  {
+    title: '状态',
+    key: 'status',
+    render: (row: any) => h(NTag, {
+      type: row.status === 'failed' ? 'error' : row.status === 'skipped' ? 'warning' : 'success',
+    }, { default: () => row.status }),
+  },
+  {
+    title: '说明',
+    key: 'message',
+    render: (row: any) => h('span', {}, [
+      row.message || '-',
+      row.missing_groups?.length ? `（缺少分组：${row.missing_groups.join(', ')}）` : '',
+    ]),
+  },
+]
+
+// Naive UI 表格分页对象（远端分页）
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  pageSizes: [10, 20, 50, 100],
+  showSizePicker: true,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
+
+// 筛选下拉选项
+const osTypeOptions = [
+  { label: 'Linux', value: 'linux' },
+  { label: 'Windows', value: 'windows' },
+]
+const hostStatusOptions = [
+  { label: '在线', value: 'online' },
+  { label: '离线', value: 'offline' },
+  { label: '未知', value: 'unknown' },
+]
+const cloudProviderOptions = [
+  { label: '阿里云', value: 'aliyun' },
+  { label: '腾讯云', value: 'tencent' },
+  { label: 'AWS', value: 'aws' },
+  { label: 'Azure', value: 'azure' },
+  { label: '华为云', value: 'huawei' },
+  { label: '百度云', value: 'baidu' },
+  { label: 'UCloud', value: 'ucloud' },
+  { label: '七牛云', value: 'qiniu' },
+  { label: '自建机房', value: 'idc' },
+  { label: '其他', value: 'other' },
+]
+const cpuArchOptions = [
+  { label: 'x86_64', value: 'x86_64' },
+  { label: 'arm64', value: 'arm64' },
+  { label: 'aarch64', value: 'aarch64' },
+  { label: 'mips', value: 'mips' },
+  { label: 'ppc64le', value: 'ppc64le' },
+  { label: '其他', value: 'other' },
+]
+
+// 云同步下拉选项
+const cloudSyncOptions = [
+  { label: '阿里云', key: 'aliyun', icon: () => h(Cloud, { size: 14 }) },
+  { label: '腾讯云', key: 'tencent', icon: () => h(Cloud, { size: 14 }) },
+  { label: 'AWS', key: 'aws', icon: () => h(Cloud, { size: 14 }) },
+]
+
+// 批量复制下拉选项
+const batchCopyOptions = [
+  { label: '复制 IP', key: 'ip' },
+  { label: '复制内网 IP', key: 'internal_ip' },
+  { label: '复制主机名', key: 'hostname' },
+  { label: '复制实例 ID / 固资号', key: 'instance_id' },
+]
+
+// 批量移动分组下拉选项
+const batchMoveGroupOptions = computed(() => [
+  ...hostGroups.value.map((group: HostGroup) => ({ label: group.name, key: String(group.id) })),
+  { label: '移出所有分组', key: 'none' },
+])
 
 
 // 获取主机列表
@@ -1506,7 +1454,7 @@ const fetchHosts = async () => {
   } catch (error: any) {
     console.error('获取主机列表失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '获取主机列表失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
     hosts.value = []
     pagination.total = 0
     totalHostCount.value = 0
@@ -1653,11 +1601,11 @@ const handleTest = async (record: Host) => {
   try {
     await hostApi.testConnection(record.id)
     record.status = 'online'
-    Message.success(`主机 ${record.name} 连接测试成功`)
+    message.success(`主机 ${record.name} 连接测试成功`)
   } catch (error) {
     record.status = 'offline'
     const errMsg = error?.response?.data?.message || error?.message || '连接测试失败'
-    Message.error(`主机 ${record.name} 连接测试失败：${errMsg}`)
+    message.error(`主机 ${record.name} 连接测试失败：${errMsg}`)
   } finally {
     record.testing = false
   }
@@ -1665,21 +1613,22 @@ const handleTest = async (record: Host) => {
 
 // 删除模板
 const handleDelete = async (record: Host) => {
-  try {
-    await Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
-      onOk: async () => {
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
         await hostApi.deleteHost(record.id)
-        Message.success('主机删除成功')
+        message.success('主机删除成功')
         fetchHosts()
+      } catch (error) {
+        message.error('主机删除失败')
+        console.error('删除主机失败:', error)
       }
-    })
-    
-  } catch (error) {
-    Message.error('主机删除失败')
-    console.error('删除主机失败:', error)
-  }
+    }
+  })
 }
 
 const resetImportState = () => {
@@ -1721,13 +1670,13 @@ const handleImportFileRemove = () => {
 
 const submitImportHosts = async () => {
   if (importFileList.value.length === 0) {
-    Message.warning('请先选择Excel文件')
+    message.warning('请先选择Excel文件')
     return
   }
 
   const rawFile = importFileList.value[0].file
   if (!rawFile) {
-    Message.error('无法读取文件，请重新选择')
+    message.error('无法读取文件，请重新选择')
     return
   }
 
@@ -1742,12 +1691,12 @@ const submitImportHosts = async () => {
   try {
     const result = await hostApi.importHostsFromExcel(formData)
     importResult.value = result
-    Message.success(result?.message || '导入完成')
+    message.success(result?.message || '导入完成')
     fetchHosts()
     fetchGroups()
   } catch (error) {
     console.error('导入主机失败:', error)
-    Message.error('导入主机失败')
+    message.error('导入主机失败')
   } finally {
     importing.value = false
   }
@@ -1764,10 +1713,10 @@ const downloadImportTemplate = async () => {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
-    Message.success('模板下载成功')
+    message.success('模板下载成功')
   } catch (error) {
     console.error('下载模板失败:', error)
-    Message.error('模板下载失败')
+    message.error('模板下载失败')
   }
 }
 
@@ -1860,15 +1809,15 @@ const handleEditGroup = (group: HostGroup) => {
 }
 
 const handleDeleteGroup = (group: HostGroup) => {
-  Modal.confirm({
+  dialog.warning({
     title: '确认删除',
     content: `确定要删除分组"${group.name}"吗？删除后该分组下的主机将移动到未分组状态。`,
-    okText: '确定',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await hostGroupApi.deleteGroup(group.id)
-        Message.success('分组删除成功')
+        message.success('分组删除成功')
         fetchGroups()
         fetchHosts()
         refreshHostFormGroups()
@@ -1883,10 +1832,10 @@ const handleTestGroupConnection = async (group: HostGroup) => {
   let loadingMessage: any
   try {
     // 使用正确的Message.loading API
-    loadingMessage = Message.loading({
-      content: `正在测试分组"${group.name}"下的主机连接...`,
-      duration: 0
-    })
+    loadingMessage = message.loading(
+      `正在测试分组"${group.name}"下的主机连接...`,
+      { duration: 0 }
+    )
 
     // 获取分组下的所有主机
     const groupHosts = hosts.value.filter(host =>
@@ -1894,8 +1843,8 @@ const handleTestGroupConnection = async (group: HostGroup) => {
     )
 
     if (groupHosts.length === 0) {
-      loadingMessage.close()
-      Message.warning(`分组"${group.name}"下没有主机`)
+      loadingMessage.destroy()
+      message.warning(`分组"${group.name}"下没有主机`)
       return
     }
 
@@ -1903,23 +1852,23 @@ const handleTestGroupConnection = async (group: HostGroup) => {
     const hostIds = groupHosts.map(host => host.id)
     await hostApi.batchTestConnection(hostIds)
 
-    loadingMessage.close()
-    Message.success(`分组"${group.name}"连接测试完成`)
+    loadingMessage.destroy()
+    message.success(`分组"${group.name}"连接测试完成`)
     fetchHosts() // 刷新主机状态
   } catch (error: any) {
     console.error('分组连接测试失败:', error)
     const errMsg = error?.response?.data?.message || error?.message || '连接测试失败'
-    Message.error(`分组"${group.name}"连接测试失败：${errMsg}`)
+    message.error(`分组"${group.name}"连接测试失败：${errMsg}`)
   } finally {
     if (loadingMessage) {
-      loadingMessage.close()
+      loadingMessage.destroy()
     }
   }
 }
 
 const handleBatchTest = async () => {
   if (selectedRowKeys.value.length === 0) {
-    Message.warning('请先选择要测试的主机')
+    message.warning('请先选择要测试的主机')
     return
   }
 
@@ -1936,15 +1885,15 @@ const handleBatchTest = async () => {
           host.status = item.result.success ? 'online' : 'offline'
         }
       })
-      Message.success(`批量测试完成：${result.success ?? 0}/${result.total ?? 0} 台主机连接成功`)
+      message.success(`批量测试完成：${result.success ?? 0}/${result.total ?? 0} 台主机连接成功`)
     } else {
       console.error('批量测试连接返回了无效的数据结构:', result)
-      Message.error('批量测试失败：返回数据格式不正确')
+      message.error('批量测试失败：返回数据格式不正确')
     }
   } catch (error) {
     console.error('批量测试连接失败:', error)
     const errMsg = error?.response?.data?.message || error?.message || '批量测试失败'
-    Message.error(errMsg)
+    message.error(errMsg)
   } finally {
     batchTesting.value = false
   }
@@ -1968,17 +1917,17 @@ const copyTextToClipboard = async (text: string, successMessage: string) => {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
-    Message.success(successMessage)
+    message.success(successMessage)
   } catch (error) {
     console.error('复制到剪贴板失败:', error)
-    Message.error('复制失败，请手动复制')
+    message.error('复制失败，请手动复制')
   }
 }
 
 // 批量复制字段
 const handleBatchCopy = async (type: string) => {
   if (selectedRowKeys.value.length === 0) {
-    Message.warning('请先选择主机')
+    message.warning('请先选择主机')
     return
   }
 
@@ -2011,7 +1960,7 @@ const handleBatchCopy = async (type: string) => {
   }
 
   if (!values.length) {
-    Message.warning(`选中的主机没有可用的 ${label}`)
+    message.warning(`选中的主机没有可用的 ${label}`)
     return
   }
 
@@ -2025,15 +1974,15 @@ const handleCloudSync = async (provider: string) => {
   try {
     const result = await hostApi.syncCloudHosts(provider)
     if (result.success) {
-      Message.success(result.message)
+      message.success(result.message)
       // 刷新主机列表
       await fetchHosts()
     } else {
-      Message.error(result.message)
+      message.error(result.message)
     }
   } catch (error) {
     console.error('云同步失败:', error)
-    Message.error('云同步失败')
+    message.error('云同步失败')
   } finally {
     cloudSyncing.value = false
   }
@@ -2073,7 +2022,7 @@ const canDeleteHost = (hostId: number): boolean => {
 
 const handleClickEditHost = (record: Host) => {
   if (!canEditHost(record.id)) {
-    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    message.warning('没有权限执行此操作，请联系管理员开放权限')
     return
   }
   handleEdit(record)
@@ -2081,7 +2030,7 @@ const handleClickEditHost = (record: Host) => {
 
 const handleClickDeleteHost = (record: Host) => {
   if (!canDeleteHost(record.id)) {
-    Message.warning('没有权限执行此操作，请联系管理员开放权限')
+    message.warning('没有权限执行此操作，请联系管理员开放权限')
     return
   }
   handleDelete(record)
@@ -2105,20 +2054,17 @@ const clearSelection = () => {
 
 const handleBatchMoveToGroup = async (groupId: number | null) => {
   if (selectedRowKeys.value.length === 0) {
-    Message.warning('请先选择要移动的主机')
+    message.warning('请先选择要移动的主机')
     return
   }
 
   try {
-    const loadingMessage = Message.loading({
-      content: '正在移动主机...',
-      duration: 0
-    })
+    const loadingMessage = message.loading('正在移动主机...', { duration: 0 })
 
     // 由于响应拦截器返回的是content部分，我们需要直接使用返回的数据
     const result = await hostApi.batchMoveToGroup(selectedRowKeys.value, groupId)
 
-    loadingMessage.close()
+    loadingMessage.destroy()
 
     // 如果没有抛出异常，说明请求成功了
     // 构建成功消息
@@ -2132,19 +2078,19 @@ const handleBatchMoveToGroup = async (groupId: number | null) => {
       successMessage = `成功将 ${movedCount} 台主机移出所有分组`
     }
 
-    Message.success(successMessage)
+    message.success(successMessage)
     clearSelection()
     fetchHosts() // 刷新主机列表
 
   } catch (error: any) {
     console.error('批量移动失败:', error)
-    Message.error(error.message || '主机移动失败')
+    message.error(error.message || '主机移动失败')
   }
 }
 
 const openBatchEdit = () => {
   if (selectedRowKeys.value.length === 0) {
-    Message.warning('请先选择要编辑的主机')
+    message.warning('请先选择要编辑的主机')
     return
   }
   // 将现有 batchEditForm.tags（字符串数组）解析为 KV 结构供编辑器使用
@@ -2184,7 +2130,7 @@ const cancelBatchEdit = () => {
 
 const submitBatchEdit = async () => {
   if (selectedRowKeys.value.length === 0) {
-    Message.warning('请先选择要编辑的主机')
+    message.warning('请先选择要编辑的主机')
     return
   }
 
@@ -2217,20 +2163,20 @@ const submitBatchEdit = async () => {
   })
 
   if (Object.keys(data).length === 0) {
-    Message.warning('请至少填写一个要修改的字段')
+    message.warning('请至少填写一个要修改的字段')
     return
   }
 
   batchEditLoading.value = true
   try {
     const result = await hostApi.batchUpdateHosts(selectedRowKeys.value, data)
-    Message.success(`批量编辑成功，已更新 ${result.updated_count} 台主机`)
+    message.success(`批量编辑成功，已更新 ${result.updated_count} 台主机`)
     batchEditVisible.value = false
     resetBatchEditForm()
     fetchHosts()
   } catch (error) {
     console.error('批量编辑主机失败:', error)
-    Message.error('批量编辑主机失败')
+    message.error('批量编辑主机失败')
   } finally {
     batchEditLoading.value = false
   }
@@ -2240,7 +2186,7 @@ const handleBatchDelete = async () => {
   try {
     // 调用批量删除API
     console.log('批量删除主机:', selectedRowKeys.value)
-    Message.success('批量删除成功')
+    message.success('批量删除成功')
     clearSelection()
     fetchHosts()
   } catch (error) {
@@ -2366,20 +2312,13 @@ watch(
 }
 
 .group-item.active .group-count {
-  background-color: #1890ff;
+  background-color: var(--app-accent);
   color: white;
 }
 
-:deep(.arco-card-body) {
-  padding: 16px;
-}
-
 /* 表格样式优化 */
-:deep(.arco-table) {
-  /* 普通表头背景色 */
-  .arco-table-th {
-    background-color: #fff !important;
-  }
+:deep(.n-data-table-th) {
+  background-color: var(--app-surface);
 }
 
 /* 新增样式 */
@@ -2531,13 +2470,13 @@ watch(
 }
 
 /* 下拉菜单项悬停效果 */
-:deep(.arco-dropdown-option:hover) {
-  background-color: var(--color-fill-2) !important;
+:deep(.n-dropdown-option:hover) {
+  background-color: var(--app-surface-soft);
 }
 
-:deep(.arco-dropdown-option.danger:hover) {
-  background-color: #fef2f2 !important;
-  color: #dc2626 !important;
+:deep(.n-dropdown-option.danger:hover) {
+  background-color: var(--app-danger-soft);
+  color: var(--app-danger);
 }
 
 .mr-1 {
@@ -2578,26 +2517,26 @@ watch(
 }
 
 .resize-handle:hover {
-  background-color: var(--color-border-3);
+  background-color: var(--app-border);
 }
 
 .resize-handle.resizing {
-  background-color: var(--color-primary-light-3);
+  background-color: var(--app-accent-soft);
 }
 
 .resize-line {
   width: 1px;
   height: 100%;
-  background-color: var(--color-border-2);
+  background-color: var(--app-border);
   transition: background-color 0.2s;
 }
 
 .resize-handle:hover .resize-line {
-  background-color: var(--color-primary);
+  background-color: var(--app-accent);
 }
 
 .resize-handle.resizing .resize-line {
-  background-color: var(--color-primary);
+  background-color: var(--app-accent);
 }
 
 .resize-dots {
@@ -2620,16 +2559,16 @@ watch(
 .dot {
   width: 2px;
   height: 2px;
-  background-color: var(--color-text-3);
+  background-color: var(--app-muted);
   border-radius: 50%;
 }
 
 .resize-handle:hover .dot {
-  background-color: var(--color-primary);
+  background-color: var(--app-accent);
 }
 
 .resize-handle.resizing .dot {
-  background-color: var(--color-primary);
+  background-color: var(--app-accent);
 }
 
 .hosts-main {
@@ -2694,28 +2633,23 @@ watch(
 }
 
 /* 多IP搜索框样式 */
-.search-form :deep(.arco-textarea-wrapper) {
+.search-form :deep(.n-input) {
   border-radius: 4px;
   transition: border-color 0.2s;
-}
-
-.search-form :deep(.arco-textarea-wrapper:hover) {
-  border-color: #4080ff;
-}
-
-.search-form :deep(.arco-textarea-wrapper:focus-within) {
-  border-color: #4080ff;
-  box-shadow: 0 0 0 2px rgba(64, 128, 255, 0.1);
-}
-
-.search-form :deep(.arco-textarea) {
   font-size: 13px;
-  line-height: 1.4;
-  resize: vertical;
+}
+
+.search-form :deep(.n-input:hover),
+.search-form :deep(.n-input--focus) {
+  border-color: var(--app-accent);
+}
+
+.search-form :deep(.n-input--focus) {
+  box-shadow: 0 0 0 2px var(--app-accent-soft);
 }
 
 /* 确保表单项布局稳定 */
-.search-form .arco-form-item {
+.search-form :deep(.n-form-item) {
   flex: 1 1 150px;
   min-width: 0;
 }
@@ -2734,14 +2668,14 @@ watch(
   margin-bottom: 0;
 }
 
-.search-row .arco-form-item {
+.search-row :deep(.n-form-item) {
   margin-bottom: 0;
   margin-right: 0;
 }
 
 /* 高级筛选样式 */
 .advanced-filter {
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
   padding: 16px;
   border-radius: 6px;
   margin-top: 12px;
@@ -2749,40 +2683,39 @@ watch(
   overflow: hidden;
 }
 
-.advanced-filter :deep(.arco-form) {
+.advanced-filter :deep(.n-form) {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
 }
 
-.advanced-filter :deep(.arco-form-item) {
+.advanced-filter :deep(.n-form-item) {
   flex: 1 1 150px;
   min-width: 0;
   margin-right: 0;
 }
 
-.hosts-main :deep(.arco-table),
-.hosts-main :deep(.arco-table-container),
-.hosts-main :deep(.arco-table-content) {
+.hosts-main :deep(.n-data-table-wrapper),
+.hosts-main :deep(.n-data-table-base-table) {
   width: 100%;
   max-width: 100%;
 }
 
-.hosts-main :deep(.arco-table-cell) {
+.hosts-main :deep(.n-data-table-td) {
   min-width: 0;
 }
 
-.hosts-main :deep(.arco-table-td-content) {
+.hosts-main :deep(.n-data-table-td) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.advanced-filter :deep(.arco-divider) {
+.advanced-filter :deep(.n-divider) {
   margin: 0 0 16px 0;
 }
 
-.advanced-filter :deep(.arco-form-item) {
+.advanced-filter :deep(.n-form-item) {
   margin-bottom: 12px;
 }
 
@@ -2790,7 +2723,7 @@ watch(
 .advanced-actions {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border-2);
+  border-top: 1px solid var(--app-border);
 }
 
 .advanced-actions-right {
@@ -2801,7 +2734,7 @@ watch(
 .basic-actions {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border-2);
+  border-top: 1px solid var(--app-border);
 }
 
 .basic-actions-right {
@@ -2833,13 +2766,14 @@ watch(
 }
 
 /* IP地址复制按钮样式优化 */
-.ip-display :deep(.arco-typography) {
+.ip-display :deep(.n-text) {
   margin: 0;
   display: inline-flex;
   align-items: center;
 }
 
-.ip-display :deep(.arco-typography-copy) {
+.ip-display :deep(.n-text a),
+.ip-display :deep(.n-text .n-button) {
   margin-left: 4px;
 }
 
@@ -2853,9 +2787,9 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
 }
 
 .import-file-info {
@@ -2866,7 +2800,7 @@ watch(
 
 .import-file-icon {
   font-size: 16px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   margin-right: 8px;
 }
 
@@ -2876,14 +2810,14 @@ watch(
 
 .import-file-name {
   font-size: 14px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   font-weight: 500;
   margin-bottom: 2px;
 }
 
 .import-file-size {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .import-file-actions {
@@ -2892,7 +2826,7 @@ watch(
 }
 
 .import-remove-btn {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   transition: color 0.3s;
 }
 

@@ -19,7 +19,8 @@ describe('flow run detail presentation', () => {
 
   it('does not expose raw node uuids in timeline or topology labels', () => {
     expect(source).toContain('event.nodeName')
-    expect(source).toContain('topologyNodeMeta(node)')
+    expect(source).toContain('const topologyNodeMeta')
+    expect(source).toContain('<FlowRunCanvas')
     expect(source).not.toContain('<span v-if="event.nodeUuid">{{ event.nodeUuid }}</span>')
     expect(source).not.toContain('<em>{{ node.uuid }}</em>')
     expect(source).not.toContain('`${nodeRun.node_name}（${uuid}）`')

@@ -2,6 +2,7 @@ import copy
 import re
 from collections import defaultdict, deque
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -25,8 +26,9 @@ from .validators import get_execution_plan_resource_permission_error, get_file_s
 class FlowRunner:
     """Internal DAG runner for flow templates."""
 
-    VARIABLE_TOKEN_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-    FULL_VARIABLE_TOKEN_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+    # Allow dotted keys so SOPS-like ${_system.executor} resolves.
+    VARIABLE_TOKEN_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.]*)\}")
+    FULL_VARIABLE_TOKEN_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.]*)\}$")
 
     CONTROL_INPUT_KEYS = frozenset(
         {
@@ -48,17 +50,32 @@ class FlowRunner:
             prepared_inputs = cls._prepare_flow_inputs(locked_template, inputs or {})
             secret_keys = flow_secret_variable_keys(locked_template.variables or {})
             public_inputs, encrypted_secret_inputs = split_flow_secret_values(prepared_inputs, secret_keys)
+            started_at = timezone.now()
+            task_name = str(run_name or locked_template.name).strip()[:200]
+            public_inputs.update(
+                cls._system_variable_inputs(
+                    user=user,
+                    task_name=task_name,
+                    started_at=started_at,
+                )
+            )
             flow_run = FlowRun.objects.create(
                 template=locked_template,
-                name=str(run_name or locked_template.name).strip()[:200],
+                name=task_name,
                 status=FlowRun.Status.RUNNING,
                 trigger_type=trigger_type,
                 started_by=user,
                 inputs=public_inputs,
                 encrypted_secret_inputs=encrypted_secret_inputs,
                 definition_snapshot=cls._build_definition_snapshot(locked_template),
-                started_at=timezone.now(),
+                started_at=started_at,
             )
+            public_inputs["_system.task_id"] = str(flow_run.id)
+            base = str(getattr(settings, "FLOW_TASK_PUBLIC_HOST", "") or "").rstrip("/")
+            task_path = f"/flows/runs/{flow_run.id}"
+            public_inputs["_system.task_url"] = f"{base}{task_path}" if base else task_path
+            flow_run.inputs = public_inputs
+            flow_run.save(update_fields=["inputs"])
 
         try:
             return cls._continue_flow(flow_run, user)
@@ -127,6 +144,7 @@ class FlowRunner:
             node_run.error_message = ""
             node_run.finished_at = timezone.now()
             node_run.save(update_fields=["status", "outputs", "error_message", "finished_at"])
+            cls._project_hooked_outputs(flow_run, node_run)
 
             flow_run.status = FlowRun.Status.RUNNING
             flow_run.error_message = ""
@@ -224,6 +242,7 @@ class FlowRunner:
             node_run.error_message = ""
             node_run.finished_at = timezone.now()
             node_run.save(update_fields=["status", "outputs", "error_message", "finished_at"])
+            cls._project_hooked_outputs(flow_run, node_run)
 
             flow_run.status = FlowRun.Status.RUNNING
             flow_run.error_message = ""
@@ -231,6 +250,178 @@ class FlowRunner:
             flow_run.save(update_fields=["status", "error_message", "finished_at"])
 
         return cls._continue_flow(flow_run, user or flow_run.started_by)
+
+    @classmethod
+    def reject_manual_node(
+        cls,
+        flow_run: FlowRun,
+        node_run: FlowNodeRun,
+        user=None,
+        remark="",
+    ) -> FlowRun:
+        """审批拒绝：人工节点置失败并结束当前流程（不再继续下游）。"""
+        with transaction.atomic():
+            flow_run = FlowRun.objects.select_for_update().select_related("started_by").get(pk=flow_run.pk)
+            if flow_run.status in (FlowRun.Status.SUCCESS, FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
+                raise ValueError(f"cannot reject node in {flow_run.status} flow")
+
+            node_run = (
+                FlowNodeRun.objects.select_for_update()
+                .select_related("node")
+                .get(pk=node_run.pk, flow_run=flow_run)
+            )
+            if node_run.node.node_type != FlowNode.NodeType.MANUAL:
+                raise ValueError("only manual nodes can be rejected")
+            if node_run.status != FlowRun.Status.PAUSED:
+                raise ValueError(f"cannot reject {node_run.status} manual node")
+
+            actor = user or flow_run.started_by
+            reason = (remark or "").strip() or "manual node rejected"
+            outputs = dict(node_run.outputs or {})
+            outputs.update(
+                {
+                    "manual": True,
+                    "confirmed": False,
+                    "rejected": True,
+                    "rejected_by": getattr(actor, "username", "") or str(getattr(actor, "id", "")),
+                    "rejected_by_id": getattr(actor, "id", None),
+                    "rejected_at": timezone.now().isoformat(),
+                    "reject_remark": reason,
+                }
+            )
+            node_run.status = FlowRun.Status.FAILED
+            node_run.outputs = outputs
+            node_run.error_message = reason
+            node_run.finished_at = timezone.now()
+            node_run.save(update_fields=["status", "outputs", "error_message", "finished_at"])
+
+            # 并行分支上可能仍有 RUNNING/PAUSED/PENDING 节点：一并取消，避免孤儿任务。
+            now = timezone.now()
+            sibling_active = list(
+                FlowNodeRun.objects.select_for_update()
+                .select_related("node", "execution_record")
+                .filter(
+                    flow_run=flow_run,
+                    status__in=[FlowRun.Status.PENDING, FlowRun.Status.RUNNING, FlowRun.Status.PAUSED],
+                )
+                .exclude(pk=node_run.pk)
+            )
+            for sibling in sibling_active:
+                if sibling.node.node_type == FlowNode.NodeType.SUB_PROCESS:
+                    cls._cancel_child_flow_for_sub_process(sibling, user=actor)
+
+                sibling.status = FlowRun.Status.CANCELLED
+                sibling.error_message = reason
+                sibling.finished_at = now
+                sibling.save(update_fields=["status", "error_message", "finished_at"])
+
+                execution_record = sibling.execution_record
+                if execution_record and execution_record.status in ("pending", "running"):
+                    AgentExecutionService.cancel_task_via_agent(execution_record=execution_record)
+                    execution_record.status = "cancelled"
+                    execution_record.error_message = reason
+                    execution_record.finished_at = now
+                    execution_record.save(update_fields=["status", "error_message", "finished_at"])
+
+            flow_run.mark_finished(FlowRun.Status.FAILED, reason)
+
+        flow_run.refresh_from_db()
+        cls._notify_parent_if_terminal(flow_run)
+        flow_run.refresh_from_db()
+        return flow_run
+
+    @classmethod
+    def force_fail_node(
+        cls,
+        flow_run: FlowRun,
+        node_run: FlowNodeRun,
+        user=None,
+        remark="",
+    ) -> FlowRun:
+        """强制失败：把 RUNNING/PAUSED 非人工节点标失败，再按失败策略继续/暂停/终止。"""
+        with transaction.atomic():
+            flow_run = FlowRun.objects.select_for_update().select_related("started_by").get(pk=flow_run.pk)
+            if flow_run.status in (FlowRun.Status.SUCCESS, FlowRun.Status.FAILED, FlowRun.Status.CANCELLED):
+                raise ValueError(f"cannot force-fail node in {flow_run.status} flow")
+
+            node_run = (
+                FlowNodeRun.objects.select_for_update()
+                .select_related("node", "execution_record")
+                .get(pk=node_run.pk, flow_run=flow_run)
+            )
+            if node_run.node.node_type == FlowNode.NodeType.MANUAL:
+                raise ValueError("use reject_manual_node for manual nodes")
+            if node_run.status not in (FlowRun.Status.RUNNING, FlowRun.Status.PAUSED):
+                raise ValueError(f"cannot force-fail {node_run.status} node")
+
+            actor = user or flow_run.started_by
+            reason = (remark or "").strip() or "node force failed"
+            now = timezone.now()
+
+            if node_run.node.node_type == FlowNode.NodeType.SUB_PROCESS:
+                cls._cancel_child_flow_for_sub_process(node_run, user=actor)
+
+            execution_record = node_run.execution_record
+            if execution_record and execution_record.status in ("pending", "running"):
+                AgentExecutionService.cancel_task_via_agent(execution_record=execution_record)
+                execution_record.status = "failed"
+                execution_record.error_message = reason
+                execution_record.finished_at = now
+                execution_record.save(update_fields=["status", "error_message", "finished_at"])
+
+            outputs = dict(node_run.outputs or {})
+            outputs.update(
+                {
+                    "force_failed": True,
+                    "force_failed_by": getattr(actor, "username", "") or str(getattr(actor, "id", "")),
+                    "force_failed_by_id": getattr(actor, "id", None),
+                    "force_failed_at": now.isoformat(),
+                    "force_fail_remark": reason,
+                }
+            )
+            node_run.status = FlowRun.Status.FAILED
+            node_run.outputs = outputs
+            node_run.error_message = reason
+            node_run.finished_at = now
+            node_run.save(update_fields=["status", "outputs", "error_message", "finished_at"])
+
+            policy = cls._apply_failed_node_policy(flow_run, node_run)
+
+        flow_run.refresh_from_db()
+        node_run.refresh_from_db()
+        if policy == "continue":
+            return cls._continue_flow(flow_run, user or flow_run.started_by)
+        if policy == "stop":
+            # 终止时清理其它活跃分支，避免孤儿执行。
+            with transaction.atomic():
+                flow_run = FlowRun.objects.select_for_update().get(pk=flow_run.pk)
+                now = timezone.now()
+                sibling_active = list(
+                    FlowNodeRun.objects.select_for_update()
+                    .select_related("node", "execution_record")
+                    .filter(
+                        flow_run=flow_run,
+                        status__in=[FlowRun.Status.PENDING, FlowRun.Status.RUNNING, FlowRun.Status.PAUSED],
+                    )
+                    .exclude(pk=node_run.pk)
+                )
+                for sibling in sibling_active:
+                    if sibling.node.node_type == FlowNode.NodeType.SUB_PROCESS:
+                        cls._cancel_child_flow_for_sub_process(sibling, user=user or flow_run.started_by)
+                    sibling.status = FlowRun.Status.CANCELLED
+                    sibling.error_message = reason
+                    sibling.finished_at = now
+                    sibling.save(update_fields=["status", "error_message", "finished_at"])
+                    execution_record = sibling.execution_record
+                    if execution_record and execution_record.status in ("pending", "running"):
+                        AgentExecutionService.cancel_task_via_agent(execution_record=execution_record)
+                        execution_record.status = "cancelled"
+                        execution_record.error_message = reason
+                        execution_record.finished_at = now
+                        execution_record.save(update_fields=["status", "error_message", "finished_at"])
+            cls._notify_parent_if_terminal(flow_run)
+        flow_run.refresh_from_db()
+        return flow_run
 
     @classmethod
     def cancel_flow(cls, flow_run: FlowRun, user=None, notify_parent=True) -> FlowRun:
@@ -326,6 +517,10 @@ class FlowRunner:
                     config=cls._node_config_for_run(node, runtime_inputs),
                 )
                 node_runs_by_node_id[node.id] = node_run
+                if node_run.status == FlowRun.Status.SUCCESS:
+                    cls._project_hooked_outputs(flow_run, node_run)
+                    flow_run.refresh_from_db()
+                    runtime_inputs = cls._runtime_inputs(flow_run)
 
             if node_run.status == FlowRun.Status.FAILED:
                 if cls._apply_failed_node_policy(flow_run, node_run) == "continue":
@@ -545,6 +740,41 @@ class FlowRunner:
     def _business_inputs(cls, inputs):
         return {key: value for key, value in (inputs or {}).items() if key not in cls.CONTROL_INPUT_KEYS}
 
+    @staticmethod
+    def _system_variable_inputs(*, user, task_name: str, started_at, task_id: str = "") -> dict:
+        """Inject BlueKing SOPS TaskContext.flat_details keys (same names)."""
+        from django.utils import translation
+
+        operator = getattr(user, "username", "") or str(getattr(user, "id", ""))
+        # No executor-proxy yet: agent falls back to the click-start operator.
+        executor = operator
+        when = started_at or timezone.now()
+        local_when = timezone.localtime(when) if timezone.is_aware(when) else when
+        task_start_time = local_when.strftime("%Y-%m-%d %H:%M:%S")
+        base = str(getattr(settings, "FLOW_TASK_PUBLIC_HOST", "") or "").rstrip("/")
+        task_path = f"/flows/runs/{task_id}" if task_id else "/flows/runs/"
+        task_url = f"{base}{task_path}" if base else task_path
+        return {
+            "_system.task_url": task_url,
+            "_system.task_start_time": task_start_time,
+            "_system.language": translation.get_language() or "zh-hans",
+            "_system.bk_biz_id": "",
+            "_system.bk_biz_name": "",
+            "_system.operator": operator,
+            "_system.executor": executor,
+            "_system.task_id": str(task_id or ""),
+            "_system.task_name": task_name,
+        }
+
+    @staticmethod
+    def _emit_notify(flow_run: FlowRun, event: str) -> None:
+        try:
+            from .notify import notify_flow_run
+
+            notify_flow_run(flow_run, event)
+        except Exception:  # pragma: no cover - notify must not break runner
+            pass
+
     @classmethod
     def _runtime_inputs(cls, flow_run: FlowRun):
         runtime_inputs = dict(flow_run.inputs or {})
@@ -640,6 +870,14 @@ class FlowRunner:
             if str(value).lower() in ("false", "0", "no", "n"):
                 return False
             raise ValueError(f"flow variable {key} must be a boolean")
+        if value_type in ("select", "enum"):
+            options = definition.get("options") or []
+            if isinstance(options, str):
+                options = [item.strip() for item in options.splitlines() if item.strip()]
+            option_values = [str(item) for item in options]
+            if option_values and str(value) not in option_values:
+                raise ValueError(f"flow variable {key} must be one of: {', '.join(option_values)}")
+            return str(value)
         return value
 
     @staticmethod
@@ -687,6 +925,7 @@ class FlowRunner:
             flow_run.error_message = node_run.error_message
             flow_run.finished_at = None
             flow_run.save(update_fields=["status", "error_message", "finished_at"])
+            cls._emit_notify(flow_run, "paused")
             return "pause"
 
         flow_run.mark_finished(FlowRun.Status.FAILED, node_run.error_message)
@@ -854,14 +1093,20 @@ class FlowRunner:
         node_run.outputs = outputs
 
         if child_flow_run.status == FlowRun.Status.SUCCESS:
+            outputs["success"] = True
+            node_run.outputs = outputs
             node_run.status = FlowRun.Status.SUCCESS
             node_run.error_message = ""
             node_run.finished_at = timezone.now()
         elif child_flow_run.status == FlowRun.Status.CANCELLED:
+            outputs["success"] = False
+            node_run.outputs = outputs
             node_run.status = FlowRun.Status.CANCELLED
             node_run.error_message = child_flow_run.error_message or "sub_process child flow cancelled"
             node_run.finished_at = timezone.now()
         elif child_flow_run.status == FlowRun.Status.FAILED:
+            outputs["success"] = False
+            node_run.outputs = outputs
             node_run.status = FlowRun.Status.FAILED
             node_run.error_message = child_flow_run.error_message or "sub_process child flow failed"
             node_run.finished_at = timezone.now()
@@ -920,6 +1165,8 @@ class FlowRunner:
             parent_node_run.refresh_from_db()
 
             if parent_node_run.status == FlowRun.Status.SUCCESS:
+                cls._project_hooked_outputs(parent_flow_run, parent_node_run)
+                parent_flow_run.refresh_from_db()
                 parent_flow_run.status = FlowRun.Status.RUNNING
                 parent_flow_run.error_message = ""
                 parent_flow_run.finished_at = None
@@ -1034,9 +1281,16 @@ class FlowRunner:
         if operator in ("not_empty", "is_not_empty"):
             return actual not in (None, "", [], {})
         if operator in ("eq", "equals", "=="):
-            return actual == expected
+            if actual == expected:
+                return True
+            # Drawer values are strings; coerce numeric/boolean loosely.
+            return str(actual) == str(expected) if actual is not None and expected is not None else False
         if operator in ("ne", "not_equals", "!="):
-            return actual != expected
+            if actual == expected:
+                return False
+            if actual is None or expected is None:
+                return actual != expected
+            return str(actual) != str(expected)
         if operator == "contains":
             return cls._contains(actual, expected)
         if operator == "not_contains":
@@ -1051,8 +1305,9 @@ class FlowRunner:
             return None
 
         path = str(variable).strip()
+        runtime_inputs = cls._runtime_inputs(flow_run)
         if path.startswith("inputs."):
-            return cls._get_path(cls._business_inputs(cls._runtime_inputs(flow_run)), path.removeprefix("inputs."))
+            return cls._get_path(cls._business_inputs(runtime_inputs), path.removeprefix("inputs."))
         if path.startswith("outputs."):
             parts = path.split(".", 2)
             if len(parts) < 3:
@@ -1061,12 +1316,21 @@ class FlowRunner:
             if not node_run:
                 return None
             return cls._get_path(node_run.outputs or {}, parts[2])
-        return cls._get_path(cls._business_inputs(cls._runtime_inputs(flow_run)), path)
+        # Prefer exact key first so flat names like `_system.operator` resolve.
+        if path in runtime_inputs:
+            return runtime_inputs.get(path)
+        business = cls._business_inputs(runtime_inputs)
+        if path in business:
+            return business.get(path)
+        return cls._get_path(business, path)
 
     @staticmethod
     def _get_path(data, path):
         current = data or {}
-        for part in str(path).split("."):
+        raw = str(path)
+        if isinstance(current, dict) and raw in current:
+            return current.get(raw)
+        for part in raw.split("."):
             if isinstance(current, dict):
                 current = current.get(part)
             elif isinstance(current, list) and part.isdigit():
@@ -1075,6 +1339,37 @@ class FlowRunner:
             else:
                 return None
         return current
+
+    @classmethod
+    def _project_hooked_outputs(cls, flow_run: FlowRun, node_run: FlowNodeRun) -> None:
+        """Copy hooked node outputs into run inputs so ${KEY} works for component_outputs vars."""
+        if node_run.status != FlowRun.Status.SUCCESS:
+            return
+        snapshot = flow_run.definition_snapshot or {}
+        variables = snapshot.get("variables") or (flow_run.template.variables if flow_run.template_id else {}) or {}
+        if not isinstance(variables, dict):
+            return
+        node_uuid = node_run.node.uuid
+        outputs = node_run.outputs or {}
+        patched = {}
+        for key, definition in variables.items():
+            if not isinstance(definition, dict):
+                continue
+            if definition.get("source_type") != "component_outputs":
+                continue
+            source_info = definition.get("source_info") or {}
+            fields = source_info.get(node_uuid) or []
+            if not isinstance(fields, list) or not fields:
+                continue
+            field = fields[0]
+            if field in outputs:
+                patched[key] = copy.deepcopy(outputs.get(field))
+        if not patched:
+            return
+        inputs = dict(flow_run.inputs or {})
+        inputs.update(patched)
+        flow_run.inputs = inputs
+        flow_run.save(update_fields=["inputs"])
 
     @staticmethod
     def _contains(actual, expected):
@@ -1181,6 +1476,7 @@ class FlowRunner:
         success = bool(result.get("success")) and result.get("failed_count", 0) == 0
         node_run.status = FlowRun.Status.SUCCESS if success else FlowRun.Status.FAILED
         node_run.outputs = {
+            "success": success,
             "success_count": result.get("success_count", 0),
             "failed_count": result.get("failed_count", 0),
             "results": result.get("results", []),
@@ -1285,6 +1581,8 @@ class FlowRunner:
                 errors.append(result.get("error", "file transfer failed"))
 
         success = aggregate["success_count"] > 0 and aggregate["failed_count"] == 0 and not errors
+        aggregate["success"] = success
+        aggregate["transferred_count"] = aggregate["success_count"]
         node_run.status = FlowRun.Status.SUCCESS if success else FlowRun.Status.FAILED
         node_run.outputs = aggregate
         node_run.error_message = "" if success else "; ".join(errors) or "file_transfer node failed"

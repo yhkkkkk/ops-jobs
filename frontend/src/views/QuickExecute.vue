@@ -2,79 +2,85 @@
   <div class="quick-execute">
     <div class="page-header">
       <h2>快速执行</h2>
-      <a-space>
-        <a-button @click="handleLoadTemplate" type="outline" v-if="activeTab === 'script'">
+      <n-space>
+        <n-button @click="handleLoadTemplate" secondary v-if="activeTab === 'script'">
           <template #icon>
-            <icon-file />
+            <FileText />
           </template>
           加载模板
-        </a-button>
-        <a-button @click="handleClear">
+        </n-button>
+        <n-button @click="handleClear">
           <template #icon>
-            <icon-refresh />
+            <RefreshCw />
           </template>
           清空
-        </a-button>
-      </a-space>
+        </n-button>
+      </n-space>
     </div>
 
     <!-- 功能标签页 -->
-    <a-tabs v-model:active-key="activeTab" class="mb-4">
-      <a-tab-pane key="script" title="脚本执行">
+    <n-tabs v-model:active-key="activeTab" class="mb-4">
+      <n-tab-pane key="script" title="脚本执行">
         <template #title>
-          <icon-code />
+          <Code2 />
           脚本执行
         </template>
-      </a-tab-pane>
-      <a-tab-pane key="file" title="文件传输">
+      </n-tab-pane>
+      <n-tab-pane key="file" title="文件传输">
         <template #title>
-          <icon-folder />
+          <Folder />
           文件传输
         </template>
-      </a-tab-pane>
-    </a-tabs>
+      </n-tab-pane>
+    </n-tabs>
 
-    <a-row :gutter="16" v-if="activeTab === 'script'">
+    <div class="form-grid-row" v-if="activeTab === 'script'">
       <!-- 左侧：主机选择 -->
-      <a-col :span="8">
-        <a-card class="mb-4">
+      <div class="form-grid-col" style="grid-column: span 8">
+        <n-card class="mb-4">
           <template #title>
           <div class="card-title-full">选择目标主机</div>
           </template>
           <template #extra>
-            <a-space>
-              <a-button type="primary" @click="showHostSelector = true">
+            <n-space>
+              <n-button type="primary" @click="showHostSelector = true">
                 <template #icon>
-                  <icon-computer />
+                  <Monitor />
                 </template>
                 选择主机
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </template>
 
           <!-- 选择摘要 -->
           <div class="host-selection-summary">
             <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)" class="empty-selection">
               <div class="empty-icon">
-                <icon-computer />
+                <Monitor />
               </div>
               <div class="empty-text">{{ selectionType === 'dynamic' ? '请选择动态分组' : '请选择执行主机' }}</div>
-              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
+              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击下方按钮选择目标主机或主机分组' }}</div>
+              <n-button type="primary" class="empty-select-btn" @click="showHostSelector = true">
+                <template #icon>
+                  <Monitor />
+                </template>
+                选择主机
+              </n-button>
             </div>
             
             <div v-else class="selection-content">
               <!-- 动态选择模式：显示分组信息 -->
               <div v-if="selectionType === 'dynamic'" class="selection-section">
                 <div class="section-title">
-                  <icon-computer />
+                  <Monitor />
                   动态选择分组 ({{ selectedGroups.length }})
                   <div class="section-actions">
-                    <a-button type="text" size="mini" @click="clearAllSelections">
+                    <n-button text size="tiny" @click="clearAllSelections">
                       <template #icon>
-                        <icon-close />
+                        <X />
                       </template>
                       清空
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
                 <div class="host-group-section">
@@ -90,35 +96,35 @@
                         <div class="host-meta">
                           <!-- 分组内主机统计 -->
                           <div class="group-stats">
-                            <a-tag size="small" color="blue">
+                            <n-tag size="small" color="blue">
                               共 {{ getGroupHostCount(groupId) }} 台
-                            </a-tag>
-                            <a-tag size="small" color="green">
+                            </n-tag>
+                            <n-tag size="small" color="green">
                               在线 {{ getGroupOnlineCount(groupId) }}
-                            </a-tag>
-                            <a-tag size="small" color="red">
+                            </n-tag>
+                            <n-tag size="small" color="red">
                               离线 {{ getGroupOfflineCount(groupId) }}
-                            </a-tag>
-                            <a-tag 
+                            </n-tag>
+                            <n-tag 
                               v-if="getGroupAgentOnlineCount(groupId) > 0" 
                               size="small" 
                               color="purple"
                             >
                               Agent {{ getGroupAgentOnlineCount(groupId) }}
-                            </a-tag>
+                            </n-tag>
                           </div>
                         </div>
                       </div>
-                      <a-button
-                        type="text"
-                        size="mini"
+                      <n-button
+                        text
+                        size="tiny"
                         @click.stop="removeGroup(groupId)"
                         class="remove-host-btn"
                       >
                         <template #icon>
-                          <icon-close />
+                          <X />
                         </template>
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
                 </div>
@@ -127,21 +133,21 @@
               <!-- 静态选择模式：显示所有目标主机 -->
               <div v-else class="selection-section">
                 <div class="section-title">
-                  <icon-computer />
+                  <Monitor />
                   目标主机 ({{ allTargetHosts.length }})
                   <div class="section-actions">
-                    <a-button type="text" size="mini" @click="clearAllSelections">
+                    <n-button text size="tiny" @click="clearAllSelections">
                       <template #icon>
-                        <icon-close />
+                        <X />
                       </template>
                       清空
-                    </a-button>
-                    <a-button type="text" size="mini" @click="removeOfflineHosts">
+                    </n-button>
+                    <n-button text size="tiny" @click="removeOfflineHosts">
                       <template #icon>
-                        <icon-exclamation-circle />
+                        <CircleAlert />
                       </template>
                       清除异常
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
 
@@ -178,122 +184,110 @@
                         </div>
                         <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
                       </div>
-                      <a-button
-                        type="text"
-                        size="mini"
+                      <n-button
+                        text
+                        size="tiny"
                         @click.stop="removeHost(host.id)"
                         class="remove-host-btn"
                       >
                         <template #icon>
-                          <icon-close />
+                          <X />
                         </template>
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </a-card>
+        </n-card>
 
         <!-- 执行参数 -->
-        <a-card title="执行参数">
-          <a-form layout="vertical">
-          <a-form-item label="脚本类型">
-            <a-select v-model="scriptType" @change="handleScriptTypeChange">
-              <a-option value="shell">Shell</a-option>
-              <a-option value="python">Python</a-option>
-              <a-option value="powershell">PowerShell</a-option>
-              <a-option value="perl">Perl</a-option>
-              <a-option value="javascript">JavaScript</a-option>
-              <a-option value="go">Go</a-option>
-            </a-select>
-          </a-form-item>
+        <n-card title="执行参数">
+          <n-form layout="vertical">
+          <n-form-item label="脚本类型">
+            <n-select v-model:value="scriptType" @update:value="handleScriptTypeChange" :options="[{ label: 'Shell', value: 'shell' }, { label: 'Python', value: 'python' }, { label: 'PowerShell', value: 'powershell' }, { label: 'Perl', value: 'perl' }, { label: 'JavaScript', value: 'javascript' }, { label: 'Go', value: 'go' }]" />
+          </n-form-item>
 
-            <a-form-item label="超时时间(秒)">
-              <a-input-number
-                v-model="timeout"
+            <n-form-item label="超时时间(秒)">
+              <n-input-number
+                v-model:value="timeout"
                 :min="10"
                 :max="3600"
                 style="width: 100%"
-              />
-            </a-form-item>
+               />
+            </n-form-item>
 
-            <a-form-item label="执行方式">
-              <a-radio-group v-model="executionMode">
-                <a-radio value="parallel">并行执行</a-radio>
-                <a-radio value="serial">串行执行</a-radio>
-                <a-radio value="rolling">滚动执行</a-radio>
-              </a-radio-group>
-            </a-form-item>
+            <n-form-item label="执行方式">
+              <n-radio-group v-model:value="executionMode">
+                <n-radio value="parallel">并行执行</n-radio>
+                <n-radio value="serial">串行执行</n-radio>
+                <n-radio value="rolling">滚动执行</n-radio>
+              </n-radio-group>
+            </n-form-item>
 
             <!-- 滚动执行配置 -->
             <div v-if="executionMode === 'rolling'" class="rolling-config">
-              <a-form-item label="滚动策略">
-                <a-select v-model="rollingStrategy" style="width: 100%">
-                  <a-option value="fail_pause">执行失败就暂停</a-option>
-                  <a-option value="ignore_error">忽略错误继续执行</a-option>
-                </a-select>
-              </a-form-item>
+              <n-form-item label="滚动策略">
+                <n-select v-model:value="rollingStrategy" style="width: 100%" :options="[{ label: '执行失败就暂停', value: 'fail_pause' }, { label: '忽略错误继续执行', value: 'ignore_error' }]" />
+              </n-form-item>
 
-              <a-form-item label="批次大小(%)">
-                <a-input-number
-                  v-model="rollingBatchSize"
+              <n-form-item label="批次大小(%)">
+                <n-input-number
+                  v-model:value="rollingBatchSize"
                   :min="1"
                   :max="100"
                   style="width: 100%"
                   placeholder="每批次执行的主机百分比"
-                />
+                 />
                 <template #help>
                   <div style="font-size: 12px; color: #666;">
                     按主机总数的百分比执行，当前将执行 {{ Math.ceil(allTargetHosts.length * rollingBatchSize / 100) }} 台主机/批次
                   </div>
                 </template>
-              </a-form-item>
+              </n-form-item>
 
-              <a-form-item label="批次间延迟(秒)">
-                <a-input-number
-                  v-model="rollingBatchDelay"
+              <n-form-item label="批次间延迟(秒)">
+                <n-input-number
+                  v-model:value="rollingBatchDelay"
                   :min="0"
                   :max="300"
                   style="width: 100%"
                   placeholder="批次间的等待时间"
-                />
-              </a-form-item>
+                 />
+              </n-form-item>
             </div>
 
-            <a-form-item label="执行账号">
-              <a-select
-                v-model="selectedAccountId"
-                placeholder="选择服务器账号（可选）"
-                allow-clear
-                :loading="accountLoading"
-              >
-                <a-option
-                  v-for="account in serverAccounts"
-                  :key="account.id"
-                  :value="account.id"
-                >
-                  {{ account.name }} ({{ account.username }})
-                </a-option>
-              </a-select>
-              <div class="form-tip">
-                <icon-info-circle />
-                不选择时将使用主机配置的默认用户
+            <n-form-item label="执行账号">
+              <div class="form-item-stack">
+                <n-select
+                  v-model:value="selectedAccountId"
+                  placeholder="选择服务器账号（可选）"
+                  clearable
+                  :loading="accountLoading"
+                  :options="(serverAccounts || []).map((account: any) => ({
+                    label: `${account.name} (${account.username})`,
+                    value: account.id,
+                  }))"
+                />
+                <div class="form-tip">
+                  <Info :size="14" />
+                  不选择时将使用主机配置的默认用户
+                </div>
               </div>
-            </a-form-item>
+            </n-form-item>
 
 
 
             <!-- 位置参数 -->
-            <a-form-item label="位置参数">
+            <n-form-item label="位置参数">
               <div class="parameter-section">
                 <!-- 参数输入模式切换 -->
                 <div class="parameter-mode-selector">
-                  <a-radio-group v-model="scriptParameterInputMode" @change="handleScriptParameterModeChange">
-                    <a-radio value="individual">逐个输入</a-radio>
-                    <a-radio value="bulk">批量输入</a-radio>
-                  </a-radio-group>
+                  <n-radio-group v-model:value="scriptParameterInputMode" @update:value="handleScriptParameterModeChange">
+                    <n-radio value="individual">逐个输入</n-radio>
+                    <n-radio value="bulk">批量输入</n-radio>
+                  </n-radio-group>
                 </div>
 
                 <!-- 逐个输入模式 -->
@@ -306,33 +300,33 @@
                     >
                       <div class="parameter-item-row">
                         <span class="parameter-index">${{ index + 1 }}</span>
-                        <a-input
-                          v-model="positionalArgs[index]"
+                        <n-input
+                          v-model:value="positionalArgs[index]"
                           :placeholder="`参数 ${index + 1}`"
                           class="parameter-input"
-                        />
-                        <a-button
-                          type="text"
+                         />
+                        <n-button
+                          text
                           status="danger"
                           @click="removePositionalArg(index)"
                           class="remove-btn"
                         >
                           <template #icon>
-                            <icon-delete />
+                            <Trash2 />
                           </template>
-                        </a-button>
+                        </n-button>
                       </div>
                     </div>
-                    <a-button
+                    <n-button
                       type="dashed"
                       @click="addPositionalArg"
                       style="width: 100%; margin-top: 8px"
                     >
                       <template #icon>
-                        <icon-plus />
+                        <Plus />
                       </template>
                       添加位置参数
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
 
@@ -341,12 +335,12 @@
                   <div class="parameter-header">
                     <span>位置参数（支持空格分隔或引号包含空格参数）</span>
                   </div>
-                  <a-textarea
-                    v-model="scriptBulkParameters"
+                  <n-input type="textarea"
+                    v-model:value="scriptBulkParameters"
                     placeholder="例如：param1 param2 'param with spaces' --flag=value"
                     :rows="3"
                     @input="handleScriptBulkParametersChange"
-                  />
+                   />
                   <div class="bulk-parameter-preview" v-if="scriptBulkParameters.trim()">
                     <div class="preview-header">参数预览：</div>
                     <div class="preview-list">
@@ -361,37 +355,33 @@
                   </div>
                 </div>
               </div>
-            </a-form-item>
+            </n-form-item>
             <div class="form-tip parameter-tip">
-              <icon-info-circle />
+              <Info />
               位置参数将按顺序传递给脚本，在脚本中可以使用 $1, $2, $3... 访问
             </div>
 
-          </a-form>
-        </a-card>
-      </a-col>
+          </n-form>
+        </n-card>
+      </div>
 
       <!-- 右侧：脚本编辑器 -->
-      <a-col :span="16">
-        <a-card title="脚本内容">
+      <div class="form-grid-col" style="grid-column: span 16">
+        <n-card title="脚本内容">
           <template #extra>
-            <a-space>
-              <a-select
-                v-model="editorTheme"
+            <n-space>
+              <n-select
+                v-model:value="editorTheme"
                 size="small"
                 style="width: 120px"
-                @change="handleThemeChange"
-              >
-                <a-option value="vs-dark">深色主题</a-option>
-                <a-option value="vs">浅色主题</a-option>
-              </a-select>
-              <a-button size="small" @click="formatCode">
+                @update:value="handleThemeChange" :options="[{ label: '深色主题', value: 'vs-dark' }, { label: '浅色主题', value: 'vs' }]" />
+              <n-button size="small" @click="formatCode">
                 <template #icon>
-                  <icon-code />
+                  <Code2 />
                 </template>
                 格式化
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </template>
 
           <script-editor-with-validation
@@ -407,7 +397,7 @@
 
           <!-- 执行按钮 -->
           <div class="mt-4 text-center">
-            <a-button
+            <n-button
               type="primary"
               size="large"
               @click="handleExecute"
@@ -415,57 +405,63 @@
               :disabled="!canExecute"
             >
               <template #icon>
-                <icon-thunderbolt />
+                <Zap />
               </template>
               {{ hasValidationErrors ? '脚本有错误' : `立即执行 (${totalTargetCount} 个目标)` }}
-            </a-button>
+            </n-button>
           </div>
-        </a-card>
-      </a-col>
-    </a-row>
+        </n-card>
+      </div>
+    </div>
 
     <!-- 文件传输界面 -->
-    <a-row :gutter="16" v-if="activeTab === 'file'">
+    <div class="form-grid-row" v-if="activeTab === 'file'">
       <!-- 左侧：主机选择（完全复用脚本执行的组件） -->
-      <a-col :span="8">
-        <a-card class="mb-4">
+      <div class="form-grid-col" style="grid-column: span 8">
+        <n-card class="mb-4">
           <template #title>
             <div class="card-title-full">选择目标主机</div>
           </template>
           <template #extra>
-            <a-space>
-              <a-button type="primary" @click="showHostSelector = true">
+            <n-space>
+              <n-button type="primary" @click="showHostSelector = true">
                 <template #icon>
-                  <icon-computer />
+                  <Monitor />
                 </template>
                 选择主机
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </template>
 
           <!-- 选择摘要 -->
           <div class="host-selection-summary">
             <div v-if="(selectionType === 'static' && selectedGroups.length === 0 && selectedHosts.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)" class="empty-selection">
               <div class="empty-icon">
-                <icon-computer />
+                <Monitor />
               </div>
               <div class="empty-text">{{ selectionType === 'dynamic' ? '请选择动态分组' : '请选择目标主机' }}</div>
-              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击上方"选择主机"按钮选择目标主机或主机分组' }}</div>
+              <div class="empty-desc">{{ selectionType === 'dynamic' ? '在主机选择器中切换到"动态选择"标签页选择分组，执行时会动态获取分组内的所有主机' : '点击下方按钮选择目标主机或主机分组' }}</div>
+              <n-button type="primary" class="empty-select-btn" @click="showHostSelector = true">
+                <template #icon>
+                  <Monitor />
+                </template>
+                选择主机
+              </n-button>
             </div>
 
             <div v-else class="selection-content">
               <!-- 动态选择模式：显示分组信息 -->
               <div v-if="selectionType === 'dynamic'" class="selection-section">
                 <div class="section-title">
-                  <icon-computer />
+                  <Monitor />
                   动态选择分组 ({{ selectedGroups.length }})
                   <div class="section-actions">
-                    <a-button type="text" size="mini" @click="clearAllSelections">
+                    <n-button text size="tiny" @click="clearAllSelections">
                       <template #icon>
-                        <icon-close />
+                        <X />
                       </template>
                       清空
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
                 <div class="host-group-section">
@@ -481,35 +477,35 @@
                         <div class="host-meta">
                           <!-- 分组内主机统计 -->
                           <div class="group-stats">
-                            <a-tag size="small" color="blue">
+                            <n-tag size="small" color="blue">
                               共 {{ getGroupHostCount(groupId) }} 台
-                            </a-tag>
-                            <a-tag size="small" color="green">
+                            </n-tag>
+                            <n-tag size="small" color="green">
                               在线 {{ getGroupOnlineCount(groupId) }}
-                            </a-tag>
-                            <a-tag size="small" color="red">
+                            </n-tag>
+                            <n-tag size="small" color="red">
                               离线 {{ getGroupOfflineCount(groupId) }}
-                            </a-tag>
-                            <a-tag 
+                            </n-tag>
+                            <n-tag 
                               v-if="getGroupAgentOnlineCount(groupId) > 0" 
                               size="small" 
                               color="purple"
                             >
                               Agent {{ getGroupAgentOnlineCount(groupId) }}
-                            </a-tag>
+                            </n-tag>
                           </div>
                         </div>
                       </div>
-                      <a-button
-                        type="text"
-                        size="mini"
+                      <n-button
+                        text
+                        size="tiny"
                         @click.stop="removeGroup(groupId)"
                         class="remove-host-btn"
                       >
                         <template #icon>
-                          <icon-close />
+                          <X />
                         </template>
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
                 </div>
@@ -518,21 +514,21 @@
               <!-- 静态选择模式：显示所有目标主机 -->
               <div v-else class="selection-section">
                 <div class="section-title">
-                  <icon-computer />
+                  <Monitor />
                   目标主机 ({{ allTargetHosts.length }})
                   <div class="section-actions">
-                    <a-button type="text" size="mini" @click="clearAllSelections">
+                    <n-button text size="tiny" @click="clearAllSelections">
                       <template #icon>
-                        <icon-close />
+                        <X />
                       </template>
                       清空
-                    </a-button>
-                    <a-button type="text" size="mini" @click="removeOfflineHosts">
+                    </n-button>
+                    <n-button text size="tiny" @click="removeOfflineHosts">
                       <template #icon>
-                        <icon-exclamation-circle />
+                        <CircleAlert />
                       </template>
                       清除异常
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
 
@@ -569,168 +565,154 @@
                         </div>
                         <div class="host-source">来自: {{ getHostGroupNames(host.id) }}</div>
                       </div>
-                      <a-button
-                        type="text"
-                        size="mini"
+                      <n-button
+                        text
+                        size="tiny"
                         @click.stop="removeDirectHost(host.id)"
                         class="remove-host-btn"
                       >
                         <template #icon>
-                          <icon-close />
+                          <X />
                         </template>
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </a-card>
-      </a-col>
+        </n-card>
+      </div>
 
       <!-- 右侧：文件传输配置 -->
-      <a-col :span="16">
-        <a-card title="文件传输配置" class="mb-4">
-          <a-form layout="vertical">
-            <a-row :gutter="16">
-              <a-col :span="24">
-                <a-form-item label="文件来源">
+      <div class="form-grid-col" style="grid-column: span 16">
+        <n-card title="文件传输配置" class="mb-4">
+          <n-form layout="vertical">
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 24">
+                <n-form-item label="文件来源">
                   <FileSourcesPanel :artifacts="fileArtifacts" @update:artifacts="(v)=>{ fileArtifacts = v }" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="18">
-                <a-form-item label="远程路径">
-                  <a-input
-                    v-model="remotePath"
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 18">
+                <n-form-item label="远程路径">
+                  <n-input
+                    v-model:value="remotePath"
                     placeholder="目标路径，例如：/opt/app/ 或 /var/www/[hostname]/app.tar.gz"
-                    allow-clear
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
+                    clearable
+                   />
+                </n-form-item>
+              </div>
+            </div>
 
-            <a-form-item v-if="remotePath && hasVariables(remotePath)" label="变量预览">
+            <n-form-item v-if="remotePath && hasVariables(remotePath)" label="变量预览">
               <div class="path-preview">
                 <div class="path-preview-header">
-                  <icon-eye />
+                  <Eye />
                   <span>路径预览（实际执行时会替换变量）</span>
                 </div>
                 <code class="path-preview-content">{{ previewPath(remotePath) }}</code>
               </div>
-            </a-form-item>
+            </n-form-item>
 
-            <a-form-item label="覆盖策略">
-              <a-select v-model="overwritePolicy" style="width: 200px">
-                <a-option value="overwrite">强制覆盖</a-option>
-                <a-option value="skip">存在跳过</a-option>
-                <a-option value="backup">备份后覆盖</a-option>
-                <a-option value="fail">存在则失败</a-option>
-              </a-select>
-            </a-form-item>
+            <n-form-item label="覆盖策略">
+              <n-select v-model:value="overwritePolicy" style="width: 200px" :options="[{ label: '强制覆盖', value: 'overwrite' }, { label: '存在跳过', value: 'skip' }, { label: '备份后覆盖', value: 'backup' }, { label: '存在则失败', value: 'fail' }]" />
+            </n-form-item>
 
             <!-- 传输配置 -->
-            <a-row :gutter="16">
-              <a-col :span="6">
-                <a-form-item label="超时时间(秒)">
-                  <a-input-number
-                    v-model="timeout"
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 6">
+                <n-form-item label="超时时间(秒)">
+                  <n-input-number
+                    v-model:value="timeout"
                     :min="10"
                     :max="3600"
                     style="width: 100%"
                     placeholder="传输超时时间"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="限速(MB/s)">
+                   />
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 6">
+                <n-form-item label="限速(MB/s)">
                   <div class="form-item-stack">
-                    <a-input-number
-                      v-model="bandwidthLimit"
+                    <n-input-number
+                      v-model:value="bandwidthLimit"
                       :min="0"
                       :max="1000000"
                       style="width: 100%"
                       placeholder="0=不限速（单位：MB/s）"
-                    />
+                     />
                     <div class="form-tip form-tip-long">
-                      <icon-info-circle />
+                      <Info />
                       <span class="form-tip-text">未设置或为 0 时：不限制带宽；若 Agent 配置了默认带宽限制，将按 Agent 默认值限速</span>
                     </div>
                   </div>
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="执行模式">
-                  <a-select v-model="executionMode" style="width: 100%">
-                    <a-option value="parallel">并行执行</a-option>
-                    <a-option value="serial">串行执行</a-option>
-                    <a-option value="rolling">滚动执行</a-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="滚动策略" v-if="executionMode === 'rolling'">
-                  <a-select v-model="rollingStrategy" style="width: 100%">
-                    <a-option value="fail_pause">失败暂停</a-option>
-                    <a-option value="ignore_error">忽略错误</a-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 6">
+                <n-form-item label="执行模式">
+                  <n-select v-model:value="executionMode" style="width: 100%" :options="[{ label: '并行执行', value: 'parallel' }, { label: '串行执行', value: 'serial' }, { label: '滚动执行', value: 'rolling' }]" />
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 6">
+                <n-form-item label="滚动策略" v-if="executionMode === 'rolling'">
+                  <n-select v-model:value="rollingStrategy" style="width: 100%" :options="[{ label: '失败暂停', value: 'fail_pause' }, { label: '忽略错误', value: 'ignore_error' }]" />
+                </n-form-item>
+              </div>
+            </div>
 
             <!-- 滚动执行配置 -->
-            <a-row :gutter="16" v-if="executionMode === 'rolling'">
-              <a-col :span="12">
-                <a-form-item label="批次大小(%)">
-                  <a-input-number
-                    v-model="rollingBatchSize"
+            <div class="form-grid-row" v-if="executionMode === 'rolling'">
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="批次大小(%)">
+                  <n-input-number
+                    v-model:value="rollingBatchSize"
                     :min="1"
                     :max="100"
                     style="width: 100%"
                     placeholder="每批次主机百分比"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="批次延迟(秒)">
-                  <a-input-number
-                    v-model="rollingBatchDelay"
+                   />
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="批次延迟(秒)">
+                  <n-input-number
+                    v-model:value="rollingBatchDelay"
                     :min="0"
                     :max="300"
                     style="width: 100%"
                     placeholder="批次间延迟时间"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
+                   />
+                </n-form-item>
+              </div>
+            </div>
 
             <!-- 执行账号 -->
-            <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item label="执行账号">
-                  <a-select
-                    v-model="selectedAccountId"
-                    placeholder="选择服务器账号（可选）"
-                    allow-clear
-                    :loading="accountLoading"
-                  >
-                    <a-option
-                      v-for="account in serverAccounts"
-                      :key="account.id"
-                      :value="account.id"
-                    >
-                      {{ account.name }} ({{ account.username }})
-                    </a-option>
-                  </a-select>
-                  <div class="form-tip">
-                    <icon-info-circle />
-                    不选择时将使用主机配置的默认用户
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="执行账号">
+                  <div class="form-item-stack">
+                    <n-select
+                      v-model:value="selectedAccountId"
+                      placeholder="选择服务器账号（可选）"
+                      clearable
+                      :loading="accountLoading"
+                      :options="(serverAccounts || []).map((account: any) => ({
+                        label: `${account.name} (${account.username})`,
+                        value: account.id,
+                      }))"
+                    />
+                    <div class="form-tip">
+                      <Info :size="14" />
+                      不选择时将使用主机配置的默认用户
+                    </div>
                   </div>
-                </a-form-item>
-              </a-col>
-            </a-row>
+                </n-form-item>
+              </div>
+            </div>
 
             <!-- 通配符和变量使用说明 -->
-            <a-alert
+            <n-alert
               type="info"
               show-icon
               closable
@@ -778,11 +760,11 @@
                   <li><code>/tmp/[hostname]_upload_[timestamp]_*.tmp</code> - 带主机名和时间戳的临时文件</li>
                 </ul>
               </div>
-            </a-alert>
-          </a-form>
+            </n-alert>
+          </n-form>
 
           <div class="text-right">
-            <a-button
+            <n-button
               type="primary"
               size="large"
               @click="handleFileTransfer"
@@ -790,48 +772,44 @@
               :disabled="((selectionType === 'static' && selectedHosts.length === 0 && selectedGroups.length === 0) || (selectionType === 'dynamic' && selectedGroups.length === 0)) || !isTransferFormValid || !remotePath"
             >
               <template #icon>
-                <icon-upload />
+                <Upload />
               </template>
               传输文件 ({{ totalTargetCount }} 个目标)
-            </a-button>
+            </n-button>
           </div>
-        </a-card>
-      </a-col>
-    </a-row>
+        </n-card>
+      </div>
+    </div>
 
     <!-- 脚本模板选择弹窗 -->
-    <a-modal
-      v-model:visible="templateModalVisible"
+    <n-modal
+      v-model:show="templateModalVisible"
+      preset="card"
       title="选择脚本模板"
-      :width="800"
-      @ok="handleTemplateSelect"
-      @cancel="templateModalVisible = false"
+      :style="{ width: '800px' }"
+      :mask-closable="false"
     >
-        <a-table
-          :columns="templateColumns"
-          :data="scriptTemplates"
-          :loading="templateLoading"
-          :pagination="false"
-          row-key="id"
-          :row-selection="{
-            type: 'radio',
-            selectedRowKeys: selectedTemplateKeys,
-            onChange: handleTemplateRowSelect,
-            onSelectAll: handleTemplateRowSelectAll
-          }"
-          @row-click="handleRowClick"
-        >
-        <template #script_type="{ record }">
-          <a-tag :color="getScriptTypeColor(record.script_type)">
-            {{ getScriptTypeText(record.script_type) }}
-          </a-tag>
-        </template>
-      </a-table>
-    </a-modal>
+      <n-data-table
+        :columns="templateColumns"
+        :data="scriptTemplates"
+        :loading="templateLoading"
+        :pagination="false"
+        :row-key="(row: any) => row.id"
+        :checked-row-keys="selectedTemplateKeys"
+        :row-props="templateRowProps"
+        @update:checked-row-keys="handleTemplateCheckedKeys"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="templateModalVisible = false">取消</n-button>
+          <n-button type="primary" @click="handleTemplateSelect">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
 
     <!-- 执行确认弹窗 -->
-    <a-modal
-      v-model:visible="confirmModalVisible"
+    <n-modal preset="card"
+      v-model:show="confirmModalVisible"
       title="确认执行"
       :width="800"
       @ok="handleConfirmExecute"
@@ -840,7 +818,7 @@
       ok-text="确认执行"
       cancel-text="取消"
     >
-      <a-alert
+      <n-alert
         type="warning"
         class="mb-4"
         show-icon
@@ -849,51 +827,51 @@
           <strong>请确认执行信息</strong>
         </template>
         脚本将在选中的主机上执行，请仔细检查脚本内容和目标主机。执行前请确保脚本内容正确无误。
-      </a-alert>
+      </n-alert>
 
-      <a-descriptions :column="2" bordered size="small" class="mb-4">
-        <a-descriptions-item label="脚本类型">
-          <a-tag :color="getScriptTypeColor(scriptType)">
+      <n-descriptions :column="2" bordered size="small" class="mb-4">
+        <n-descriptions-item label="脚本类型">
+          <n-tag :color="getScriptTypeColor(scriptType)">
             {{ getScriptTypeText(scriptType) }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="执行目标">
-          <a-tag color="green">{{ allTargetHosts.length }} 台主机</a-tag>
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="执行目标">
+          <n-tag color="green">{{ allTargetHosts.length }} 台主机</n-tag>
           <span v-if="selectedGroups.length > 0" class="ml-2 text-gray-500">
             (来自 {{ selectedGroups.length }} 个分组{{ selectedHosts.length > 0 ? ' + ' + selectedHosts.length + ' 台直选主机' : '' }})
           </span>
           <span v-else-if="selectedHosts.length > 0" class="ml-2 text-gray-500">
             (直接选择)
           </span>
-        </a-descriptions-item>
-        <a-descriptions-item label="超时时间">
-          <a-tag color="orange">{{ timeout }} 秒</a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="执行账号">
+        </n-descriptions-item>
+        <n-descriptions-item label="超时时间">
+          <n-tag color="orange">{{ timeout }} 秒</n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="执行账号">
           <div>
             <strong>{{ selectedAccount?.name || '默认账号' }}</strong>
             <span v-if="selectedAccount" class="text-gray-500 ml-2">
               ({{ selectedAccount.username }})
             </span>
           </div>
-        </a-descriptions-item>
-        <a-descriptions-item v-if="executionMode === 'rolling'" label="滚动策略">
-          <a-tag color="blue">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="executionMode === 'rolling'" label="滚动策略">
+          <n-tag color="blue">
             {{ getRollingStrategyText(rollingStrategy) }}
-          </a-tag>
-        </a-descriptions-item>
-      </a-descriptions>
+          </n-tag>
+        </n-descriptions-item>
+      </n-descriptions>
 
       <div class="script-preview-section">
         <div class="flex items-center justify-between mb-2">
           <h4 class="text-base font-medium text-gray-800 mb-0">脚本内容预览</h4>
-          <a-tag color="gray" size="small">{{ scriptContent.split('\n').length }} 行</a-tag>
+          <n-tag color="gray" size="small">{{ scriptContent.split('\n').length }} 行</n-tag>
         </div>
         <div class="script-preview-container">
           <pre class="script-preview-content">{{ scriptContent }}</pre>
         </div>
       </div>
-    </a-modal>
+    </n-modal>
 
     <!-- 主机选择器弹窗 -->
   <HostSelector
@@ -916,8 +894,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import { IconEye } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi, scriptTemplateApi, quickExecuteApi } from '@/api/ops'
 import { accountApi, type ServerAccount } from '@/api/account'
 import request from '@/utils/request'
@@ -927,7 +903,11 @@ import ScriptEditorWithValidation from '@/components/ScriptEditorWithValidation.
 import { getScriptExample } from '@/components/ScriptExamples'
 import type { ScriptValidationResult } from '@/utils/scriptValidator'
 import FileSourcesPanel from '@/components/FileSourcesPanel.vue'
+import { NAlert, NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NForm, NFormItem, NInput, NInputNumber, NModal, NRadio, NRadioGroup, NSelect, NSpace, NTabPane, NTabs, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { CircleAlert, Code2, Eye, FileText, Folder, Info, Monitor, Plus, RefreshCw, Trash2, Upload, Zap } from 'lucide-vue-next'
 
+const dialog = useDialog()
+const message = useMessage()
 const router = useRouter()
 const route = useRoute()
 
@@ -1012,12 +992,24 @@ const globalVariables = ref<Record<string, any>>({})
 const scriptTemplates = ref<ScriptTemplate[]>([])
 const selectedTemplateKeys = ref<number[]>([])
 
-// 模板表格列
-const templateColumns = [
-  { title: '模板名称', dataIndex: 'name', key: 'name' },
-  { title: '类型', dataIndex: 'script_type', key: 'script_type', slotName: 'script_type' },
-  { title: '描述', dataIndex: 'description', key: 'description' },
+// 模板表格列（Naive 单选）
+const templateColumns: DataTableColumns<any> = [
+  { type: 'selection', multiple: false },
+  { title: '模板名称', key: 'name' },
+  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  {
+    title: '脚本类型',
+    key: 'script_type',
+    render: (row) => h(NTag, { type: getScriptTypeColor(row.script_type) as any }, { default: () => getScriptTypeText(row.script_type) }),
+  },
 ]
+
+const templateRowProps = (row: any) => ({
+  style: 'cursor: pointer',
+  onClick: () => {
+    selectedTemplateKeys.value = [row.id]
+  },
+})
 
 const totalGroupHosts = computed(() => {
   return selectedGroups.value.reduce((total, groupId) => {
@@ -1209,7 +1201,7 @@ const removeGroup = (groupId: number) => {
   const index = selectedGroups.value.indexOf(groupId)
   if (index > -1) {
     selectedGroups.value.splice(index, 1)
-    Message.success(`已移除分组: ${getGroupName(groupId)}`)
+    message.success(`已移除分组: ${getGroupName(groupId)}`)
   }
 }
 
@@ -1337,7 +1329,7 @@ const prefillFromTemplateId = async (templateId: number): Promise<boolean> => {
   try {
     const template = await scriptTemplateApi.getTemplate(templateId)
     if (template?.is_active === false) {
-      Message.warning('模板已下线，无法预填')
+      message.warning('模板已下线，无法预填')
       return false
     }
     scriptContent.value = template.script_content || template.content || ''
@@ -1347,7 +1339,7 @@ const prefillFromTemplateId = async (templateId: number): Promise<boolean> => {
     return true
   } catch (error) {
     console.error('加载模板失败:', error)
-    Message.error('加载模板失败')
+    message.error('加载模板失败')
     return false
   }
 }
@@ -1484,9 +1476,9 @@ const handleValidationChange = (results: ScriptValidationResult[]) => {
   const warningCount = results.filter(r => r.severity === 'warning').length
   
   if (errorCount > 0) {
-    Message.warning(`脚本中发现 ${errorCount} 个错误，${warningCount} 个警告`)
+    message.warning(`脚本中发现 ${errorCount} 个错误，${warningCount} 个警告`)
   } else if (warningCount > 0) {
-    Message.info(`脚本中发现 ${warningCount} 个警告`)
+    message.info(`脚本中发现 ${warningCount} 个警告`)
   }
 }
 
@@ -1507,21 +1499,8 @@ const handleLoadTemplate = async () => {
   }
 }
 
-// 处理模板行选择
-const handleTemplateRowSelect = (selectedRowKeys: number[], selectedRows: any[]) => {
-  selectedTemplateKeys.value = selectedRowKeys
-  console.log('选择的模板:', selectedRowKeys, selectedRows)
-}
-
-// 处理全选（单选模式下不会触发）
-const handleTemplateRowSelectAll = () => {
-  // 单选模式下不需要处理
-}
-
-// 处理行点击
-const handleRowClick = (record: any) => {
-  selectedTemplateKeys.value = [record.id]
-  console.log('点击行选择模板:', record.id, record.name)
+const handleTemplateCheckedKeys = (keys: Array<string | number>) => {
+  selectedTemplateKeys.value = keys.map((key) => Number(key)).filter((key) => !Number.isNaN(key))
 }
 
 const handleTemplateSelect = () => {
@@ -1531,10 +1510,10 @@ const handleTemplateSelect = () => {
       // 使用正确的字段名
       scriptContent.value = template.script_content || template.content || ''
       scriptType.value = template.script_type
-      Message.success(`已加载模板: ${template.name}`)
+      message.success(`已加载模板: ${template.name}`)
     }
   } else {
-    Message.warning('请选择一个模板')
+    message.warning('请选择一个模板')
     return
   }
   templateModalVisible.value = false
@@ -1595,7 +1574,7 @@ const handleFileChange = async (files: any[]) => {
       }
     } catch (e) {
       console.error('上传制品失败', e)
-      Message.error(`文件 ${f.name} 上传制品库失败`)
+      message.error(`文件 ${f.name} 上传制品库失败`)
       // remove placeholder
       fileArtifacts.value = fileArtifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
     }
@@ -1612,38 +1591,38 @@ const handleFileRemove = (fileItem: any) => {
 
 const handleFileTransfer = async () => {
   if (selectionType.value === 'static' && selectedHosts.value.length === 0 && selectedGroups.value.length === 0) {
-    Message.warning('请选择至少一台主机或一个主机分组')
+    message.warning('请选择至少一台主机或一个主机分组')
     return
   }
 
   if (selectionType.value === 'dynamic' && selectedGroups.value.length === 0) {
-    Message.warning('请至少选择一个分组')
+    message.warning('请至少选择一个分组')
     return
   }
 
   if (!fileArtifacts.value || fileArtifacts.value.length === 0) {
-    Message.warning('请至少添加一个文件来源并填写远程路径')
+    message.warning('请至少添加一个文件来源并填写远程路径')
     return
   }
   if (!remotePath.value) {
-    Message.warning('请填写远程路径')
+    message.warning('请填写远程路径')
     return
   }
   if (missingRequiredVarNames.value.length > 0) {
-    Message.error(`必填变量未填写：${missingRequiredVarNames.value.join(', ')}`)
+    message.error(`必填变量未填写：${missingRequiredVarNames.value.join(', ')}`)
     return
   }
   // 检查源服务器和目标服务器的agent状态
   const agentStatusWarnings = checkFileTransferAgentStatus(fileArtifacts.value, allTargetHosts.value)
   if (agentStatusWarnings.length > 0) {
     const warningMessages = agentStatusWarnings.map(w => w.message).join('\n')
-    const shouldContinue = await Modal.confirm({
+    const shouldContinue = await dialog.warning({
       title: 'Agent状态警告',
       content: `发现以下服务器的Agent不在线：\n\n${warningMessages}\n\n是否继续执行？`,
-      okText: '继续执行',
-      cancelText: '取消',
-      okButtonProps: { type: 'primary' },
-      cancelButtonProps: { type: 'primary' },
+      positiveText: '继续执行',
+      negativeText: '取消',
+      positiveButtonProps: { type: 'primary' },
+      negativeButtonProps: { type: 'primary' },
     })
     if (!shouldContinue) {
       return
@@ -1697,7 +1676,7 @@ const handleFileTransfer = async () => {
         const sourcePath = a.source_server_path || a.source_path
         const accountId = a.account_id ?? a.account
         if (!sourceHost || !sourcePath || accountId === undefined || accountId === null) {
-          Message.error('服务器来源缺少主机、路径或账号，请补全后重试')
+          message.error('服务器来源缺少主机、路径或账号，请补全后重试')
           executing.value = false
           return
         }
@@ -1711,7 +1690,7 @@ const handleFileTransfer = async () => {
         })
       } else {
         if (!a.download_url) {
-          Message.error(`文件 ${a.name || a.filename || ''} 尚未上传完成`)
+          message.error(`文件 ${a.name || a.filename || ''} 尚未上传完成`)
           executing.value = false
           return
         }
@@ -1730,12 +1709,12 @@ const handleFileTransfer = async () => {
     data.file_sources = file_sources
 
     const result = await quickExecuteApi.transferFile(data)
-    Message.success(`文件传输任务已启动，任务ID: ${result.task_id}`)
+    message.success(`文件传输任务已启动，任务ID: ${result.task_id}`)
 
     router.push(`/execution-records/${result.execution_record_id}`)
   } catch (error) {
     console.error('文件传输失败:', error)
-    Message.error('文件传输失败，请检查网络连接或联系管理员')
+    message.error('文件传输失败，请检查网络连接或联系管理员')
   } finally {
     executing.value = false
   }
@@ -1773,16 +1752,16 @@ const handleClear = () => {
   selectedGroups.value = []
   selectionType.value = 'static'
 
-  Message.success('已清空所有内容')
+  message.success('已清空所有内容')
 }
 
 // 执行操作
 const handleExecute = () => {
   if (!canExecute.value) {
     if (hasValidationErrors.value) {
-      Message.error('脚本存在错误，请修复后再执行')
+      message.error('脚本存在错误，请修复后再执行')
     } else {
-      Message.warning('请选择目标主机或分组并输入脚本内容')
+      message.warning('请选择目标主机或分组并输入脚本内容')
     }
     return
   }
@@ -1842,7 +1821,7 @@ const handleConfirmExecute = async () => {
     }
 
     const result = await quickExecuteApi.execute(data)
-    Message.success('脚本执行已启动')
+    message.success('脚本执行已启动')
 
     // 跳转到执行记录详情页面
     router.push(`/execution-records/${result.execution_record_id}`)
@@ -1913,7 +1892,7 @@ const clearAllSelections = () => {
   selectedHosts.value = []
   selectedGroups.value = []
   selectionType.value = 'static'
-  Message.success('已清空所有选择')
+  message.success('已清空所有选择')
 }
 
 // 统一的主机移除方法
@@ -1959,7 +1938,7 @@ const removeHost = (hostId: number) => {
     }
   }
 
-  Message.success(`已移除主机: ${host.name}`)
+  message.success(`已移除主机: ${host.name}`)
 }
 
 // 为了兼容现有模板，保留这两个方法但都调用统一的 removeHost
@@ -1974,7 +1953,7 @@ const removeDirectHost = (hostId: number) => {
 const removeOfflineHosts = () => {
   const offlineHosts = allTargetHosts.value.filter(host => host.status === 'offline')
   if (offlineHosts.length === 0) {
-    Message.info('没有找到离线主机')
+    message.info('没有找到离线主机')
     return
   }
 
@@ -1983,7 +1962,7 @@ const removeOfflineHosts = () => {
     removeHost(host.id)
   })
 
-  Message.success(`已移除 ${offlineHosts.length} 台离线主机`)
+  message.success(`已移除 ${offlineHosts.length} 台离线主机`)
 }
 
 // 检查文件传输中源服务器和目标服务器的agent状态
@@ -2065,6 +2044,14 @@ onMounted(() => {
 // 组件卸载时移除事件监听
 onUnmounted(() => {
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: 'Shell', value: 'shell' }, { label: 'Python', value: 'python' }, { label: 'PowerShell', value: 'powershell' }, { label: 'Perl', value: 'perl' }, { label: 'JavaScript', value: 'javascript' }, { label: 'Go', value: 'go' }]
+const selectOptions2 = [{ label: '执行失败就暂停', value: 'fail_pause' }, { label: '忽略错误继续执行', value: 'ignore_error' }]
+const selectOptions3 = [{ label: '深色主题', value: 'vs-dark' }, { label: '浅色主题', value: 'vs' }]
+const selectOptions4 = [{ label: '强制覆盖', value: 'overwrite' }, { label: '存在跳过', value: 'skip' }, { label: '备份后覆盖', value: 'backup' }, { label: '存在则失败', value: 'fail' }]
+const selectOptions5 = [{ label: '并行执行', value: 'parallel' }, { label: '串行执行', value: 'serial' }, { label: '滚动执行', value: 'rolling' }]
+const selectOptions6 = [{ label: '失败暂停', value: 'fail_pause' }, { label: '忽略错误', value: 'ignore_error' }]
 </script>
 
 <style scoped>
@@ -2110,6 +2097,10 @@ onUnmounted(() => {
   font-size: 12px;
   color: #86909c;
   line-height: 1.4;
+}
+
+.empty-select-btn {
+  margin-top: 12px;
 }
 
 .selection-content {
@@ -2172,15 +2163,15 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background-color: var(--color-fill-1);
-  border: 1px solid var(--color-border-2);
+  background-color: var(--app-surface-muted);
+  border: 1px solid var(--app-border);
   border-radius: 4px;
   transition: all 0.2s;
 }
 
 .host-item:hover {
-  background-color: var(--color-fill-2);
-  border-color: var(--color-border-3);
+  background-color: var(--app-surface-soft);
+  border-color: var(--app-border);
 }
 
 .host-item.host-offline {
@@ -2196,13 +2187,13 @@ onUnmounted(() => {
 .host-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   margin-bottom: 2px;
 }
 
 .host-ip {
   font-size: 11px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-family: 'Courier New', monospace;
   margin-bottom: 4px;
 }
@@ -2219,8 +2210,8 @@ onUnmounted(() => {
   padding: 1px 4px;
   border-radius: 2px;
   font-weight: 500;
-  background-color: var(--color-fill-3);
-  color: var(--color-text-2);
+  background-color: var(--app-surface-soft);
+  color: var(--app-fg-secondary);
 }
 
 .os-linux {
@@ -2261,7 +2252,7 @@ onUnmounted(() => {
 }
 
 .remove-host-btn {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   flex-shrink: 0;
 }
 
@@ -2284,16 +2275,16 @@ onUnmounted(() => {
   gap: 6px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-bottom: 8px;
   padding: 4px 8px;
-  background-color: var(--color-fill-2);
+  background-color: var(--app-surface-soft);
   border-radius: 4px;
 }
 
 .host-source {
   font-size: 10px;
-  color: var(--color-text-4);
+  color: var(--app-meta);
   font-style: italic;
 }
 
@@ -2332,7 +2323,7 @@ onUnmounted(() => {
   gap: 4px;
   margin-top: 4px;
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .form-item-stack {
@@ -2363,7 +2354,7 @@ onUnmounted(() => {
   display: block;
   width: 100%;
   margin-top: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .pt-3 {
@@ -2482,16 +2473,16 @@ onUnmounted(() => {
 
 /* 位置参数样式 */
 .parameter-section {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 16px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .parameter-mode-selector {
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border-2);
+  border-bottom: 1px solid var(--app-border);
 }
 
 /* 更宽的参数表单，让输入区域占用更多横向空间 */
@@ -2510,7 +2501,7 @@ onUnmounted(() => {
 
 .parameter-header {
   font-size: 13px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-bottom: 12px;
 }
 
@@ -2535,7 +2526,7 @@ onUnmounted(() => {
   min-width: 40px;
   text-align: center;
   font-weight: 500;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-family: 'Courier New', monospace;
 }
 
@@ -2550,15 +2541,15 @@ onUnmounted(() => {
 .bulk-parameter-preview {
   margin-top: 12px;
   padding: 12px;
-  background-color: var(--color-fill-1);
-  border: 1px solid var(--color-border-2);
+  background-color: var(--app-surface-muted);
+  border: 1px solid var(--app-border);
   border-radius: 4px;
 }
 
 .preview-header {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-bottom: 8px;
 }
 
@@ -2571,11 +2562,11 @@ onUnmounted(() => {
 .preview-param {
   font-size: 12px;
   font-family: 'Courier New', monospace;
-  color: var(--color-text-1);
-  background-color: var(--color-fill-2);
+  color: var(--app-fg);
+  background-color: var(--app-surface-soft);
   padding: 4px 8px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
 }
 
 /* 文件路径选择样式 */
@@ -2589,8 +2580,8 @@ onUnmounted(() => {
 .path-preview {
   margin-top: 12px;
   padding: 12px 16px;
-  background-color: var(--color-fill-1);
-  border: 1px solid var(--color-primary-light-2);
+  background-color: var(--app-surface-muted);
+  border: 1px solid var(--app-accent-soft);
   border-radius: 6px;
 }
 
@@ -2607,11 +2598,11 @@ onUnmounted(() => {
   display: block;
   font-family: 'Courier New', 'Fira Code', monospace;
   font-size: 13px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   background-color: #fff;
   padding: 8px 12px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   word-break: break-all;
   line-height: 1.6;
 }
@@ -2667,9 +2658,9 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
   margin-bottom: 8px;
 }
 
@@ -2681,7 +2672,7 @@ onUnmounted(() => {
 
 .file-icon {
   font-size: 16px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   margin-right: 8px;
 }
 
@@ -2691,14 +2682,14 @@ onUnmounted(() => {
 
 .file-name {
   font-size: 14px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   font-weight: 500;
   margin-bottom: 2px;
 }
 
 .file-size {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .file-actions {
@@ -2707,7 +2698,7 @@ onUnmounted(() => {
 }
 
 .remove-btn {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   transition: color 0.3s;
 }
 
@@ -2721,48 +2712,48 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  border: 2px dashed var(--color-border-2);
+  border: 2px dashed var(--app-border);
   border-radius: 6px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
   cursor: pointer;
   transition: all 0.3s;
 }
 
 .upload-btn:hover {
   border-color: var(--color-primary-light-4);
-  background-color: var(--color-primary-light-1);
+  background-color: var(--app-accent-soft);
 }
 
 .upload-text {
   margin-top: 8px;
   font-size: 14px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 /* 路径示例样式 */
 .path-examples {
   padding: 8px 12px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   margin-top: 8px;
 }
 
 .example-title {
   font-size: 12px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-weight: 500;
   margin-bottom: 4px;
 }
 
 .example-item {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-bottom: 2px;
   font-size: 12px;
 }
 
 .example-item code {
-  background-color: var(--color-fill-3);
+  background-color: var(--app-surface-soft);
   padding: 2px 4px;
   border-radius: 2px;
   font-family: 'Courier New', monospace;
@@ -2775,7 +2766,7 @@ onUnmounted(() => {
 }
 
 .script-preview-container {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   background-color: #f8f9fa;
   overflow: hidden;
@@ -2815,12 +2806,12 @@ onUnmounted(() => {
 
 .example-item {
   font-size: 11px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   margin-bottom: 2px;
 }
 
 .example-item code {
-  background-color: var(--color-fill-2);
+  background-color: var(--app-surface-soft);
   padding: 1px 4px;
   border-radius: 2px;
   font-family: 'Courier New', monospace;
@@ -2896,13 +2887,13 @@ onUnmounted(() => {
 }
 
 .agent-disabled {
-  background-color: var(--color-fill-3);
-  color: var(--color-text-3);
+  background-color: var(--app-surface-soft);
+  color: var(--app-muted);
 }
 
 .agent-none {
-  background-color: var(--color-fill-2);
-  color: var(--color-text-3);
+  background-color: var(--app-surface-soft);
+  color: var(--app-muted);
   font-size: 10px;
 }
 </style>

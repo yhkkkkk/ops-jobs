@@ -6,8 +6,8 @@
         <span>运维作业平台</span>
       </div>
       <div class="nav-actions">
-        <a-button type="text" @click="router.push('/login')">登录</a-button>
-        <a-button type="primary" @click="router.push('/login')">进入控制台</a-button>
+        <n-button text @click="router.push('/login')">登录</n-button>
+        <n-button type="primary" @click="router.push('/login')">进入控制台</n-button>
       </div>
     </nav>
 
@@ -19,8 +19,8 @@
           面向内部运维与平台团队，提供模板化作业编排、批量执行、Agent 管控、实时日志和执行追踪。
         </p>
         <div class="hero-actions">
-          <a-button type="primary" size="large" @click="router.push('/login')">开始使用</a-button>
-          <a-button size="large" @click="router.push('/login?platform=ops')">查看运维台</a-button>
+          <n-button type="primary" size="large" @click="router.push('/login')">开始使用</n-button>
+          <n-button size="large" @click="router.push('/login?platform=ops')">查看运维台</n-button>
         </div>
       </div>
 
@@ -97,13 +97,14 @@
         <p class="app-page-eyebrow">READY</p>
         <h2>进入控制台，先从 Dashboard 和执行链路开始收敛。</h2>
       </div>
-      <a-button type="primary" size="large" @click="router.push('/login')">登录控制台</a-button>
+      <n-button type="primary" size="large" @click="router.push('/login')">登录控制台</n-button>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { NButton } from 'naive-ui'
 
 const router = useRouter()
 

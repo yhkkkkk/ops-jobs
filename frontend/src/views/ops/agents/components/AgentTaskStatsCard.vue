@@ -1,14 +1,14 @@
 <template>
-  <a-card class="task-stats-card" :bordered="false">
+  <n-card class="task-stats-card" :bordered="false">
     <div class="stats-header">
       <span class="stats-title">任务执行统计</span>
-      <a-tag v-if="healthStatus" :color="healthStatusColor">{{ healthStatusText }}</a-tag>
+      <n-tag v-if="healthStatus" :type="healthStatusColor">{{ healthStatusText }}</n-tag>
     </div>
 
     <div class="stats-content">
       <!-- 成功率进度环 -->
       <div class="progress-section">
-        <a-progress
+        <n-progress
           type="circle"
           :percent="successRate"
           :stroke-color="progressColor"
@@ -16,9 +16,9 @@
           :format="() => `${successRate.toFixed(1)}%`"
         >
           <template #icon>
-            <icon-check-circle :style="{ color: progressColor }" />
+            <CircleCheck  :style="{ color: progressColor }" />
           </template>
-        </a-progress>
+        </n-progress>
         <div class="progress-label">成功率</div>
       </div>
 
@@ -46,19 +46,20 @@
     <!-- 平均执行时长 -->
     <div class="stats-footer">
       <div class="avg-duration">
-        <icon-clock-circle />
+        <Clock3  />
         <span>平均执行时长: <strong>{{ formatDuration(stats.avg_duration_ms) }}</strong></span>
       </div>
       <div class="last-updated" v-if="stats.last_updated">
         更新于: {{ formatTime(stats.last_updated) }}
       </div>
     </div>
-  </a-card>
+  </n-card>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { IconCheckCircle, IconClockCircle } from '@arco-design/web-vue/es/icon'
+import { NCard, NProgress, NTag } from 'naive-ui'
+import { CircleCheck, Clock3 } from 'lucide-vue-next'
 
 const props = defineProps<{
   stats: {
@@ -91,7 +92,7 @@ const healthStatusColor = computed(() => {
   if (status === 'healthy') return 'green'
   if (status === 'warning') return 'orange'
   if (status === 'critical') return 'red'
-  return 'gray'
+  return 'default'
 })
 
 const healthStatusText = computed(() => {
@@ -159,7 +160,7 @@ const formatTime = (timeStr?: string) => {
     .stats-title {
       font-size: 16px;
       font-weight: 600;
-      color: var(--color-text-1);
+      color: var(--app-fg);
     }
   }
   
@@ -174,7 +175,7 @@ const formatTime = (timeStr?: string) => {
       .progress-label {
         margin-top: 8px;
         font-size: 13px;
-        color: var(--color-text-3);
+        color: var(--app-muted);
       }
     }
     
@@ -192,7 +193,7 @@ const formatTime = (timeStr?: string) => {
           font-weight: 600;
           line-height: 1.2;
           
-          &.total { color: var(--color-text-1); }
+          &.total { color: var(--app-fg); }
           &.success { color: #0fbf60; }
           &.failed { color: #f53f3f; }
           &.cancelled { color: #ffb940; }
@@ -201,7 +202,7 @@ const formatTime = (timeStr?: string) => {
         .stat-label {
           margin-top: 4px;
           font-size: 12px;
-          color: var(--color-text-3);
+          color: var(--app-muted);
         }
       }
     }
@@ -210,12 +211,12 @@ const formatTime = (timeStr?: string) => {
   .stats-footer {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border-2);
+    border-top: 1px solid var(--app-border);
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 13px;
-    color: var(--color-text-3);
+    color: var(--app-muted);
     
     .avg-duration {
       display: flex;
@@ -223,12 +224,12 @@ const formatTime = (timeStr?: string) => {
       gap: 6px;
       
       strong {
-        color: var(--color-text-1);
+        color: var(--app-fg);
       }
     }
     
     .last-updated {
-      color: var(--color-text-4);
+      color: var(--app-meta);
     }
   }
 }

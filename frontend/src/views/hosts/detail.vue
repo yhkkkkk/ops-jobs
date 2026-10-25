@@ -1,41 +1,36 @@
 <template>
   <div class="host-detail">
     <div class="page-header">
-      <a-breadcrumb>
-        <a-breadcrumb-item @click="goBack">主机管理</a-breadcrumb-item>
-        <a-breadcrumb-item>主机详情</a-breadcrumb-item>
-      </a-breadcrumb>
-
       <div class="header-actions">
-        <a-space>
-          <a-button @click="goBack">
+        <n-space>
+          <n-button @click="goBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft  />
             </template>
             返回
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             @click="handleEdit"
             v-if="!isReadOnly"
             v-permission="{ resourceType: 'host', permission: 'change', resourceId: hostDetail?.id }"
           >
             <template #icon>
-              <icon-edit />
+              <Pencil  />
             </template>
             编辑
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             @click="handleCollectInfo"
             :loading="collecting"
             v-if="!isReadOnly"
             v-permission="{ resourceType: 'host', permission: 'execute', resourceId: hostDetail?.id }"
           >
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             收集系统信息
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             type="primary"
             @click="handleTest"
             :loading="testing"
@@ -43,11 +38,11 @@
             v-permission="{ resourceType: 'host', permission: 'execute', resourceId: hostDetail?.id }"
           >
             <template #icon>
-              <icon-wifi />
+              <Wifi  />
             </template>
             测试连接
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
     </div>
 
@@ -70,19 +65,18 @@
           </div>
           <div class="info-item">
             <span class="label">操作系统：</span>
-            <span class="value">
-              <a-tag :color="getOSColor(hostDetail.os_type)">
+            <span class="value"><n-tag :type="getOSColor(hostDetail.os_type) as any">
                 {{ hostDetail.os_type_display }}
-              </a-tag>
+              </n-tag>
             </span>
           </div>
           <div class="info-item">
             <span class="label">服务器账号：</span>
             <span class="value">
               <div v-if="hostDetail.account_info">
-                <a-tag color="blue" size="small">
+                <n-tag type="info" size="small">
                   {{ hostDetail.account_info.name }}
-                </a-tag>
+                </n-tag>
                 <div class="text-gray-500" style="font-size: 12px; margin-top: 4px;">
                   {{ hostDetail.account_info.username }}
                 </div>
@@ -92,24 +86,23 @@
           </div>
           <div class="info-item">
             <span class="label">状态：</span>
-            <span class="value">
-              <a-tag :color="getStatusColor(hostDetail.status)">
+            <span class="value"><n-tag :type="getStatusColor(hostDetail.status) as any">
                 {{ getStatusText(hostDetail.status) }}
-              </a-tag>
+              </n-tag>
             </span>
           </div>
           <div class="info-item">
             <span class="label">所属分组：</span>
             <span class="value">
               <div v-if="hostDetail.groups_info && hostDetail.groups_info.length > 0">
-                <a-tag
+                <n-tag
                   v-for="group in hostDetail.groups_info"
                   :key="group.id"
-                  color="blue"
+                 type="info"
                   class="mr-1 mb-1"
                 >
                   {{ group.name }}
-                </a-tag>
+                </n-tag>
               </div>
               <span v-else class="text-gray-500">未分组</span>
             </span>
@@ -175,9 +168,9 @@
           <div class="info-item">
             <span class="label">云厂商：</span>
             <span class="value">
-              <a-tag v-if="hostDetail.cloud_provider" color="green">
+              <n-tag v-if="hostDetail.cloud_provider" type="success">
                 {{ hostDetail.cloud_provider_display }}
-              </a-tag>
+              </n-tag>
               <span v-else>--</span>
             </span>
           </div>
@@ -212,14 +205,14 @@
             <span class="label">标签：</span>
             <span class="value">
               <template v-if="hostDetail.tags && hostDetail.tags.length">
-                <a-space wrap>
-                  <a-tag
+                <n-space wrap>
+                  <n-tag
                     v-for="tag in hostDetail.tags"
                     :key="typeof tag === 'object' ? `${tag.key || ''}-${tag.value || ''}` : String(tag)"
                   >
                     {{ tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag }}
-                  </a-tag>
-                </a-space>
+                  </n-tag>
+                </n-space>
               </template>
               <span v-else>--</span>
             </span>
@@ -271,14 +264,14 @@
             <span class="label">DNS服务器：</span>
             <span class="value">
               <div v-if="hostDetail.dns_servers">
-                <a-tag
+                <n-tag
                   v-for="dns in getDnsServers(hostDetail.dns_servers)"
                   :key="dns"
-                  color="green"
+                 type="success"
                   class="mr-1 mb-1"
                 >
                   {{ dns }}
-                </a-tag>
+                </n-tag>
               </div>
               <span v-else>--</span>
             </span>
@@ -311,7 +304,7 @@
     </div>
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" />
+      <n-spin size="large" />
     </div>
 
     <!-- 主机表单弹窗 -->
@@ -326,14 +319,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
-import { IconRefresh } from '@arco-design/web-vue/es/icon'
 import { hostApi } from '@/api/ops'
 import type { Host } from '@/types'
 import HostForm from './components/HostForm.vue'
 import dayjs from 'dayjs'
+import { NButton, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, Pencil, RefreshCw, Wifi } from 'lucide-vue-next'
 
 const route = useRoute()
+const message = useMessage()
 const router = useRouter()
 const isOpsPlatform = computed(() => {
   return route.matched.some((record) => record.meta?.platform === 'ops')
@@ -355,7 +349,7 @@ const fetchHostDetail = async () => {
     hostDetail.value = await hostApi.getHost(hostId)
   } catch (error) {
     console.error('获取主机详情失败:', error)
-    Message.error('获取主机详情失败')
+    message.error('获取主机详情失败')
   } finally {
     loading.value = false
   }
@@ -387,7 +381,7 @@ const handleTest = async () => {
     await hostApi.testConnection(hostDetail.value.id)
     // 测试成功后重新获取主机详情，确保数据同步
     await fetchHostDetail()
-    Message.success(`主机 ${hostDetail.value.name} 连接测试成功`)
+    message.success(`主机 ${hostDetail.value.name} 连接测试成功`)
   } catch (error) {
     // 测试失败后也重新获取主机详情，确保状态同步
     await fetchHostDetail()
@@ -405,12 +399,12 @@ const handleCollectInfo = async () => {
   try {
     // 调用系统信息收集API
     await hostApi.collectSystemInfo(hostDetail.value.id)
-    Message.success('系统信息收集成功')
+    message.success('系统信息收集成功')
     // 重新获取主机详情以显示最新信息
     await fetchHostDetail()
   } catch (error) {
     console.error('系统信息收集失败:', error)
-    Message.error('系统信息收集失败')
+    message.error('系统信息收集失败')
   } finally {
     collecting.value = false
   }
@@ -524,7 +518,7 @@ onMounted(() => {
 
 .page-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 16px;
 }
@@ -542,10 +536,6 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 200px;
-}
-
-:deep(.arco-breadcrumb-item) {
-  cursor: pointer;
 }
 
 .mr-1 {

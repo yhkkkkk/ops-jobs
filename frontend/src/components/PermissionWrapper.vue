@@ -4,23 +4,24 @@
   </div>
   <div v-else-if="fallback" class="permission-fallback">
     <slot name="fallback">
-      <a-result
+      <n-result
         status="403"
         title="权限不足"
-        sub-title="您没有权限访问此内容"
+        description="您没有权限访问此内容"
       >
-        <template #extra>
-          <a-button type="primary" @click="handleRequestPermission">
+        <template #footer>
+          <n-button type="primary" @click="handleRequestPermission">
             申请权限
-          </a-button>
+          </n-button>
         </template>
-      </a-result>
+      </n-result>
     </slot>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { NButton, NResult } from 'naive-ui'
 import { usePermission } from '@/utils/permissions'
 import type { PermissionLevel, ResourceType } from '@/types'
 

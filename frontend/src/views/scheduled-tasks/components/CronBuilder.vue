@@ -4,19 +4,10 @@
       <div class="cron-section">
         <div class="cron-row">
           <span class="cron-label">执行频率</span>
-          <a-select
+          <n-select
             :model-value="period.attrs.modelValue"
-            @change="period.events['update:model-value']"
-            size="small"
-          >
-            <a-option
-              v-for="item in period.items"
-              :key="item.id"
-              :value="item.id"
-            >
-              {{ getPeriodText(item) }}
-            </a-option>
-          </a-select>
+            @update:value="period.events['update:model-value']"
+            size="small" :options="(period.items || []).map((item: any) => ({ label: String(getPeriodText(item)), value: String(item.id) }))" />
         </div>
       </div>
 
@@ -27,23 +18,14 @@
           class="cron-row"
         >
           <span class="cron-label">{{ getFieldLabel(field.id) }}</span>
-          <a-select
+          <n-select
             multiple
-            allow-search
-            allow-clear
+            filterable
+            clearable
             :model-value="field.attrs.modelValue"
-            @change="field.events['update:model-value']"
+            @update:value="field.events['update:model-value']"
             :placeholder="translateText(field.selectedStr) || '请选择'"
-            size="small"
-          >
-            <a-option
-              v-for="item in field.items"
-              :key="item.value"
-              :value="item.value"
-            >
-              {{ getFieldItemText(field.id, item) }}
-            </a-option>
-          </a-select>
+            size="small" :options="(field.items || []).map((item: any) => ({ label: String(getFieldItemText(field.id, item)), value: String(item.value) }))" />
         </div>
       </div>
 
@@ -51,25 +33,25 @@
         <div class="cron-row cron-row-presets">
           <span class="cron-label">常用</span>
           <div class="cron-presets-list">
-            <a-button
+            <n-button
               v-for="preset in presets"
               :key="preset.value"
-              size="mini"
+              size="tiny"
               @click="applyPreset(preset.value)"
             >
               {{ preset.label }}
-            </a-button>
+            </n-button>
           </div>
         </div>
       </div>
 
       <div class="cron-expression">
         <div class="cron-expression-label">Cron表达式</div>
-        <a-input :model-value="value" readonly />
+        <n-input :model-value="value" readonly />
       </div>
 
       <div v-if="error" class="cron-error">
-        <icon-exclamation-circle />
+        <CircleAlert  />
         {{ error }}
       </div>
     </cron-core>
@@ -78,7 +60,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { IconExclamationCircle } from '@arco-design/web-vue/es/icon'
+import { NButton, NInput, NSelect } from 'naive-ui'
+import { CircleAlert } from 'lucide-vue-next'
 
 interface Props {
   modelValue: string

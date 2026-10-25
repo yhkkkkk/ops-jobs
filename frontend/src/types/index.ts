@@ -592,12 +592,21 @@ export interface FlowDefinitionSnapshot {
   edges: FlowEdge[]
 }
 
+export interface FlowNotifyConfig {
+  enabled?: boolean
+  events?: Array<'success' | 'failed' | 'paused' | string>
+  webhook_url?: string
+}
+
 export interface FlowTemplate {
   id?: number
   name: string
   description?: string
+  category?: string
   variables: Record<string, any>
+  notify_config?: FlowNotifyConfig
   is_active: boolean
+  is_public?: boolean
   created_by?: number
   created_by_name?: string
   created_at?: string

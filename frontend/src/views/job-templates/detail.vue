@@ -1,98 +1,99 @@
 <template>
   <div class="template-detail">
-    <a-page-header
-      :title="template?.name || '模板详情'"
-      @back="handleBack"
-    >
-      <template #subtitle>
-        <a-space>
-          <a-tag v-if="template?.category" color="blue">{{ template.category }}</a-tag>
-          <span class="text-gray-500">创建于 {{ formatDate(template?.created_at) }}</span>
-        </a-space>
-      </template>
-
-      <template #extra>
-        <a-space>
-          <a-button type="outline" @click="handleRefresh">
-            <template #icon>
-              <icon-refresh />
-            </template>
-            刷新
-          </a-button>
-          <a-button
-            type="outline"
-            @click="handleEdit"
-            v-permission="{ resourceType: 'jobtemplate', permission: 'change', resourceId: template?.id }"
-          >
-            <template #icon>
-              <icon-edit />
-            </template>
-            编辑
-          </a-button>
-          <a-button
-            type="outline"
-            @click="handleCopy"
-            v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
-          >
-            <template #icon>
-              <icon-copy />
-            </template>
-            复制
-          </a-button>
-          <a-button
-            type="primary"
-            @click="handleDebugExecute"
-            v-permission="{ resourceType: 'jobtemplate', permission: 'execute', resourceId: template?.id }"
-          >
-            <template #icon>
-              <icon-play-arrow />
-            </template>
-            调试执行
-          </a-button>
-        </a-space>
-      </template>
-    </a-page-header>
+    <div class="page-header-block">
+      <n-button text size="small" @click="handleBack">
+        <template #icon>
+          <ChevronLeft />
+        </template>
+        返回
+      </n-button>
+      <div class="page-header-info">
+        <h4>{{ template?.name || '模板详情' }}</h4>
+        <n-space v-if="template?.category" :size="4">
+          <n-tag type="info" size="small">{{ template.category }}</n-tag>
+        </n-space>
+      </div>
+      <n-space class="page-header-extra">
+        <span class="text-gray-500">创建于 {{ formatDate(template?.created_at) }}</span>
+        <n-button secondary @click="handleRefresh">
+          <template #icon>
+            <RefreshCw />
+          </template>
+          刷新
+        </n-button>
+        <n-button
+          secondary
+          @click="handleEdit"
+          v-permission="{ resourceType: 'jobtemplate', permission: 'change', resourceId: template?.id }"
+        >
+          <template #icon>
+            <Pencil />
+          </template>
+          编辑
+        </n-button>
+        <n-button
+          secondary
+          @click="handleCopy"
+          v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
+        >
+          <template #icon>
+            <Copy />
+          </template>
+          复制
+        </n-button>
+        <n-button
+          type="primary"
+          @click="handleDebugExecute"
+          v-permission="{ resourceType: 'jobtemplate', permission: 'execute', resourceId: template?.id }"
+        >
+          <template #icon>
+            <Play />
+          </template>
+          调试执行
+        </n-button>
+      </n-space>
+    </div>
 
     <div class="detail-content" v-if="template">
-      <a-row :gutter="24">
+      <div class="form-grid-row">
         <!-- 基本信息 -->
-        <a-col :span="8">
-          <a-card title="基本信息" class="mb-4">
-            <a-descriptions :column="1" bordered>
-              <a-descriptions-item label="模板名称">
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="基本信息" class="mb-4">
+            <n-descriptions :column="1" bordered label-placement="left" :label-style="{ width: '96px' }">
+              <n-descriptions-item label="模板名称">
                 {{ template.name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="分类">
+              </n-descriptions-item>
+              <n-descriptions-item label="分类">
                 {{ template.category || '未分类' }}
-              </a-descriptions-item>
-              <a-descriptions-item label="标签">
-                <a-space v-if="template.tag_list && template.tag_list.length > 0">
-                  <a-tag
+              </n-descriptions-item>
+              <n-descriptions-item label="标签">
+                <n-space v-if="template.tag_list && template.tag_list.length > 0">
+                  <n-tag
                     v-for="tag in template.tag_list"
                     :key="`${tag.key}-${tag.value}`"
                     size="small"
                   >
                     <strong>{{ tag.key }}:</strong> {{ tag.value }}
-                  </a-tag>
-                </a-space>
+                  </n-tag>
+                </n-space>
                 <span v-else class="text-gray-400">无标签</span>
-              </a-descriptions-item>
-              <a-descriptions-item label="创建人">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建人">
                 {{ template.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ formatDate(template.created_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="更新时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="更新时间">
                 {{ formatDate(template.updated_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="步骤数量">
+              </n-descriptions-item>
+              <n-descriptions-item label="步骤数量">
                 {{ template.step_count }}
-              </a-descriptions-item>
-              <a-descriptions-item label="执行方案数量">
+              </n-descriptions-item>
+              <n-descriptions-item label="执行方案数量">
                 {{ template.plan_count }}
-              </a-descriptions-item>
-            </a-descriptions>
+              </n-descriptions-item>
+            </n-descriptions>
 
             <div v-if="template.description" class="mt-4">
               <h4 class="description-title">描述</h4>
@@ -106,12 +107,12 @@
               title="全局变量"
               empty-text="暂无全局变量"
             />
-          </a-card>
-        </a-col>
+          </n-card>
+        </div>
 
         <!-- 作业步骤 -->
-        <a-col :span="16">
-          <a-card title="作业步骤">
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="作业步骤">
             <div v-if="template.steps && template.steps.length > 0" class="steps-list">
               <StepCard
                 v-for="(step, index) in template.steps"
@@ -123,17 +124,17 @@
                 @click="openStepDrawer(step, index)"
               />
             </div>
-            <a-empty v-else description="暂无步骤" />
-          </a-card>
-        </a-col>
-      </a-row>
-      <a-drawer
-        v-model:visible="drawerVisible"
+            <n-empty v-else description="暂无步骤" />
+          </n-card>
+        </div>
+      </div>
+      <n-drawer
+        v-model:show="drawerVisible"
       :width="960"
-        :footer="false"
-        unmount-on-close
-      >
-        <template #title>
+       
+       
+      ><n-drawer-content>
+        <template #header>
           <div class="drawer-title">
             <span>步骤 {{ drawerIndex + 1 }}</span>
             <span class="drawer-title-name">{{ getStepDisplayName(drawerStep) }}</span>
@@ -147,11 +148,11 @@
           :show-detail="true"
           :default-expanded="true"
         />
-      </a-drawer>
+      </n-drawer-content></n-drawer>
     </div>
 
     <div v-else class="loading-container">
-      <a-spin size="large" />
+      <n-spin size="large" />
     </div>
   </div>
 </template>
@@ -159,13 +160,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
-import { IconEdit, IconCopy, IconPlayArrow, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import StepCard from '@/components/StepCard.vue'
 import GlobalVariablesPanel from '@/components/GlobalVariablesPanel.vue'
+import { NButton, NCard, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NEmpty, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, Copy, Pencil, Play, RefreshCw } from 'lucide-vue-next'
 
+const message = useMessage()
 const router = useRouter()
 const route = useRoute()
 
@@ -185,7 +187,7 @@ const fetchTemplate = async () => {
     template.value = response
   } catch (error) {
     console.error('获取模板详情失败:', error)
-    Message.error('获取模板详情失败')
+    message.error('获取模板详情失败')
   } finally {
     loading.value = false
   }
@@ -238,7 +240,7 @@ const handleCopy = () => {
 
   // 跳转到编辑器页面
   router.push('/job-templates/create?action=copy')
-  Message.success('模板数据已复制，请修改模板名称后保存')
+  message.success('模板数据已复制，请修改模板名称后保存')
 }
 
 const handleDebugExecute = async () => {
@@ -251,14 +253,14 @@ const handleDebugExecute = async () => {
       rolling_batch_size: 1,
       rolling_batch_delay: 0,
     })
-    Message.success('调试执行已启动！')
+    message.success('调试执行已启动！')
 
     // 跳转到执行记录页面查看结果
     router.push(`/execution-records/${result.execution_id}`)
 
   } catch (error: any) {
     console.error('调试执行失败:', error)
-    Message.error(error.response?.data?.message || '调试执行失败')
+    message.error(error.response?.data?.message || '调试执行失败')
   }
 }
 
@@ -308,7 +310,7 @@ onMounted(() => {
 }
 
 .step-list-item:hover {
-  border-color: var(--color-primary-6);
+  border-color: var(--app-accent);
 }
 
 .drawer-title {
@@ -319,7 +321,7 @@ onMounted(() => {
 }
 
 .drawer-title-name {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-weight: 500;
 }
 

@@ -10,9 +10,12 @@ class FlowTemplate(models.Model):
 
     name = models.CharField(max_length=200, unique=True, verbose_name="流程名称")
     description = models.TextField(blank=True, verbose_name="描述")
+    category = models.CharField(max_length=64, blank=True, default="", verbose_name="分类")
     variables = models.JSONField(default=dict, blank=True, verbose_name="变量定义")
     encrypted_secret_defaults = models.JSONField(default=dict, blank=True, verbose_name="加密敏感变量默认值")
+    notify_config = models.JSONField(default=dict, blank=True, verbose_name="通知配置")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    is_public = models.BooleanField(default=False, verbose_name="是否公共流程")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="创建人")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
@@ -22,6 +25,10 @@ class FlowTemplate(models.Model):
         ordering = ["-created_at"]
         verbose_name = "流程模板"
         verbose_name_plural = "流程模板"
+        indexes = [
+            models.Index(fields=["is_public", "is_active"]),
+            models.Index(fields=["category"]),
+        ]
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
@@ -179,6 +186,18 @@ class FlowRun(models.Model):
         self.error_message = error_message
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "error_message", "finished_at"])
+        event = None
+        if status == self.Status.SUCCESS:
+            event = "success"
+        elif status == self.Status.FAILED:
+            event = "failed"
+        if event:
+            try:
+                from .notify import notify_flow_run
+
+                notify_flow_run(self, event)
+            except Exception:
+                pass
 
 
 class FlowNodeRun(models.Model):

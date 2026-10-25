@@ -1,29 +1,31 @@
 <template>
   <div v-if="visibleItems.length" class="active-filters">
     <span class="active-filters__label">已筛选</span>
-    <a-space wrap>
-      <a-tag
+    <n-space wrap :size="8">
+      <n-tag
         v-for="item in visibleItems"
         :key="item.key"
         closable
+        size="small"
         @close="handleClose(item.key)"
       >
         {{ item.label }}：{{ item.display }}
-      </a-tag>
-    </a-space>
-    <a-button
-      type="text"
-      size="mini"
+      </n-tag>
+    </n-space>
+    <n-button
+      text
+      size="tiny"
       class="active-filters__clear"
       @click="emit('clear-all')"
     >
       清空
-    </a-button>
+    </n-button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { NButton, NSpace, NTag } from 'naive-ui'
 
 interface FilterItem {
   key: string
@@ -53,7 +55,7 @@ const handleClose = (key: string) => {
 }
 
 .active-filters__label {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 

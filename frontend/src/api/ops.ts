@@ -463,6 +463,8 @@ export interface FlowTemplatePageParams extends FlowPageParams {
   search?: string
   status?: string
   run_status?: string
+  is_public?: boolean | string
+  category?: string
 }
 
 export const flowApi = {
@@ -528,6 +530,14 @@ export const flowApi = {
 
   confirmManualNode(id: number, data: { node_run_id: number; remark?: string }): Promise<FlowRun> {
     return http.post(`/flows/runs/${id}/confirm_manual_node/`, data)
+  },
+
+  rejectManualNode(id: number, data: { node_run_id: number; remark?: string }): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/reject_manual_node/`, data)
+  },
+
+  forceFailNode(id: number, data: { node_run_id: number; remark?: string }): Promise<FlowRun> {
+    return http.post(`/flows/runs/${id}/force_fail_node/`, data)
   },
 
   cancelRun(id: number): Promise<FlowRun> {

@@ -1,125 +1,112 @@
 <template>
-  <a-drawer
-    v-model:visible="drawerVisible"
-    :title="title"
+  <n-drawer
+    v-model:show="drawerVisible"
     :width="width"
-    :footer="false"
-    placement="right"
     :mask-closable="closableOnMask"
-    @close="handleClose"
+    @after-leave="handleClose"
   >
-    <!-- 进度概览 -->
-    <div class="progress-overview">
-      <a-space size="large">
-        <!-- 总数 -->
-        <div class="progress-item">
-          <div class="progress-label">总数</div>
-          <div class="progress-value">{{ progress.total }}</div>
-        </div>
-        <!-- 成功 -->
-        <div class="progress-item">
-          <div class="progress-label success">成功</div>
-          <div class="progress-value success">{{ progress.success_count }}</div>
-        </div>
-        <!-- 失败 -->
-        <div class="progress-item">
-          <div class="progress-label danger">失败</div>
-          <div class="progress-value danger">{{ progress.failed_count }}</div>
-        </div>
-        <!-- 进行中 -->
-        <div class="progress-item">
-          <div class="progress-label warning">进行中</div>
-          <div class="progress-value warning">{{ progress.completed - progress.success_count - progress.failed_count }}</div>
-        </div>
-      </a-space>
-    </div>
-
-    <!-- 进度条 -->
-    <div class="progress-bar-section">
-      <a-progress
-        :percent="totalPercent"
-        :status="progressBarStatus"
-        :show-text="false"
-        size="large"
-      />
-      <div class="progress-text">
-        <span class="percent-text">{{ totalPercent }}%</span>
-        <span class="status-text" :class="progress.status">
-          {{ statusText }}
-        </span>
+    <n-drawer-content :title="title" :body-content-style="{ padding: '20px' }">
+      <!-- 进度概览 -->
+      <div class="progress-overview">
+        <n-space :size="32">
+          <div class="progress-item">
+            <div class="progress-label">总数</div>
+            <div class="progress-value">{{ progress.total }}</div>
+          </div>
+          <div class="progress-item">
+            <div class="progress-label success">成功</div>
+            <div class="progress-value success">{{ progress.success_count }}</div>
+          </div>
+          <div class="progress-item">
+            <div class="progress-label danger">失败</div>
+            <div class="progress-value danger">{{ progress.failed_count }}</div>
+          </div>
+          <div class="progress-item">
+            <div class="progress-label warning">进行中</div>
+            <div class="progress-value warning">{{ progress.completed - progress.success_count - progress.failed_count }}</div>
+          </div>
+        </n-space>
       </div>
-    </div>
 
-    <!-- 状态消息 -->
-    <a-alert
-      v-if="progress.message"
-      :type="alertType"
-      :show-icon="true"
-      class="status-message"
-    >
-      {{ progress.message }}
-    </a-alert>
-
-    <!-- 实时日志 -->
-    <div class="log-section">
-      <div class="log-header">
-        <div class="log-title">
-          <icon-code />
-          <span>实时日志</span>
-          <a-tag size="small" color="blue">{{ progress.logs.length }} 条</a-tag>
+      <!-- 进度条 -->
+      <div class="progress-bar-section">
+        <n-progress
+          type="line"
+          :percentage="totalPercent"
+          :status="progressBarStatus"
+          :show-indicator="false"
+          :height="12"
+        />
+        <div class="progress-text">
+          <span class="percent-text">{{ totalPercent }}%</span>
+          <span class="status-text" :class="progress.status">
+            {{ statusText }}
+          </span>
         </div>
-        <a-space>
-          <a-button
-            size="small"
-            :disabled="progress.logs.length === 0"
-            @click="handleClearLogs"
+      </div>
+
+      <!-- 状态消息 -->
+      <n-alert
+        v-if="progress.message"
+        :type="alertType"
+        :show-icon="true"
+        class="status-message"
+      >
+        {{ progress.message }}
+      </n-alert>
+
+      <!-- 实时日志 -->
+      <div class="log-section">
+        <div class="log-header">
+          <div class="log-title">
+            <Code2 :size="15" />
+            <span>实时日志</span>
+            <n-tag size="small" type="info">{{ progress.logs.length }} 条</n-tag>
+          </div>
+          <n-space :size="8">
+            <n-button size="small" :disabled="progress.logs.length === 0" @click="handleClearLogs">
+              <template #icon><Trash2 :size="14" /></template>
+              清空
+            </n-button>
+            <n-button size="small" :disabled="progress.logs.length === 0" @click="handleExportLogs">
+              <template #icon><Download :size="14" /></template>
+              导出
+            </n-button>
+          </n-space>
+        </div>
+
+        <!-- 日志容器 -->
+        <div ref="logContainerRef" class="log-container">
+          <div
+            v-for="(log, index) in progress.logs"
+            :key="index"
+            class="log-item"
+            :class="[log.log_type, { 'auto-scrolled': autoScrolled }]"
           >
-            <template #icon>
-              <icon-delete />
-            </template>
-            清空
-          </a-button>
-          <a-button
-            size="small"
-            :disabled="progress.logs.length === 0"
-            @click="handleExportLogs"
-          >
-            <template #icon>
-              <icon-download />
-            </template>
-            导出
-          </a-button>
-        </a-space>
-      </div>
-
-      <!-- 日志容器 -->
-      <div ref="logContainerRef" class="log-container">
-        <div
-          v-for="(log, index) in progress.logs"
-          :key="index"
-          class="log-item"
-          :class="[log.log_type, { 'auto-scrolled': autoScrolled }]"
-        >
-          <span class="log-time">{{ formatTime(log.timestamp) }}</span>
-          <span class="log-host" v-if="log.host_name">[{{ log.host_name }}]</span>
-          <span class="log-content">{{ log.content }}</span>
-        </div>
-        <div v-if="progress.logs.length === 0" class="log-empty">
-          暂无日志
+            <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+            <span class="log-host" v-if="log.host_name">[{{ log.host_name }}]</span>
+            <span class="log-content">{{ log.content }}</span>
+          </div>
+          <div v-if="progress.logs.length === 0" class="log-empty">暂无日志</div>
         </div>
       </div>
-    </div>
-  </a-drawer>
+    </n-drawer-content>
+  </n-drawer>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import {
-  IconCode,
-  IconDelete,
-  IconDownload
-} from '@arco-design/web-vue/es/icon'
-import { Message } from '@arco-design/web-vue'
+  NAlert,
+  NButton,
+  NDrawer,
+  NDrawerContent,
+  NProgress,
+  NSpace,
+  NTag,
+  useMessage
+} from 'naive-ui'
+import { Code2, Download, Trash2 } from 'lucide-vue-next'
 import type { ProgressState, ProgressLog } from '@/composables/useSSEProgress'
 import { formatTime } from '@/utils/date'
 
@@ -151,6 +138,8 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+const message = useMessage()
+
 // 抽屉可见性
 const drawerVisible = computed({
   get: () => props.visible,
@@ -170,9 +159,8 @@ const totalPercent = computed(() => {
 const progressBarStatus = computed(() => {
   const status = props.progress.status.toLowerCase()
   if (status === 'completed' || status === 'success') return 'success'
-  if (status === 'failed' || status === 'error') return 'danger'
-  if (status === 'running') return 'normal'
-  return 'normal'
+  if (status === 'failed' || status === 'error') return 'error'
+  return 'default'
 })
 
 const statusText = computed(() => {
@@ -237,13 +225,13 @@ onMounted(() => {
 // 清空日志
 const handleClearLogs = () => {
   props.progress.logs = []
-  Message.success('日志已清空')
+  message.success('日志已清空')
 }
 
 // 导出日志
 const handleExportLogs = () => {
   if (props.progress.logs.length === 0) {
-    Message.warning('没有可导出的日志')
+    message.warning('没有可导出的日志')
     return
   }
 
@@ -253,12 +241,12 @@ const handleExportLogs = () => {
 
   const blob = new Blob([logs], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `progress-${Date.now()}.log`
-  a.click()
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `progress-${Date.now()}.log`
+  link.click()
   URL.revokeObjectURL(url)
-  Message.success('日志导出成功')
+  message.success('日志导出成功')
 }
 
 // 关闭抽屉
@@ -267,12 +255,12 @@ const handleClose = () => {
 }
 </script>
 
-<style scoped lang="less">
+<style scoped>
 .progress-overview {
   display: flex;
   justify-content: center;
   padding: 16px 0;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
   border-radius: 4px;
   margin-bottom: 16px;
 }
@@ -284,38 +272,29 @@ const handleClose = () => {
 
 .progress-label {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   margin-bottom: 4px;
+}
 
-  &.success {
-    color: rgb(var(--green-6));
-  }
+.progress-label.success,
+.progress-value.success {
+  color: #16a34a;
+}
 
-  &.danger {
-    color: rgb(var(--red-6));
-  }
+.progress-label.danger,
+.progress-value.danger {
+  color: #dc2626;
+}
 
-  &.warning {
-    color: rgb(var(--orange-6));
-  }
+.progress-label.warning,
+.progress-value.warning {
+  color: #d97706;
 }
 
 .progress-value {
   font-size: 24px;
   font-weight: bold;
-  color: var(--color-text-1);
-
-  &.success {
-    color: rgb(var(--green-6));
-  }
-
-  &.danger {
-    color: rgb(var(--red-6));
-  }
-
-  &.warning {
-    color: rgb(var(--orange-6));
-  }
+  color: var(--app-fg);
 }
 
 .progress-bar-section {
@@ -331,37 +310,34 @@ const handleClose = () => {
 
 .percent-text {
   font-weight: bold;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .status-text {
   font-weight: 500;
+  color: var(--app-muted);
+}
 
-  &.idle {
-    color: var(--color-text-3);
-  }
+.status-text.running {
+  color: #2f6feb;
+}
 
-  &.running {
-    color: rgb(var(--blue-6));
-  }
+.status-text.completed,
+.status-text.success {
+  color: #16a34a;
+}
 
-  &.completed,
-  &.success {
-    color: rgb(var(--green-6));
-  }
+.status-text.failed,
+.status-text.error {
+  color: #dc2626;
+}
 
-  &.failed,
-  &.error {
-    color: rgb(var(--red-6));
-  }
+.status-text.completed_with_errors {
+  color: #d97706;
+}
 
-  &.completed_with_errors {
-    color: rgb(var(--orange-6));
-  }
-
-  &.stopped {
-    color: rgb(var(--gray-6));
-  }
+.status-text.stopped {
+  color: #6b7280;
 }
 
 .status-message {
@@ -369,7 +345,7 @@ const handleClose = () => {
 }
 
 .log-section {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -379,8 +355,8 @@ const handleClose = () => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: var(--color-fill-2);
-  border-bottom: 1px solid var(--color-border-2);
+  background: var(--app-surface-soft);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .log-title {
@@ -403,30 +379,30 @@ const handleClose = () => {
 .log-item {
   padding: 2px 0;
   color: #d4d4d4;
+}
 
-  &.info {
-    color: #9cdcfe;
-  }
+.log-item.info {
+  color: #9cdcfe;
+}
 
-  &.success {
-    color: #6a9955;
-  }
+.log-item.success {
+  color: #6a9955;
+}
 
-  &.error {
-    color: #f14c4c;
-  }
+.log-item.error {
+  color: #f14c4c;
+}
 
-  &.warning {
-    color: #cca700;
-  }
+.log-item.warning {
+  color: #cca700;
+}
 
-  &.debug {
-    color: #808080;
-  }
+.log-item.debug {
+  color: #808080;
+}
 
-  &.auto-scrolled {
-    background: rgba(255, 255, 255, 0.05);
-  }
+.log-item.auto-scrolled {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .log-time {

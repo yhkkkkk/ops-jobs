@@ -8,10 +8,10 @@
           关注 Agent 连通性、任务失败率、延时分位和失败主机，优先服务值班排障与容量判断。
         </p>
       </div>
-      <a-space>
+      <n-space>
         <span class="last-updated">最后更新：{{ formatDateTime(overview.last_updated) || '-' }}</span>
-        <a-button type="primary" :loading="loading" @click="fetchOverview">刷新</a-button>
-      </a-space>
+        <n-button type="primary" :loading="loading" @click="fetchOverview">刷新</n-button>
+      </n-space>
     </div>
 
     <div class="app-metric-grid">
@@ -36,7 +36,7 @@
     </div>
 
     <div class="ops-grid">
-      <a-card class="ops-panel" :bordered="false">
+      <n-card class="ops-panel" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>Agent 在线分布</h3>
@@ -47,9 +47,9 @@
           </span>
         </div>
         <echart-pie :data="pieData" height="320px" />
-      </a-card>
+      </n-card>
 
-      <a-card class="ops-panel" :bordered="false">
+      <n-card class="ops-panel" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>24h 任务质量</h3>
@@ -83,31 +83,27 @@
             <strong>{{ overview.heartbeat_alerts }}</strong>
           </div>
         </div>
-      </a-card>
+      </n-card>
     </div>
 
-    <a-card class="ops-panel" :bordered="false">
+    <n-card class="ops-panel" :bordered="false">
       <div class="app-section-title trend-title">
         <div>
           <h3>任务延时趋势</h3>
           <p>P50 / P95 分位延时趋势，辅助判断执行链路是否出现退化。</p>
         </div>
         <div class="trend-controls">
-          <a-select v-model="timeRange" class="range-select" @change="onTimeRangeChange">
-            <a-option v-for="opt in timeOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </a-option>
-          </a-select>
-          <a-date-picker v-if="timeRange === 'custom'" v-model="startDate" format="YYYY-MM-DD" placeholder="开始日期" />
-          <a-date-picker v-if="timeRange === 'custom'" v-model="endDate" format="YYYY-MM-DD" placeholder="结束日期" />
-          <a-button type="primary" @click="applyLatencyRange">应用</a-button>
+          <n-select v-model:value="timeRange" class="range-select" @update:value="onTimeRangeChange" :options="(timeOptions || []).map((opt: any) => ({ label: String(opt.label), value: String(opt.value) }))" />
+          <n-date-picker v-if="timeRange === 'custom'" v-model="startDate" format="YYYY-MM-DD" placeholder="开始日期" />
+          <n-date-picker v-if="timeRange === 'custom'" v-model="endDate" format="YYYY-MM-DD" placeholder="结束日期" />
+          <n-button type="primary" @click="applyLatencyRange">应用</n-button>
         </div>
       </div>
       <EchartLine v-if="latencySeries.length > 0" :series="latencySeries" :xAxis="latencyXAxis" height="320px" />
       <div v-else class="app-empty">暂无延时趋势数据</div>
-    </a-card>
+    </n-card>
 
-    <a-card class="ops-panel" :bordered="false">
+    <n-card class="ops-panel" :bordered="false">
       <div class="app-section-title">
         <div>
           <h3>失败主机 TOP</h3>
@@ -137,7 +133,7 @@
           </tbody>
         </table>
       </div>
-    </a-card>
+    </n-card>
   </div>
 </template>
 
@@ -146,11 +142,11 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { dashboardApi } from '@/api/dashboard'
-import { Message } from '@arco-design/web-vue'
-import { IconCheckCircle, IconCloseCircle, IconClockCircle, IconMinusCircle } from '@arco-design/web-vue/es/icon'
 import EchartPie from '@/components/charts/EchartPie.vue'
 import EchartLine from '@/components/charts/EchartLine.vue'
 import { formatDateTime } from '@/utils/date'
+import { NButton, NCard, NDatePicker, NSelect, NSpace, useMessage } from 'naive-ui'
+import { CircleCheck, CircleMinus, CircleX, Clock3 } from 'lucide-vue-next'
 
 const overview = reactive({
   agents_total: 0,
@@ -168,6 +164,7 @@ const overview = reactive({
   last_updated: null as string | null
 })
 
+const message = useMessage()
 const loading = ref(false)
 const router = useRouter()
 
@@ -180,7 +177,7 @@ const fetchOverview = async () => {
     }
   } catch (e) {
     console.error('获取运维台概览失败', e)
-    Message.error('获取运维台概览失败')
+    message.error('获取运维台概览失败')
   } finally {
     loading.value = false
   }
@@ -191,7 +188,7 @@ const cards = computed(() => [
     key: 'total',
     title: 'Agent 总数',
     value: overview.agents_total,
-    icon: IconClockCircle,
+    icon: Clock3,
     hint: `待激活 ${overview.agents_pending}，已禁用 ${overview.agents_disabled}`,
     tone: 'tone-neutral'
   },
@@ -199,7 +196,7 @@ const cards = computed(() => [
     key: 'online',
     title: '在线 Agent',
     value: overview.agents_online,
-    icon: IconCheckCircle,
+    icon: CircleCheck,
     hint: `在线率 ${agentOnlineRate.value}%`,
     tone: 'tone-success'
   },
@@ -207,7 +204,7 @@ const cards = computed(() => [
     key: 'offline',
     title: '离线 Agent',
     value: overview.agents_offline,
-    icon: IconCloseCircle,
+    icon: CircleX,
     hint: overview.agents_offline > 0 ? '需要确认心跳或网络状态' : '当前无离线节点',
     tone: overview.agents_offline > 0 ? 'tone-danger' : 'tone-success'
   },
@@ -215,7 +212,7 @@ const cards = computed(() => [
     key: 'p95',
     title: '任务 P95',
     value: overview.task_p95_ms,
-    icon: IconMinusCircle,
+    icon: CircleMinus,
     hint: '毫秒，点击查看执行记录',
     tone: 'tone-neutral'
   },
@@ -333,7 +330,7 @@ const applyLatencyRange = () => {
   const params: any = {}
   if (timeRange.value === 'custom') {
     if (!startDate.value || !endDate.value) {
-      Message.warning('请选择开始和结束日期')
+      message.warning('请选择开始和结束日期')
       return
     }
     const fmtVal = (v: any) => {

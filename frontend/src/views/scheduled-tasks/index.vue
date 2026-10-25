@@ -13,24 +13,24 @@
       description="创建和管理执行方案定时任务，跟踪最近执行结果和稳定性。"
     >
       <template #actions>
-        <a-space>
-          <a-button @click="handleRefresh">
+        <n-space>
+          <n-button @click="handleRefresh">
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             刷新
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             type="primary"
             @click="handleCreate"
             v-permission="{ resourceType: 'job', permission: 'add' }"
           >
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             新建任务
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
@@ -40,77 +40,58 @@
       :active-count="scheduledTaskActiveFilterCount"
     >
       <div class="app-filter-grid">
-        <a-input
-          v-model="searchForm.name"
+        <n-input
+          v-model:value="searchForm.name"
           placeholder="任务名称"
-          allow-clear
+          clearable
           @press-enter="handleSearch"
           @clear="handleSearch"
         />
-        <a-input
-          v-model="searchForm.plan_name"
+        <n-input
+          v-model:value="searchForm.plan_name"
           placeholder="执行方案"
-          allow-clear
+          clearable
           @press-enter="handleSearch"
           @clear="handleSearch"
         />
-        <a-select
-          v-model="searchForm.is_active"
+        <n-select
+          :value="(searchForm.is_active as any)"
           placeholder="状态"
-          allow-clear
-          @change="handleSearch"
-          @clear="handleSearch"
-        >
-          <a-option :value="true">启用</a-option>
-          <a-option :value="false">禁用</a-option>
-        </a-select>
-        <a-select
-          v-model="searchForm.created_by"
+          clearable
+          :options="[{ label: '启用', value: true }, { label: '停用', value: false }] as any"
+          @update:value="(v: any) => { searchForm.is_active = v; handleSearch() }"
+        />
+        <n-select
+          v-model:value="searchForm.created_by"
           placeholder="创建者"
-          allow-clear
-          allow-search
-          :filter-option="false"
+          clearable
+          filterable
+          remote
+          :options="(filteredCreators || []).map((u: any) => ({ label: u.name, value: u.id }))"
           @search="handleCreatorSearch"
-          @change="handleSearch"
-          @clear="handleSearch"
-        >
-          <a-option
-            v-for="user in filteredCreators"
-            :key="user.id"
-            :value="user.id"
-          >
-            {{ user.name }}
-          </a-option>
-        </a-select>
-        <a-select
-          v-model="searchForm.updated_by"
+          @update:value="handleSearch"
+        />
+        <n-select
+          v-model:value="searchForm.updated_by"
           placeholder="更新者"
-          allow-clear
-          allow-search
-          :filter-option="false"
+          clearable
+          filterable
+          remote
+          :options="(filteredUpdaters || []).map((u: any) => ({ label: u.name, value: u.id }))"
           @search="handleUpdaterSearch"
-          @change="handleSearch"
-          @clear="handleSearch"
-        >
-          <a-option
-            v-for="user in filteredUpdaters"
-            :key="user.id"
-            :value="user.id"
-          >
-            {{ user.name }}
-          </a-option>
-        </a-select>
+          @update:value="handleSearch"
+        />
         <div class="app-filter-grid__actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon><icon-search /></template>
+          <n-space>
+            <n-button type="primary" @click="handleSearch">
+              <template #icon><Search  /></template>
               搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon><icon-refresh /></template>
+            </n-button>
+            <n-button @click="handleReset">
+              <template #icon><RefreshCw  /></template>
               重置
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
       <ActiveFiltersBar
@@ -124,245 +105,69 @@
       title="任务列表"
       :description="`共 ${pagination.total} 个任务，当前页 ${tasks.length} 个`"
     >
-      <a-table
+      <n-data-table
         class="schedule-data-table"
         :columns="columns"
         :data="tasks"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #task="{ record }">
-          <div class="task-name-cell">
-            <a-link class="task-name-link" @click="handleView(record)">
-              {{ record.name }}
-            </a-link>
-            <div class="task-context-line">方案：{{ record.plan_name || '-' }}</div>
-            <div class="task-context-line">模板：{{ record.template_name || '-' }}</div>
-          </div>
-        </template>
-
-        <template #status="{ record }">
-          <a-tag v-if="record.is_active" color="green">启用</a-tag>
-          <a-tag v-else color="red">禁用</a-tag>
-        </template>
-
-        <template #cron_expression="{ record }">
-          <a-tooltip :content="getCronDescription(record.cron_expression)">
-            <code>{{ record.cron_expression }}</code>
-          </a-tooltip>
-        </template>
-
-        <template #success_rate="{ record }">
-          <a-progress
-            :percent="record.success_rate"
-            :color="getProgressColor(record.success_rate)"
-            size="small"
-            :show-text="false"
-          />
-          <span style="margin-left: 8px">{{ record.success_rate }}%</span>
-        </template>
-
-        <template #execution_stats="{ record }">
-          <div class="stats-cell">
-            <div>总计: {{ record.total_runs }}</div>
-            <div>成功: <span style="color: #00b42a">{{ record.success_runs }}</span></div>
-            <div>失败: <span style="color: #f53f3f">{{ record.failed_runs }}</span></div>
-          </div>
-        </template>
-
-        <template #last_execution="{ record }">
-          <div>
-            <template v-if="record.last_execution_status || record.last_execution_at">
-              <a-tag v-if="record.last_execution_status" :color="getExecutionStatusColor(record.last_execution_status)">
-                {{ getExecutionStatusText(record.last_execution_status) }}
-              </a-tag>
-              <span v-else style="color: #86909c">状态未知</span>
-              <div v-if="record.last_execution_at" class="meta-line">
-                {{ formatDateTime(record.last_execution_at) }}
-              </div>
-            </template>
-            <span v-else style="color: #86909c">暂无</span>
-          </div>
-        </template>
-
-        <template #created_at="{ record }">
-          <MetaInfoLines
-            :created-text="`创建：${formatDateTime(record.created_at)} · ${record.created_by_name || '-'}`"
-            :updated-text="`更新：${record.updated_at ? formatDateTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
-          />
-        </template>
-
-        <template #actions="{ record }">
-          <a-space class="table-row-actions" :size="2">
-            <a-button
-              type="text"
-              size="small"
-              class="scheduled-primary-action"
-              @click="handleView(record)"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              查看
-            </a-button>
-            <a-dropdown>
-              <a-button
-                type="text"
-                size="small"
-                class="scheduled-more-action"
-                aria-label="更多操作"
-              >
-                <template #icon>
-                  <icon-more />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption
-                  :class="{ 'disabled-option': !canChangeTask(record.id) }"
-                  @click="canChangeTask(record.id) ? handleEdit(record) : showNoPermissionMessage()"
-                >
-                  <template #icon>
-                    <icon-edit />
-                  </template>
-                  编辑
-                </a-doption>
-                <a-doption @click="handleHistory(record)">
-                  <template #icon><icon-history /></template>
-                  历史
-                </a-doption>
-                <a-doption
-                  v-if="record.is_active"
-                  :class="['text-orange-500', { 'disabled-option': !canChangeTask(record.id) }]"
-                  @click="handleClickToggleStatus(record)"
-                >
-                  <template #icon>
-                    <icon-pause />
-                  </template>
-                  禁用
-                </a-doption>
-                <a-doption
-                  v-else
-                  :class="['text-green-500', { 'disabled-option': !canChangeTask(record.id) }]"
-                  @click="handleClickToggleStatus(record)"
-                >
-                  <template #icon>
-                    <icon-play-arrow />
-                  </template>
-                  启用
-                </a-doption>
-                <a-doption
-                  :class="['text-red-500', { 'disabled-option': !canDeleteTask(record.id) }]"
-                  @click="handleClickDeleteTask(record)"
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                  删除
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+      />
     </DetailPanel>
 
     <!-- 历史记录抽屉 -->
-      <a-drawer
-        v-model:visible="historyVisible"
+      <n-drawer
+        v-model:show="historyVisible"
         :title="currentHistoryJob ? `执行历史 - ${currentHistoryJob.name}` : '执行历史'"
         width="70%"
-        unmount-on-close
-      >
+       
+      ><n-drawer-content>
       <div class="history-toolbar">
-        <a-input
-          v-model="historyFilters.keyword"
-          allow-clear
+        <n-input
+          v-model:value="historyFilters.keyword"
+          clearable
           placeholder="搜索名称 / 执行ID"
           style="width: 240px"
           @press-enter="handleHistorySearch"
           @clear="handleHistorySearch"
         />
-        <a-select
-          v-model="historyFilters.status"
-          allow-clear
+                <n-select
+          v-model:value="historyFilters.status"
+          clearable
           placeholder="状态"
           style="width: 140px"
           @change="handleHistorySearch"
-          @clear="handleHistorySearch"
-        >
-          <a-option value="SUCCESS">成功</a-option>
-          <a-option value="FAILED">失败</a-option>
-          <a-option value="RUNNING">运行中</a-option>
-          <a-option value="CANCELLED">已取消</a-option>
-        </a-select>
-        <a-select
-          v-model="historyFilters.quick_range"
-          allow-clear
+          @clear="handleHistorySearch" :options="selectOptions1" />
+                <n-select
+          v-model:value="historyFilters.quick_range"
+          clearable
           placeholder="时间范围"
           style="width: 140px"
           @change="handleQuickRangeChange"
-          @clear="handleQuickRangeClear"
-        >
-          <a-option value="1h">近1小时</a-option>
-          <a-option value="24h">近24小时</a-option>
-          <a-option value="7d">近7天</a-option>
-        </a-select>
-        <a-range-picker
-          v-model="historyFilters.range"
+          @clear="handleQuickRangeClear" :options="selectOptions2" />
+        <n-date-picker
+          v-model:formatted-value="historyFilters.range"
+          type="datetimerange"
           style="width: 320px"
-          show-time
-          value-format="YYYY-MM-DD HH:mm:ss"
-          allow-clear
+          value-format="yyyy-MM-dd HH:mm:ss"
+          clearable
           @change="handleRangeChange"
         />
       </div>
 
-      <a-table
+      <n-data-table
         :columns="historyTableColumns"
         :data="historyRecords"
         :loading="historyLoading"
-        :pagination="historyPagination"
-        @page-change="handleHistoryPageChange"
-        @page-size-change="handleHistoryPageSizeChange"
-      >
-        <template #status="{ record }">
-          <a-tag v-if="record.status === 'SUCCESS'" color="green">成功</a-tag>
-          <a-tag v-else-if="record.status === 'FAILED'" color="red">失败</a-tag>
-          <a-tag v-else-if="record.status === 'RUNNING'" color="blue">运行中</a-tag>
-          <a-tag v-else-if="record.status === 'CANCELLED'" color="orange">取消</a-tag>
-          <a-tag v-else color="gray">{{ record.status }}</a-tag>
-        </template>
-        <template #duration="{ record }">
-          <span v-if="record.duration">{{ formatDuration(record.duration) }}</span>
-          <span v-else style="color: #86909c">-</span>
-        </template>
-        <template #actions="{ record }">
-          <a-button type="text" size="small" @click="router.push(`/execution-records/${record.id}`)">
-            查看详情
-          </a-button>
-        </template>
-      </a-table>
-    </a-drawer>
+        :pagination="historyTablePagination"
+        remote
+      />
+    </n-drawer-content></n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
-import { Message, Modal } from '@arco-design/web-vue'
-import {
-  IconRefresh,
-  IconPlus,
-  IconSearch,
-  IconEye,
-  IconEdit,
-  IconDelete,
-  IconPause,
-  IconPlayArrow,
-  IconMore,
-  IconHistory
-} from '@arco-design/web-vue/es/icon'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { scheduledJobApi } from '@/api/scheduler'
 import { executionRecordApi } from '@/api/ops'
@@ -372,7 +177,11 @@ import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
+import { NButton, NDataTable, NDrawer, NDrawerContent, NDropdown, NInput, NProgress, NSelect, NSpace, NTag, NTooltip, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { CirclePause, Eye, History, MoreHorizontal, PauseCircle, Pencil, Play, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
 
+const dialog = useDialog()
+const message = useMessage()
 const router = useRouter()
 const loading = ref(false)
 const tasks = ref<ScheduledJob[]>([])
@@ -488,64 +297,144 @@ const handleClearFilter = (key: string) => {
 }
 
 // 表格列配置
-const columns = [
+const taskRowActions = (row: any) => {
+  const actions: any[] = [
+    { label: '编辑', key: 'edit', disabled: !canChangeTask(row.id), icon: () => h(Pencil, { size: 14 }) },
+    { label: '历史', key: 'history', icon: () => h(History, { size: 14 }) },
+  ]
+  if (row.is_active) {
+    actions.push({ label: '禁用', key: 'toggle', disabled: !canChangeTask(row.id), icon: () => h(PauseCircle, { size: 14 }) })
+  } else {
+    actions.push({ label: '启用', key: 'toggle', disabled: !canChangeTask(row.id), icon: () => h(Play, { size: 14 }) })
+  }
+  actions.push({ label: '删除', key: 'delete', disabled: !canDeleteTask(row.id), icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } })
+  return actions
+}
+
+const onTaskRowAction = (key: string, row: any) => {
+  if (key === 'edit') { if (canChangeTask(row.id)) handleEdit(row); else showNoPermissionMessage() }
+  if (key === 'history') handleHistory(row)
+  if (key === 'toggle') handleClickToggleStatus(row)
+  if (key === 'delete') handleClickDeleteTask(row)
+}
+
+const columns: DataTableColumns<any> = [
   {
     title: '任务',
     key: 'task',
-    slotName: 'task',
-    width: 260
+    width: 260,
+    render: (row) =>
+      h('div', { class: 'task-name-cell' }, [
+        h(NButton, { text: true, size: 'small', class: 'task-name-link', onClick: () => handleView(row) }, { default: () => row.name }),
+        h('div', { class: 'task-context-line' }, `方案：${row.plan_name || '-'}`),
+        h('div', { class: 'task-context-line' }, `模板：${row.template_name || '-'}`),
+      ]),
   },
   {
     title: '状态',
-    dataIndex: 'is_active',
     key: 'status',
-    slotName: 'status',
     width: 72,
-    align: 'center'
+    align: 'center',
+    render: (row) => (row.is_active
+      ? h(NTag, { type: 'success' }, { default: () => '启用' })
+      : h(NTag, { type: 'error' }, { default: () => '禁用' })),
   },
   {
     title: 'Cron表达式',
-    dataIndex: 'cron_expression',
     key: 'cron_expression',
-    slotName: 'cron_expression',
-    width: 128
+    width: 128,
+    render: (row) =>
+      h(NTooltip, {}, {
+        trigger: () => h('code', row.cron_expression),
+        default: () => getCronDescription(row.cron_expression),
+      }),
   },
   {
     title: '成功率',
     key: 'success_rate',
-    slotName: 'success_rate',
     width: 110,
-    align: 'center'
+    align: 'center',
+    render: (row) =>
+      h('span', { style: 'display: inline-flex; align-items: center' }, [
+        h(NProgress, {
+          type: 'line',
+          percentage: row.success_rate,
+          color: getProgressColor(row.success_rate),
+          showIndicator: false,
+          height: 6,
+        }),
+        h('span', { style: 'margin-left: 8px' }, `${row.success_rate}%`),
+      ]),
   },
   {
     title: '执行统计',
     key: 'execution_stats',
-    slotName: 'execution_stats',
     width: 108,
-    align: 'center'
+    align: 'center',
+    render: (row) =>
+      h('div', { class: 'stats-cell' }, [
+        h('div', `总计: ${row.total_runs}`),
+        h('div', [ '成功: ', h('span', { style: 'color: #16a34a' }, String(row.success_runs)) ]),
+        h('div', [ '失败: ', h('span', { style: 'color: #dc2626' }, String(row.failed_runs)) ]),
+      ]),
   },
   {
     title: '最近执行结果',
-    dataIndex: 'last_execution',
     key: 'last_execution',
-    slotName: 'last_execution',
-    width: 150
+    width: 150,
+    render: (row) => {
+      if (!row.last_execution_status && !row.last_execution_at) {
+        return h('span', { style: 'color: var(--app-meta)' }, '暂无')
+      }
+      return h('div', {}, [
+        row.last_execution_status
+          ? h(NTag, { type: getExecutionStatusColor(row.last_execution_status) as any }, { default: () => getExecutionStatusText(row.last_execution_status) })
+          : h('span', { style: 'color: var(--app-meta)' }, '状态未知'),
+        row.last_execution_at ? h('div', { class: 'meta-line' }, formatDateTime(row.last_execution_at)) : null,
+      ])
+    },
   },
   {
-    title: '创建/更新',
-    dataIndex: 'created_at',
+    title: '创建信息',
     key: 'created_at',
-    slotName: 'created_at',
-    width: 168
+    render: (row) =>
+      h(MetaInfoLines, {
+        createdText: `创建：${formatDateTime(row.created_at)} · ${row.created_by_name || '-'}`,
+        updatedText: `更新：${row.updated_at ? formatDateTime(row.updated_at) : '-'} · ${row.updated_by_name || row.created_by_name || '-'}`,
+      }),
   },
   {
     title: '操作',
     key: 'actions',
-    slotName: 'actions',
-    width: 108,
-    align: 'center'
-  }
+    width: 130,
+    render: (row) =>
+      h(NSpace, { class: 'table-row-actions', size: 2, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h(NButton, { text: true, size: 'small', class: 'scheduled-primary-action', onClick: () => handleView(row) }, {
+            icon: () => h(Eye, { size: 14 }),
+            default: () => '查看',
+          }),
+          h(NDropdown, {
+            trigger: 'click',
+            options: taskRowActions(row),
+            onSelect: (key: string) => onTaskRowAction(key, row),
+          }, {
+            default: () => h(NButton, { text: true, size: 'small', class: 'scheduled-more-action', 'aria-label': '更多操作' }, {
+              icon: () => h(MoreHorizontal, { size: 16 }),
+            }),
+          }),
+        ],
+      }),
+  },
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 
 // 获取可用用户列表（创建者）
 const fetchAvailableUsers = async () => {
@@ -624,7 +513,7 @@ const fetchTasks = async () => {
     // 提取用户列表
     await fetchAvailableUsers()
   } catch (error) {
-    Message.error('获取执行方案定时任务列表失败')
+    message.error('获取执行方案定时任务列表失败')
     console.error('获取执行方案定时任务列表失败:', error)
   } finally {
     loading.value = false
@@ -709,7 +598,7 @@ const fetchHistory = async () => {
     historyPagination.total = res.total || 0
   } catch (error) {
     console.error('获取执行历史失败:', error)
-    Message.error('获取执行历史失败')
+    message.error('获取执行历史失败')
   } finally {
     historyLoading.value = false
   }
@@ -789,12 +678,12 @@ const handleEdit = (record: ScheduledJob): void => {
 const handleToggleStatus = async (record: ScheduledJob): Promise<void> => {
   try {
     const action = record.is_active ? '禁用' : '启用'
-    Modal.confirm({
+    dialog.warning({
       title: `确认${action}任务`,
       content: `确定要${action}任务"${record.name}"吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         await scheduledJobApi.toggleStatus(record.id, !record.is_active)
-        Message.success(`${action}成功`)
+        message.success(`${action}成功`)
         await fetchTasks()
       }
     })
@@ -815,17 +704,17 @@ const handleClickToggleStatus = (record: ScheduledJob): void => {
 // 删除任务
 const handleDelete = async (record: ScheduledJob): Promise<void> => {
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认删除',
       content: `确定要删除任务"${record.name}"吗？此操作不可恢复。`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           await scheduledJobApi.delete(record.id)
-          Message.success('删除成功')
+          message.success('删除成功')
           await fetchTasks()
         } catch (error: any) {
           const message = error?.response?.data?.message || '删除任务失败'
-          Message.error(message)
+          message.error(message)
         }
       }
     })
@@ -843,7 +732,7 @@ const handleClickDeleteTask = (record: ScheduledJob): void => {
 }
 
 const showNoPermissionMessage = () => {
-  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+  message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 // 工具函数
@@ -869,9 +758,9 @@ const getCronDescription = (cronExpression: string): string => {
 }
 
 const getProgressColor = (percent: number): string => {
-  if (percent >= 90) return '#00b42a'
-  if (percent >= 70) return '#ff7d00'
-  return '#f53f3f'
+  if (percent >= 90) return '#16a34a'
+  if (percent >= 70) return '#d97706'
+  return '#dc2626'
 }
 
 const getExecutionStatusText = (status?: string) => {
@@ -890,14 +779,14 @@ const getExecutionStatusText = (status?: string) => {
 
 const getExecutionStatusColor = (status?: string) => {
   const map: Record<string, string> = {
-    pending: 'gray',
-    running: 'blue',
-    success: 'green',
-    failed: 'red',
-    cancelled: 'orange',
-    timeout: 'red',
-    paused: 'orange',
-    retrying: 'purple'
+    pending: 'default',
+    running: 'info',
+    success: 'success',
+    failed: 'error',
+    cancelled: 'warning',
+    timeout: 'error',
+    paused: 'warning',
+    retrying: 'info'
   }
   return status ? (map[status] || 'gray') : 'gray'
 }
@@ -928,21 +817,51 @@ const canDeleteTask = (taskId: number): boolean => {
   )
 }
 
-const historyTableColumns = [
-  { title: '执行ID', dataIndex: 'execution_id', ellipsis: true, tooltip: true },
-  { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '开始时间', dataIndex: 'started_at', width: 160 },
-  { title: '结束时间', dataIndex: 'finished_at', width: 160 },
-  { title: '耗时', dataIndex: 'duration', slotName: 'duration', width: 100 },
-  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 120 }
+const historyTableColumns: DataTableColumns<any> = [
+  { title: '执行ID', key: 'execution_id', ellipsis: { tooltip: true }, render: (row) => row.execution_id },
+  { title: '名称', key: 'name', ellipsis: { tooltip: true }, render: (row) => row.name },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) => {
+      if (row.status === 'SUCCESS') return h(NTag, { type: 'success' }, { default: () => '成功' })
+      if (row.status === 'FAILED') return h(NTag, { type: 'error' }, { default: () => '失败' })
+      if (row.status === 'RUNNING') return h(NTag, { type: 'info' }, { default: () => '运行中' })
+      if (row.status === 'CANCELLED') return h(NTag, { type: 'warning' }, { default: () => '取消' })
+      return h(NTag, {}, { default: () => row.status })
+    },
+  },
+  { title: '开始时间', key: 'started_at', width: 160, render: (row) => row.started_at },
+  { title: '结束时间', key: 'finished_at', width: 160, render: (row) => row.finished_at },
+  { title: '耗时', key: 'duration', width: 100, render: (row) => (row.duration ? formatDuration(row.duration) : h('span', { style: 'color: var(--app-meta)' }, '-')) },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (row) =>
+      h(NButton, { text: true, size: 'small', onClick: () => router.push(`/execution-records/${row.id}`) }, { default: () => '查看详情' }),
+  }
 ]
+
+const historyTablePagination = computed(() => ({
+  page: historyPagination.current,
+  pageSize: historyPagination.pageSize,
+  itemCount: historyPagination.total,
+  onChange: (page: number) => handleHistoryPageChange(page),
+  onUpdatePageSize: (size: number) => handleHistoryPageSizeChange(size),
+}))
 
 // 生命周期
 onMounted(() => {
   initFromQuery()
   fetchTasks()
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '成功', value: 'SUCCESS' }, { label: '失败', value: 'FAILED' }, { label: '运行中', value: 'RUNNING' }, { label: '已取消', value: 'CANCELLED' }]
+const selectOptions2 = [{ label: '近1小时', value: '1h' }, { label: '近24小时', value: '24h' }, { label: '近7天', value: '7d' }]
+
 </script>
 
 <style scoped>
@@ -991,7 +910,7 @@ onMounted(() => {
 .meta-line {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .disabled-option {

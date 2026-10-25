@@ -1,45 +1,45 @@
 <template>
   <div class="script-template-versions-page">
-    <a-page-header
+    <n-page-header
       :title="`脚本模板版本管理 - ${template?.name || ''}`"
       @back="handleBack"
     />
 
-    <a-card class="mb-4">
-      <a-descriptions :column="3" bordered size="small" v-if="template">
-        <a-descriptions-item label="模板名称">
+    <n-card class="mb-4">
+      <n-descriptions :column="3" bordered size="small" v-if="template">
+        <n-descriptions-item label="模板名称">
           {{ template.name }}
-        </a-descriptions-item>
-        <a-descriptions-item label="脚本类型">
-          <a-tag :color="getScriptTypeColor(template.script_type)">
+        </n-descriptions-item>
+        <n-descriptions-item label="脚本类型">
+          <n-tag :color="getScriptTypeColor(template.script_type)">
             {{ getScriptTypeText(template.script_type) }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="当前版本">
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="当前版本">
           {{ template.version || '未设置' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="状态">
-          <a-tag :color="template.is_active ? 'green' : 'red'">
+        </n-descriptions-item>
+        <n-descriptions-item label="状态">
+          <n-tag :color="template.is_active ? 'green' : 'red'">
             {{ template.is_active ? '上线' : '下线' }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="创建者">
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="创建者">
           {{ template.created_by_name }}
-        </a-descriptions-item>
-      </a-descriptions>
-    </a-card>
+        </n-descriptions-item>
+      </n-descriptions>
+    </n-card>
 
-    <a-card>
+    <n-card>
       <div class="mb-4">
-        <a-button type="primary" @click="showCreateVersion = true">
+        <n-button type="primary" @click="showCreateVersion = true">
           <template #icon>
-            <icon-plus />
+            <Plus />
           </template>
           创建新版本
-        </a-button>
+        </n-button>
       </div>
 
-      <a-table
+      <n-table
         :columns="versionColumns"
         :data="versions"
         :loading="versionLoading"
@@ -47,9 +47,9 @@
         row-key="id"
       >
         <template #is_active="{ record }">
-          <a-tag :color="record.is_active ? 'green' : 'gray'">
+          <n-tag :color="record.is_active ? 'green' : 'gray'">
             {{ record.is_active ? '当前版本' : '历史版本' }}
-          </a-tag>
+          </n-tag>
         </template>
 
         <template #created_at="{ record }">
@@ -57,97 +57,97 @@
         </template>
 
         <template #actions="{ record }">
-          <a-dropdown>
-            <a-button type="text" size="small">
+          <n-dropdown>
+            <n-button text size="small">
               <template #icon>
-                <icon-more />
+                <MoreHorizontal />
               </template>
-            </a-button>
+            </n-button>
             <template #content>
-              <a-doption
+              <n-doption
                 v-if="!record.is_active"
                 class="action-success"
                 @click="handleRollback(record)"
               >
                 设为当前
-              </a-doption>
-              <a-doption
+              </n-doption>
+              <n-doption
                 v-if="!record.is_active"
                 class="action-info"
                 @click="handleCompareWithCurrent(record)"
               >
                 对比当前
-              </a-doption>
-              <a-doption class="action-primary" @click="handleEditVersion(record)">
+              </n-doption>
+              <n-doption class="action-primary" @click="handleEditVersion(record)">
                 编辑
-              </a-doption>
-              <a-doption class="action-muted" @click="handleViewVersion(record)">
+              </n-doption>
+              <n-doption class="action-muted" @click="handleViewVersion(record)">
                 查看
-              </a-doption>
-              <a-doption class="action-blue" @click="handleCopyFromVersion(record)">
+              </n-doption>
+              <n-doption class="action-blue" @click="handleCopyFromVersion(record)">
                 复制并新建
-              </a-doption>
-              <a-doption class="action-success" @click="handleExecuteVersion(record)">
+              </n-doption>
+              <n-doption class="action-success" @click="handleExecuteVersion(record)">
                 去执行
-              </a-doption>
-              <a-doption
+              </n-doption>
+              <n-doption
                 :class="template?.is_active ? 'action-danger' : 'action-success'"
                 @click="handleDisableFromVersion"
               >
                 {{ template?.is_active ? '禁用模板' : '启用模板' }}
-              </a-doption>
+              </n-doption>
             </template>
-          </a-dropdown>
+          </n-dropdown>
         </template>
-      </a-table>
-    </a-card>
+      </n-table>
+    </n-card>
 
     <!-- 创建版本弹窗 -->
-    <a-modal
-      v-model:visible="showCreateVersion"
+    <n-modal preset="card"
+      v-model:show="showCreateVersion"
       title="创建新版本"
       @ok="handleCreateVersion"
       @cancel="resetVersionForm"
     >
-      <a-form :model="versionForm" layout="vertical">
-        <a-form-item label="版本号" required>
-          <a-input
-            v-model="versionForm.version"
+      <n-form :model="versionForm" layout="vertical">
+        <n-form-item label="版本号" required>
+          <n-input
+            v-model:value="versionForm.version"
             placeholder="请输入版本号，如：1.1.0"
-          />
-        </a-form-item>
-        <a-form-item label="版本描述">
-          <a-textarea
-            v-model="versionForm.description"
+           />
+        </n-form-item>
+        <n-form-item label="版本描述">
+          <n-input type="textarea"
+            v-model:value="versionForm.description"
             placeholder="请输入版本描述"
             :rows="3"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
+           />
+        </n-form-item>
+      </n-form>
+    </n-modal>
 
     <!-- 版本内容查看弹窗 -->
-    <a-modal
-      v-model:visible="versionContentVisible"
+    <n-modal preset="card"
+      v-model:show="versionContentVisible"
       title="版本内容"
       :width="1000"
       :footer="false"
     >
       <div v-if="currentVersion">
-        <a-descriptions :column="2" bordered class="mb-4">
-          <a-descriptions-item label="版本号">
+        <n-descriptions :column="2" bordered class="mb-4">
+          <n-descriptions-item label="版本号">
             {{ currentVersion.version }}
-          </a-descriptions-item>
-          <a-descriptions-item label="创建者">
+          </n-descriptions-item>
+          <n-descriptions-item label="创建者">
             {{ currentVersion.created_by_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="创建时间" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item label="创建时间" :span="2">
             {{ dayjs(currentVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-          </a-descriptions-item>
-          <a-descriptions-item label="描述" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item label="描述" :span="2">
             {{ currentVersion.description || '暂无描述' }}
-          </a-descriptions-item>
-        </a-descriptions>
+          </n-descriptions-item>
+        </n-descriptions>
 
         <div>
           <h4>脚本内容</h4>
@@ -159,11 +159,11 @@
           />
         </div>
       </div>
-    </a-modal>
+    </n-modal>
 
     <!-- 版本对比弹窗 -->
-    <a-modal
-      v-model:visible="versionDiffVisible"
+    <n-modal preset="card"
+      v-model:show="versionDiffVisible"
       title="版本对比"
       :width="1100"
       :footer="false"
@@ -172,25 +172,25 @@
         <div class="version-diff-meta">
           <div class="version-diff-meta-column">
             <h4>当前版本 {{ diffBaseVersion.version }}</h4>
-            <a-descriptions :column="1" bordered size="small" class="mb-2">
-              <a-descriptions-item label="创建者">
+            <n-descriptions :column="1" bordered size="small" class="mb-2">
+              <n-descriptions-item label="创建者">
                 {{ diffBaseVersion.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ dayjs(diffBaseVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-              </a-descriptions-item>
-            </a-descriptions>
+              </n-descriptions-item>
+            </n-descriptions>
           </div>
           <div class="version-diff-meta-column">
             <h4>对比版本 {{ diffTargetVersion.version }}</h4>
-            <a-descriptions :column="1" bordered size="small" class="mb-2">
-              <a-descriptions-item label="创建者">
+            <n-descriptions :column="1" bordered size="small" class="mb-2">
+              <n-descriptions-item label="创建者">
                 {{ diffTargetVersion.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ dayjs(diffTargetVersion.created_at).format('YYYY-MM-DD HH:mm:ss') }}
-              </a-descriptions-item>
-            </a-descriptions>
+              </n-descriptions-item>
+            </n-descriptions>
           </div>
         </div>
         <monaco-diff-editor
@@ -201,21 +201,23 @@
           :readonly="true"
         />
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import MonacoDiffEditor from '@/components/MonacoDiffEditor.vue'
 import dayjs from 'dayjs'
-import { IconPlus, IconMore } from '@arco-design/web-vue/es/icon'
+import { NButton, NDataTable, NDropdown, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { ChevronLeft, MoreHorizontal } from 'lucide-vue-next'
 
+const dialog = useDialog()
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -286,7 +288,7 @@ const handleBack = () => {
 const fetchTemplate = async () => {
   const id = Number(route.params.id)
   if (!id) {
-    Message.error('模板ID无效')
+    message.error('模板ID无效')
     handleBack()
     return
   }
@@ -295,7 +297,7 @@ const fetchTemplate = async () => {
     template.value = await scriptTemplateApi.getTemplate(id)
   } catch (error) {
     console.error('获取模板详情失败:', error)
-    Message.error('获取模板详情失败')
+    message.error('获取模板详情失败')
     handleBack()
   }
 }
@@ -308,7 +310,7 @@ const fetchVersions = async () => {
     versions.value = await scriptTemplateApi.getVersions(template.value.id)
   } catch (error) {
     console.error('获取版本列表失败:', error)
-    Message.error('获取版本列表失败')
+    message.error('获取版本列表失败')
   } finally {
     versionLoading.value = false
   }
@@ -317,7 +319,7 @@ const fetchVersions = async () => {
 const handleCreateVersion = async () => {
   if (!template.value?.id) return
   if (!versionForm.version.trim()) {
-    Message.error('请输入版本号')
+    message.error('请输入版本号')
     return
   }
 
@@ -326,31 +328,31 @@ const handleCreateVersion = async () => {
       version: versionForm.version,
       description: versionForm.description
     })
-    Message.success('创建版本成功')
+    message.success('创建版本成功')
     showCreateVersion.value = false
     resetVersionForm()
     await fetchVersions()
   } catch (error) {
     console.error('创建版本失败:', error)
-    Message.error('创建版本失败')
+    message.error('创建版本失败')
   }
 }
 
 const handleRollback = async (version: any) => {
   if (!template.value?.id) return
 
-  Modal.confirm({
+  dialog.warning({
     title: '确认设为当前版本',
     content: `将版本 ${version.version} 设为当前后，会同步更新模板内容并保留原当前版本为历史记录，是否继续？`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         await scriptTemplateApi.rollbackVersion(template.value!.id!, version.id)
-        Message.success('已设为当前版本')
+        message.success('已设为当前版本')
         await fetchTemplate()
         await fetchVersions()
       } catch (error) {
         console.error('设置当前版本失败:', error)
-        Message.error('设置当前版本失败')
+        message.error('设置当前版本失败')
       }
     }
   })
@@ -363,7 +365,7 @@ const handleViewVersion = (version: any) => {
 
 const handleEditVersion = (version: any) => {
   if (!template.value) {
-    Message.error('当前未选择模板')
+    message.error('当前未选择模板')
     return
   }
 
@@ -382,7 +384,7 @@ const handleEditVersion = (version: any) => {
 
 const handleCopyFromVersion = (version: any) => {
   if (!template.value) {
-    Message.error('当前未选择模板')
+    message.error('当前未选择模板')
     return
   }
 
@@ -401,7 +403,7 @@ const handleCopyFromVersion = (version: any) => {
 
 const handleExecuteVersion = (version: any) => {
   if (!template.value) {
-    Message.error('当前未选择模板')
+    message.error('当前未选择模板')
     return
   }
 
@@ -420,17 +422,17 @@ const handleDisableFromVersion = async () => {
   if (!template.value?.id) return
 
   const action = template.value.is_active ? '下线' : '上线'
-  Modal.confirm({
+  dialog.warning({
     title: `确认${action}`,
     content: `确定要${action}模板 "${template.value.name}" 吗？`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         const result = await scriptTemplateApi.toggleStatus(template.value!.id!)
         template.value!.is_active = result.is_active
-        Message.success(`模板已${action}`)
+        message.success(`模板已${action}`)
       } catch (error) {
         console.error(`${action}失败:`, error)
-        Message.error(`${action}失败`)
+        message.error(`${action}失败`)
       }
     }
   })
@@ -439,7 +441,7 @@ const handleDisableFromVersion = async () => {
 const handleCompareWithCurrent = (version: any) => {
   const active = versions.value.find(v => v.is_active)
   if (!active) {
-    Message.warning('当前没有标记为“当前版本”的版本记录')
+    message.warning('当前没有标记为“当前版本”的版本记录')
     return
   }
 
@@ -520,11 +522,11 @@ onMounted(async () => {
 }
 
 :deep(.action-info) {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
 }
 
 :deep(.action-primary) {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
 }
 
 :deep(.action-blue) {
@@ -532,7 +534,7 @@ onMounted(async () => {
 }
 
 :deep(.action-muted) {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 </style>
 

@@ -6,7 +6,7 @@
         <p>标准插件 / 场景模板</p>
       </div>
     </div>
-    <a-input v-model="search" class="node-search" allow-clear placeholder="搜索执行动作或流程控制" />
+    <n-input v-model:value="search" class="node-search" clearable placeholder="搜索执行动作或流程控制" />
     <div class="node-library-note">
       控制节点由流程引擎处理，不是 Agent 执行动作。
     </div>
@@ -42,7 +42,7 @@
         </span>
       </button>
     </section>
-    <a-empty v-if="groupedPlugins.every(group => group.plugins.length === 0)" description="没有匹配的节点类型" />
+    <n-empty v-if="groupedPlugins.every(group => group.plugins.length === 0)" description="没有匹配的节点类型" />
 
     <div class="status-legend">
       <span><i class="legend-dot legend-dot--success" /> 成功</span>
@@ -53,8 +53,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type Component } from 'vue'
 import type { SupportedFlowNodeType } from '../flowUtils'
+import { NEmpty, NInput } from 'naive-ui'
 
 export interface FlowNodePluginOption {
   type: SupportedFlowNodeType
@@ -62,7 +63,7 @@ export interface FlowNodePluginOption {
   description: string
   category: string
   risk: string
-  icon: string
+  icon: Component
 }
 
 export interface FlowScenarioOption {
@@ -132,11 +133,15 @@ const handleScenarioClick = (key: 'release' | 'dispatch') => {
 .node-library {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  height: 100%;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
-  padding: 7px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 8px 16px;
   background: #fff;
+  overscroll-behavior: contain;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
 }

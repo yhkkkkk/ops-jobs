@@ -8,166 +8,113 @@
           <p class="header-desc">查看和管理 Agent 卸载历史记录</p>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button @click="handleRefresh">
+          <n-space>
+            <n-button @click="handleRefresh">
               <template #icon>
-                <IconRefresh />
+                <RefreshCw />
               </template>
               刷新
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
     <!-- 搜索栏 -->
-    <a-card class="mb-4">
-      <a-form :model="searchForm" layout="inline">
-        <a-form-item label="搜索">
-          <a-input
-            v-model="searchForm.search"
+    <n-card class="mb-4">
+      <n-form :model="searchForm" layout="inline">
+        <n-form-item label="搜索">
+          <n-input
+            v-model:value="searchForm.search"
             placeholder="主机名、IP"
-            allow-clear
+            clearable
             @press-enter="handleSearch"
             @clear="handleSearch"
             style="width: 250px"
           />
-        </a-form-item>
-        <a-form-item label="状态">
-          <a-select
-            v-model="searchForm.status"
+        </n-form-item>
+        <n-form-item label="状态">
+                    <n-select
+            v-model:value="searchForm.status"
             placeholder="请选择状态"
-            allow-clear
+            clearable
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 120px"
-          >
-            <a-option value="pending">卸载中</a-option>
-            <a-option value="success">成功</a-option>
-            <a-option value="failed">失败</a-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
+            style="width: 120px" :options="selectOptions1" />
+        </n-form-item>
+        <n-form-item>
+          <n-button type="primary" @click="handleSearch">
             <template #icon>
-              <IconSearch />
+              <Search />
             </template>
             搜索
-          </a-button>
-          <a-button @click="handleReset" style="margin-left: 8px">
+          </n-button>
+          <n-button @click="handleReset" style="margin-left: 8px">
             <template #icon>
-              <IconRefresh />
+              <RefreshCw />
             </template>
             重置
-          </a-button>
-        </a-form-item>
-      </a-form>
-    </a-card>
+          </n-button>
+        </n-form-item>
+      </n-form>
+    </n-card>
 
     <!-- 卸载记录列表 -->
     <div class="table-container">
-      <a-table
+      <n-data-table
         :columns="columns"
         :data="records"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #host="{ record }">
-          <div>
-            <div style="font-weight: 500">{{ record.host_name }}</div>
-            <div style="color: #86909c; font-size: 12px">{{ record.host_ip }}</div>
-          </div>
-        </template>
-
-        <template #status="{ record }">
-          <a-tag :color="getStatusColor(record.status)">
-            {{ record.status_display }}
-          </a-tag>
-        </template>
-
-        <template #task_stats="{ record }">
-          <div class="task-stats">
-            <div class="stat-item">
-              <span class="stat-label">总数:</span>
-              <span class="stat-value">{{ record.task_total_hosts || 1 }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label stat-success">成功:</span>
-              <span class="stat-value stat-success">{{ record.task_success_count || 0 }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label stat-error">失败:</span>
-              <span class="stat-value stat-error">{{ record.task_failed_count || 0 }}</span>
-            </div>
-          </div>
-        </template>
-
-        <template #uninstalled_at="{ record }">
-          {{ formatDateTime(record.uninstalled_at) }}
-        </template>
-
-        <template #actions="{ record }">
-          <a-space>
-            <a-button type="text" size="small" @click="handleViewDetail(record)">
-              <template #icon>
-                <IconEye />
-              </template>
-              查看详情
-            </a-button>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+      />
     </div>
 
     <!-- 详情对话框 -->
-    <a-modal
-      v-model:visible="detailVisible"
+    <n-modal preset="card" :style="{ width: '800px' }"
+      v-model:show="detailVisible"
       title="卸载记录详情"
-      width="800px"
-      :footer="false"
+     
+     
     >
-      <a-descriptions
+      <n-descriptions
         v-if="currentRecord"
         :column="1"
         bordered
         size="large"
       >
-        <a-descriptions-item label="主机信息">
+        <n-descriptions-item label="主机信息">
           <div>
             <div><strong>主机名：</strong>{{ currentRecord.host_name }}</div>
             <div><strong>IP 地址：</strong>{{ currentRecord.host_ip }}</div>
           </div>
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.agent_id" label="Agent ID">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.agent_id" label="Agent ID">
           {{ currentRecord.agent_id }}
-        </a-descriptions-item>
-        <a-descriptions-item label="Agent类型">
-          <a-tag :color="currentRecord.agent_type === 'agent-server' ? 'purple' : 'blue'">
+        </n-descriptions-item>
+        <n-descriptions-item label="Agent类型"><n-tag :type="currentRecord.agent_type === 'agent-server' ? 'purple' : 'blue' as any">
             {{ currentRecord.agent_type_display }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.package_version" label="版本">
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.package_version" label="版本">
           {{ currentRecord.package_version }}
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.package_os_type" label="操作系统">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.package_os_type" label="操作系统">
           {{ currentRecord.package_os_type }}
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.package_arch" label="架构">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.package_arch" label="架构">
           {{ currentRecord.package_arch }}
-        </a-descriptions-item>
-        <a-descriptions-item label="卸载状态">
-          <a-space>
-            <a-tag :color="getStatusColor(currentRecord.status)">
+        </n-descriptions-item>
+        <n-descriptions-item label="卸载状态">
+          <n-space><n-tag :type="getStatusColor(currentRecord.status) as any">
               {{ currentRecord.status_display }}
-            </a-tag>
-          </a-space>
-        </a-descriptions-item>
-        <a-descriptions-item label="卸载时间">
+            </n-tag>
+          </n-space>
+        </n-descriptions-item>
+        <n-descriptions-item label="卸载时间">
           {{ formatDateTime(currentRecord.uninstalled_at) }}
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.task_total_hosts" label="任务统计">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.task_total_hosts" label="任务统计">
           <div class="task-stats-detail">
             <div class="stat-item">
               <span class="stat-label">总主机数:</span>
@@ -182,40 +129,37 @@
               <span class="stat-value stat-error">{{ currentRecord.task_failed_count }}</span>
             </div>
           </div>
-        </a-descriptions-item>
-        <a-descriptions-item label="操作者">
+        </n-descriptions-item>
+        <n-descriptions-item label="操作者">
           {{ currentRecord.uninstalled_by_name }}
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.message" label="消息">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.message" label="消息">
           <div style="word-break: break-all; white-space: pre-wrap">{{ currentRecord.message }}</div>
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.error_message" label="错误信息">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.error_message" label="错误信息">
           <div style="word-break: break-all; white-space: pre-wrap; color: #ff4d4f">{{ currentRecord.error_message }}</div>
-        </a-descriptions-item>
-        <a-descriptions-item v-if="currentRecord.error_detail" label="错误详情">
+        </n-descriptions-item>
+        <n-descriptions-item v-if="currentRecord.error_detail" label="错误详情">
           <div style="word-break: break-all; white-space: pre-wrap; color: #ff4d4f">{{ currentRecord.error_detail }}</div>
-        </a-descriptions-item>
-      </a-descriptions>
-    </a-modal>
+        </n-descriptions-item>
+      </n-descriptions>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { computed, h, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
-import {
-  IconRefresh,
-  IconSearch,
-  IconEye,
-} from '@arco-design/web-vue/es/icon'
 import { agentsApi } from '@/api/agents'
 import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import { formatDateTime } from '@/utils/date'
+import { NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NTag, type DataTableColumns, useMessage } from 'naive-ui'
+import { Eye, RefreshCw, Search } from 'lucide-vue-next'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
+const message = useMessage()
 const route = useRoute()
 
 // 类型定义
@@ -276,68 +220,69 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
 })
 
 // 表格列配置
-const columns = [
+const columns: DataTableColumns<any> = [
   {
     title: '主机',
     key: 'host',
-    slot: 'host',
-    width: 180
+    width: 180,
+    render: (row) =>
+      h('div', {}, [
+        h('div', { style: 'font-weight: 500' }, row.host_name),
+        h('div', { style: 'color: var(--app-meta); font-size: 12px' }, row.host_ip),
+      ]),
   },
-  {
-    title: 'Agent ID',
-    key: 'agent_id',
-    dataIndex: 'agent_id',
-    width: 100
-  },
-  {
-    title: 'Agent类型',
-    key: 'agent_type_display',
-    dataIndex: 'agent_type_display',
-    width: 120
-  },
+  { title: 'Agent ID', key: 'agent_id', width: 100, render: (row) => row.agent_id },
+  { title: 'Agent类型', key: 'agent_type_display', width: 120, render: (row) => row.agent_type_display },
   {
     title: '状态',
     key: 'status',
-    slot: 'status',
-    width: 100
+    width: 100,
+    render: (row) => h(NTag, { type: getStatusColor(row.status) as any }, { default: () => row.status_display }),
   },
   {
     title: '任务统计',
     key: 'task_stats',
-    slot: 'task_stats',
-    width: 150
+    width: 150,
+    render: (row) =>
+      h('div', { class: 'task-stats' }, [
+        h('div', { class: 'stat-item' }, [h('span', { class: 'stat-label' }, '总数:'), h('span', { class: 'stat-value' }, String(row.task_total_hosts || 1))]),
+        h('div', { class: 'stat-item' }, [h('span', { class: 'stat-label stat-success' }, '成功:'), h('span', { class: 'stat-value stat-success' }, String(row.task_success_count || 0))]),
+        h('div', { class: 'stat-item' }, [h('span', { class: 'stat-label stat-error' }, '失败:'), h('span', { class: 'stat-value stat-error' }, String(row.task_failed_count || 0))]),
+      ]),
   },
-  {
-    title: '卸载时间',
-    key: 'uninstalled_at',
-    slot: 'uninstalled_at',
-    width: 180
-  },
-  {
-    title: '操作者',
-    key: 'uninstalled_by_name',
-    dataIndex: 'uninstalled_by_name',
-    width: 120,
-    ellipsis: true
-  },
+  { title: '卸载时间', key: 'uninstalled_at', width: 180, render: (row) => formatDateTime(row.uninstalled_at) },
   {
     title: '操作',
     key: 'actions',
-    slot: 'actions',
     width: 120,
-    fixed: 'right'
-  }
+    render: (row) =>
+      h(NSpace, { size: 4 }, {
+        default: () =>
+          h(NButton, { text: true, size: 'small', onClick: () => handleViewDetail(row) }, {
+            icon: () => h(Eye, { size: 14 }),
+            default: () => '查看详情',
+          }),
+      }),
+  },
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 
 // 获取状态颜色
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'success':
-      return 'green'
+      return 'success'
     case 'failed':
-      return 'red'
+      return 'error'
     case 'pending':
-      return 'orange'
+      return 'warning'
     default:
       return 'default'
   }
@@ -359,7 +304,7 @@ const loadData = async () => {
     pagination.total = response.total
   } catch (error) {
     console.error('加载卸载记录失败:', error)
-    Message.error('加载卸载记录失败')
+    message.error('加载卸载记录失败')
   } finally {
     loading.value = false
   }
@@ -425,6 +370,9 @@ const handleViewDetail = (record: UninstallRecord) => {
   detailVisible.value = true
 }
 
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '卸载中', value: 'pending' }, { label: '成功', value: 'success' }, { label: '失败', value: 'failed' }]
 </script>
 
 <style scoped>

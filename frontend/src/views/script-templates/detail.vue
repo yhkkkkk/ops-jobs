@@ -1,120 +1,95 @@
 <template>
   <div class="script-template-detail">
     <!-- 页面头部 -->
-    <a-page-header
-      :title="template?.name || '脚本模板详情'"
-      @back="handleBack"
-    >
-      <template #subtitle>
-        <a-space>
-          <a-tag v-if="template?.category" color="blue">{{ getCategoryText(template.category) }}</a-tag>
-        </a-space>
-      </template>
-
-      <template #extra>
-        <a-space>
-          <span class="text-gray-500">创建于 {{ formatTime(template?.created_at) }}</span>
-          <a-button type="outline" @click="handleRefresh">
-            <template #icon>
-              <icon-refresh />
-            </template>
-            刷新
-          </a-button>
-          <a-button
-            type="outline"
-            @click="handleEdit"
-            v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: template?.id }"
-          >
-            <template #icon>
-              <icon-edit />
-            </template>
-            编辑
-          </a-button>
-          <a-button
-            type="outline"
-            @click="handleCopy"
-            v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
-          >
-            <template #icon>
-              <icon-copy />
-            </template>
-            复制
-          </a-button>
-          <a-dropdown>
-            <a-button type="outline">
-              <template #icon>
-                <icon-more />
-              </template>
-            </a-button>
-            <template #content>
-              <a-doption
-                :class="{ 'disabled-option': !canManageVersions }"
-                @click="handleVersions"
-              >
+    <div class="page-header-block">
+      <n-button text size="small" @click="handleBack">
+        <template #icon>
+          <ChevronLeft  />
+        </template>
+        返回
+      </n-button>
+      <div class="page-header-info">
+        <h4>{{ template?.name || '脚本模板详情' }}</h4>
+        <n-space v-if="template?.category" :size="4">
+          <n-tag type="info" size="small">{{ getCategoryText(template.category) }}</n-tag>
+        </n-space>
+      </div>
+      <n-space class="page-header-extra">
+        <span class="text-gray-500">创建于 {{ formatTime(template?.created_at) }}</span>
+        <n-button secondary @click="handleRefresh">
+          <template #icon>
+            <RefreshCw  />
+          </template>
+          刷新
+        </n-button>
+        <n-button
+          secondary
+          @click="handleEdit"
+          v-permission="{ resourceType: 'scripttemplate', permission: 'change', resourceId: template?.id }"
+        >
+          <template #icon>
+            <Pencil  />
+          </template>
+          编辑
+        </n-button>
+        <n-button
+          secondary
+          @click="handleCopy"
+          v-permission="{ resourceType: 'scripttemplate', permission: 'add', resourceId: template?.id }"
+        >
+          <template #icon>
+            <Copy  />
+          </template>
+          复制
+        </n-button>
+<n-dropdown
+              trigger="click"
+              :options="detailRowActions"
+              @select="onDetailRowAction"
+            >
+              <n-button secondary>
                 <template #icon>
-                  <icon-history />
+                  <MoreHorizontal  />
                 </template>
-                版本管理
-              </a-doption>
-              <a-doption
-                :class="{ 'disabled-option': !canToggleStatus }"
-                @click="handleToggleStatus"
-              >
-                <template #icon>
-                  <icon-poweroff />
-                </template>
-                {{ template?.is_active ? '下线' : '上线' }}
-              </a-doption>
-              <a-doption
-                :class="['text-red-500', { 'disabled-option': !canDeleteTemplate }]"
-                @click="handleDelete"
-              >
-                <template #icon>
-                  <icon-delete />
-                </template>
-                删除
-              </a-doption>
-            </template>
-          </a-dropdown>
-        </a-space>
-      </template>
-    </a-page-header>
+              </n-button>
+            </n-dropdown>
+      </n-space>
+    </div>
 
     <div class="detail-content" v-if="template">
-      <a-row :gutter="24">
-        <a-col :span="8">
+      <div class="form-grid-row">
+        <div class="form-grid-col" style="grid-column: span 8">
           <!-- 基本信息 -->
-          <a-card title="基本信息" class="mb-4">
-            <a-descriptions :column="1" bordered>
-              <a-descriptions-item label="模板名称">
+          <n-card title="基本信息" class="mb-4">
+            <n-descriptions :column="1" bordered label-placement="left" :label-style="{ width: '96px' }">
+              <n-descriptions-item label="模板名称">
                 {{ template.name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="脚本类型">
-                <a-tag :color="getScriptTypeColor(template.script_type)">
+              </n-descriptions-item>
+              <n-descriptions-item label="脚本类型"><n-tag :type="getScriptTypeColor(template.script_type) as any">
                   {{ getScriptTypeText(template.script_type) }}
-                </a-tag>
-              </a-descriptions-item>
-              <a-descriptions-item label="分类">
+                </n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="分类">
                 {{ template.category || '未分类' }}
-              </a-descriptions-item>
-              <a-descriptions-item label="版本">
+              </n-descriptions-item>
+              <n-descriptions-item label="版本">
                 {{ template.version || '1.0.0' }}
-              </a-descriptions-item>
-              <a-descriptions-item label="状态">
-                <a-tag :color="template.is_active ? 'green' : 'red'">
+              </n-descriptions-item>
+              <n-descriptions-item label="状态">
+                <n-tag :type="template.is_active ? 'success' : 'error'">
                   {{ template.is_active ? '上线' : '下线' }}
-                </a-tag>
-              </a-descriptions-item>
-              <a-descriptions-item label="创建人">
+                </n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="创建人">
                 {{ template.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ formatTime(template.created_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="更新时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="更新时间">
                 {{ formatTime(template.updated_at) }}
-              </a-descriptions-item>
-            </a-descriptions>
+              </n-descriptions-item>
+            </n-descriptions>
 
             <div v-if="template?.description" class="mt-4">
               <h4 class="description-title">描述</h4>
@@ -125,56 +100,49 @@
             <div class="mt-4">
               <h4 class="description-title">标签</h4>
               <div v-if="template?.tag_list && template.tag_list.length > 0">
-                <a-space wrap>
-                  <a-tag
+                <n-space wrap>
+                  <n-tag
                     v-for="tag in template.tag_list"
                     :key="`${tag.key}-${tag.value}`"
                     size="small"
                   >
                     <strong>{{ tag.key }}:</strong> {{ tag.value }}
-                  </a-tag>
-                </a-space>
+                  </n-tag>
+                </n-space>
               </div>
               <span v-else class="text-gray-400">无标签</span>
             </div>
-          </a-card>
-        </a-col>
+          </n-card>
+        </div>
 
-        <a-col :span="16">
+        <div class="form-grid-col" style="grid-column: span 16">
           <!-- 脚本内容 -->
-          <a-card title="脚本内容">
+          <n-card title="脚本内容">
             <simple-monaco-editor
               :model-value="template?.script_content || template?.content || ''"
               :language="template?.script_type || 'shell'"
               :height="500"
               :readonly="true"
             />
-          </a-card>
-        </a-col>
-      </a-row>
+          </n-card>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, h, onMounted, ref, resolveDirective, type VNode, withDirectives } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import {
-  IconRefresh,
-  IconEdit,
-  IconCopy,
-  IconMore,
-  IconHistory,
-  IconPoweroff,
-  IconDelete,
-  IconArrowLeft
-} from '@arco-design/web-vue/es/icon'
 import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
 import { usePermissionsStore } from '@/stores/permissions'
+import { NButton, NCard, NDescriptions, NDescriptionsItem, NDropdown, NSpace, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { ChevronLeft, Copy, History, MoreHorizontal, Pencil, Power, RefreshCw, Trash2 } from 'lucide-vue-next'
 
+const dialog = useDialog()
+const message = useMessage()
 const router = useRouter()
 const route = useRoute()
 const permissionsStore = usePermissionsStore()
@@ -192,7 +160,7 @@ const fetchTemplate = async () => {
     template.value = data
   } catch (error) {
     console.error('获取脚本模板详情失败:', error)
-    Message.error('获取模板详情失败')
+    message.error('获取模板详情失败')
     router.back()
   } finally {
     loading.value = false
@@ -239,17 +207,17 @@ const handleToggleStatus = async () => {
   if (!template.value) return
 
   const action = template.value.is_active ? '下线' : '上线'
-  Modal.confirm({
+  dialog.warning({
     title: `确认${action}`,
     content: `确定要${action}模板 "${template.value.name}" 吗？`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         const result = await scriptTemplateApi.toggleStatus(templateId)
         template.value!.is_active = result.is_active
-        Message.success(`模板已${action}`)
+        message.success(`模板已${action}`)
       } catch (error) {
         console.error(`${action}失败:`, error)
-        Message.error(`${action}失败`)
+        message.error(`${action}失败`)
       }
     }
   })
@@ -259,16 +227,16 @@ const handleToggleStatus = async () => {
 const handleDelete = async () => {
   if (!template.value) return
 
-  Modal.confirm({
+  dialog.warning({
     title: '确认删除',
     content: `确定要删除模板"${template.value.name}"吗？此操作不可恢复。`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         await scriptTemplateApi.deleteTemplate(templateId)
-        Message.success('模板删除成功')
+        message.success('模板删除成功')
         router.push('/script-templates')
       } catch (error) {
-        Message.error('模板删除失败')
+        message.error('模板删除失败')
         console.error('删除模板失败:', error)
       }
     }
@@ -351,6 +319,23 @@ const canDeleteTemplate = computed(() => {
 onMounted(() => {
   fetchTemplate()
 })
+
+const detailRowActions = computed<any[]>(() => [
+  { label: '版本管理', key: 'versions', disabled: !canManageVersions, icon: () => h(History, { size: 14 }) },
+  { label: template.value?.is_active ? '下线' : '上线', key: 'toggle', disabled: !canToggleStatus, icon: () => h(Power, { size: 14 }) },
+  { label: '删除', key: 'delete', disabled: !canDeleteTemplate, icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } },
+])
+
+const onDetailRowAction = (key: string) => {
+  if (key === 'versions') handleVersions()
+  if (key === 'toggle') handleToggleStatus()
+  if (key === 'delete') handleDelete()
+}
+
+const withPerm = (vnode: VNode, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
 </script>
 
 <style scoped>
@@ -412,12 +397,12 @@ onMounted(() => {
 
 .back-button {
   padding: 4px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .back-button:hover {
-  color: var(--color-text-1);
-  background-color: var(--color-fill-2);
+  color: var(--app-fg);
+  background-color: var(--app-surface-soft);
 }
 
 .header-left h2 {
@@ -450,7 +435,7 @@ onMounted(() => {
 }
 
 :deep(.arco-card .arco-card-header) {
-  border-bottom: 1px solid var(--color-border-2);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .mt-4 {

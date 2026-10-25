@@ -1,5 +1,5 @@
 <template>
-  <a-drawer :visible="visible" title="流水线详情" :width="drawerWidth" unmount-on-close @update:visible="emit('update:visible', $event)">
+  <n-drawer :show="visible" :width="drawerWidth" @update:show="emit('update:visible', $event)"><n-drawer-content title="流水线详情">
     <template v-if="template">
       <div class="readonly-flow-workbench">
         <main class="readonly-flow-preview">
@@ -25,7 +25,7 @@
               </div>
             </article>
           </div>
-          <a-empty v-else description="当前流水线没有节点" />
+          <n-empty v-else description="当前流水线没有节点" />
 
           <div class="readonly-edge-list">
             <div class="readonly-edge-list__head">
@@ -35,17 +35,17 @@
             <div v-if="(template.edges || []).length" class="readonly-edge-rows">
               <div v-for="edge in template.edges || []" :key="`${edge.source_uuid}-${edge.target_uuid}`" class="readonly-edge-row">
                 <span>{{ nodeName(edge.source_uuid) }}</span>
-                <icon-arrow-right />
+                <ChevronRight />
                 <span>{{ nodeName(edge.target_uuid) }}</span>
               </div>
             </div>
-            <a-empty v-else description="当前流水线没有连线" />
+            <n-empty v-else description="当前流水线没有连线" />
           </div>
         </main>
 
         <aside class="readonly-flow-side">
-          <a-tabs class="readonly-inspector-tabs" size="small">
-            <a-tab-pane key="node" title="节点配置">
+          <n-tabs class="readonly-inspector-tabs" size="small">
+            <n-tab-pane name="node" tab="节点配置">
               <section class="drawer-section drawer-section--tight">
                 <div class="inspector-node-head">
                   <div>
@@ -61,32 +61,32 @@
                     <strong v-else>{{ row.value }}</strong>
                   </div>
                 </div>
-                <a-empty v-else description="请选择一个节点" />
+                <n-empty v-else description="请选择一个节点" />
               </section>
-            </a-tab-pane>
+            </n-tab-pane>
 
-            <a-tab-pane key="variables" title="全局变量">
+            <n-tab-pane name="variables" tab="全局变量">
               <section class="drawer-section drawer-section--tight">
                 <FlowVariableReadOnlyPanel :variables="template.variables || {}" empty-text="当前流水线没有全局变量定义" />
               </section>
-            </a-tab-pane>
+            </n-tab-pane>
 
-            <a-tab-pane key="meta" title="基本信息">
+            <n-tab-pane name="meta" tab="基本信息">
               <section class="drawer-section drawer-section--tight">
                 <h3>基本信息</h3>
-                <a-descriptions :column="1" bordered size="medium">
-                  <a-descriptions-item label="名称">{{ template.name }}</a-descriptions-item>
-                  <a-descriptions-item label="描述">{{ template.description || '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="负责人">{{ template.created_by_name || '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="更新时间">{{ formatTime(template.updated_at || template.created_at) }}</a-descriptions-item>
-                </a-descriptions>
+                <n-descriptions :column="1" bordered size="medium">
+                  <n-descriptions-item label="名称">{{ template.name }}</n-descriptions-item>
+                  <n-descriptions-item label="描述">{{ template.description || '-' }}</n-descriptions-item>
+                  <n-descriptions-item label="负责人">{{ template.created_by_name || '-' }}</n-descriptions-item>
+                  <n-descriptions-item label="更新时间">{{ formatTime(template.updated_at || template.created_at) }}</n-descriptions-item>
+                </n-descriptions>
               </section>
 
               <section class="drawer-section">
                 <h3>最近执行</h3>
                 <div v-if="latestRun" class="drawer-latest-run">
                   <div>
-                    <a-link @click="emit('openRun', latestRun.id)">执行 {{ latestRun.id }}</a-link>
+                    <n-button text size="small" @click="emit('openRun', latestRun.id)">执行 {{ latestRun.id }}</n-button>
                     <span>{{ latestRun.started_by_name || '-' }}</span>
                     <span>{{ formatTime(latestRun.started_at || latestRun.created_at) }}</span>
                   </div>
@@ -94,20 +94,22 @@
                 </div>
                 <span v-else class="drawer-muted">暂无执行记录</span>
               </section>
-            </a-tab-pane>
-          </a-tabs>
+            </n-tab-pane>
+          </n-tabs>
         </aside>
       </div>
     </template>
-  </a-drawer>
+  </n-drawer-content></n-drawer>
 </template>
 
 <script setup lang="ts">
+import { ChevronRight } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { FlowNode, FlowRun, FlowTemplate } from '@/types'
 import { StatusBadge } from '@/components/app'
 import { flowNodeConfigDisplayRows, flowNodeTypeText, flowRunStatusText, summarizeFlowNode } from '../flowUtils'
 import FlowVariableReadOnlyPanel from './FlowVariableReadOnlyPanel.vue'
+import { NButton, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NEmpty, NTabPane, NTabs } from 'naive-ui'
 
 const props = defineProps<{
   visible: boolean

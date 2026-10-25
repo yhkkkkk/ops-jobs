@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
-import { ArcoResolver } from 'unplugin-vue-components/resolvers';
+import { NaiveUiResolver } from 'unplugin-vue-components/resolvers';
 import svgLoader from 'vite-svg-loader'
 import Pages from 'vite-plugin-pages'
 import { resolve } from 'path'
@@ -62,10 +62,7 @@ export default defineConfig({
       dts: 'src/components.d.ts',
       // 添加Arco Design组件的解析器
       resolvers: [
-        ArcoResolver({
-          sideEffect: true,  // 启用副作用导入以自动导入相关样式
-          resolveIcons: true, // 解析图标组件
-        }),
+        NaiveUiResolver(),
       ],
       directoryAsNamespace: true,
       globalNamespaces: ['global'],
@@ -113,7 +110,6 @@ export default defineConfig({
           if (!id.includes('node_modules')) return
           if (id.includes('monaco-editor')) return 'monaco-editor'
           if (id.includes('echarts')) return 'charts'
-          if (id.includes('@arco-design')) return 'arco'
           if (id.includes('vue') || id.includes('pinia')) return 'vue'
         },
       },

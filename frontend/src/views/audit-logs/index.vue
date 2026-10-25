@@ -6,20 +6,20 @@
       description="集中查看用户操作、资源变更和系统安全事件，便于追踪责任链路。"
     >
       <template #actions>
-        <a-space>
-          <a-button type="primary" @click="exportLogs" :loading="exporting">
+        <n-space>
+          <n-button type="primary" @click="exportLogs" :loading="exporting">
             <template #icon>
-              <icon-download />
+              <Download  />
             </template>
             导出日志
-          </a-button>
-          <a-button @click="handleRefresh">
+          </n-button>
+          <n-button @click="handleRefresh">
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             刷新
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
@@ -31,60 +31,46 @@
       <div class="audit-filter-grid">
         <label class="filter-field">
           <span>关键词</span>
-          <a-input
-            v-model="searchForm.search"
+          <n-input
+            v-model:value="searchForm.search"
             placeholder="搜索描述、资源名称等"
-            allow-clear
+            clearable
             @press-enter="handleSearch"
           />
         </label>
         <label class="filter-field">
           <span>用户</span>
-          <a-select
-            v-model="searchForm.user_id"
+          <n-select
+            v-model:value="searchForm.user_id"
             placeholder="选择用户"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="user in userOptions"
-              :key="user.id"
-              :value="user.id"
-              :label="user.username"
-            />
-          </a-select>
+            clearable
+            :options="(userOptions || []).map((u: any) => ({ label: u.username, value: u.id }))"
+            @update:value="handleSearch"
+          />
         </label>
         <label class="filter-field">
           <span>操作类型</span>
-          <a-select
-            v-model="searchForm.action"
+          <n-select
+            v-model:value="searchForm.action"
             placeholder="选择操作类型"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="action in actionOptions"
-              :key="action.value"
-              :value="action.value"
-              :label="action.label"
-            />
-          </a-select>
+            clearable
+            :options="(actionOptions || []).map((a: any) => ({ label: a.label, value: a.value }))"
+            @update:value="handleSearch"
+          />
         </label>
         <label class="filter-field">
           <span>状态</span>
-          <a-select
-            v-model="searchForm.success"
+          <n-select
+            :value="(searchForm.success as any)"
             placeholder="选择状态"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option :value="true" label="成功" />
-            <a-option :value="false" label="失败" />
-          </a-select>
+            clearable
+            :options="[{ label: '成功', value: true }, { label: '失败', value: false }] as any"
+            @update:value="(v: any) => { searchForm.success = v; handleSearch() }"
+          />
         </label>
         <label class="filter-field">
           <span>开始日期</span>
-          <a-date-picker
+          <n-date-picker
             v-model="searchForm.start_date"
             placeholder="开始日期"
             format="YYYY-MM-DD"
@@ -94,7 +80,7 @@
         </label>
         <label class="filter-field">
           <span>结束日期</span>
-          <a-date-picker
+          <n-date-picker
             v-model="searchForm.end_date"
             placeholder="结束日期"
             format="YYYY-MM-DD"
@@ -103,16 +89,16 @@
           />
         </label>
         <div class="filter-actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon><icon-search /></template>
+          <n-space>
+            <n-button type="primary" @click="handleSearch">
+              <template #icon><Search  /></template>
               搜索
-            </a-button>
-            <a-button @click="resetSearch">
-              <template #icon><icon-refresh /></template>
+            </n-button>
+            <n-button @click="resetSearch">
+              <template #icon><RefreshCw  /></template>
               重置
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </DataToolbar>
@@ -121,150 +107,76 @@
       title="审计明细"
       :description="`共 ${pagination.total} 条记录，当前页 ${auditLogs.length} 条`"
     >
-      <a-table
+      <n-data-table
         :data="auditLogs"
+        :columns="tableColumns"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-        row-key="id"
-      >
-        <template #columns>
-          <a-table-column title="用户" data-index="user_name" :width="120">
-            <template #cell="{ record }">
-              <div class="user-info">
-                <a-avatar :size="24" class="user-avatar">
-                  {{ getUserInitial(record) }}
-                </a-avatar>
-                <span>{{ getUserName(record) }}</span>
-              </div>
-            </template>
-          </a-table-column>
-
-          <a-table-column title="操作类型" data-index="action_display" :width="120">
-            <template #cell="{ record }">
-              <a-tag :color="getActionColor(record.action)">
-                {{ record.action_display }}
-              </a-tag>
-            </template>
-          </a-table-column>
-
-          <a-table-column title="资源" data-index="resource_name" :width="170">
-            <template #cell="{ record }">
-              <div v-if="record.resource_name">
-                <div class="resource-info">
-                  <span class="resource-name">{{ record.resource_name }}</span>
-                  <span v-if="record.resource_type_name || record.resource_type" class="resource-type">
-                    ({{ record.resource_type_name || record.resource_type }})
-                  </span>
-                </div>
-              </div>
-              <span v-else class="text-muted">-</span>
-            </template>
-          </a-table-column>
-
-          <a-table-column title="描述" data-index="description" :min-width="240" :width="320">
-            <template #cell="{ record }">
-              <div class="description-cell">
-                <a-tooltip :content="record.description" position="top">
-                  <span class="description-text">{{ record.description }}</span>
-                </a-tooltip>
-              </div>
-            </template>
-          </a-table-column>
-
-          <a-table-column title="IP地址" data-index="ip_address" :width="120" />
-
-          <a-table-column title="状态" data-index="success" :width="80">
-            <template #cell="{ record }">
-              <StatusBadge
-                :status="record.success ? 'success' : 'failed'"
-                :text="record.success ? '成功' : '失败'"
-              />
-            </template>
-          </a-table-column>
-
-          <a-table-column title="时间" data-index="created_at" :width="240">
-            <template #cell="{ record }">
-              <span>{{ formatDateTime(record.created_at) }}</span>
-            </template>
-          </a-table-column>
-
-          <a-table-column title="操作" :width="100">
-            <template #cell="{ record }">
-              <a-button
-                type="text"
-                size="small"
-                @click="viewDetail(record)"
-              >
-                详情
-              </a-button>
-            </template>
-          </a-table-column>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+        :row-key="(row: any) => row.id"
+      />
     </DetailPanel>
 
     <!-- 详情弹窗 -->
-    <a-modal
-      v-model:visible="detailVisible"
+    <n-modal preset="card" :style="{ width: '800px' }"
+      v-model:show="detailVisible"
       title="审计日志详情"
-      width="800px"
-      :footer="false"
+     
+     
     >
       <div v-if="currentLog" class="detail-content">
-        <a-descriptions :column="2" bordered>
-          <a-descriptions-item label="用户">
+        <n-descriptions :column="2" bordered>
+          <n-descriptions-item label="用户">
             {{ currentLog.user_full_name || currentLog.user_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="操作类型">
-            <a-tag :color="getActionColor(currentLog.action)">
+          </n-descriptions-item>
+          <n-descriptions-item label="操作类型"><n-tag :type="getActionColor(currentLog.action) as any">
               {{ currentLog.action_display }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="资源名称">
+            </n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="资源名称">
             {{ currentLog.resource_name || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="资源类型">
+          </n-descriptions-item>
+          <n-descriptions-item label="资源类型">
             {{ currentLog.resource_type_name || currentLog.resource_type || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="IP地址">
+          </n-descriptions-item>
+          <n-descriptions-item label="IP地址">
             {{ currentLog.ip_address }}
-          </a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag :color="currentLog.success ? 'green' : 'red'">
+          </n-descriptions-item>
+          <n-descriptions-item label="状态"><n-tag :type="currentLog.success ? 'green' : 'red' as any">
               {{ currentLog.success ? '成功' : '失败' }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="操作时间" :span="2">
+            </n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="操作时间" :span="2">
             {{ formatDateTime(currentLog.created_at) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="操作描述" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item label="操作描述" :span="2">
             {{ currentLog.description }}
-          </a-descriptions-item>
-          <a-descriptions-item v-if="currentLog.error_message" label="错误信息" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item v-if="currentLog.error_message" label="错误信息" :span="2">
             <div class="error-message">{{ currentLog.error_message }}</div>
-          </a-descriptions-item>
-          <a-descriptions-item v-if="currentLog.extra_data && Object.keys(currentLog.extra_data).length > 0" label="额外数据" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item v-if="currentLog.extra_data && Object.keys(currentLog.extra_data).length > 0" label="额外数据" :span="2">
             <pre class="extra-data">{{ JSON.stringify(currentLog.extra_data, null, 2) }}</pre>
-          </a-descriptions-item>
-        </a-descriptions>
+          </n-descriptions-item>
+        </n-descriptions>
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { Message } from '@arco-design/web-vue'
 import { auditLogApi } from '@/api/ops'
 import { authApi } from '@/api/auth'
 import type { AuditLog, AuditLogQueryParams } from '@/types'
 import { formatDateTime } from '@/utils/date'
 import { useFilterQuerySync, parseNumberQuery, parseBooleanQuery } from '@/composables/useFilterQuerySync'
 import { DataToolbar, DetailPanel, PageHeader, StatusBadge, countActiveFilters } from '@/components/app'
+import { NAvatar, NButton, NDataTable, NDatePicker, NDescriptions, NDescriptionsItem, NInput, NModal, NSelect, NSpace, NTag, NTooltip, type DataTableColumns, useMessage } from 'naive-ui'
+import { Download, RefreshCw, Search } from 'lucide-vue-next'
 
 // 响应式数据
+const message = useMessage()
 const loading = ref(false)
 const exporting = ref(false)
 const auditLogs = ref<AuditLog[]>([])
@@ -425,7 +337,7 @@ const fetchAuditLogs = async () => {
   } catch (error: any) {
     console.error('获取审计日志失败:', error)
     const msg = error?.message || '获取审计日志失败'
-    Message.error(msg)
+    message.error(msg)
     auditLogs.value = []
     pagination.total = 0
     lastApiStatus.value = `失败 - ${msg}`
@@ -506,9 +418,9 @@ const exportLogs = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
     
-    Message.success('导出成功')
+    message.success('导出成功')
   } catch (error: any) {
-    Message.error(`导出失败: ${error.message}`)
+    message.error(`导出失败: ${error.message}`)
   } finally {
     exporting.value = false
   }
@@ -520,6 +432,81 @@ onMounted(() => {
   fetchAuditLogs()
   fetchUsers()
 })
+
+const tableColumns: DataTableColumns<any> = [
+  {
+    title: '用户',
+    key: 'user_name',
+    width: 120,
+    render: (row) =>
+      h('div', { class: 'user-info' }, [
+        h(NAvatar, { size: 24, class: 'user-avatar' }, { default: () => getUserInitial(row) }),
+        h('span', getUserName(row)),
+      ]),
+  },
+  {
+    title: '操作类型',
+    key: 'action_display',
+    width: 120,
+    render: (row) => h(NTag, { type: getActionColor(row.action) as any }, { default: () => row.action_display }),
+  },
+  {
+    title: '资源',
+    key: 'resource_name',
+    width: 170,
+    render: (row) => row.resource_name
+      ? h('div', {}, [
+          h('div', { class: 'resource-info' }, [
+            h('span', { class: 'resource-name' }, row.resource_name),
+            row.resource_type_name || row.resource_type
+              ? h('span', { class: 'resource-type' }, `(${row.resource_type_name || row.resource_type})`)
+              : null,
+          ]),
+        ])
+      : h('span', { class: 'text-muted' }, '-'),
+  },
+  {
+    title: '描述',
+    key: 'description',
+    width: 320,
+    render: (row) =>
+      h('div', { class: 'description-cell' }, [
+        h(NTooltip, { position: 'top' }, {
+          trigger: () => h('span', { class: 'description-text' }, row.description),
+          default: () => row.description,
+        }),
+      ]),
+  },
+  { title: 'IP地址', key: 'ip_address', width: 120, render: (row) => row.ip_address },
+  {
+    title: '状态',
+    key: 'success',
+    width: 80,
+    render: (row) =>
+      h(StatusBadge, {
+        status: row.success ? 'success' : 'failed',
+        text: row.success ? '成功' : '失败',
+      }),
+  },
+  { title: '时间', key: 'created_at', width: 240, render: (row) => formatDateTime(row.created_at) },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: (row) =>
+      h(NButton, { text: true, size: 'small', onClick: () => viewDetail(row) }, { default: () => '详情' }),
+  },
+]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  showSizePicker: true,
+  pageSizes: [10, 20, 50, 100],
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 </script>
 
 <style scoped>

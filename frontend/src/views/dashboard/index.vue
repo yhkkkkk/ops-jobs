@@ -8,14 +8,14 @@
           聚合作业模板、执行方案、定时任务和主机覆盖情况，帮助值班人员快速判断今天该先处理什么。
         </p>
       </div>
-      <a-space>
-        <a-button @click="refreshAllData" :loading="loadingStats || loadingExecutions || loadingFavorites">
+      <n-space>
+        <n-button @click="refreshAllData" :loading="loadingStats || loadingExecutions || loadingFavorites">
           刷新数据
-        </a-button>
-        <a-button type="primary" @click="() => router.push('/quick-execute')">
+        </n-button>
+        <n-button type="primary" @click="() => router.push('/quick-execute')">
           快速执行
-        </a-button>
-      </a-space>
+        </n-button>
+      </n-space>
     </div>
 
     <div class="app-metric-grid">
@@ -40,7 +40,7 @@
     </div>
 
     <div class="dashboard-grid">
-      <a-card class="workflow-card" :bordered="false">
+      <n-card class="workflow-card" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>作业链路</h3>
@@ -78,9 +78,9 @@
             </div>
           </button>
         </div>
-      </a-card>
+      </n-card>
 
-      <a-card class="health-card" :bordered="false">
+      <n-card class="health-card" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>资源健康</h3>
@@ -118,18 +118,18 @@
             <strong>{{ debugStats.activeScheduledJobs }}</strong>
           </div>
         </div>
-      </a-card>
+      </n-card>
     </div>
 
     <div class="activity-grid">
-      <a-card class="favorites-card" :bordered="false">
+      <n-card class="favorites-card" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>我的收藏</h3>
             <p>常用模板和方案入口。</p>
           </div>
         </div>
-        <a-spin :loading="loadingFavorites" class="dashboard-spin">
+        <n-spin :show="loadingFavorites" class="dashboard-spin">
           <div v-if="myFavorites.length === 0" class="app-empty">暂无收藏项目</div>
           <div v-else class="favorite-list">
             <button
@@ -140,25 +140,25 @@
               @click="() => router.push(item.url)"
             >
               <span>{{ item.name }}</span>
-              <a-tag size="small" :color="getFavoriteTypeColor(item.type)">
+              <n-tag size="small" :type="getFavoriteTypeColor(item.type)">
                 {{ item.typeDisplay }}
-              </a-tag>
+              </n-tag>
             </button>
           </div>
-        </a-spin>
-      </a-card>
+        </n-spin>
+      </n-card>
 
-      <a-card class="activity-card" :bordered="false">
+      <n-card class="activity-card" :bordered="false">
         <div class="app-section-title">
           <div>
             <h3>最近操作</h3>
             <p>最近执行与系统活动。</p>
           </div>
-          <a-button type="text" size="small" @click="() => router.push('/execution-records')">
+          <n-button text size="small" @click="() => router.push('/execution-records')">
             查看全部
-          </a-button>
+          </n-button>
         </div>
-        <a-spin :loading="loadingExecutions" class="dashboard-spin">
+        <n-spin :show="loadingExecutions" class="dashboard-spin">
         <div class="execution-list">
           <div v-if="recentExecutions.length === 0" class="app-empty">暂无最近操作</div>
           <template v-else>
@@ -168,11 +168,11 @@
               class="execution-item"
             >
               <div class="execution-avatar" :class="getStatusClass(item.status)">
-                <icon-check v-if="item.status === 'SUCCESS'" />
-                <icon-close v-else-if="item.status === 'FAILURE' || item.status === 'ERROR'" />
-                <icon-loading v-else-if="item.status === 'RUNNING'" />
-                <icon-schedule v-else-if="item.status === 'PENDING'" />
-                <icon-settings v-else />
+                <Check v-if="item.status === 'SUCCESS'" :size="14" />
+                <X v-else-if="item.status === 'FAILURE' || item.status === 'ERROR'" :size="14" />
+                <LoaderCircle v-else-if="item.status === 'RUNNING'" :size="14" />
+                <Clock3 v-else-if="item.status === 'PENDING'" :size="14" />
+                <Settings2 v-else :size="14" />
               </div>
               <div class="execution-content">
                 <div class="execution-header">
@@ -186,8 +186,8 @@
             </div>
           </template>
         </div>
-        </a-spin>
-      </a-card>
+        </n-spin>
+      </n-card>
     </div>
   </div>
 </template>
@@ -195,18 +195,21 @@
 <script lang="ts" setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { NButton, NCard, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
 import {
-  IconFile,
-  IconSettings,
-  IconSchedule,
-  IconComputer,
-  IconCheck,
-  IconClose,
-  IconLoading
-} from '@arco-design/web-vue/es/icon'
+  CalendarClock,
+  Check,
+  Clock3,
+  FileText,
+  LoaderCircle,
+  Monitor,
+  Settings2,
+  X
+} from 'lucide-vue-next'
 import { dashboardApi } from '@/api/dashboard'
 import { favoriteApi } from '@/api/ops'
-import { Message } from '@arco-design/web-vue'
+
+const message = useMessage()
 
 const router = useRouter()
 
@@ -255,7 +258,7 @@ const metricCards = computed(() => [
     title: '作业模板',
     value: debugStats.value.templates,
     note: '沉淀为标准化作业入口',
-    icon: IconFile,
+    icon: FileText,
     onClick: navigateToTemplates
   },
   {
@@ -263,7 +266,7 @@ const metricCards = computed(() => [
     title: '执行方案',
     value: debugStats.value.plans,
     note: '可直接发起或调度的方案',
-    icon: IconSettings,
+    icon: Settings2,
     onClick: navigateToPlans
   },
   {
@@ -271,7 +274,7 @@ const metricCards = computed(() => [
     title: '定时任务',
     value: debugStats.value.scheduledJobs,
     note: `活跃 ${debugStats.value.activeScheduledJobs} 个`,
-    icon: IconSchedule,
+    icon: CalendarClock,
     onClick: navigateToScheduledJobs
   },
   {
@@ -279,7 +282,7 @@ const metricCards = computed(() => [
     title: '主机覆盖',
     value: debugStats.value.hosts,
     note: `在线 ${debugStats.value.onlineHosts} 台，离线 ${debugStats.value.offlineHosts} 台`,
-    icon: IconComputer,
+    icon: Monitor,
     onClick: navigateToHosts
   }
 ])
@@ -332,7 +335,7 @@ const fetchStats = async () => {
     stats.onlineHosts = content.resources?.hosts?.online || 0
   } catch (error) {
     console.error('获取统计数据失败:', error)
-    Message.error(`获取统计数据失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.error(`获取统计数据失败: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     loadingStats.value = false
   }
@@ -379,7 +382,7 @@ const fetchRecentExecutions = async () => {
     }
   } catch (error: any) {
     console.error('获取执行记录失败:', error)
-    Message.error(error?.message || '获取执行记录失败')
+    message.error(error?.message || '获取执行记录失败')
     recentExecutions.value = []
   } finally {
     loadingExecutions.value = false
@@ -393,7 +396,7 @@ const fetchExecutionPlans = async () => {
     executionPlans.value = response.data || response || []
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
-    Message.error(`获取执行方案列表失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.error(`获取执行方案列表失败: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     loadingPlans.value = false
   }
@@ -428,15 +431,6 @@ const navigateToScriptTemplates = () => {
   router.push('/script-templates')
 }
 
-const getStatusColor = (status: string) => {
-  const s = (status || '').toString().toUpperCase()
-  if (s === 'SUCCESS') return 'green'
-  if (s === 'FAILURE' || s === 'ERROR') return 'red'
-  if (s === 'RUNNING') return 'blue'
-  if (s === 'PENDING') return 'orange'
-  return 'gray'
-}
-
 const getStatusClass = (status: string) => {
   const s = (status || '').toString().toUpperCase()
   if (s === 'SUCCESS') return 'app-status-success'
@@ -467,13 +461,13 @@ const formatDateTime = (t: string | number | undefined) => {
   }
 }
 
-const getFavoriteTypeColor = (type: string) => {
-  const colorMap: Record<string, string> = {
-    job_template: 'blue',
-    script_template: 'green',
-    execution_plan: 'orange'
+const getFavoriteTypeColor = (type: string): 'default' | 'info' | 'success' | 'warning' => {
+  const colorMap: Record<string, 'default' | 'info' | 'success' | 'warning'> = {
+    job_template: 'info',
+    script_template: 'success',
+    execution_plan: 'warning'
   }
-  return colorMap[type] || 'gray'
+  return colorMap[type] || 'default'
 }
 
 onMounted(async () => {

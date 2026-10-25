@@ -1,12 +1,13 @@
 <template>
-  <a-layout class="layout">
-    <!-- 侧边栏 -->
-    <a-layout-sider
+  <n-layout has-sider class="layout">
+    <n-layout-sider
+      v-if="!isMobile"
       :width="200"
+      :collapsed-width="64"
       :collapsed="collapsed"
-      :collapsible="true"
-      :hide-trigger="true"
-      @collapse="onCollapse"
+      :native-scrollbar="false"
+      bordered
+      @update:collapsed="onCollapse"
     >
       <div class="logo">
         <div class="brand-mark">J</div>
@@ -15,279 +16,186 @@
           <span class="brand-subtitle">Ops Job</span>
         </div>
       </div>
-      
-      <nav v-if="collapsed" class="compact-nav" aria-label="折叠菜单">
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': selectedKeys.includes('/dashboard') }]"
-          title="仪表盘"
-          @click="onMenuClick('/dashboard')"
-        >
-          <icon-dashboard />
-        </button>
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'resource' }]"
-          title="资源管理"
-          @click="onMenuClick('/hosts')"
-        >
-          <icon-storage />
-        </button>
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'job' }]"
-          title="作业管理"
-          @click="onMenuClick('/flows')"
-        >
-          <icon-apps />
-        </button>
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'schedule' }]"
-          title="调度管理"
-          @click="onMenuClick('/scheduled-tasks')"
-        >
-          <icon-schedule />
-        </button>
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'monitor' }]"
-          title="监控审计"
-          @click="onMenuClick('/execution-records')"
-        >
-          <icon-eye />
-        </button>
-        <button
-          type="button"
-          :class="['compact-nav__item', { 'compact-nav__item--active': compactActiveGroup === 'system' }]"
-          title="平台管理"
-          @click="onMenuClick('/permissions')"
-        >
-          <icon-settings />
-        </button>
-      </nav>
+      <n-menu
+        v-model:value="selectedMenuKey"
+        :options="menuOptions"
+        :collapsed="collapsed"
+        :collapsed-width="64"
+        :expanded-keys="openKeys"
+        :indent="collapsed ? 0 : 12"
+        :root-indent="collapsed ? 0 : 12"
+        @update:expanded-keys="onExpandedKeysChange"
+      />
+    </n-layout-sider>
 
-      <a-menu
-        v-else
-        :selected-keys="selectedKeys"
-        :open-keys="openKeys"
-        mode="vertical"
-        @menu-item-click="onMenuClick"
-        @sub-menu-click="onSubMenuClick"
-      >
-        <a-menu-item key="/dashboard">
-          <template #icon>
-            <icon-dashboard />
-          </template>
-          仪表盘
-        </a-menu-item>
-
-        <!-- 资源管理分组 -->
-        <a-sub-menu key="resource">
-          <template #icon>
-            <icon-storage />
-          </template>
-          <template #title>资源管理</template>
-
-          <a-menu-item key="/hosts">
-            <template #icon>
-              <icon-computer />
-            </template>
-            主机管理
-          </a-menu-item>
-
-          <a-menu-item key="/accounts">
-            <template #icon>
-              <icon-user />
-            </template>
-            服务器账号
-          </a-menu-item>
-        </a-sub-menu>
-
-        <!-- 作业管理分组 -->
-        <a-sub-menu key="job">
-          <template #icon>
-            <icon-apps />
-          </template>
-          <template #title>作业管理</template>
-
-          <a-menu-item key="/script-templates">
-            <template #icon>
-              <icon-code />
-            </template>
-            脚本模板
-          </a-menu-item>
-
-          <a-menu-item key="/job-templates">
-            <template #icon>
-              <icon-file />
-            </template>
-            作业模板
-          </a-menu-item>
-
-          <a-menu-item key="/execution-plans">
-            <template #icon>
-              <icon-calendar />
-            </template>
-            作业执行方案
-          </a-menu-item>
-
-          <a-menu-item key="/flows">
-            <template #icon>
-              <icon-branch />
-            </template>
-            运维流水线
-          </a-menu-item>
-
-          <a-menu-item key="/quick-execute">
-            <template #icon>
-              <icon-thunderbolt />
-            </template>
-            快速执行
-          </a-menu-item>
-        </a-sub-menu>
-
-        <!-- 调度管理分组 -->
-        <a-sub-menu key="schedule">
-          <template #icon>
-            <icon-schedule />
-          </template>
-          <template #title>调度管理</template>
-
-          <a-menu-item key="/scheduled-tasks">
-            <template #icon>
-              <icon-clock-circle />
-            </template>
-            执行方案定时任务
-          </a-menu-item>
-        </a-sub-menu>
-
-        <!-- 监控审计分组 -->
-        <a-sub-menu key="monitor">
-          <template #icon>
-            <icon-eye />
-          </template>
-          <template #title>监控审计</template>
-
-          <a-menu-item key="/execution-records">
-            <template #icon>
-              <icon-history />
-            </template>
-            执行记录
-          </a-menu-item>
-
-          <a-menu-item key="/audit-logs" v-if="authStore.user?.is_superuser">
-            <template #icon>
-              <icon-eye-invisible />
-            </template>
-            审计日志
-          </a-menu-item>
-        </a-sub-menu>
-
-        <!-- 平台管理分组 -->
-        <a-sub-menu key="system">
-          <template #icon>
-            <icon-settings />
-          </template>
-          <template #title>平台管理</template>
-
-          <a-menu-item key="/permissions">
-            <template #icon>
-              <icon-safe />
-            </template>
-            权限管理
-          </a-menu-item>
-
-          <a-menu-item v-if="authStore.user?.is_superuser" key="/users">
-            <template #icon>
-              <icon-user-group />
-            </template>
-            用户管理
-          </a-menu-item>
-        </a-sub-menu>
-      </a-menu>
-    </a-layout-sider>
-    
-    <!-- 主内容区 -->
-    <a-layout>
-      <!-- 顶部导航 -->
-      <a-layout-header class="header">
-        <div class="header-left">
-          <a-button class="layout-collapse-btn" type="text" size="small" @click="toggleCollapsed">
-            <template #icon>
-              <icon-menu-unfold v-if="collapsed" />
-              <icon-menu-fold v-else />
-            </template>
-          </a-button>
-          <a-breadcrumb>
-            <a-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-              {{ item.title }}
-            </a-breadcrumb-item>
-          </a-breadcrumb>
+    <n-drawer
+      v-if="isMobile"
+      v-model:show="mobileMenuOpen"
+      placement="left"
+      :width="248"
+      :show-mask="true"
+    >
+      <n-drawer-content body-content-style="padding: 0">
+        <div class="logo">
+          <div class="brand-mark">J</div>
+          <div class="brand-copy">
+            <span class="brand-title">作业平台</span>
+            <span class="brand-subtitle">Ops Job</span>
+          </div>
         </div>
-        
+        <n-menu
+          v-model:value="selectedMenuKey"
+          :options="menuOptions"
+          :expanded-keys="openKeys"
+          :indent="12"
+          :root-indent="12"
+          @update:expanded-keys="onExpandedKeysChange"
+        />
+      </n-drawer-content>
+    </n-drawer>
+
+    <n-layout>
+      <n-layout-header class="header">
+        <div class="header-left">
+          <n-button
+            class="layout-collapse-btn"
+            text
+            size="small"
+            :title="collapseButtonTitle"
+            :aria-label="collapseButtonTitle"
+            @click="toggleCollapsedOrMobile"
+          >
+            <component
+              :is="collapseButtonIcon"
+              :size="17"
+              :stroke-width="1.8"
+              aria-hidden="true"
+            />
+          </n-button>
+          <n-breadcrumb>
+            <n-breadcrumb-item
+              v-for="(item, index) in breadcrumbs"
+              :key="`${item.path}-${index}`"
+              :clickable="Boolean(item.to)"
+              @click="item.to && router.push(item.to)"
+            >
+              {{ item.title }}
+            </n-breadcrumb-item>
+          </n-breadcrumb>
+        </div>
         <div class="header-right">
-          <a-space>
-            <!-- 平台切换（仅超级管理员可见） -->
-            <a-button 
+          <n-space align="center">
+            <n-button
               v-if="authStore.user?.is_superuser"
               class="platform-switch"
-              type="text" 
+              text
+              title="切换到运维台"
               @click="switchToOpsPlatform"
             >
               <template #icon>
-                <icon-tool />
+                <Wrench :size="16" :stroke-width="1.8" aria-hidden="true" />
               </template>
               切换到运维台
-            </a-button>
-            
-            <!-- 用户信息 -->
-            <a-dropdown>
-              <a-button type="text">
+            </n-button>
+            <n-dropdown
+              :options="userMenuOptions"
+              trigger="click"
+              @select="handleUserMenuSelect"
+            >
+              <n-button
+                text
+                :aria-label="`用户菜单：${authStore.user?.username || ''}`"
+              >
                 <template #icon>
-                  <icon-user />
+                  <UserRound :size="16" :stroke-width="1.8" aria-hidden="true" />
                 </template>
                 {{ authStore.user?.username }}
-              </a-button>
-              <template #content>
-                <a-doption @click="handleLogout">
-                  <template #icon>
-                    <icon-export />
-                  </template>
-                  退出登录
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
+              </n-button>
+            </n-dropdown>
+          </n-space>
         </div>
-      </a-layout-header>
-      
-      <!-- 内容区域 -->
-      <a-layout-content :class="['content', { 'content--workspace': workspaceMode }]">
+      </n-layout-header>
+
+      <n-layout-content :class="['content', { 'content--workspace': workspaceMode }]">
         <router-view />
-      </a-layout-content>
-    </a-layout>
-  </a-layout>
+      </n-layout-content>
+    </n-layout>
+  </n-layout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  NButton,
+  NBreadcrumb,
+  NBreadcrumbItem,
+  NDropdown,
+  NDrawer,
+  NDrawerContent,
+  NLayout,
+  NLayoutContent,
+  NLayoutHeader,
+  NLayoutSider,
+  NMenu,
+  NSpace,
+  useMessage,
+  type MenuOption,
+} from 'naive-ui'
+import {
+  AppWindow,
+  Calendar,
+  CalendarDays,
+  Clock3,
+  Code2,
+  Database,
+  Eye,
+  FileText,
+  GitBranch,
+  History,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Monitor,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings2,
+  ShieldCheck,
+  UserRound,
+  Users,
+  Wrench,
+  X,
+  Zap,
+} from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const message = useMessage()
 
+const MOBILE_BREAKPOINT = 520
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([])
 const openKeys = ref<string[]>([])
+const isMobile = ref(
+  typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT,
+)
+const mobileMenuOpen = ref(false)
+
+const selectedMenuKey = computed({
+  get: () => selectedKeys.value[0] || null,
+  set: (key: string | null) => {
+    if (key) void onMenuClick(key)
+  },
+})
+
 const workspaceMode = computed(() => route.meta.workspaceMode === true)
 let previousCollapsedState: boolean | null = null
 
-// 菜单配置映射
-const menuConfig = {
+const renderIcon = (icon: Component) => () => h(icon, { size: 16, strokeWidth: 1.8 })
+
+const menuConfig: Record<string, { key: string; parent: string | null }> = {
   '/dashboard': { key: '/dashboard', parent: null },
   '/hosts': { key: '/hosts', parent: 'resource' },
   '/accounts': { key: '/accounts', parent: 'resource' },
@@ -303,59 +211,123 @@ const menuConfig = {
   '/audit-logs': { key: '/audit-logs', parent: 'monitor' },
 }
 
-// 查找菜单键和父菜单
+const menuOptions = computed<MenuOption[]>(() => [
+  {
+    label: '仪表盘',
+    key: '/dashboard',
+    icon: renderIcon(LayoutDashboard),
+  },
+  {
+    label: '资源管理',
+    key: 'resource',
+    icon: renderIcon(Database),
+    children: [
+      { label: '主机管理', key: '/hosts', icon: renderIcon(Monitor) },
+      { label: '服务器账号', key: '/accounts', icon: renderIcon(UserRound) },
+    ],
+  },
+  {
+    label: '作业管理',
+    key: 'job',
+    icon: renderIcon(AppWindow),
+    children: [
+      { label: '脚本模板', key: '/script-templates', icon: renderIcon(Code2) },
+      { label: '作业模板', key: '/job-templates', icon: renderIcon(FileText) },
+      { label: '作业执行方案', key: '/execution-plans', icon: renderIcon(CalendarDays) },
+      { label: '运维流水线', key: '/flows', icon: renderIcon(GitBranch) },
+      { label: '快速执行', key: '/quick-execute', icon: renderIcon(Zap) },
+    ],
+  },
+  {
+    label: '调度管理',
+    key: 'schedule',
+    icon: renderIcon(Clock3),
+    children: [
+      { label: '执行方案定时任务', key: '/scheduled-tasks', icon: renderIcon(Calendar) },
+    ],
+  },
+  {
+    label: '监控审计',
+    key: 'monitor',
+    icon: renderIcon(Eye),
+    children: [
+      { label: '执行记录', key: '/execution-records', icon: renderIcon(History) },
+      ...(authStore.user?.is_superuser
+        ? [{ label: '审计日志', key: '/audit-logs', icon: renderIcon(ShieldCheck) }]
+        : []),
+    ],
+  },
+  {
+    label: '平台管理',
+    key: 'system',
+    icon: renderIcon(Settings2),
+    children: [
+      { label: '权限管理', key: '/permissions', icon: renderIcon(ShieldCheck) },
+      ...(authStore.user?.is_superuser
+        ? [{ label: '用户管理', key: '/users', icon: renderIcon(Users) }]
+        : []),
+    ],
+  },
+])
+
+const userMenuOptions = [
+  { label: '退出登录', key: 'logout', icon: renderIcon(LogOut) },
+]
+
+const collapseButtonTitle = computed(() => {
+  if (isMobile.value) {
+    return mobileMenuOpen.value ? '关闭导航' : '打开导航'
+  }
+  return '折叠侧边栏'
+})
+
+const collapseButtonIcon = computed(() => {
+  if (isMobile.value) {
+    return mobileMenuOpen.value ? X : Menu
+  }
+  return collapsed.value ? PanelLeftOpen : PanelLeftClose
+})
+
 const findMenuInfo = (path: string) => {
-  // 精确匹配
   for (const [menuPath, config] of Object.entries(menuConfig)) {
-    if (path === menuPath || path.startsWith(menuPath + '/')) {
+    if (path === menuPath || path.startsWith(`${menuPath}/`)) {
       return config
     }
   }
-
   return { key: '/dashboard', parent: null }
 }
 
-// 面包屑导航
 const breadcrumbs = computed(() => {
-  try {
-    const matched = route.matched.filter(item => item.meta?.title)
-    return matched.map(item => ({
-      title: item.meta?.title,
-      path: item.path,
-    }))
-  } catch (error) {
-    console.error('面包屑导航计算失败:', error)
-    return []
+  const matched = route.matched.filter((item) => item.meta?.title)
+  const leaf = matched[matched.length - 1]
+  const parent = leaf?.meta?.breadcrumbParent as { title: string; to: string } | undefined
+  const items = matched.map((item) => ({
+    title: String(item.meta?.title || ''),
+    path: item.path,
+    to: undefined as string | undefined,
+  }))
+  if (parent) {
+    return [
+      { title: parent.title, path: parent.to, to: parent.to },
+      ...items.filter((item) => item.title !== parent.title),
+    ]
   }
+  return items
 })
 
-const compactActiveGroup = computed(() => {
-  const menuInfo = findMenuInfo(route.path)
-  return menuInfo.parent || menuInfo.key
-})
-
-// 监听路由变化，更新菜单选中状态
 watch(
   () => route.path,
   (path) => {
-    try {
-      // 找到匹配的菜单项
-      const menuInfo = findMenuInfo(path)
-      if (menuInfo.key) {
-        selectedKeys.value = [menuInfo.key]
-
-        // 如果有父菜单，确保父菜单展开
-        if (menuInfo.parent && !collapsed.value) {
-          if (!openKeys.value.includes(menuInfo.parent)) {
-            openKeys.value = [...openKeys.value, menuInfo.parent]
-          }
-        }
-      }
-    } catch (error) {
-      console.error('更新菜单选中状态失败:', error)
+    const info = findMenuInfo(path)
+    selectedKeys.value = [info.key]
+    if (info.parent && !collapsed.value && !openKeys.value.includes(info.parent)) {
+      openKeys.value = [...openKeys.value, info.parent]
+    }
+    if (isMobile.value) {
+      mobileMenuOpen.value = false
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 watch(
@@ -367,113 +339,94 @@ watch(
       openKeys.value = []
       return
     }
-
     if (previousCollapsedState !== null) {
       collapsed.value = previousCollapsedState
       previousCollapsedState = null
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
-// 侧边栏折叠
-const onCollapse = (collapsedState: boolean) => {
-  try {
-    // 更新折叠状态
-    collapsed.value = collapsedState
-
-    // 折叠时清空展开的菜单
-    if (collapsedState) {
-      openKeys.value = []
-    }
-  } catch (error) {
-    console.error('侧边栏折叠处理失败:', error)
+const onCollapse = (value: boolean) => {
+  collapsed.value = value
+  if (value) {
+    openKeys.value = []
   }
 }
 
-const toggleCollapsed = () => {
-  onCollapse(!collapsed.value)
+const toggleCollapsed = () => onCollapse(!collapsed.value)
+const toggleMobileMenu = () => {
+  mobileMenuOpen.value = !mobileMenuOpen.value
+}
+const toggleCollapsedOrMobile = () => {
+  if (isMobile.value) {
+    toggleMobileMenu()
+    return
+  }
+  toggleCollapsed()
 }
 
-// 菜单点击
+const onExpandedKeysChange = (keys: string[]) => {
+  openKeys.value = collapsed.value ? [] : keys
+}
+
 const onMenuClick = async (key: string) => {
-  try {
-    // 避免重复导航到同一路由
-    if (route.path !== key) {
-      // 等待DOM更新完成
-      await nextTick()
-
-      // 执行路由跳转
-      await router.push(key).catch(error => {
-        // 忽略导航重复错误
-        if (error.name !== 'NavigationDuplicated') {
-          console.error('路由跳转失败:', error)
-        }
-      })
+  if (route.path === key) return
+  await nextTick()
+  await router.push(key).catch((error) => {
+    if (error.name !== 'NavigationDuplicated') {
+      console.error('路由跳转失败:', error)
     }
-  } catch (error) {
-    console.error('菜单点击处理失败:', error)
-  }
+  })
 }
 
-// 子菜单点击处理
-const onSubMenuClick = (key: string) => {
-  try {
-    // 切换子菜单展开状态
-    if (openKeys.value.includes(key)) {
-      openKeys.value = openKeys.value.filter(k => k !== key)
-    } else {
-      openKeys.value = [...openKeys.value, key]
-    }
-  } catch (error) {
-    console.error('子菜单点击处理失败:', error)
-  }
-}
-
-// 切换到运维台
 const switchToOpsPlatform = () => {
-  // 记住用户选择了运维台
   localStorage.setItem('selected_platform', 'ops')
   sessionStorage.setItem('selected_platform', 'ops')
-  
-  // 跳转到运维台
-  router.push('/ops/dashboard')
+  void router.push('/ops/dashboard')
 }
 
-// 退出登录
+const handleUserMenuSelect = (key: string) => {
+  if (key === 'logout') void handleLogout()
+}
+
 const handleLogout = async () => {
   try {
     await authStore.logout()
-    Message.success('退出登录成功')
-
-    // 清除平台选择
-    localStorage.removeItem('selected_platform')
-    sessionStorage.removeItem('selected_platform')
-
-    // 使用replace而不是push避免历史记录问题
-    await router.replace('/login')
+    message.success('退出登录成功')
   } catch (error) {
     console.error('退出登录失败:', error)
-    // 即使退出失败也要跳转到登录页
-    await router.replace('/login')
+  }
+  localStorage.removeItem('selected_platform')
+  sessionStorage.removeItem('selected_platform')
+  await router.replace('/login')
+}
+
+const handleViewportChange = () => {
+  const nextIsMobile = window.innerWidth <= MOBILE_BREAKPOINT
+  if (nextIsMobile !== isMobile.value) {
+    isMobile.value = nextIsMobile
+    mobileMenuOpen.value = false
   }
 }
 
-// 组件卸载时清理
+onMounted(() => {
+  handleViewportChange()
+  window.addEventListener('resize', handleViewportChange, { passive: true })
+})
+
 onBeforeUnmount(() => {
-  try {
-    // 清理状态
-    selectedKeys.value = []
-    openKeys.value = []
-  } catch (error) {
-    console.error('组件清理失败:', error)
-  }
+  window.removeEventListener('resize', handleViewportChange)
+  selectedKeys.value = []
+  openKeys.value = []
+  mobileMenuOpen.value = false
 })
 </script>
 
 <style scoped>
 .layout {
   height: 100vh;
+  overflow: hidden;
   background: var(--app-bg);
 }
 
@@ -524,38 +477,6 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
-.compact-nav {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 12px 6px;
-}
-
-.compact-nav__item {
-  display: inline-flex;
-  width: 32px;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--app-fg-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: var(--app-radius-sm);
-  cursor: pointer;
-}
-
-.compact-nav__item:hover,
-.compact-nav__item--active {
-  color: var(--app-accent);
-  background: var(--app-accent-soft);
-}
-
-.compact-nav__item svg {
-  width: 16px;
-  height: 16px;
-}
-
 .header {
   display: flex;
   align-items: center;
@@ -581,7 +502,8 @@ onBeforeUnmount(() => {
   border-radius: var(--app-radius-sm);
 }
 
-.layout-collapse-btn:hover {
+.layout-collapse-btn:hover,
+.platform-switch:hover {
   color: var(--app-accent);
   background: var(--app-accent-soft);
 }
@@ -597,180 +519,115 @@ onBeforeUnmount(() => {
 }
 
 .content--workspace {
-  padding: 16px;
-}
-
-:deep(.arco-layout-sider) {
-  background: var(--app-surface);
-  border-right: 1px solid var(--app-border);
-  box-shadow: 1px 0 0 rgb(15 23 42 / 2%);
-}
-
-:deep(.arco-menu-vertical) {
-  background: transparent;
-  border-right: none;
-  padding: 10px 8px;
-}
-
-:deep(.arco-menu-vertical > .arco-menu-item),
-:deep(.arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title) {
-  margin: 3px 0 !important;
-  border-radius: var(--app-radius-sm) !important;
-  font-weight: 500 !important;
-  height: 40px !important;
-  line-height: 40px !important;
-  padding: 0 12px !important;
-  min-height: 40px !important;
-  max-height: 40px !important;
   display: flex !important;
-  align-items: center !important;
-  color: var(--app-fg-secondary) !important;
-  box-sizing: border-box !important;
-}
-
-:deep(.arco-menu-vertical > .arco-menu-item:hover),
-:deep(.arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title:hover) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-}
-
-:deep(.arco-menu-vertical > .arco-menu-item.arco-menu-selected) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-  font-weight: 600 !important;
-}
-
-:deep(.arco-menu-item .arco-icon) {
-  margin-right: 8px;
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.arco-menu-sub-title .arco-icon) {
-  margin-right: 8px;
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.arco-menu-sub) {
-  background: transparent;
-}
-
-:deep(.arco-menu-sub .arco-menu-item) {
-  margin: 2px 0 2px 24px !important;
-  font-weight: 400 !important;
-  font-size: 13px !important;
-  height: 36px !important;
-  line-height: 36px !important;
-  padding: 0 12px !important;
-  border-radius: var(--app-radius-sm) !important;
-  color: var(--app-muted) !important;
-}
-
-:deep(.arco-menu-sub .arco-menu-item:hover) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-}
-
-:deep(.arco-menu-sub .arco-menu-item.arco-menu-selected),
-:deep(.arco-sub-menu .arco-menu-item.arco-menu-selected),
-:deep(.arco-menu .arco-sub-menu .arco-menu-item.arco-menu-selected) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-  font-weight: 500 !important;
-}
-
-:deep(.arco-menu-vertical .arco-sub-menu .arco-menu-item.arco-menu-selected) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-  font-weight: 500 !important;
-}
-
-:deep(.arco-menu .arco-menu-item.arco-menu-selected) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-}
-
-:deep([class*="arco-menu"] [class*="arco-menu-item"][class*="selected"]) {
-  background: var(--app-accent-soft) !important;
-  color: var(--app-accent) !important;
-}
-
-:deep(.arco-layout-sider-collapsed .logo) {
-  justify-content: center;
-  padding: 0;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical) {
-  padding: 10px 8px;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-menu-item),
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-sub-title),
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-inline-header),
-:deep(.arco-layout-sider-collapsed .arco-menu-vertical > .arco-sub-menu > .arco-menu-pop-header) {
-  width: 32px !important;
-  min-width: 32px !important;
-  justify-content: center;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  padding: 0 !important;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 16px;
   overflow: hidden !important;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-item .arco-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-inline-header .arco-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-pop-header .arco-icon) {
-  margin-right: 0 !important;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-item .arco-menu-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-sub-title .arco-menu-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-inline-header .arco-menu-icon),
-:deep(.arco-layout-sider-collapsed .arco-menu-pop-header .arco-menu-icon) {
-  margin-right: 0 !important;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-inline-header > *:not(.arco-menu-icon)),
-:deep(.arco-layout-sider-collapsed .arco-menu-pop-header > *:not(.arco-menu-icon)) {
-  display: none !important;
-}
-
-:deep(.arco-layout-sider-collapsed .arco-menu-icon-suffix),
-:deep(.arco-layout-sider-collapsed .arco-menu-suffix),
-:deep(.arco-layout-sider-collapsed .arco-menu-collapse-button) {
-  display: none !important;
-}
-
-:global(.arco-menu-pop-trigger .arco-trigger-arrow) {
-  display: none !important;
-}
-
-:deep(.arco-breadcrumb) {
-  color: var(--app-muted);
-  font-size: 13px;
 }
 
 .platform-switch {
   color: var(--app-fg-secondary);
 }
 
-@media (max-width: 768px) {
+:deep(.n-layout-sider) {
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-border);
+  box-shadow: 1px 0 0 rgb(15 23 42 / 2%);
+}
+
+:deep(.n-layout-sider .logo) {
+  justify-content: flex-start;
+}
+
+:deep(.n-layout-sider.n-layout-sider--collapsed) {
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+:deep(.n-layout-sider.n-layout-sider--collapsed > .n-scrollbar),
+:deep(.n-layout-sider.n-layout-sider--collapsed .n-scrollbar-container) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+:deep(.n-layout-sider.n-layout-sider--collapsed .logo) {
+  justify-content: center;
+  padding: 0;
+}
+
+:deep(.n-menu) {
+  background: transparent;
+  padding: 10px 8px;
+}
+
+:deep(.n-menu--collapsed) {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 10px 0;
+}
+
+:deep(.n-menu-item-content) {
+  margin: 3px 0;
+  border-radius: var(--app-radius-sm);
+  color: var(--app-fg-secondary);
+  font-weight: 500;
+  min-height: 40px;
+}
+
+:deep(.n-menu--collapsed .n-menu-item-content),
+:deep(.n-menu--collapsed .n-menu-item-content--selected) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  justify-content: center;
+  display: flex !important;
+  width: 100%;
+}
+
+:deep(.n-menu--collapsed .n-menu-item-content-header),
+:deep(.n-menu--collapsed .n-menu-item-content__arrow) {
+  display: none !important;
+  width: 0 !important;
+  max-width: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+
+:deep(.n-menu-item-content:hover),
+:deep(.n-menu-item-content--selected) {
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+:deep(.n-submenu-children .n-menu-item-content) {
+  min-height: 36px;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+:deep(.n-menu-item-content__icon) {
+  margin-right: 8px;
+}
+
+:deep(.n-menu--collapsed .n-menu-item-content__icon) {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
+
+@media (max-width: 520px) {
   .content {
     padding: 18px;
   }
 
   .header {
     padding: 0 18px;
+  }
+
+  :deep(.n-layout-sider) {
+    display: none;
   }
 }
 </style>

@@ -24,7 +24,7 @@ def test_flow_secret_values_fail_closed_for_invalid_ciphertext():
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from apps.flows.models import FlowNode, FlowTemplate
+from apps.flows.models import FlowNode, FlowRun, FlowTemplate
 from apps.flows.services import FlowRunner
 from apps.hosts.models import Host
 
@@ -125,7 +125,15 @@ def test_flow_schedule_masks_secret_input_and_restores_it_only_when_starting():
 
     assert schedule.inputs == {"ApiToken": "****"}
     assert decrypt_flow_secret_values(schedule.encrypted_secret_inputs) == {"ApiToken": "schedule-token"}
-    with patch("apps.flows.schedule_service.FlowRunner.start") as start:
+    flow_run = FlowRun.objects.create(
+        template=template,
+        name="flow-secret-schedule-run",
+        started_by=user,
+        status=FlowRun.Status.PENDING,
+        trigger_type="scheduled",
+        inputs={},
+    )
+    with patch("apps.flows.schedule_service.FlowRunner.start", return_value=flow_run) as start:
         execute_flow_schedule(schedule.id)
 
     assert start.call_args.kwargs["inputs"] == {"ApiToken": "schedule-token"}

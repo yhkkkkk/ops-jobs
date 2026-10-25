@@ -2,123 +2,128 @@
   <div class="app-page flows-page">
     <PageHeader eyebrow="标准运维" title="流程模板" description="">
       <template #actions>
-        <a-space>
-          <a-button @click="router.push('/flows/tasks')"><template #icon><icon-history /></template>流水线任务</a-button>
-          <a-button @click="loadData"><template #icon><icon-refresh /></template>刷新</a-button>
-          <a-button type="primary" @click="router.push('/flows/create')"><template #icon><icon-plus /></template>新建流程</a-button>
-        </a-space>
+        <n-space>
+          <n-button @click="router.push('/flows/tasks')"><template #icon><History  /></template>流水线任务</n-button>
+          <n-button @click="loadData"><template #icon><RefreshCw  /></template>刷新</n-button>
+          <n-button type="primary" @click="router.push('/flows/create')"><template #icon><Plus  /></template>新建流程</n-button>
+        </n-space>
       </template>
     </PageHeader>
 
-    <DataToolbar title="筛选流程模板" description="按名称、状态和最近执行结果定位模板。" :active-count="activeFilterCount">
+    <DataToolbar title="筛选流程模板" description="我的流程 / 公共目录；按名称、状态和最近执行结果定位。" :active-count="activeFilterCount">
       <div class="app-filter-grid flows-filter-grid">
-        <a-input v-model="filters.search" allow-clear placeholder="搜索模板名称、描述、负责人" @press-enter="loadData" @clear="loadData" />
-        <a-select v-model="filters.status" allow-clear placeholder="模板状态" @change="loadData">
-          <a-option value="active">启用</a-option>
-          <a-option value="inactive">停用</a-option>
-        </a-select>
-        <a-select v-model="filters.runStatus" allow-clear placeholder="执行状态" @change="loadData">
-          <a-option value="pending">等待中</a-option>
-          <a-option value="running">执行中</a-option>
-          <a-option value="success">成功</a-option>
-          <a-option value="failed">失败</a-option>
-          <a-option value="paused">已暂停</a-option>
-          <a-option value="cancelled">已取消</a-option>
-        </a-select>
+        <n-radio-group v-model:value="catalogScope" size="small" @update:value="handleCatalogScopeChange">
+          <n-radio-button value="mine">我的流程</n-radio-button>
+          <n-radio-button value="public">公共目录</n-radio-button>
+        </n-radio-group>
+        <n-input v-model:value="filters.search" clearable placeholder="搜索模板名称、描述、负责人" @press-enter="loadData" @clear="loadData" />
+                <n-select v-model:value="filters.status" clearable placeholder="模板状态" @update:value="loadData" :options="selectOptions1" />
+                <n-select v-model:value="filters.runStatus" clearable placeholder="执行状态" @update:value="loadData" :options="selectOptions2" />
         <div class="app-filter-grid__actions">
-          <a-space>
-            <a-button type="primary" @click="loadData">
-              <template #icon><icon-search /></template>
+          <n-space>
+            <n-button type="primary" @click="loadData">
+              <template #icon><Search  /></template>
               搜索
-            </a-button>
-            <a-button @click="resetFilters">重置</a-button>
-          </a-space>
+            </n-button>
+            <n-button @click="resetFilters">重置</n-button>
+          </n-space>
         </div>
       </div>
     </DataToolbar>
 
-    <DetailPanel title="流程模板" :description="`共 ${templatePagination.total} 个模板，当前页 ${filteredTemplates.length} 个`">
-    <a-table
-      row-key="id"
-      class="flow-standard-table pipeline-table"
-      :columns="templateColumns"
-      :data="filteredTemplates"
-      :loading="loading"
-      :pagination="templatePagination"
-      :scroll="{ x: 980 }"
-      @page-change="handlePageChange"
-      @page-size-change="handlePageSizeChange"
-    >
-      <template #name="{ record }">
-        <div class="pipeline-name-cell">
-          <a-link @click="openDetailDrawer(record)">{{ record.name }}</a-link>
-          <span>{{ record.description || '暂无描述' }}</span>
-        </div>
+    <DetailPanel :title="catalogScope === 'public' ? '公共流程' : '流程模板'" :description="`共 ${templatePagination.total} 个模板，当前页 ${filteredTemplates.length} 个`">
+      <template #extra>
+        <n-radio-group v-model:value="listViewMode" size="small">
+          <n-radio-button value="table">列表</n-radio-button>
+          <n-radio-button value="card">卡片</n-radio-button>
+        </n-radio-group>
       </template>
 
-      <template #status="{ record }">
-        <StatusBadge :status="record.is_active ? 'success' : 'muted'" :text="record.is_active ? '启用' : '停用'" />
-      </template>
+      <n-data-table
+        v-if="listViewMode === 'table'"
+        :row-key="(row: any) => row.id"
+        class="flow-standard-table pipeline-table"
+        :columns="templateColumns"
+        :data="filteredTemplates"
+        :loading="loading"
+        :pagination="tablePagination"
+      />
 
-      <template #topology="{ record }">
-        <div class="pipeline-topology">
-          <span><strong>{{ record.nodes?.length || 0 }}</strong> 节点</span>
-          <span><strong>{{ record.edges?.length || 0 }}</strong> 连线</span>
-          <em>{{ templateNodeTypeSummary(record) }}</em>
-        </div>
-      </template>
-
-      <template #latestRun="{ record }">
-        <div v-if="latestRun(record.id)" class="pipeline-run-summary">
-          <div class="pipeline-run-summary__main">
-            <a-link @click="router.push(`/flows/runs/${latestRun(record.id)?.id}`)">{{ latestRunTitle(latestRun(record.id)) }}</a-link>
-            <span>{{ latestRunTrigger(latestRun(record.id)) }} / {{ latestRunActor(latestRun(record.id)) }}</span>
-            <time>{{ latestRunTime(latestRun(record.id)) }}</time>
+      <div v-else class="pipeline-template-grid" :aria-busy="loading">
+        <article
+          v-for="record in filteredTemplates"
+          :key="record.id"
+          class="pipeline-template-card"
+        >
+          <header class="pipeline-template-card__head">
+            <div>
+              <button type="button" class="pipeline-template-card__title" @click="openDetailDrawer(record)">
+                {{ record.name }}
+              </button>
+              <p>{{ record.description || '暂无描述' }}</p>
+            </div>
+            <StatusBadge
+              :status="record.is_active ? 'success' : 'muted'"
+              :text="record.is_active ? '启用' : '停用'"
+            />
+          </header>
+          <div class="pipeline-template-card__meta">
+            <span>{{ record.nodes?.length || 0 }} 节点 / {{ record.edges?.length || 0 }} 连线</span>
+            <span>{{ templateNodeTypeSummary(record) }}</span>
+            <span>{{ record.created_by_name || '-' }} · {{ formatTime(record.updated_at || record.created_at) }}</span>
           </div>
-          <StatusBadge :status="latestRun(record.id)?.status" :text="statusText(latestRun(record.id)?.status)" />
-        </div>
-        <span v-else class="table-muted">暂无执行</span>
-      </template>
-
-      <template #owner="{ record }">
-        <MetaInfoLines
-          :created-text="record.created_by_name || '-'"
-          :updated-text="formatTime(record.updated_at || record.created_at)"
+          <div class="pipeline-template-card__run" v-if="latestRun(record.id)">
+            <div>
+              <n-button text size="small" @click="router.push(`/flows/runs/${latestRun(record.id)!.id}`)">
+                {{ latestRunTitle(latestRun(record.id)) }}
+              </n-button>
+              <span>{{ latestRunTrigger(latestRun(record.id)) }} / {{ latestRunActor(latestRun(record.id)) }}</span>
+            </div>
+            <StatusBadge
+              :status="latestRun(record.id)!.status"
+              :text="statusText(latestRun(record.id)!.status)"
+            />
+          </div>
+          <div v-else class="pipeline-template-card__run pipeline-template-card__run--empty">暂无执行</div>
+          <footer class="pipeline-template-card__actions">
+            <n-button
+              type="primary"
+              size="small"
+              :disabled="!record.is_active"
+              @click="openStartModal(record)"
+            >
+              <template #icon><Play :size="14" /></template>
+              新建任务
+            </n-button>
+            <n-button size="small" @click="router.push(`/flows/${record.id}/edit`)">编辑</n-button>
+            <n-dropdown
+              trigger="click"
+              :options="pipelineRowActions(record)"
+              @select="(key: string) => onPipelineRowAction(key, record)"
+            >
+              <n-button size="small" aria-label="更多操作">
+                <template #icon><MoreHorizontal :size="16" /></template>
+              </n-button>
+            </n-dropdown>
+          </footer>
+        </article>
+        <n-empty
+          v-if="!loading && filteredTemplates.length === 0"
+          description="暂无流程模板"
+          class="pipeline-template-grid__empty"
         />
-      </template>
-
-      <template #actions="{ record }">
-        <div class="table-row-actions pipeline-actions">
-          <a-button type="text" size="small" :disabled="!record.is_active" @click="openStartModal(record)">
-            <template #icon><icon-play-arrow /></template>
-            启动
-          </a-button>
-          <a-dropdown>
-            <a-button class="pipeline-more-btn" type="text" size="small" aria-label="更多操作">
-              <template #icon><icon-more /></template>
-            </a-button>
-            <template #content>
-              <a-doption @click="openTemplateDetail(record)">
-                <template #icon><icon-file /></template>
-                详情
-              </a-doption>
-              <a-doption @click="router.push(`/flows/${record.id}/edit`)">
-                <template #icon><icon-edit /></template>
-                编辑
-              </a-doption>
-              <a-doption @click="copyTemplate(record)">
-                <template #icon><icon-copy /></template>
-                复制
-              </a-doption>
-              <a-doption class="danger-option" @click="confirmDeleteTemplate(record)">
-                <template #icon><icon-delete /></template>
-                删除
-              </a-doption>
-            </template>
-          </a-dropdown>
+        <div v-if="filteredTemplates.length > 0" class="pipeline-template-grid__pager">
+          <n-pagination
+            v-model:page="templatePagination.current"
+            v-model:page-size="templatePagination.pageSize"
+            :item-count="templatePagination.total"
+            show-size-picker
+            :page-sizes="[12, 24, 48]"
+            @update:page="handlePageChange"
+            @update:page-size="handlePageSizeChange"
+          />
         </div>
-      </template>
-    </a-table>
+      </div>
     </DetailPanel>
 
     <FlowStartModal
@@ -130,14 +135,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, resolveDirective, type VNode, watch, withDirectives } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { flowApi } from '@/api/ops'
 import type { FlowRun, FlowRunStatus, FlowTemplate } from '@/types'
 import { DataToolbar, DetailPanel, PageHeader, StatusBadge } from '@/components/app'
 import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import FlowStartModal from './components/FlowStartModal.vue'
+import { NButton, NDataTable, NDropdown, NEmpty, NInput, NPagination, NRadioButton, NRadioGroup, NSelect, NSpace, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
 import {
   buildLatestRunMap,
   filterFlowTemplates,
@@ -145,9 +150,14 @@ import {
   flowRunStatusText,
   type SupportedFlowNodeType,
 } from './flowUtils'
+import { Copy, FileText, History, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
 
+const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 const loading = ref(false)
+const listViewMode = ref<'table' | 'card'>('table')
+const catalogScope = ref<'mine' | 'public'>('mine')
 const startVisible = ref(false)
 const selectedTemplate = ref<FlowTemplate | null>(null)
 const templates = ref<FlowTemplate[]>([])
@@ -156,14 +166,6 @@ const filters = reactive({ search: '', status: '', runStatus: '' })
 
 const templatePagination = reactive({ current: 1, pageSize: 12, total: 0, showTotal: true, showPageSize: true })
 
-const templateColumns = [
-  { title: '流水线', dataIndex: 'name', key: 'name', slotName: 'name', width: 260, ellipsis: true, tooltip: true },
-  { title: '状态', dataIndex: 'is_active', key: 'status', slotName: 'status', align: 'center', width: 82 },
-  { title: '拓扑', key: 'topology', slotName: 'topology', width: 160 },
-  { title: '最近执行', key: 'latestRun', slotName: 'latestRun', width: 190 },
-  { title: '负责人/更新', dataIndex: 'updated_at', key: 'owner', slotName: 'owner', width: 150 },
-  { title: '操作', key: 'actions', slotName: 'actions', align: 'left', width: 140, fixed: 'right' },
-]
 
 const activeFilterCount = computed(() => Number(Boolean(filters.search)) + Number(Boolean(filters.status)) + Number(Boolean(filters.runStatus)))
 const latestRunMap = computed(() => buildLatestRunMap(runs.value))
@@ -213,6 +215,7 @@ const loadData = async () => {
       search: filters.search,
       status: filters.status,
       run_status: filters.runStatus,
+      is_public: catalogScope.value === 'public' ? true : undefined,
       page: templatePagination.current,
       page_size: templatePagination.pageSize,
     })
@@ -233,7 +236,7 @@ const loadData = async () => {
     }
   } catch (error) {
     console.error('加载流水线失败:', error)
-    Message.error('加载流水线失败')
+    message.error('加载流水线失败')
   } finally {
     loading.value = false
   }
@@ -254,6 +257,11 @@ const resetFilters = () => {
   filters.search = ''
   filters.status = ''
   filters.runStatus = ''
+  templatePagination.current = 1
+  loadData()
+}
+
+const handleCatalogScopeChange = () => {
   templatePagination.current = 1
   loadData()
 }
@@ -279,30 +287,148 @@ const copyTemplate = async (record: FlowTemplate) => {
   if (!record.id) return
   try {
     const copied = await flowApi.copyTemplate(record.id, { name: `${record.name} 副本` })
-    Message.success('已复制流水线')
+    message.success('已复制流水线')
     await loadData()
     if (copied.id) router.push(`/flows/${copied.id}/edit`)
   } catch (error) {
     console.error('复制流水线失败:', error)
-    Message.error('复制流水线失败')
+    message.error('复制流水线失败')
   }
 }
 
 const confirmDeleteTemplate = (record: FlowTemplate) => {
-  Modal.warning({
+  dialog.warning({
     title: '删除流水线',
     content: `确认删除“${record.name}”？删除后不可恢复。`,
-    hideCancel: false,
-    onOk: async () => {
+    onPositiveClick: async () => {
       if (!record.id) return
       await flowApi.deleteTemplate(record.id)
-      Message.success('已删除流水线')
+      message.success('已删除流水线')
       loadData()
     },
   })
 }
 
 onMounted(loadData)
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '启用', value: 'active' }, { label: '停用', value: 'inactive' }]
+const selectOptions2 = [{ label: '等待中', value: 'pending' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'success' }, { label: '失败', value: 'failed' }, { label: '已暂停', value: 'paused' }, { label: '已取消', value: 'cancelled' }]
+
+const withPerm = (vnode: VNode, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
+
+const pipelineRowActions = (record: FlowTemplate) => [
+  { label: '详情', key: 'detail', icon: () => h(FileText, { size: 14 }) },
+  { label: '编辑', key: 'edit', icon: () => h(Pencil, { size: 14 }) },
+  { label: '复制', key: 'copy', icon: () => h(Copy, { size: 14 }) },
+  { label: '删除', key: 'delete', icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } },
+]
+
+const onPipelineRowAction = (key: string, record: FlowTemplate) => {
+  if (key === 'detail') openTemplateDetail(record)
+  if (key === 'edit') router.push(`/flows/${record.id}/edit`)
+  if (key === 'copy') copyTemplate(record)
+  if (key === 'delete') confirmDeleteTemplate(record)
+}
+
+const templateColumns: DataTableColumns<any> = [
+  {
+    title: '流水线',
+    key: 'name',
+    width: 260,
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h('div', { class: 'pipeline-name-cell' }, [
+        h(NButton, { text: true, size: 'small', onClick: () => openDetailDrawer(row) }, { default: () => row.name }),
+        h('span', row.description || '暂无描述'),
+      ]),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    align: 'center',
+    width: 82,
+    render: (row) =>
+      h(StatusBadge, {
+        status: row.is_active ? 'success' : 'muted',
+        text: row.is_active ? '启用' : '停用',
+      }),
+  },
+  {
+    title: '拓扑',
+    key: 'topology',
+    width: 160,
+    render: (row) =>
+      h('div', { class: 'pipeline-topology' }, [
+        h('span', [h('strong', String(row.nodes?.length || 0)), ' 节点']),
+        h('span', [h('strong', String(row.edges?.length || 0)), ' 连线']),
+        h('em', templateNodeTypeSummary(row)),
+      ]),
+  },
+  {
+    title: '最近执行',
+    key: 'latestRun',
+    width: 190,
+    render: (row) => {
+      const run = latestRun(row.id)
+      if (!run) return h('span', { class: 'table-muted' }, '暂无执行')
+      return h('div', { class: 'pipeline-run-summary' }, [
+        h('div', { class: 'pipeline-run-summary__main' }, [
+          h(NButton, {
+            text: true, size: 'small',
+            onClick: () => router.push(`/flows/runs/${run.id}`),
+          }, { default: () => latestRunTitle(run) }),
+          h('span', `${latestRunTrigger(run)} / ${latestRunActor(run)}`),
+          h('time', latestRunTime(run)),
+        ]),
+        h(StatusBadge, { status: run.status, text: statusText(run.status) }),
+      ])
+    },
+  },
+  {
+    title: '负责人/更新',
+    key: 'owner',
+    width: 150,
+    render: (row) =>
+      h(MetaInfoLines, {
+        createdText: row.created_by_name || '-',
+        updatedText: formatTime(row.updated_at || row.created_at),
+      }),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    align: 'left',
+    width: 140,
+    render: (row) =>
+      h('div', { class: 'table-row-actions pipeline-actions' }, [
+        h(NButton, {
+          text: true, size: 'small', disabled: !row.is_active,
+          onClick: () => openStartModal(row),
+        }, { icon: () => h(Play, { size: 14 }), default: () => '新建任务' }),
+        h(NDropdown, {
+          trigger: 'click',
+          options: pipelineRowActions(row),
+          onSelect: (key: string) => onPipelineRowAction(key, row),
+        }, {
+          default: () => h(NButton, { class: 'pipeline-more-btn', text: true, size: 'small', 'aria-label': '更多操作' }, {
+            icon: () => h(MoreHorizontal, { size: 16 }),
+          }),
+        }),
+      ]),
+  },
+]
+
+const tablePagination = computed(() => ({
+  page: templatePagination.current,
+  pageSize: templatePagination.pageSize,
+  itemCount: templatePagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 </script>
 
 <style scoped>
@@ -315,6 +441,88 @@ onMounted(loadData)
   padding: 0;
   overflow-x: clip;
 }
+.pipeline-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.pipeline-template-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface, #fff);
+}
+.pipeline-template-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pipeline-template-card__title {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--app-fg);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.pipeline-template-card__title:hover {
+  color: var(--app-accent);
+}
+.pipeline-template-card__head p,
+.pipeline-template-card__meta,
+.pipeline-template-card__run span {
+  margin: 4px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.pipeline-template-card__meta {
+  display: grid;
+  gap: 4px;
+}
+.pipeline-template-card__run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--app-border);
+}
+.pipeline-template-card__run--empty {
+  display: block;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.pipeline-template-card__run > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.pipeline-template-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pipeline-template-grid__empty {
+  grid-column: 1 / -1;
+  padding: 32px 0;
+}
+.pipeline-template-grid__pager {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
 .flows-page-head {
   display: flex;
   align-items: flex-start;
@@ -326,7 +534,7 @@ onMounted(loadData)
   flex: 0 0 auto;
 }
 .flows-filter-grid {
-  grid-template-columns: minmax(240px, 360px) 150px 150px minmax(0, 1fr);
+  grid-template-columns: auto minmax(200px, 320px) 140px 140px minmax(0, 1fr);
   align-items: end;
 }
 .flows-filter-grid .app-filter-grid__actions {

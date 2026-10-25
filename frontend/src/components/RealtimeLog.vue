@@ -3,93 +3,89 @@
     <!-- 顶部控制栏 -->
     <div class="control-bar">
       <div class="connection-status">
-        <a-space>
-          <a-tag v-if="connected" color="green">
-            <template #icon><icon-check-circle /></template>
+        <n-space :size="8">
+          <n-tag v-if="connected" type="success" size="small">
+            <template #icon><CheckCircle2 :size="12" /></template>
             已连接
-          </a-tag>
-          <a-tag v-else color="red">
-            <template #icon><icon-close-circle /></template>
+          </n-tag>
+          <n-tag v-else type="error" size="small">
+            <template #icon><XCircle :size="12" /></template>
             未连接
-          </a-tag>
+          </n-tag>
 
-          <a-button v-if="!connected" type="primary" size="small" @click="() => connect()" :loading="connecting">
+          <n-button v-if="!connected" type="primary" size="small" @click="() => connect()" :loading="connecting">
             连接实时日志
-          </a-button>
-          <a-button v-else type="outline" size="small" @click="disconnect">
+          </n-button>
+          <n-button v-else secondary size="small" @click="disconnect">
             断开连接
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
 
       <div class="control-actions">
-        <a-space>
+        <n-space :size="8">
           <!-- 搜索和过滤 -->
-          <a-input
-            v-model="searchText"
+          <n-input
+            v-model:value="searchText"
             placeholder="搜索日志内容..."
             size="small"
             style="width: 200px"
-            allow-clear
+            clearable
           >
             <template #prefix>
-              <icon-search />
+              <Search :size="13" />
             </template>
-          </a-input>
+          </n-input>
 
-          <a-select
-            v-model="logLevelFilter"
+          <n-select
+            v-model:value="logLevelFilter"
             placeholder="日志级别"
             size="small"
             style="width: 120px"
-            allow-clear
-          >
-            <a-option value="info">信息</a-option>
-            <a-option value="warning">警告</a-option>
-            <a-option value="error">错误</a-option>
-            <a-option value="debug">调试</a-option>
-          </a-select>
+            clearable
+            :options="logLevelOptions"
+          />
 
-          <a-button size="small" @click="clearLogs">
-            <template #icon><icon-delete /></template>
+          <n-button size="small" @click="clearLogs">
+            <template #icon><Trash2 :size="14" /></template>
             清空日志
-          </a-button>
+          </n-button>
 
-          <a-button size="small" @click="exportLogs" :disabled="!hasSelectedStepLogs">
-            <template #icon><icon-download /></template>
+          <n-button size="small" @click="exportLogs" :disabled="!hasSelectedStepLogs">
+            <template #icon><Download :size="14" /></template>
             导出TXT
-          </a-button>
+          </n-button>
 
-          <a-switch v-model="autoScroll" size="small">
+          <n-switch v-model:value="autoScroll" size="small">
             <template #checked>自动滚动</template>
             <template #unchecked>手动滚动</template>
-          </a-switch>
-        </a-space>
+          </n-switch>
+        </n-space>
       </div>
     </div>
 
 
     <!-- 执行概览 -->
     <div v-if="status" class="log-summary">
-      <a-descriptions :column="4" size="small">
-        <a-descriptions-item label="总步骤数">
+      <n-descriptions :column="4" size="small" label-placement="left">
+        <n-descriptions-item label="总步骤数">
           {{ Object.keys(stepLogs).length }}
-        </a-descriptions-item>
-        <a-descriptions-item label="总主机数">
+        </n-descriptions-item>
+        <n-descriptions-item label="总主机数">
           {{ status.total_hosts }}
-        </a-descriptions-item>
-        <a-descriptions-item label="成功主机">
-          <span style="color: #52c41a;">{{ status.success_hosts }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="失败主机">
-          <span style="color: #ff4d4f;">{{ status.failed_hosts }}</span>
-        </a-descriptions-item>
-      </a-descriptions>
+        </n-descriptions-item>
+        <n-descriptions-item label="成功主机">
+          <span style="color: #16a34a;">{{ status.success_hosts }}</span>
+        </n-descriptions-item>
+        <n-descriptions-item label="失败主机">
+          <span style="color: #dc2626;">{{ status.failed_hosts }}</span>
+        </n-descriptions-item>
+      </n-descriptions>
     </div>
 
     <!-- 主体内容：渐进式布局 -->
     <div v-if="logs.length === 0" class="empty-logs">
-      <a-empty description="暂无日志数据" />
+      <n-empty description="暂无日志数据" />
     </div>
 
     <div v-else class="execution-flow-layout" :class="{ 'has-selected-step': selectedStepId }">
@@ -104,12 +100,12 @@
               class="timeline-step-item"
             >
               <!-- 时间线连接线 -->
-              <div 
-                v-if="index < Object.keys(stepLogs).length - 1" 
+              <div
+                v-if="index < Object.keys(stepLogs).length - 1"
                 class="timeline-connector"
                 :class="getConnectorClass(stepLog.status)"
               ></div>
-              
+
               <!-- 步骤节点 -->
               <div class="timeline-step-node">
                 <!-- 左侧时间线圆点 -->
@@ -118,11 +114,11 @@
                     <span class="step-number">{{ stepLog.step_order || (index + 1) }}</span>
                   </div>
                 </div>
-                
+
                 <!-- 右侧步骤卡片 -->
-                <div 
+                <div
                   class="timeline-step-card"
-                  :class="{ 
+                  :class="{
                     'step-active': selectedStepId === stepId,
                     [`step-${stepLog.status}`]: true
                   }"
@@ -131,17 +127,17 @@
                   <div class="step-card-content">
                     <div class="step-title-row">
                       <h5 class="step-title">{{ stepLog.step_name }}</h5>
-                      <a-tag
-                        :color="getStepStatusColor(stepLog.status)"
+                      <n-tag
+                        :type="getStepStatusColor(stepLog.status)"
                         size="small"
                         class="step-status-tag"
                       >
                         {{ getStepStatusText(stepLog.status) }}
-                      </a-tag>
+                      </n-tag>
                     </div>
                     <div class="step-meta-row">
                       <span class="step-hosts">
-                        <icon-user /> {{ stepLog.hostCount || 0 }} 台主机
+                        <UserRound :size="12" /> {{ stepLog.hostCount || 0 }} 台主机
                       </span>
                     </div>
                   </div>
@@ -158,9 +154,9 @@
             <div class="step-detail-header">
               <div class="step-detail-info">
                 <h3>{{ stepLogs[selectedStepId].step_name }}</h3>
-                <a-tag :color="getStepStatusColor(stepLogs[selectedStepId].status)" size="small">
+                <n-tag :type="getStepStatusColor(stepLogs[selectedStepId].status)" size="small">
                   {{ getStepStatusText(stepLogs[selectedStepId].status) }}
-                </a-tag>
+                </n-tag>
               </div>
             </div>
 
@@ -186,45 +182,45 @@
               >
                 <div class="host-group-header" @click.stop="toggleGroup(selectedStepId, status)">
                   <div class="group-info">
-                    <a-tag
-                      :color="getHostStatusColor(status)"
+                    <n-tag
+                      :type="getHostStatusColor(status)"
+                      size="small"
                       class="group-status-tag"
                     >
                       {{ getHostStatusText(status) }}
-                    </a-tag>
+                    </n-tag>
                     <span class="group-count">{{ group.hosts.length }}台主机</span>
                   </div>
                   <div class="group-actions">
-                    <a-button
+                    <n-button
                       size="small"
-                      type="text"
+                      text
                       @click.stop="toggleGroup(selectedStepId, status)"
                       title="展开/收起分组"
                     >
-                      <icon-down
+                      <ChevronDown
                         :class="{ 'rotate-180': group.expanded }"
                         class="expand-icon"
                       />
-                    </a-button>
+                    </n-button>
                   </div>
                 </div>
 
                 <div v-show="group.expanded" class="host-group-content">
-                  <a-tabs
+                  <n-tabs
                     v-if="group.hosts.length > 0"
-                    v-model:active-key="selectedHostIds[selectedStepId]"
+                    v-model:value="selectedHostIds[selectedStepId]"
                     type="card"
                     size="small"
                     class="host-tabs"
-                    :tab-position="'top'"
-                    :scrollable="true"
                   >
-                    <a-tab-pane
+                    <n-tab-pane
                       v-for="hostLog in group.hosts"
                       :key="hostLog.host_id"
+                      :name="String(hostLog.host_id)"
                       :class="`host-tab-${hostLog.status}`"
                     >
-                      <template #title>
+                      <template #tab>
                         <div class="host-tab-title">
                           <div class="host-name">{{ hostLog.host_name }}</div>
                         </div>
@@ -236,12 +232,12 @@
                         <div class="host-info-header">
                           <div class="host-info">
                             <h5>{{ hostLog.host_name }}</h5>
-                            <a-space>
-                              <a-tag :color="getHostStatusColor(hostLog.status)">
+                            <n-space :size="8">
+                              <n-tag :type="getHostStatusColor(hostLog.status)" size="small">
                                 {{ getHostStatusText(hostLog.status) }}
-                              </a-tag>
+                              </n-tag>
                               <span class="host-ip">{{ hostLog.host_ip }}</span>
-                            </a-space>
+                            </n-space>
                           </div>
 
                           <!-- 文件传输进度条 -->
@@ -255,11 +251,11 @@
                                 </span>
                               </span>
                             </div>
-                            <a-progress
-                              :percent="hostLog.progress.percent"
-                              :color="hostLog.progress.percent === 100 ? '#52c41a' : '#1890ff'"
-                              size="small"
-                              :show-text="true"
+                            <n-progress
+                              type="line"
+                              :percentage="hostLog.progress.percent"
+                              :color="hostLog.progress.percent === 100 ? '#16a34a' : '#2f6feb'"
+                              :show-indicator="true"
                             />
                             <div
                               v-if="hostLog.progress.fileSources && hostLog.progress.fileSources.length > 0"
@@ -270,11 +266,11 @@
                                 :key="idx"
                                 class="file-source-item"
                               >
-                                <a-tag size="small" :color="src.type === 'server' ? 'blue' : 'arcoblue'">
+                                <n-tag size="small" :type="src.type === 'server' ? 'info' : 'primary'">
                                   {{ getFileSourceType(src.type) }}
-                                </a-tag>
+                                </n-tag>
                                 <span class="file-source-path">{{ getFileSourcePath(src) }}</span>
-                                <icon-right style="font-size: 12px; margin: 0 6px;" />
+                                <ChevronRight :size="12" style="margin: 0 6px;" />
                                 <span class="file-dest-path">{{ src.remote_path || hostLog.progress.remotePath || '-' }}</span>
                               </div>
                             </div>
@@ -328,8 +324,8 @@
                           </div>
                         </div>
                       </div>
-                    </a-tab-pane>
-                  </a-tabs>
+                    </n-tab-pane>
+                  </n-tabs>
                 </div>
               </div>
             </div>
@@ -342,8 +338,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
-import { Message } from '@arco-design/web-vue'
-import { IconCheckCircle, IconCloseCircle, IconDelete, IconSearch, IconDownload } from '@arco-design/web-vue/es/icon'
+import { NButton, NDescriptions, NDescriptionsItem, NEmpty, NInput, NProgress, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useMessage } from 'naive-ui'
+import { CheckCircle2, ChevronDown, ChevronRight, Download, Search, Trash2, UserRound, XCircle } from 'lucide-vue-next'
+
+const message = useMessage()
 import { useAuthStore } from '@/stores/auth'
 import { buildSseUrl } from '@/utils/env'
 import { SSE } from 'sse.js'
@@ -446,7 +444,7 @@ const expandedSteps = ref<Record<string, boolean>>({})
 
 // 搜索和过滤
 const searchText = ref('')
-const logLevelFilter = ref('')
+const logLevelFilter = ref<string | null>(null)
 
 // 重连相关
 const reconnectAttempts = ref(0)
@@ -462,7 +460,7 @@ const itemHeight = 20
 
 const connect = async (isReconnect = false) => {
   if (!props.executionId) {
-    Message.error('执行ID不能为空')
+    message.error('执行ID不能为空')
     return
   }
 
@@ -644,7 +642,7 @@ const connect = async (isReconnect = false) => {
 
   } catch (error) {
     connecting.value = false
-    Message.error('连接失败')
+    message.error('连接失败')
     console.error('SSE连接失败:', error)
   }
 }
@@ -880,13 +878,20 @@ const getConnectorClass = (status: string) => {
   }
 }
 
+const logLevelOptions = [
+  { label: '信息', value: 'info' },
+  { label: '警告', value: 'warning' },
+  { label: '错误', value: 'error' },
+  { label: '调试', value: 'debug' }
+]
+
 const getStepStatusColor = (status: string) => {
   switch (status) {
-    case 'pending': return 'gray'
-    case 'running': return 'blue'
-    case 'success': return 'green'
-    case 'failed': return 'red'
-    default: return 'gray'
+    case 'pending': return 'default'
+    case 'running': return 'info'
+    case 'success': return 'success'
+    case 'failed': return 'error'
+    default: return 'default'
   }
 }
 
@@ -902,11 +907,11 @@ const getStepStatusText = (status: string) => {
 
 const getHostStatusColor = (status: string) => {
   switch (status) {
-    case 'waiting': return 'gray'
-    case 'running': return 'blue'
-    case 'success': return 'green'
-    case 'failed': return 'red'
-    default: return 'gray'
+    case 'waiting': return 'default'
+    case 'running': return 'info'
+    case 'success': return 'success'
+    case 'failed': return 'error'
+    default: return 'default'
   }
 }
 
@@ -1069,7 +1074,7 @@ const getHostLogs = (stepId: string, hostId: string) => {
 const exportLogs = () => {
   const currentStepId = selectedStepId.value
   if (!currentStepId || !stepLogs.value[currentStepId]) {
-    Message.warning('没有可导出的日志')
+    message.warning('没有可导出的日志')
     return
   }
 
@@ -1110,7 +1115,7 @@ const exportLogs = () => {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 
-  Message.success('日志导出成功')
+  message.success('日志导出成功')
 }
 
 // 监听搜索和过滤条件变化，重置虚拟滚动位置

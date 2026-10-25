@@ -1,34 +1,31 @@
 <template>
   <div class="file-sources-panel">
     <div class="panel-actions" style="display:flex; gap:8px; align-items:center;">
-      <a-upload
+      <n-upload
         :file-list="uploadList"
-        :auto-upload="false"
+        :default-upload="false"
         multiple
-        :show-upload-button="true"
         :show-file-list="false"
-        @change="onFileChange"
-        @remove="onFileRemove"
+        @change="(data: any) => onFileChange(data.fileList)"
+        @remove="(data: any) => onFileRemove(data.file)"
       >
-        <template #upload-button>
-          <a-button type="dashed">
-            <template #icon><icon-plus /></template>
-            添加本地文件
-          </a-button>
-        </template>
-      </a-upload>
-      <a-button type="dashed" @click="serverInlineVisible = !serverInlineVisible">
-        <template #icon><icon-plus /></template>
+        <n-button dashed>
+          <template #icon><Plus :size="14" /></template>
+          添加本地文件
+        </n-button>
+      </n-upload>
+      <n-button dashed @click="serverInlineVisible = !serverInlineVisible">
+        <template #icon><Plus :size="14" /></template>
         添加服务器文件
-      </a-button>
+      </n-button>
     </div>
 
     <div v-if="localArtifacts && localArtifacts.length > 0" class="artifact-list artifact-list-panel">
-      <div v-for="(a, idx) in localArtifacts" :key="a.uid || a.storage_path || idx" class="artifact-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px; border:1px solid var(--color-border-2); border-radius:4px; margin-bottom:8px;">
+      <div v-for="(a, idx) in localArtifacts" :key="a.uid || a.storage_path || idx" class="artifact-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px; border:1px solid var(--app-border); border-radius:4px; margin-bottom:8px;">
         <div style="display:flex; gap:12px; align-items:center; min-width:0; flex:1">
-          <a-tag :color="a.type === 'server' ? 'orange' : (a.storage_path ? 'cyan' : 'gray')">
+          <n-tag size="small" :type="a.type === 'server' ? 'warning' : (a.storage_path ? 'info' : 'default')">
             {{ a.type === 'server' ? '服务器' : (a.storage_path ? '制品' : '临时') }}
-          </a-tag>
+          </n-tag>
           <div style="min-width:0; flex:1">
             <div v-if="a.type === 'server'">
               <div class="server-row">
@@ -54,8 +51,8 @@
             </div>
             <div v-else>
               <div v-if="a.uploading" style="display:flex; align-items:center; gap:8px;">
-                <a-progress :percent="(a.progress || 0) / 100" size="small" style="flex:1" />
-                <div style="width:48px; text-align:right; font-size:12px; color:#86909c;">{{ a.progress || 0 }}%</div>
+                <n-progress type="line" :percentage="a.progress || 0" :show-indicator="false" :height="6" style="flex:1" />
+                <div style="width:48px; text-align:right; font-size:12px; color:var(--app-meta);">{{ a.progress || 0 }}%</div>
               </div>
               <div v-else>
                 <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.name || a.filename || a.storage_path }}</div>
@@ -68,33 +65,33 @@
           </div>
         </div>
         <div>
-          <a-space>
-            <a-button type="text" size="small" status="danger" @click="removeArtifact(a)">移除</a-button>
-          </a-space>
+          <n-space :size="8">
+            <n-button text type="error" size="small" @click="removeArtifact(a)">移除</n-button>
+          </n-space>
         </div>
       </div>
     </div>
-      <div v-if="serverInlineVisible" class="server-inline-panel">
+    <div v-if="serverInlineVisible" class="server-inline-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <div style="font-weight:600">服务器来源列表</div>
-        <a-button type="dashed" size="small" @click="addServerRow">+ 添加一行</a-button>
+        <n-button dashed size="small" @click="addServerRow">+ 添加一行</n-button>
       </div>
       <div v-for="(row, idx) in serverRows" :key="row._uid" class="server-row">
         <div class="server-row-line">
-          <a-button class="server-btn" type="outline" @click="openHostSelector(idx)">
+          <n-button class="server-btn" secondary @click="openHostSelector(idx)">
             <template v-if="row.server">{{ row.server }}</template>
             <template v-else>选择源服务器</template>
-          </a-button>
-          <a-input v-model="row.path" placeholder="源文件路径" class="path-input" />
+          </n-button>
+          <n-input v-model:value="row.path" placeholder="源文件路径" class="path-input" />
         </div>
         <div class="server-row-line">
-          <a-select v-model="row.account_id" placeholder="账号" class="account-select" :options="accounts.map(a => ({ label: a.name, value: a.id }))" />
-          <a-input v-model="row.remote_path" placeholder="目标远程路径（可选）" class="remote-input" />
-          <a-button type="text" status="danger" size="small" @click="removeServerRow(idx)">移除</a-button>
+          <n-select v-model:value="row.account_id" placeholder="账号" clearable class="account-select" :options="accounts.map(a => ({ label: a.name, value: a.id }))" />
+          <n-input v-model:value="row.remote_path" placeholder="目标远程路径（可选）" class="remote-input" />
+          <n-button text type="error" size="small" @click="removeServerRow(idx)">移除</n-button>
         </div>
       </div>
       <div style="text-align:right">
-        <a-button type="primary" size="small" @click="addServerEntries">确认添加</a-button>
+        <n-button type="primary" size="small" @click="addServerEntries">确认添加</n-button>
       </div>
       <!-- HostSelector 用于选择源服务器 -->
       <HostSelector
@@ -110,11 +107,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { NButton, NInput, NProgress, NSelect, NSpace, NTag, NUpload, useMessage } from 'naive-ui'
+import { Plus } from 'lucide-vue-next'
 import request from '@/utils/request'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import { accountApi } from '@/api/account'
 import HostSelector from '@/components/HostSelector.vue'
+
+const message = useMessage()
 
 const props = defineProps({
   artifacts: { type: Array, default: () => [] }
@@ -257,7 +257,6 @@ const onFileChange = async (files: any[]) => {
       }
       const idx = localArtifacts.value.findIndex(x => x.uid === f.uid || x.name === f.name)
       if (idx > -1) {
-        // 合并元数据并标记为已完成
         localArtifacts.value[idx] = {
           ...localArtifacts.value[idx],
           ...meta,
@@ -273,7 +272,7 @@ const onFileChange = async (files: any[]) => {
       emit('update:artifacts', localArtifacts.value)
     } catch (e) {
       console.error('artifact upload failed', e)
-      Message.error(`文件 ${f.name} 上传失败`)
+      message.error(`文件 ${f.name} 上传失败`)
       localArtifacts.value = localArtifacts.value.filter(x => x.uid !== f.uid && x.name !== f.name)
       emit('update:artifacts', localArtifacts.value)
     }
@@ -299,7 +298,7 @@ const removeServerRow = (idx: number) => {
 const addServerEntries = () => {
   for (const r of serverRows.value) {
     if (!r.server_id || !r.path || !r.account_id) {
-      Message.error('服务器来源需要选择源主机、源路径和账号')
+      message.error('服务器来源需要选择源主机、源路径和账号')
       continue
     }
     const host = hosts.value.find(h => h.id === r.server_id)
@@ -324,7 +323,6 @@ const addServerEntries = () => {
 }
 
 const removeArtifact = (a: any) => {
-  // 标记被用户移除的 artifact
   removedUids.add(a.uid || a.name)
   localArtifacts.value = localArtifacts.value.filter(x => x !== a)
   emit('update:artifacts', localArtifacts.value)
@@ -392,17 +390,16 @@ const getAgentStatusText = (serverId: any) => {
 
 const getAgentStatusColor = (serverId: any) => {
   const status = getAgentStatus(serverId)
-  if (status === 'online') return '#52c41a'
-  if (status === 'offline') return '#ff4d4f'
-  return '#d9d9d9'
+  if (status === 'online') return '#16a34a'
+  if (status === 'offline') return '#dc2626'
+  return '#d1d5db'
 }
 </script>
 
 <style scoped>
-.artifact-item { }
 .artifact-list-panel {
   margin-top: 12px;
-  border: 1px dashed var(--color-border-2);
+  border: 1px dashed var(--app-border);
   padding: 12px;
   border-radius: 4px;
   width: 100%;
@@ -412,7 +409,7 @@ const getAgentStatusColor = (serverId: any) => {
 }
 .server-inline-panel {
   margin-top: 12px;
-  border: 1px dashed var(--color-border-2);
+  border: 1px dashed var(--app-border);
   padding: 12px;
   border-radius: 4px;
   width: 100%;
@@ -422,7 +419,7 @@ const getAgentStatusColor = (serverId: any) => {
 }
 .col-muted {
   font-size:12px;
-  color:#86909c;
+  color:var(--app-meta);
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -437,9 +434,9 @@ const getAgentStatusColor = (serverId: any) => {
   min-width:260px;
 }
 .account-select {
-  flex:1 1 140px;     /* 收缩优先 */
-  min-width:120px;     /* 确保可用 */
-  max-width:180px;     /* 上限，避免过长 */
+  flex:1 1 140px;
+  min-width:120px;
+  max-width:180px;
 }
 .remote-input {
   flex:4 1 320px;
@@ -447,26 +444,26 @@ const getAgentStatusColor = (serverId: any) => {
 }
 .server-row {
   display:flex;
-  gap:8px;     /* 两行之间的距离 */
+  gap:8px;
   align-items:center;
   width:100%;
   flex-wrap:wrap;
-  margin-bottom:12px;     /* 行与行之间 */
+  margin-bottom:12px;
 }
 .server-row:last-child {
-  margin-bottom:0;         /* 最后一行不多出空白 */
+  margin-bottom:0;
 }
 .server-row-line {
   display:flex;
   align-items:center;
   gap:12px;
-  flex-wrap:wrap;     /* 缩放/窄屏自动换行 */
+  flex-wrap:wrap;
 }
 .server-name-status { display:flex; align-items:center; gap:8px; flex:2 1 180px; min-width:150px; white-space:nowrap; overflow:hidden; }
 .agent-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 .server-name { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
-.agent-text { flex:0 0 auto; font-size:12px; color:#86909c; margin-left:8px; white-space:nowrap; }
-.col-source-path { flex:4 1 220px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.col-account { flex:1 1 120px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.col-remote { flex:3 1 220px; color:#86909c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.agent-text { flex:0 0 auto; font-size:12px; color:var(--app-meta); margin-left:8px; white-space:nowrap; }
+.col-source-path { flex:4 1 220px; color:var(--app-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-account { flex:1 1 120px; color:var(--app-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-remote { flex:3 1 220px; color:var(--app-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>

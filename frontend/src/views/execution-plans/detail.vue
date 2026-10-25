@@ -4,121 +4,121 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="handleBack">
+          <n-button text @click="handleBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>{{ plan?.name || '执行方案详情' }}</h2>
             <p class="header-desc">{{ plan?.description || '暂无描述' }}</p>
           </div>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button @click="handleRefresh">
+          <n-space>
+            <n-button @click="handleRefresh">
               <template #icon>
-                <icon-refresh />
+                <RefreshCw  />
               </template>
               刷新
-            </a-button>
-            <a-button
+            </n-button>
+            <n-button
               @click="handleEdit"
               v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: plan?.id }"
             >
               <template #icon>
-                <icon-edit />
+                <Pencil  />
               </template>
               编辑方案
-            </a-button>
-            <a-button
+            </n-button>
+            <n-button
               type="primary"
               @click="handleExecute"
               v-permission="{ resourceType: 'executionplan', permission: 'execute', resourceId: plan?.id }"
             >
               <template #icon>
-                <icon-play-arrow />
+                <Play />
               </template>
               执行方案
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" />
+      <n-spin size="large" />
     </div>
 
     <div v-else-if="plan" class="detail-content">
-      <a-row :gutter="24">
+      <div class="form-grid-row">
         <!-- 基本信息 -->
-        <a-col :span="8">
-          <a-card title="基本信息" class="mb-4">
-            <a-descriptions :column="1" bordered>
-              <a-descriptions-item label="方案名称">
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="基本信息" class="mb-4">
+            <n-descriptions :column="1" bordered label-placement="left" :label-style="{ width: '96px' }">
+              <n-descriptions-item label="方案名称">
                 {{ plan.name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="所属模板">
-                <a-link @click="handleViewTemplate">{{ plan.template_name }}</a-link>
-              </a-descriptions-item>
-              <a-descriptions-item label="方案描述">
+              </n-descriptions-item>
+              <n-descriptions-item label="所属模板">
+                <n-button text size="small" @click="handleViewTemplate">{{ plan.template_name }}</n-button>
+              </n-descriptions-item>
+              <n-descriptions-item label="方案描述">
                 {{ plan.description || '暂无描述' }}
-              </a-descriptions-item>
-              <a-descriptions-item label="同步状态">
-                <a-tag v-if="plan.needs_sync" color="orange">
+              </n-descriptions-item>
+              <n-descriptions-item label="同步状态">
+                <n-tag v-if="plan.needs_sync" type="warning">
                   <template #icon>
-                    <icon-exclamation-circle />
+                    <CircleAlert  />
                   </template>
                   需要同步
-                </a-tag>
-                <a-tag v-else color="green">
+                </n-tag>
+                <n-tag v-else type="success">>
                   <template #icon>
-                    <icon-check-circle />
+                    <CircleCheck  />
                   </template>
                   已同步
-                </a-tag>
-              </a-descriptions-item>
-              <a-descriptions-item label="创建人">
+                </n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="创建人">
                 {{ plan.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ formatDateTime(plan.created_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="更新时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="更新时间">
                 {{ formatDateTime(plan.updated_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="执行统计">
+              </n-descriptions-item>
+              <n-descriptions-item label="执行统计">
                 <div class="stats-info">
                   <span>总执行: {{ plan.total_executions || 0 }} 次</span>
                   <span>成功率: {{ plan.success_rate || 0 }}%</span>
                 </div>
-              </a-descriptions-item>
-            </a-descriptions>
-          </a-card>
+              </n-descriptions-item>
+            </n-descriptions>
+          </n-card>
 
           <!-- 执行变量 -->
-          <a-card title="执行变量" class="mb-4">
+          <n-card title="执行变量" class="mb-4">
             <ExecutionVariablesPanel
               :variables="plan.global_parameters_snapshot || plan.template_global_parameters || {}"
             />
-          </a-card>
-        </a-col>
+          </n-card>
+        </div>
 
         <!-- 执行步骤 -->
-        <a-col :span="16">
-          <a-card title="执行步骤" class="mb-4">
-        <template #extra>
-          <a-space>
-            <a-tag>共 {{ steps.length }} 个步骤</a-tag>
-            <a-button v-if="plan.needs_sync" type="outline" size="small" @click="handleViewTemplate">
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="执行步骤" class="mb-4">
+        <template #footer>
+          <n-space>
+            <n-tag>共 {{ steps.length }} 个步骤</n-tag>
+            <n-button v-if="plan.needs_sync" secondary size="small" @click="handleViewTemplate">
               <template #icon>
-                <icon-sync />
+                <RefreshCw  />
               </template>
               去模板同步
-            </a-button>
-            <a-button
+            </n-button>
+            <n-button
               v-if="plan.needs_sync"
               type="primary"
               size="small"
@@ -126,17 +126,17 @@
               v-permission="{ resourceType: 'executionplan', permission: 'change', resourceId: plan?.id }"
             >
               <template #icon>
-                <icon-sync />
+                <RefreshCw  />
               </template>
               同步方案
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </template>
 
 
 
         <div v-if="steps.length === 0" class="empty-steps">
-          <a-empty description="暂无执行步骤" />
+          <n-empty description="暂无执行步骤" />
         </div>
 
         <div v-else class="steps-list">
@@ -150,17 +150,17 @@
             @click="openStepDrawer(step, index)"
           />
         </div>
-          </a-card>
+          </n-card>
 
-        </a-col>
-      </a-row>
-      <a-drawer
-        v-model:visible="drawerVisible"
+        </div>
+      </div>
+      <n-drawer
+        v-model:show="drawerVisible"
         :width="960"
-        :footer="false"
-        unmount-on-close
-      >
-        <template #title>
+       
+       
+      ><n-drawer-content>
+        <template #header>
           <div class="drawer-title">
             <span>步骤 {{ drawerIndex + 1 }}</span>
             <span class="drawer-title-name">{{ getStepDisplayName(drawerStep) }}</span>
@@ -174,21 +174,21 @@
           :show-detail="true"
           :default-expanded="true"
         />
-      </a-drawer>
+      </n-drawer-content></n-drawer>
     </div>
 
     <div v-else class="error-container">
-      <a-result
+      <n-result
         status="404"
         title="执行方案不存在"
         subtitle="请检查方案ID是否正确"
       >
-        <template #extra>
-          <a-button type="primary" @click="handleBack">
+        <template #footer>
+          <n-button type="primary" @click="handleBack">
             返回
-          </a-button>
+          </n-button>
         </template>
-      </a-result>
+      </n-result>
     </div>
   </div>
 
@@ -198,13 +198,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
 import StepCard from '@/components/StepCard.vue'
 import ExecutionVariablesPanel from '@/components/ExecutionVariablesPanel.vue'
+import { NButton, NCard, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NEmpty, NResult, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, CircleAlert, CircleCheck, Pencil, Play, RefreshCw } from 'lucide-vue-next'
 
 
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -232,7 +234,7 @@ const fetchPlanDetail = async () => {
     }
   } catch (error) {
     console.error('获取方案详情失败:', error);
-    Message.error('获取方案详情失败');
+    message.error('获取方案详情失败');
   } finally {
     loading.value = false;
   }
@@ -288,12 +290,12 @@ const handleSync = async () => {
   try {
     const planId = Number(route.params.id)
     await executionPlanApi.syncPlan(planId)
-    Message.success('方案同步成功')
+    message.success('方案同步成功')
     fetchPlanDetail()
 
   } catch (error) {
     console.error('同步方案失败:', error)
-    Message.error('同步方案失败')
+    message.error('同步方案失败')
   }
 }
 
@@ -350,12 +352,12 @@ onMounted(() => {
   margin: 0 0 4px 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .header-desc {
   margin: 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -389,7 +391,7 @@ onMounted(() => {
 }
 
 .step-list-item:hover {
-  border-color: var(--color-primary-6);
+  border-color: var(--app-accent);
 }
 
 .drawer-title {
@@ -400,7 +402,7 @@ onMounted(() => {
 }
 
 .drawer-title-name {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-weight: 500;
 }
 
@@ -419,10 +421,10 @@ onMounted(() => {
 }
 
 .step-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 16px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .step-header {
@@ -440,7 +442,7 @@ onMounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--color-primary-6);
+  background: var(--app-accent);
   color: white;
   display: flex;
   align-items: center;
@@ -455,12 +457,12 @@ onMounted(() => {
 
 .step-name {
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   margin-bottom: 4px;
 }
 
 .step-desc {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -478,7 +480,7 @@ onMounted(() => {
   margin: 0 0 8px 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .script-content {
@@ -489,10 +491,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
 }
 
 .parameter-item {
@@ -504,13 +506,13 @@ onMounted(() => {
 
 .param-key {
   font-weight: 600;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   min-width: 120px;
 }
 
 .param-value {
-  color: var(--color-text-1);
-  background: var(--color-bg-2);
+  color: var(--app-fg);
+  background: var(--app-bg);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -526,7 +528,7 @@ onMounted(() => {
 }
 
 .parameter-item.global .param-key {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
 }
 
 .parameter-item.global .param-value {
@@ -538,10 +540,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
 }
 
 .global-parameters .parameter-item {
@@ -556,7 +558,7 @@ onMounted(() => {
 
 .global-parameters .param-key {
   font-weight: 500;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   min-width: auto;
 }
 

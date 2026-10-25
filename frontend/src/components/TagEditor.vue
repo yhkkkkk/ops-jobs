@@ -1,67 +1,69 @@
 <template>
   <div class="tag-editor">
     <div class="tag-list">
-      <a-tag
+      <n-tag
         v-for="(tag, index) in tags"
         :key="index"
         closable
-        @close="removeTag(index)"
+        size="small"
         class="tag-item"
+        @close="removeTag(index)"
       >
-        <strong>{{ tag.key }}:</strong> {{ tag.value }}
-      </a-tag>
-      
-      <a-tag
+        <strong>{{ tag.key }}:</strong> {{ tag.value }}>
+      </n-tag>
+
+      <n-tag
         v-if="!showInput"
-        @click="showAddInput"
         class="add-tag"
-        style="background: #fafafa; border-style: dashed;"
+        :style="{ background: 'var(--app-surface-soft)', borderStyle: 'dashed' }"
+        @click="showAddInput"
       >
         <template #icon>
-          <icon-plus />
+          <Plus :size="13" />
         </template>
         添加标签
-      </a-tag>
+      </n-tag>
     </div>
 
     <!-- 添加标签输入框 -->
     <div v-if="showInput" class="tag-input">
-      <a-space>
-        <a-input
+      <n-space :size="8" align="center">
+        <n-input
           ref="keyInputRef"
-          v-model="newTag.key"
+          v-model:value="newTag.key"
           placeholder="键"
           size="small"
           style="width: 100px"
           @keyup.enter="focusValueInput"
         />
         <span>:</span>
-        <a-input
+        <n-input
           ref="valueInputRef"
-          v-model="newTag.value"
+          v-model:value="newTag.value"
           placeholder="值"
           size="small"
           style="width: 120px"
           @keyup.enter="addTag"
         />
-        <a-button type="primary" size="small" @click="addTag">
+        <n-button type="primary" size="small" @click="addTag">
           <template #icon>
-            <icon-check />
+            <Check :size="14" />
           </template>
-        </a-button>
-        <a-button size="small" @click="cancelAdd">
+        </n-button>
+        <n-button size="small" @click="cancelAdd">
           <template #icon>
-            <icon-close />
+            <X :size="14" />
           </template>
-        </a-button>
-      </a-space>
+        </n-button>
+      </n-space>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, nextTick, watch } from 'vue'
-import { IconPlus, IconCheck, IconClose } from '@arco-design/web-vue/es/icon'
+import { NButton, NInput, NSpace, NTag } from 'naive-ui'
+import { Check, Plus, X } from 'lucide-vue-next'
 
 interface Tag {
   key: string
@@ -126,11 +128,11 @@ const focusValueInput = () => {
 const addTag = () => {
   const key = newTag.key.trim()
   const value = newTag.value.trim()
-  
+
   if (!key || !value) {
     return
   }
-  
+
   // 检查是否已存在相同的键
   const existingIndex = tags.value.findIndex(tag => tag.key === key)
   if (existingIndex >= 0) {
@@ -140,12 +142,12 @@ const addTag = () => {
     // 添加新标签
     tags.value.push({ key, value })
   }
-  
+
   // 重置输入
   newTag.key = ''
   newTag.value = ''
   showInput.value = false
-  
+
   // 触发更新
   updateValue()
 }
@@ -192,8 +194,8 @@ const updateValue = () => {
 }
 
 .add-tag:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: var(--app-accent);
+  color: var(--app-accent);
 }
 
 .tag-input {

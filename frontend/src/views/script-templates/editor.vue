@@ -3,12 +3,12 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="goBack">
+          <n-button text @click="goBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>{{ headerTitle }}</h2>
             <p class="header-desc">
@@ -17,25 +17,25 @@
           </div>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button @click="handlePreview">
+          <n-space>
+            <n-button @click="handlePreview">
               <template #icon>
-                <icon-eye />
+                <Eye  />
               </template>
               预览
-            </a-button>
-            <a-button type="primary" @click="handleSave" :loading="saving">
+            </n-button>
+            <n-button type="primary" @click="handleSave" :loading="saving">
               <template #icon>
-                <icon-save />
+                <Save />
               </template>
               保存
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
-    <a-alert
+    <n-alert
       v-if="isEditVersion"
       class="version-edit-alert"
       type="warning"
@@ -55,8 +55,8 @@
     />
 
     <!-- 未保存更改提示 -->
-    <a-modal
-      v-model:visible="leaveConfirmVisible"
+    <n-modal
+       v-model:show="leaveConfirmVisible"
       title="未保存更改"
       :width="480"
       :footer="false"
@@ -65,51 +65,50 @@
         您有未保存的更改，是否保存并离开？
       </div>
       <div class="leave-confirm-actions">
-        <a-button type="primary" :loading="saving" @click="handleLeaveSave">保存并离开</a-button>
-        <a-button status="danger" @click="handleLeaveDiscard">放弃更改</a-button>
-        <a-button @click="handleLeaveCancel">取消</a-button>
+        <n-button type="primary" :loading="saving" @click="handleLeaveSave">保存并离开</n-button>
+        <n-button type="error" @click="handleLeaveDiscard">放弃更改</n-button>
+        <n-button @click="handleLeaveCancel">取消</n-button>
       </div>
-    </a-modal>
+    </n-modal>
 
     <!-- 预览弹窗 -->
-    <a-modal
-      v-model:visible="previewVisible"
+    <n-modal
+       v-model:show="previewVisible"
       title="模板预览"
       :width="1000"
       :footer="false"
     >
       <div v-if="previewData">
-        <a-descriptions :column="2" bordered class="mb-4">
-          <a-descriptions-item label="模板名称">
+        <n-descriptions :column="2" bordered class="mb-4">
+          <n-descriptions-item label="模板名称">
             {{ previewData.name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="脚本类型">
-            <a-tag :color="getScriptTypeColor(previewData.script_type)">
+          </n-descriptions-item>
+          <n-descriptions-item label="脚本类型"><n-tag :type="getScriptTypeColor(previewData.script_type) as any">
               {{ getScriptTypeText(previewData.script_type) }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="分类">
+            </n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="分类">
             {{ getCategoryText(previewData.category) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="标签">
-            <a-space v-if="previewData.tags_json && Object.keys(previewData.tags_json).length > 0">
-              <a-tag v-for="(value, key) in previewData.tags_json" :key="key" size="small">
+          </n-descriptions-item>
+          <n-descriptions-item label="标签">
+            <n-space v-if="previewData.tags_json && Object.keys(previewData.tags_json).length > 0">
+              <n-tag v-for="(value, key) in previewData.tags_json" :key="key" size="small">
                 {{ key }}:{{ value }}
-              </a-tag>
-            </a-space>
+              </n-tag>
+            </n-space>
             <span v-else>-</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="版本号">
+          </n-descriptions-item>
+          <n-descriptions-item label="版本号">
             {{ previewData.version || '未设置' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag v-if="previewData.is_active" color="green">上线</a-tag>
-            <a-tag v-else color="red">下线</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="描述" :span="2">
+          </n-descriptions-item>
+          <n-descriptions-item label="状态">
+            <n-tag v-if="previewData.is_active" type="success">上线</n-tag>
+            <n-tag v-else type="error">下线</n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="描述" :span="2">
             {{ previewData.description || '暂无描述' }}
-          </a-descriptions-item>
-        </a-descriptions>
+          </n-descriptions-item>
+        </n-descriptions>
 
         <div class="mb-4">
           <h4>脚本内容</h4>
@@ -124,20 +123,22 @@
 
 
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import TemplateForm from './components/TemplateForm.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { NAlert, NButton, NDescriptions, NDescriptionsItem, NModal, NSpace, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, Eye, Save } from 'lucide-vue-next'
 
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -257,17 +258,17 @@ const fetchTemplate = async () => {
             editingVersionId.value = targetVersion.id
             editingVersionIsActive.value = !!targetVersion.is_active
           } else {
-            Message.error('未找到指定版本')
+            message.error('未找到指定版本')
           }
         } catch (e) {
           console.error('获取版本内容失败:', e)
-          Message.error('获取版本内容失败')
+          message.error('获取版本内容失败')
         }
       }
     }
   } catch (error) {
     console.error('获取模板失败:', error)
-    Message.error('获取模板失败')
+    message.error('获取模板失败')
     router.push('/script-templates')
   } finally {
     loading.value = false
@@ -296,7 +297,7 @@ const handlePreview = async () => {
     }
   } catch (error) {
     console.error('预览失败:', error)
-    Message.error('表单验证失败，请检查输入内容')
+    message.error('表单验证失败，请检查输入内容')
   }
 }
 
@@ -312,7 +313,7 @@ const handleSave = async (): Promise<boolean> => {
     return false
   } catch (error) {
     console.error('保存失败:', error)
-    Message.error('保存失败')
+    message.error('保存失败')
     return false
   }
 }
@@ -339,7 +340,7 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
 
     if (isEditVersion.value) {
       if (!templateData.value?.id || !editingVersionId.value) {
-        Message.error('版本信息不完整，无法保存')
+        message.error('版本信息不完整，无法保存')
         return
       }
 
@@ -351,16 +352,16 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
 
       console.log('更新版本，模板ID:', templateData.value.id, '版本ID:', editingVersionId.value)
       await scriptTemplateApi.updateVersion(templateData.value.id, editingVersionId.value, versionData)
-      Message.success('版本更新成功')
+      message.success('版本更新成功')
     } else if (isEdit.value) {
       console.log('更新模板，ID:', templateData.value!.id)
       await scriptTemplateApi.updateTemplate(templateData.value!.id, apiData)
-      Message.success('模板更新成功')
+      message.success('模板更新成功')
     } else {
       console.log('创建新模板')
       const result = await scriptTemplateApi.createTemplate(apiData)
       console.log('创建结果:', result)
-      Message.success('模板创建成功')
+      message.success('模板创建成功')
     }
 
     // 重置变更状态
@@ -389,7 +390,7 @@ const handleSubmit = async (data: Partial<ScriptTemplate>) => {
       errorMessage += ': ' + error.message
     }
 
-    Message.error(errorMessage)
+    message.error(errorMessage)
     leaveAfterSave.value = false
   } finally {
     saving.value = false
@@ -545,7 +546,7 @@ const getCategoryText = (category: string) => {
 
 .header-desc {
   margin: 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -563,7 +564,7 @@ const getCategoryText = (category: string) => {
 
 .leave-confirm-content {
   margin-bottom: 16px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .leave-confirm-actions {

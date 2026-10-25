@@ -6,26 +6,26 @@
       <div class="step-info">
         <div class="step-title-row">
           <span class="step-name">{{ stepName }}</span>
-          <a-tag :color="stepTypeColor">{{ stepTypeName }}</a-tag>
+          <n-tag size="small" :type="stepTypeTagType">{{ stepTypeName }}</n-tag>
           <span v-if="timeout !== undefined" class="step-meta">超时: {{ timeout }}秒</span>
-          <a-tag v-if="ignoreError" color="orange">忽略错误</a-tag>
+          <n-tag v-if="ignoreError" size="small" type="warning">忽略错误</n-tag>
           <span v-if="hasCondition" class="step-meta">有执行条件</span>
         </div>
         <div class="step-desc">{{ stepDescription }}</div>
       </div>
       <div class="step-actions">
-        <a-button
+        <n-button
           v-if="collapsible"
-          type="text"
+          text
           size="small"
           @click.stop="toggleExpanded"
         >
           <template #icon>
-            <icon-down v-if="!isExpanded" />
-            <icon-up v-else />
+            <ChevronDown v-if="!isExpanded" />
+            <ChevronUp v-else />
           </template>
           {{ isExpanded ? '收起' : '查看详情' }}
-        </a-button>
+        </n-button>
         <slot name="actions"></slot>
       </div>
     </div>
@@ -34,28 +34,28 @@
       <div v-if="stepType === 'script'" class="script-content">
         <div class="script-info">
           <div class="script-meta">
-            <a-space>
-              <a-tag color="blue">{{ scriptTypeName }}</a-tag>
+            <n-space :size="8" align="center">
+              <n-tag size="small" type="info">{{ scriptTypeName }}</n-tag>
               <span v-if="accountDisplay">执行账号: {{ accountDisplay }}</span>
               <span class="script-lines">{{ scriptLineCount }} 行</span>
-            </a-space>
+            </n-space>
           </div>
           <div class="script-actions">
-            <a-space>
-              <a-button type="text" size="small" @click="copyScriptContent(scriptContent)">
+            <n-space :size="8">
+              <n-button text size="small" @click="copyScriptContent(scriptContent)">
                 <template #icon>
-                  <icon-copy />
+                  <Copy :size="14" />
                 </template>
                 复制脚本
-              </a-button>
-              <a-button type="text" size="small" @click="toggleScriptExpand">
+              </n-button>
+              <n-button text size="small" @click="toggleScriptExpand">
                 <template #icon>
-                  <icon-down v-if="!scriptExpanded" />
-                  <icon-up v-else />
+                  <ChevronDown v-if="!scriptExpanded" />
+                  <ChevronUp v-else />
                 </template>
                 {{ scriptExpanded ? '收起' : '展开' }}
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </div>
         </div>
 
@@ -101,19 +101,19 @@
       </div>
 
       <div v-else-if="stepType === 'file_transfer'" class="file-transfer-content">
-        <a-descriptions :column="2" size="small">
-          <a-descriptions-item label="覆盖策略">
+        <n-descriptions :column="2" size="small" label-placement="left">
+          <n-descriptions-item label="覆盖策略">
             {{ overwritePolicyName }}
-          </a-descriptions-item>
-          <a-descriptions-item label="执行账号">
+          </n-descriptions-item>
+          <n-descriptions-item label="执行账号">
             {{ accountDisplay || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item v-if="fileSources.length > 0" label="文件来源">
+          </n-descriptions-item>
+          <n-descriptions-item v-if="fileSources.length > 0" label="文件来源">
             <div class="file-sources">
               <div v-for="(src, si) in fileSources" :key="si" class="file-source-row">
-                <a-tag :color="getFileSourceColor(src)">
+                <n-tag size="small" :type="getFileSourceTagType(src)">
                   {{ getFileSourceLabel(src) }}
-                </a-tag>
+                </n-tag>
                 <div class="file-source-main">
                   <div class="file-source-title">
                     {{ getFileSourceTitle(src) }}
@@ -125,55 +125,55 @@
                     <span v-if="src.checksum || src.sha256"> · sha256: {{ String(src.checksum || src.sha256).substr(0, 12) }}...</span>
                   </div>
                 </div>
-                <a-space>
-                  <a-button
+                <n-space :size="8">
+                  <n-button
                     v-if="src.download_url"
-                    type="text"
+                    text
                     size="small"
                     @click="openExternal(src.download_url)"
-                  >下载</a-button>
-                  <a-button
+                  >下载</n-button>
+                  <n-button
                     v-if="src.download_url"
-                    type="text"
+                    text
                     size="small"
                     @click="copyToClipboard(src.download_url)"
-                  >复制链接</a-button>
-                </a-space>
+                  >复制链接</n-button>
+                </n-space>
               </div>
             </div>
-          </a-descriptions-item>
-          <a-descriptions-item v-else label="文件来源">
-            <a-empty description="未配置文件来源" :image-style="{ height: '30px' }" />
-          </a-descriptions-item>
-        </a-descriptions>
+          </n-descriptions-item>
+          <n-descriptions-item v-else label="文件来源">
+            <n-empty description="未配置文件来源" size="small" />
+          </n-descriptions-item>
+        </n-descriptions>
       </div>
 
       <div v-if="hasTargets" class="step-targets">
         <div v-if="targetHosts.length" class="target-group">
           <div class="target-label">目标主机</div>
-          <a-space wrap>
-            <a-tag
+          <n-space wrap :size="8">
+            <n-tag
               v-for="host in targetHosts"
               :key="getItemKey(host)"
-              color="cyan"
+              type="info"
               size="small"
             >
               {{ formatHostLabel(host) }}
-            </a-tag>
-          </a-space>
+            </n-tag>
+          </n-space>
         </div>
         <div v-if="targetGroups.length" class="target-group">
           <div class="target-label">目标分组</div>
-          <a-space wrap>
-            <a-tag
+          <n-space wrap :size="8">
+            <n-tag
               v-for="group in targetGroups"
               :key="getItemKey(group)"
-              color="blue"
+              type="primary"
               size="small"
             >
               {{ formatGroupLabel(group) }}
-            </a-tag>
-          </a-space>
+            </n-tag>
+          </n-space>
         </div>
       </div>
 
@@ -200,9 +200,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
-import { IconCopy, IconDown, IconUp } from '@arco-design/web-vue/es/icon'
+import { NButton, NDescriptions, NDescriptionsItem, NEmpty, NSpace, NTag, useMessage } from 'naive-ui'
+import { ChevronDown, ChevronUp, Copy } from 'lucide-vue-next'
 import SimpleMonacoEditor from '@/components/SimpleMonacoEditor.vue'
+
+const message = useMessage()
 
 const props = defineProps({
   step: {
@@ -259,12 +261,12 @@ const stepTypeName = computed(() => {
   return typeMap[stepType.value] || stepType.value || '未知类型'
 })
 
-const stepTypeColor = computed(() => {
-  const colorMap: Record<string, string> = {
-    script: 'blue',
-    file_transfer: 'green'
+const stepTypeTagType = computed<'default' | 'info' | 'success'>(() => {
+  const colorMap: Record<string, 'default' | 'info' | 'success'> = {
+    script: 'info',
+    file_transfer: 'success'
   }
-  return colorMap[stepType.value] || 'gray'
+  return colorMap[stepType.value] || 'default'
 })
 
 const scriptType = computed(() => props.step.script_type || props.step.step_script_type || 'shell')
@@ -371,14 +373,14 @@ const toggleExpanded = () => {
 
 const copyScriptContent = async (content?: string) => {
   if (!content) {
-    Message.warning('无脚本内容可复制')
+    message.warning('无脚本内容可复制')
     return
   }
   try {
     await navigator.clipboard.writeText(content)
-    Message.success('脚本内容已复制到剪贴板')
+    message.success('脚本内容已复制到剪贴板')
   } catch (error) {
-    Message.error('复制失败，请手动选择复制')
+    message.error('复制失败，请手动选择复制')
   }
 }
 
@@ -412,10 +414,10 @@ const formatGroupLabel = (group: any) => {
   return `ID: ${group}`
 }
 
-const getFileSourceColor = (src: any) => {
-  if (src.type === 'server') return 'orange'
-  if (src.type === 'local') return 'cyan'
-  return 'purple'
+const getFileSourceTagType = (src: any) => {
+  if (src.type === 'server') return 'warning'
+  if (src.type === 'local') return 'info'
+  return 'default'
 }
 
 const getFileSourceLabel = (src: any) => {
@@ -442,9 +444,9 @@ const copyToClipboard = async (text?: string) => {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-    Message.success('已复制链接到剪贴板')
+    message.success('已复制链接到剪贴板')
   } catch (error) {
-    Message.error('复制失败')
+    message.error('复制失败')
   }
 }
 
@@ -460,15 +462,15 @@ const formatSize = (bytes?: number) => {
 
 <style scoped>
 .step-card {
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--app-surface);
   overflow: hidden;
 }
 
 .step-card.is-selected {
-  border-color: var(--color-primary-6);
-  box-shadow: 0 0 0 1px rgba(22, 93, 255, 0.08);
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 1px var(--app-accent-soft);
 }
 
 .step-card-header {
@@ -476,16 +478,16 @@ const formatSize = (bytes?: number) => {
   align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
-  background: #fff;
-  border-bottom: 1px solid #e5e6eb;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .step-number {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #e8f3ff;
-  color: #165dff;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -509,17 +511,17 @@ const formatSize = (bytes?: number) => {
 .step-name {
   font-size: 16px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--app-fg);
 }
 
 .step-meta {
   font-size: 12px;
-  color: #86909c;
+  color: var(--app-muted);
 }
 
 .step-desc {
   margin-top: 6px;
-  color: #4e5969;
+  color: var(--app-fg-secondary);
   font-size: 13px;
   word-break: break-word;
 }
@@ -533,7 +535,7 @@ const formatSize = (bytes?: number) => {
 
 .target-label {
   font-size: 12px;
-  color: #86909c;
+  color: var(--app-muted);
   margin-bottom: 4px;
 }
 
@@ -548,9 +550,9 @@ const formatSize = (bytes?: number) => {
 .script-info {
   margin-bottom: 12px;
   padding: 12px 16px;
-  background: #f7f8fa;
+  background: var(--app-bg);
   border-radius: 6px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--app-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -562,7 +564,7 @@ const formatSize = (bytes?: number) => {
 }
 
 .script-lines {
-  color: #86909c;
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -605,7 +607,7 @@ const formatSize = (bytes?: number) => {
 }
 
 .file-transfer-content {
-  background: #f7f8fa;
+  background: var(--app-bg);
   border-radius: 4px;
   padding: 12px;
 }
@@ -637,20 +639,20 @@ const formatSize = (bytes?: number) => {
 
 .file-source-meta {
   font-size: 12px;
-  color: #86909c;
+  color: var(--app-muted);
 }
 
 .positional-args-section {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #e5e6eb;
+  border-top: 1px solid var(--app-border);
 }
 
 .positional-args-section h4 {
   margin: 0 0 12px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--app-fg);
 }
 
 .positional-args {
@@ -663,25 +665,25 @@ const formatSize = (bytes?: number) => {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  background: #f7f8fa;
+  background: var(--app-bg);
   border-radius: 4px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--app-border);
 }
 
 .arg-index {
   font-weight: 600;
-  color: #165dff;
+  color: var(--app-accent);
   margin-right: 12px;
   min-width: 40px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
-  background: #e8f3ff;
+  background: var(--app-accent-soft);
   padding: 2px 6px;
   border-radius: 3px;
 }
 
 .arg-value {
-  color: #1d2129;
+  color: var(--app-fg);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   flex: 1;
@@ -696,17 +698,17 @@ const formatSize = (bytes?: number) => {
   margin: 0 0 8px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--app-fg);
 }
 
 .parameters {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f7f8fa;
+  background: var(--app-bg);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--app-border);
 }
 
 .parameter-item {
@@ -718,30 +720,30 @@ const formatSize = (bytes?: number) => {
 
 .param-key {
   font-weight: 600;
-  color: #4e5969;
+  color: var(--app-fg-secondary);
   min-width: 120px;
 }
 
 .param-value {
-  color: #1d2129;
-  background: #fff;
+  color: var(--app-fg);
+  background: var(--app-surface);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
 .parameter-item.override .param-key {
-  color: #ff7d00;
+  color: #d97706;
 }
 
 .parameter-item.override .param-value {
-  background: #fff7e8;
+  background: var(--app-warn-soft);
   border: 1px solid #ffd8a8;
 }
 
 .step-card-footer {
   padding: 12px 16px;
-  border-top: 1px solid #e5e6eb;
-  background: #fff;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
 }
 </style>

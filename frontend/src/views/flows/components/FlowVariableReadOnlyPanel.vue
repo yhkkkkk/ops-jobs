@@ -1,8 +1,8 @@
 <template>
   <div class="flow-variable-readonly">
-    <a-tabs size="small">
-      <a-tab-pane key="form" title="只读表单">
-        <a-empty v-if="displayRows.length === 0" :description="emptyText" />
+    <n-tabs size="small">
+      <n-tab-pane name="form" tab="只读表单">
+        <n-empty v-if="displayRows.length === 0" :description="emptyText" />
         <div v-else class="variable-readonly-table">
           <div class="variable-readonly-table__head">
             <span>变量</span>
@@ -21,17 +21,18 @@
             <span>{{ row.flags }}</span>
           </div>
         </div>
-      </a-tab-pane>
-      <a-tab-pane key="json" title="JSON">
+      </n-tab-pane>
+      <n-tab-pane name="json" tab="JSON">
         <pre class="variable-json-block">{{ formattedJson }}</pre>
-      </a-tab-pane>
-    </a-tabs>
+      </n-tab-pane>
+    </n-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { flowVariableReference, normalizeFlowVariables } from '../flowUtils'
+import { NEmpty, NTabPane, NTabs } from 'naive-ui'
 
 const props = withDefaults(defineProps<{
   variables?: Record<string, any>

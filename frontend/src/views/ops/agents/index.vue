@@ -8,120 +8,69 @@
           <p class="header-desc">管理 Agent 状态、Token 和版本信息</p>
         </div>
         <div class="header-right">
-          <a-space :size="12" class="header-actions">
-            <a-button type="primary" @click="handleInstallAgent">
+          <n-space :size="12" class="header-actions">
+            <n-button type="primary" @click="handleInstallAgent">
               <template #icon>
-                <icon-plus />
+                <Plus  />
               </template>
               安装 Agent
-            </a-button>
-            <!-- 使用 CSS 过渡动画替代 v-if，避免选择时按钮闪烁和布局抖动 -->
-            <div class="batch-actions" :class="{ 'batch-actions-visible': selectedAgentIds.length > 0 }">
-              <a-dropdown trigger="click">
-                <a-button type="primary" :disabled="selectedAgentIds.length === 0">
-                  <template #icon>
-                    <icon-more />
-                  </template>
-                  批量操作 ({{ selectedAgentIds.length }})
-                  <icon-down style="margin-left: 6px" />
-                </a-button>
-                <template #content>
-                  <a-doption
-                    :disabled="selectedAgentIds.length === 0"
-                    @click="handleBatchRegenerateScript"
-                  >
-                    重新生成脚本 ({{ selectedAgentIds.length }})
-                  </a-doption>
-                  <a-doption
-                    :disabled="selectedAgentIds.length === 0"
-                    @click="handleBatchUpdateAgentServer"
-                  >
-                    编辑 Agent-Server ({{ selectedAgentIds.length }})
-                  </a-doption>
-                  <a-doption
-                    :disabled="!hasEnableableAgents"
-                    @click="handleBatchEnable"
-                  >
-                    启用 ({{ selectedEnableableCount }})
-                  </a-doption>
-                  <a-doption
-                    :disabled="!hasDisableableAgents"
-                    @click="handleBatchDisable"
-                  >
-                    禁用 ({{ selectedDisableableCount }})
-                  </a-doption>
-                  <a-doption
-                    :disabled="selectedAgentIds.length === 0"
-                    @click="handleBatchRestart"
-                  >
-                    重启 ({{ selectedAgentIds.length }})
-                  </a-doption>
-                  <a-divider class="dropdown-divider" />
-                  <a-doption
-                    class="danger-option"
-                    :style="{ color: '#f53f3f' }"
-                    :disabled="!hasPendingAgents"
-                    @click="handleBatchDeletePending"
-                  >
-                    <span class="danger-text">删除待激活 ({{ selectedPendingCount }})</span>
-                  </a-doption>
-                  <a-doption
-                    class="danger-option"
-                    :style="{ color: '#f53f3f' }"
-                    :disabled="selectedAgentIds.length === 0"
-                    @click="handleUninstallAgent"
-                  >
-                    <span class="danger-text">卸载 ({{ selectedAgentIds.length }})</span>
-                  </a-doption>
+            </n-button>
+            <!-- 蓝鲸节点管理式：批量操作常显，勾选后可用（重装/安装/启停等） -->
+            <n-dropdown trigger="click" :options="batchActionOptions" @select="onBatchAction">
+              <n-button type="primary" secondary :disabled="selectedAgentIds.length === 0">
+                <template #icon>
+                  <MoreHorizontal />
                 </template>
-              </a-dropdown>
-            </div>
-            <a-divider direction="vertical" style="height: 32px; margin: 0" />
-            <a-button @click="handleViewInstallRecords">
+                批量操作{{ selectedAgentIds.length > 0 ? ` (${selectedAgentIds.length})` : '' }}
+                <ChevronDown style="margin-left: 6px" />
+              </n-button>
+            </n-dropdown>
+            <n-divider direction="vertical" style="height: 32px; margin: 0" />
+            <n-button @click="handleViewInstallRecords">
               <template #icon>
-                <IconHistory />
+                <History />
               </template>
               安装记录
-            </a-button>
-            <a-button @click="handleViewUninstallRecords">
+            </n-button>
+            <n-button @click="handleViewUninstallRecords">
               <template #icon>
-                <IconDelete />
+                <Trash2 />
               </template>
               卸载记录
-            </a-button>
-            <a-button @click="fetchAgents">
+            </n-button>
+            <n-button @click="fetchAgents">
               <template #icon>
-                <icon-refresh />
+                <RefreshCw  />
               </template>
               刷新
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
-    <a-tabs v-model:active-key="activeTab" type="line" class="agent-tabs">
-      <a-tab-pane key="agent" title="Agent">
+    <n-tabs v-model:value="activeTab" type="line" class="agent-tabs">
+      <n-tab-pane name="agent" tab="Agent">
         <!-- 搜索栏 -->
-    <a-card class="mb-4">
-      <a-form :model="searchForm">
-        <a-row :gutter="16">
-          <a-col :span="4">
-            <a-input
-              v-model="searchForm.search"
+    <n-card class="mb-4">
+      <n-form :model="searchForm">
+        <div class="form-grid-row">
+          <div class="form-grid-col" style="grid-column: span 4">
+            <n-input
+              v-model:value="searchForm.search"
               placeholder="主机名、IP"
-              allow-clear
+              clearable
               @press-enter="handleSearch"
               @clear="handleSearch"
               style="width: 100%"
             />
-          </a-col>
-          <a-col :span="3">
-            <a-select
-              v-model="searchForm.last_error_code"
+          </div>
+          <div class="form-grid-col" style="grid-column: span 3">
+            <n-select
+              v-model:value="searchForm.last_error_code"
               placeholder="输入错误码"
-              allow-clear
-              allow-search
+              clearable
+              filterable
               allow-create
               :filter-option="false"
               :loading="errorCodeLoading"
@@ -130,18 +79,15 @@
               @clear="handleSearch"
               @dropdown-visible-change="handleErrorCodeDropdown"
               style="width: 100%"
-            >
-              <a-option v-for="code in errorCodeOptions" :key="code" :value="code">
-                {{ code }}
-              </a-option>
-            </a-select>
-          </a-col>
-          <a-col :span="3">
-            <a-select
-              v-model="searchForm.version"
+              :options="(errorCodeOptions || []).map((c: string) => ({ label: c, value: c }))"
+            />
+          </div>
+          <div class="form-grid-col" style="grid-column: span 3">
+            <n-select
+              v-model:value="searchForm.version"
               placeholder="输入版本"
-              allow-clear
-              allow-search
+              clearable
+              filterable
               :filter-option="false"
               :loading="versionLoading"
               @search="handleVersionSearch"
@@ -149,361 +95,174 @@
               @clear="handleSearch"
               @dropdown-visible-change="handleVersionDropdown"
               style="width: 100%"
-            >
-              <a-option v-for="version in versionOptions" :key="version" :value="version">
-                {{ version }}
-              </a-option>
-            </a-select>
-          </a-col>
-          <a-col :span="5">
-            <a-select
-              v-model="searchForm.agent_server_id"
+              :options="(versionOptions || []).map((v: string) => ({ label: v, value: v }))"
+            />
+          </div>
+          <div class="form-grid-col" style="grid-column: span 5">
+            <n-select
+              v-model:value="searchForm.agent_server_id"
               placeholder="请选择 Agent-Server"
-              allow-clear
-              allow-search
+              clearable
+              filterable
               :filter-option="filterAgentServerOption"
               style="width: 100%"
               @change="handleSearch"
-            >
-              <a-option
-                v-for="server in agentServers"
-                :key="server.id"
-                :value="server.id"
-                :label="formatAgentServerLabel(server)"
-              >
-                {{ formatAgentServerLabel(server) }}
-              </a-option>
-            </a-select>
-          </a-col>
-          <a-col :span="4" />
-          <!-- 状态筛选已移除，前端展示使用 computed_status，复杂筛选请使用运维台 Dashboard -->
-          <a-col :span="5">
+              :options="(agentServers || []).map((sv: any) => ({ label: formatAgentServerLabel(sv), value: sv.id }))"
+            />
+          </div>
+          <div class="form-grid-col" style="grid-column: span 5">
             <div style="display: flex; justify-content: flex-end;">
-              <a-space>
-                <a-button type="primary" @click="handleSearch">
+              <n-space>
+                <n-button type="primary" @click="handleSearch">
                   <template #icon>
-                    <icon-search />
+                    <Search  />
                   </template>
                   搜索
-                </a-button>
-                <a-button @click="handleReset">
+                </n-button>
+                <n-button @click="handleReset">
                   <template #icon>
-                    <icon-refresh />
+                    <RefreshCw  />
                   </template>
                   重置
-                </a-button>
-              </a-space>
+                </n-button>
+              </n-space>
             </div>
-          </a-col>
-        </a-row>
-      </a-form>
-    </a-card>
+          </div>
+        </div>
+      </n-form>
+    </n-card>
 
     <!-- 快速状态过滤器 -->
-    <a-card class="mb-4">
+    <n-card class="mb-4">
       <div class="filter-section">
         <div class="filter-title">快速筛选：</div>
-        <a-space wrap>
+        <n-space wrap>
           <!-- 基础状态筛选 -->
-          <a-button
-            :type="statusFilters.online ? 'primary' : 'outline'"
+          <n-button
+            :type="statusFilters.online ? 'primary' : 'default'"
             @click="toggleStatusFilter('online')"
           >
             <template #icon>
-              <icon-check-circle />
+              <CircleCheck  />
             </template>
             在线Agent ({{ onlineCount }})
-          </a-button>
-          <a-button
-            :type="statusFilters.offline ? 'primary' : 'outline'"
+          </n-button>
+          <n-button
+            :type="statusFilters.offline ? 'primary' : 'default'"
             @click="toggleStatusFilter('offline')"
           >
             <template #icon>
-              <icon-close-circle />
+              <CircleX  />
             </template>
             离线Agent ({{ offlineCount }})
-          </a-button>
-          <a-button
-            :type="statusFilters.pending ? 'primary' : 'outline'"
+          </n-button>
+          <n-button
+            :type="statusFilters.pending ? 'primary' : 'default'"
             @click="toggleStatusFilter('pending')"
           >
             <template #icon>
-              <icon-clock-circle />
+              <Clock3  />
             </template>
             待激活 ({{ pendingCount }})
-          </a-button>
-          <a-button
-            :type="statusFilters.disabled ? 'primary' : 'outline'"
+          </n-button>
+          <n-button
+            :type="statusFilters.disabled ? 'primary' : 'default'"
             @click="toggleStatusFilter('disabled')"
           >
             <template #icon>
-              <icon-stop />
+              <Square  />
             </template>
             已禁用 ({{ disabledCount }})
-          </a-button>
+          </n-button>
           <!-- 分割线 -->
-          <a-divider direction="vertical" style="height: 24px; margin: 0 8px;" />
+          <n-divider direction="vertical" style="height: 24px; margin: 0 8px;" />
           <!-- 问题状态筛选 -->
-          <a-button
-            :type="statusFilters.outdated ? 'primary' : 'outline'"
+          <n-button
+            :type="statusFilters.outdated ? 'primary' : 'default'"
             @click="toggleStatusFilter('outdated')"
           >
             <template #icon>
-              <icon-arrow-up />
+              <ChevronUp />
             </template>
             版本落后 ({{ outdatedCount }})
-          </a-button>
-          <a-button
-            :type="statusFilters.failed ? 'primary' : 'outline'"
+          </n-button>
+          <n-button
+            :type="statusFilters.failed ? 'primary' : 'default'"
             @click="toggleStatusFilter('failed')"
           >
             <template #icon>
-              <icon-exclamation-circle />
+              <CircleAlert  />
             </template>
             最近失败 ({{ failedCount }})
-          </a-button>
+          </n-button>
           <!-- 清除筛选按钮 -->
-          <a-button
+          <n-button
             v-if="hasActiveFilters"
-            @click="clearAllFilters"
-            type="outline"
-            status="danger"
+            @click="clearAllFilters" 
+           type="error"
           >
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             清除筛选
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
 
         <!-- 筛选统计信息 -->
         <div v-if="hasFilterSummary" class="filter-stats">
-          <a-space>
+          <n-space>
             <span class="stats-text">
               当前显示: {{ filteredAgents.length }} / 总计: {{ agents.length }} 个Agent
             </span>
-            <a-tag v-if="errorCodeFilterLabel" color="red">错误码: {{ errorCodeFilterLabel }}</a-tag>
-            <a-tag v-if="statusFilters.online" color="green">在线: {{ filteredOnlineCount }}</a-tag>
-            <a-tag v-if="statusFilters.offline" color="red">离线: {{ filteredOfflineCount }}</a-tag>
-            <a-tag v-if="statusFilters.pending" color="orange">待激活: {{ filteredPendingCount }}</a-tag>
-            <a-tag v-if="statusFilters.disabled" color="gray">已禁用: {{ filteredDisabledCount }}</a-tag>
-            <a-tag v-if="statusFilters.outdated" color="purple">版本落后: {{ filteredOutdatedCount }}</a-tag>
-            <a-tag v-if="statusFilters.failed" color="red">最近失败: {{ filteredFailedCount }}</a-tag>
-          </a-space>
+            <n-tag v-if="errorCodeFilterLabel" type="error">错误码: {{ errorCodeFilterLabel }}</n-tag>
+            <n-tag v-if="statusFilters.online" type="success">在线: {{ filteredOnlineCount }}</n-tag>
+            <n-tag v-if="statusFilters.offline" type="error">离线: {{ filteredOfflineCount }}</n-tag>
+            <n-tag v-if="statusFilters.pending" type="warning">待激活: {{ filteredPendingCount }}</n-tag>
+            <n-tag v-if="statusFilters.disabled" type="default">已禁用: {{ filteredDisabledCount }}</n-tag>
+            <n-tag v-if="statusFilters.outdated" type="info">版本落后: {{ filteredOutdatedCount }}</n-tag>
+            <n-tag v-if="statusFilters.failed" type="error">最近失败: {{ filteredFailedCount }}</n-tag>
+          </n-space>
         </div>
       </div>
-    </a-card>
+    </n-card>
 
     <!-- Agent 列表 -->
     <div class="table-container">
-      <a-table
+      <n-data-table
         :columns="columns"
         :data="filteredAgents"
         :loading="loading"
-        :pagination="pagination"
-        row-key="id"
-        :row-selection="rowSelection"
-        :scroll="{ x: 'max-content' }"
-        :virtual-list-props="virtualListProps"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-        @selection-change="handleSelectionChange"
-      >
-        <template #host="{ record }">
-          <div class="host-info">
-            <div class="host-name">{{ record.host.name }}</div>
-            <div class="host-ip">
-              <span class="host-ip-label">IP</span>
-              <span class="host-ip-value">{{ record.host.ip_address }}</span>
-            </div>
-          </div>
-        </template>
-
-        <template #agent_type="{ record }">
-          <a-tag :color="getAgentTypeColor(record.agent_type)" size="small">
-            {{ agentTypeMap[record.agent_type || 'agent'] || (record.agent_type || '-') }}
-          </a-tag>
-        </template>
-
-        <template #status="{ record }">
-          <a-space>
-            <a-tag
-              :color="getStatusColor(record.computed_status || record.status)"
-              size="small"
-            >
-              {{ record.computed_status_display || record.status_display }}
-            </a-tag>
-            <a-tooltip v-if="getStatusHint(record.computed_status || record.status)" :content="getStatusHint(record.computed_status || record.status)">
-              <IconInfoCircle style="color: #ff7d00; cursor: help" />
-            </a-tooltip>
-          </a-space>
-        </template>
-
-        <template #version="{ record }">
-          <a-space>
-            <span>{{ record.version || '-' }}</span>
-            <a-tooltip
-              v-if="record.is_version_outdated && record.version"
-              :content="getVersionTooltip(record)"
-            >
-              <a-tag color="red" size="small">
-                版本落后
-              </a-tag>
-            </a-tooltip>
-          </a-space>
-        </template>
-
-        <template #last_heartbeat_at="{ record }">
-          <span v-if="record.last_heartbeat_at">
-            {{ formatTime(record.last_heartbeat_at) }}
-          </span>
-          <span v-else>-</span>
-        </template>
-
-        <template #task_stats="{ record }">
-          <a-tooltip v-if="record.task_stats && record.task_stats.total > 0" :content="getTaskStatsTooltip(record.task_stats)">
-            <div class="task-stats-cell">
-              <a-progress
-                type="circle"
-                :percent="record.task_stats.success_rate"
-                :stroke-color="getSuccessRateColor(record.task_stats.success_rate)"
-                :width="40"
-                :show-text="false"
-              />
-              <span class="task-stats-text">
-                {{ record.task_stats.success_rate?.toFixed(0) || 0 }}%
-              </span>
-            </div>
-          </a-tooltip>
-          <span v-else class="text-gray">-</span>
-        </template>
-
-        <template #last_error_code="{ record }">
-          <a-tag v-if="record.last_error_code" color="red" size="small">
-            {{ record.last_error_code }}
-          </a-tag>
-          <span v-else>-</span>
-        </template>
-
-        <template #tags="{ record }">
-          <div v-if="record.host?.tags && record.host.tags.length">
-            <a-space wrap>
-              <a-tag v-for="tag in record.host.tags" :key="tag.key || tag" size="small">
-                {{ tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag }}
-              </a-tag>
-            </a-space>
-          </div>
-          <span v-else class="text-gray">-</span>
-        </template>
-
-        <template #actions="{ record }">
-          <a-space>
-            <a-button
-              type="text"
-              size="small"
-              @click="handleViewDetail(record.id)"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              详情
-            </a-button>
-            <a-button
-            v-if="(record.computed_status || record.status) === 'pending'"
-              type="text"
-              status="warning"
-              size="small"
-              @click="handleRegenerateScript(record)"
-            >
-              <template #icon>
-                <IconCopy />
-              </template>
-              重新生成脚本
-            </a-button>
-            <a-button
-            v-if="(record.computed_status || record.status) !== 'pending'"
-              type="text"
-              size="small"
-              @click="handleIssueToken(record)"
-            >
-              <template #icon>
-                <IconLock />
-              </template>
-              发Token
-            </a-button>
-            <a-button
-            v-if="((record.computed_status || record.status) === 'online') && record.is_version_outdated"
-              type="text"
-              status="warning"
-              size="small"
-              @click="handleUpgradeAgent(record)"
-            >
-              <template #icon>
-                <icon-arrow-up />
-              </template>
-              升级
-            </a-button>
-            <a-button
-            v-if="(record.computed_status || record.status) === 'online'"
-              type="text"
-              size="small"
-              @click="handleRestartAgent(record)"
-            >
-              <template #icon>
-                <icon-refresh />
-              </template>
-              重启
-            </a-button>
-            <a-button
-            v-if="((record.computed_status || record.status) !== 'disabled') && ((record.computed_status || record.status) !== 'pending')"
-              type="text"
-              status="warning"
-              size="small"
-              @click="handleDisable(record)"
-            >
-              <template #icon>
-                <icon-close-circle />
-              </template>
-              禁用
-            </a-button>
-            <a-button
-            v-if="(record.computed_status || record.status) === 'disabled'"
-              type="text"
-              status="success"
-              size="small"
-              @click="handleEnable(record)"
-            >
-              <template #icon>
-                <icon-check-circle />
-              </template>
-              启用
-            </a-button>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        :row-key="(row: any) => row.id"
+        :checked-row-keys="selectedAgentIds"
+        :scroll-x="1400"
+        :bordered="true"
+        :single-line="false"
+        @update:checked-row-keys="handleSelectionChange"
+      />
     </div>
 
-      </a-tab-pane>
-      <a-tab-pane key="agent-server" title="Agent-Server">
-        <a-card class="mb-4">
-          <a-form :model="agentServerSearchForm">
-            <a-row :gutter="16">
-              <a-col :span="5">
-                <a-input
-                  v-model="agentServerSearchForm.search"
+      </n-tab-pane>
+      <n-tab-pane name="agent-server" tab="Agent-Server">
+        <n-card class="mb-4">
+          <n-form :model="agentServerSearchForm">
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 5">
+                <n-input
+                  v-model:value="agentServerSearchForm.search"
                   placeholder="名称/地址"
-                  allow-clear
+                  clearable
                   @press-enter="handleAgentServerSearch"
                   @clear="handleAgentServerSearch"
                   style="width: 100%"
                 />
-              </a-col>
-              <a-col :span="4">
-                <a-select
-                  v-model="agentServerSearchForm.version"
+              </div>
+              <div class="form-grid-col" style="grid-column: span 4">
+                <n-select
+                  v-model:value="agentServerSearchForm.version"
                   placeholder="输入版本"
-                  allow-clear
-                  allow-search
+                  clearable
+                  filterable
                   :filter-option="false"
                   :loading="agentServerVersionLoading"
                   @search="handleAgentServerVersionSearch"
@@ -511,462 +270,390 @@
                   @clear="handleAgentServerSearch"
                   @dropdown-visible-change="handleAgentServerVersionDropdown"
                   style="width: 100%"
-                >
-                  <a-option
-                    v-for="version in agentServerVersionOptions"
-                    :key="version"
-                    :value="version"
-                  >
-                    {{ version }}
-                  </a-option>
-                </a-select>
-              </a-col>
-              <a-col :span="3">
-                <a-select
-                  v-model="agentServerSearchForm.is_active"
+                  :options="(agentServerVersionOptions || []).map((v: string) => ({ label: v, value: v }))"
+                />
+              </div>
+              <div class="form-grid-col" style="grid-column: span 3">
+                <n-select
+                  :value="(agentServerSearchForm.is_active as any)"
                   placeholder="状态"
-                  allow-clear
+                  clearable
+                  :options="[{ label: '启用', value: true }, { label: '停用', value: false }] as any"
                   style="width: 100%"
-                  @change="handleAgentServerSearch"
-                >
-                  <a-option :value="true">启用</a-option>
-                  <a-option :value="false">停用</a-option>
-                </a-select>
-              </a-col>
-              <a-col :span="3">
-                <a-select
-                  v-model="agentServerSearchForm.require_signature"
+                  @update:value="(v: any) => { agentServerSearchForm.is_active = v; handleAgentServerSearch() }"
+                />
+              </div>
+              <div class="form-grid-col" style="grid-column: span 3">
+                <n-select
+                  :value="(agentServerSearchForm.require_signature as any)"
                   placeholder="签名校验"
-                  allow-clear
+                  clearable
+                  :options="[{ label: '开启', value: true }, { label: '关闭', value: false }] as any"
                   style="width: 100%"
-                  @change="handleAgentServerSearch"
-                >
-                  <a-option :value="true">开启</a-option>
-                  <a-option :value="false">关闭</a-option>
-                </a-select>
-              </a-col>
-              <a-col :span="4" />
-              <a-col :span="5">
+                  @update:value="(v: any) => { agentServerSearchForm.require_signature = v; handleAgentServerSearch() }"
+                />
+              </div>
+              <div class="form-grid-col" style="grid-column: span 5">
                 <div style="display: flex; justify-content: flex-end;">
-                  <a-space>
-                    <a-button type="primary" @click="handleAgentServerSearch">
+                  <n-space>
+                    <n-button type="primary" @click="handleAgentServerSearch">
                       <template #icon>
-                        <icon-search />
+                        <Search  />
                       </template>
                       搜索
-                    </a-button>
-                    <a-button @click="handleAgentServerReset">
+                    </n-button>
+                    <n-button @click="handleAgentServerReset">
                       <template #icon>
-                        <icon-refresh />
+                        <RefreshCw  />
                       </template>
                       重置
-                    </a-button>
-                  </a-space>
+                    </n-button>
+                  </n-space>
                 </div>
-              </a-col>
-            </a-row>
-          </a-form>
-        </a-card>
+              </div>
+            </div>
+          </n-form>
+        </n-card>
         <div class="table-container">
-          <a-table
+          <n-data-table
             :columns="agentServerColumns"
             :data="filteredAgentServers"
             :loading="agentServerTableLoading"
             :pagination="false"
-            row-key="id"
-          >
-            <template #is_active="{ record }">
-              <a-tag :color="record.is_active ? 'green' : 'gray'" size="small">
-                {{ record.is_active ? '启用' : '停用' }}
-              </a-tag>
-            </template>
-            <template #require_signature="{ record }">
-              <a-tag :color="record.require_signature ? 'arcoblue' : 'gray'" size="small">
-                {{ record.require_signature ? '开启' : '关闭' }}
-              </a-tag>
-            </template>
-            <template #shared_secret_last4="{ record }">
-              <span v-if="record.shared_secret_last4" class="text-gray">****{{ record.shared_secret_last4 }}</span>
-              <span v-else class="text-gray">-</span>
-            </template>
-            <template #updated_at="{ record }">
-              <span v-if="record.updated_at">{{ formatTime(record.updated_at) }}</span>
-              <span v-else class="text-gray">-</span>
-            </template>
-            <template #agent_server_actions="{ record }">
-              <a-space>
-                <a-button type="text" size="small" @click="handleEditAgentServer(record)">
-                  <template #icon>
-                    <icon-edit />
-                  </template>
-                  编辑
-                </a-button>
-                <a-button type="text" size="small" @click="copyText(record.base_url)">
-                  <template #icon>
-                    <IconCopy />
-                  </template>
-                  复制地址
-                </a-button>
-              </a-space>
-            </template>
-          </a-table>
+            :row-key="(row: any) => row.id"
+          />
         </div>
-      </a-tab-pane>
-    </a-tabs>
+      </n-tab-pane>
+    </n-tabs>
 
     <!-- 发 Token 弹窗 -->
-    <a-modal
-      v-model:visible="tokenModalVisible"
+    <n-modal
+      preset="card"
+      v-model:show="tokenModalVisible"
       title="签发 Agent Token"
-      @ok="handleIssueTokenConfirm"
-      @cancel="handleTokenModalCancel"
+      style="width: 480px"
     >
-      <a-form :model="tokenForm" ref="tokenFormRef">
-        <a-form-item
+      <n-form :model="tokenForm" ref="tokenFormRef">
+        <n-form-item
           label="过期时间"
-          field="expired_at"
+          path="expired_at"
         >
-          <a-date-picker
-            v-model="tokenForm.expired_at"
-            show-time
-            format="YYYY-MM-DD HH:mm:ss"
+          <n-date-picker
+            v-model:value="tokenForm.expired_at"
+            type="datetime"
+            clearable
             style="width: 100%"
           />
-        </a-form-item>
-        <a-form-item
+        </n-form-item>
+        <n-form-item
           label="备注"
-          field="note"
+          path="note"
         >
-          <a-textarea
-            v-model="tokenForm.note"
+          <n-input type="textarea"
+            v-model:value="tokenForm.note"
             placeholder="请输入备注"
             :max-length="255"
-            :auto-size="{ minRows: 2, maxRows: 4 }"
+            :autosize="{ minRows: 2, maxRows: 4 }"
           />
-        </a-form-item>
-        <a-form-item
+        </n-form-item>
+        <n-form-item
           label="二次确认"
-          field="confirmed"
+          path="confirmed"
         >
-          <a-checkbox v-model="tokenForm.confirmed">
+          <n-checkbox v-model:checked="tokenForm.confirmed">
             我已确认此操作（高危操作）
-          </a-checkbox>
-        </a-form-item>
-      </a-form>
+          </n-checkbox>
+        </n-form-item>
+      </n-form>
       <template #footer>
-        <a-space>
-          <a-button @click="handleTokenModalCancel">取消</a-button>
-          <a-button type="primary" @click="handleIssueTokenConfirm" :disabled="!tokenForm.confirmed">
+        <n-space justify="end">
+          <n-button @click="handleTokenModalCancel">取消</n-button>
+          <n-button type="primary" @click="handleIssueTokenConfirm" :disabled="!tokenForm.confirmed">
             确认签发
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
-    </a-modal>
+    </n-modal>
 
     <!-- 编辑 Agent-Server 弹窗 -->
-    <a-modal
-      v-model:visible="agentServerEditVisible"
+    <n-modal preset="card"
+      v-model:show="agentServerEditVisible"
       title="编辑 Agent-Server"
       @ok="handleAgentServerEditConfirm"
       @cancel="handleAgentServerEditCancel"
     >
-      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+      <n-alert type="info" show-icon style="margin-bottom: 12px;">
         仅更新控制面记录，不会自动下发/重装
-      </a-alert>
-      <a-form :model="agentServerEditForm" layout="vertical">
-        <a-form-item label="名称" required>
-          <a-input v-model="agentServerEditForm.name" placeholder="请输入名称" />
-        </a-form-item>
-        <a-form-item label="基础地址(base_url)" required>
-          <a-input v-model="agentServerEditForm.base_url" placeholder="例如: http://agent-server.example.com:8080" />
-        </a-form-item>
-        <a-form-item label="启用状态">
-          <a-switch v-model="agentServerEditForm.is_active" />
-        </a-form-item>
-        <a-form-item label="签名校验">
-          <a-switch v-model="agentServerEditForm.require_signature" />
-        </a-form-item>
-        <a-form-item label="shared_secret">
-          <a-input
-            v-model="agentServerEditForm.shared_secret"
+      </n-alert>
+      <n-form :model="agentServerEditForm" layout="vertical">
+        <n-form-item label="名称" required>
+          <n-input v-model:value="agentServerEditForm.name" placeholder="请输入名称" />
+        </n-form-item>
+        <n-form-item label="基础地址(base_url)" required>
+          <n-input v-model:value="agentServerEditForm.base_url" placeholder="例如: http://agent-server.example.com:8080" />
+        </n-form-item>
+        <n-form-item label="启用状态">
+          <n-switch v-model:value="agentServerEditForm.is_active" />
+        </n-form-item>
+        <n-form-item label="签名校验">
+          <n-switch v-model:value="agentServerEditForm.require_signature" />
+        </n-form-item>
+        <n-form-item label="shared_secret">
+          <n-input
+            v-model:value="agentServerEditForm.shared_secret"
             placeholder="留空表示不变"
             :disabled="!agentServerEditForm.require_signature"
           />
           <div v-if="agentServerSecretHint" class="form-help">
             {{ agentServerSecretHint }}
           </div>
-        </a-form-item>
-        <a-form-item label="描述">
-          <a-textarea v-model="agentServerEditForm.description" :auto-size="{ minRows: 2, maxRows: 4 }" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
+        </n-form-item>
+        <n-form-item label="描述">
+          <n-input type="textarea" v-model:value="agentServerEditForm.description" :autosize="{ minRows: 2, maxRows: 4 }" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
 
     <!-- 批量编辑 Agent-Server 弹窗 -->
-    <a-modal
-      v-model:visible="batchUpdateAgentServerVisible"
+    <n-modal preset="card"
+      v-model:show="batchUpdateAgentServerVisible"
       title="批量编辑 Agent-Server"
       @ok="handleBatchUpdateAgentServerConfirm"
       @cancel="handleBatchUpdateAgentServerCancel"
     >
-      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+      <n-alert type="info" show-icon style="margin-bottom: 12px;">
         仅更新控制面记录，不会自动下发/重装
-      </a-alert>
-      <a-form :model="batchUpdateAgentServerForm" layout="vertical">
-        <a-form-item label="关联 Agent-Server">
-          <a-select
-            v-model="batchUpdateAgentServerForm.agent_server_id"
+      </n-alert>
+      <n-form :model="batchUpdateAgentServerForm" layout="vertical">
+        <n-form-item label="关联 Agent-Server">
+          <n-select
+            v-model:value="batchUpdateAgentServerForm.agent_server_id"
             placeholder="请选择 Agent-Server"
-            allow-clear
-            allow-search
-            :filter-option="filterAgentServerOption"
-          >
-            <a-option
-              v-for="server in agentServers"
-              :key="server.id"
-              :value="server.id"
-              :label="formatAgentServerLabel(server)"
-            >
-              {{ formatAgentServerLabel(server) }}
-            </a-option>
-          </a-select>
+            clearable
+            filterable
+            :filter-option="filterAgentServerOption" :options="(agentServers || []).map((sv: any) => ({ label: formatAgentServerLabel(sv), value: sv.id }))" />
           <div class="form-help">留空表示解除绑定（仅控制面记录）</div>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+        </n-form-item>
+      </n-form>
+    </n-modal>
 
     <!-- 安装 Agent 抽屉 -->
-    <a-drawer
-      v-model:visible="installModalVisible"
-      title="安装 Agent"
+    <n-drawer
+      v-model:show="installModalVisible"
+     
       width="900px"
-      :footer="false"
+     
       placement="right"
-    >
+    ><n-drawer-content title="安装 Agent">
       <div class="install-content">
         <div class="install-step">
-            <a-form :model="installForm" layout="vertical">
-              <a-form-item label="安装类型">
-            <a-radio-group v-model="installForm.install_type" @change="handleInstallTypeChange">
-              <a-radio value="agent">安装 Agent</a-radio>
-              <a-radio value="agent-server">安装 Agent-Server</a-radio>
-            </a-radio-group>
-                <template #extra>
-                  <div style="color: #86909c; font-size: 12px;">
+            <n-form :model="installForm" layout="vertical">
+              <n-form-item label="安装类型">
+                <div class="form-item-stack">
+                  <n-radio-group v-model:value="installForm.install_type" @update:value="handleInstallTypeChange">
+                    <n-radio value="agent">安装 Agent</n-radio>
+                    <n-radio value="agent-server">安装 Agent-Server</n-radio>
+                  </n-radio-group>
+                  <div class="form-help">
                     选择安装类型后，主机列表会自动刷新并显示符合条件的主机
                   </div>
-                </template>
-              </a-form-item>
+                </div>
+              </n-form-item>
 
-              <a-form-item label="选择主机">
-                <a-select
-                  v-model="installForm.host_ids"
-                  placeholder="请选择要安装 Agent 的主机"
-                  multiple
-                  :max-tag-count="3"
-                  allow-search
-                  allow-clear
-                  :filter-option="filterHostOption"
-                  style="width: 100%"
-                >
-                  <a-option
-                    v-for="host in availableHosts"
-                    :key="host.id"
-                    :value="host.id"
-                    :label="getHostLabel(host)"
-                  >
-                    {{ getHostLabel(host) }}
-                  </a-option>
-                </a-select>
-                <template #extra>
-                  <a-link @click="fetchAvailableHosts">刷新主机列表</a-link>
-                </template>
-              </a-form-item>
-              <template v-if="installForm.install_type === 'agent'">
-                <a-form-item label="Agent-Server 地址">
-                  <a-input
-                    v-model="installForm.agent_server_url"
-                    placeholder="例如: ws://agent-server:8080"
-                  />
-                  <template #extra>
-                    <div class="form-help">Agent 连接 Agent-Server 的 WS 地址，仅安装 Agent 使用</div>
-                  </template>
-                </a-form-item>
-                <a-form-item label="最大并发任务数" field="max_concurrent_tasks">
-                  <a-input-number
-                    v-model="installForm.max_concurrent_tasks"
-                    :min="1"
-                    :max="20"
-                    placeholder="留空使用默认值 (5)"
+              <n-form-item label="选择主机">
+                <div class="form-item-stack">
+                  <n-select
+                    v-model:value="installForm.host_ids"
+                    placeholder="请选择要安装 Agent 的主机"
+                    multiple
+                    :max-tag-count="3"
+                    filterable
+                    clearable
+                    :filter-option="filterHostOption"
                     style="width: 100%"
+                    :options="(availableHosts || []).map((hst: any) => ({ label: getHostLabel(hst), value: hst.id }))"
                   />
-                  <template #extra>
+                  <n-button text size="small" class="form-inline-action" @click="fetchAvailableHosts">刷新主机列表</n-button>
+                </div>
+              </n-form-item>
+              <template v-if="installForm.install_type === 'agent'">
+                <n-form-item label="Agent-Server 地址">
+                  <div class="form-item-stack">
+                    <n-input
+                      v-model:value="installForm.agent_server_url"
+                      placeholder="例如: ws://agent-server:8080"
+                    />
+                    <div class="form-help">Agent 连接 Agent-Server 的 WS 地址，仅安装 Agent 使用</div>
+                  </div>
+                </n-form-item>
+                <n-form-item label="最大并发任务数" path="max_concurrent_tasks">
+                  <div class="form-item-stack">
+                    <n-input-number
+                      v-model:value="installForm.max_concurrent_tasks"
+                      :min="1"
+                      :max="20"
+                      placeholder="留空使用默认值 (5)"
+                      style="width: 100%"
+                    />
                     <div class="form-help">控制该 Agent 同时执行的任务数量，留空则使用默认值 5</div>
-                  </template>
-                </a-form-item>
-                <a-row :gutter="12">
-                  <a-col :span="8">
-                    <a-form-item label="WS 初始退避(ms)">
-                      <a-input-number v-model="installForm.ws_backoff_initial_ms" :min="100" :max="60000" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="WS 最大退避(ms)">
-                      <a-input-number v-model="installForm.ws_backoff_max_ms" :min="1000" :max="600000" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="WS 最大重试">
-                      <a-input-number v-model="installForm.ws_max_retries" :min="1" :max="20" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="启用压缩">
-                      <a-switch v-model="installForm.ws_enable_compression" />
-                      <div class="form-help">启用压缩（需服务端也开启）</div>
-                    </a-form-item>
-                  </a-col>
-                </a-row>
+                  </div>
+                </n-form-item>
+                <div class="form-grid-row">
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="WS 初始退避(ms)">
+                      <n-input-number v-model:value="installForm.ws_backoff_initial_ms" :min="100" :max="60000" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="WS 最大退避(ms)">
+                      <n-input-number v-model:value="installForm.ws_backoff_max_ms" :min="1000" :max="600000" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="WS 最大重试">
+                      <n-input-number v-model:value="installForm.ws_max_retries" :min="1" :max="20" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                </div>
+                <n-form-item label="启用压缩">
+                  <div class="switch-with-help">
+                    <n-switch v-model:value="installForm.ws_enable_compression" />
+                    <span class="form-help">启用压缩（需服务端也开启）</span>
+                  </div>
+                </n-form-item>
               </template>
               <template v-if="installForm.install_type === 'agent-server'">
-                <a-form-item label="控制面访问地址">
-                  <a-input
-                    v-model="installForm.agent_server_base_url"
-                    placeholder="例如: http://agent-server.example.com:8080"
-                    style="width: 100%"
-                  />
-                  <template #extra>
+                <n-form-item label="控制面访问地址">
+                  <div class="form-item-stack">
+                    <n-input
+                      v-model:value="installForm.agent_server_base_url"
+                      placeholder="例如: http://agent-server.example.com:8080"
+                      style="width: 100%"
+                    />
                     <div class="form-help">控制面访问 Agent-Server 的地址(base_url)，默认使用监听地址，可按需改为域名或负载均衡地址</div>
-                  </template>
-                </a-form-item>
-                <a-form-item label="Agent-Server 监听地址">
-                  <a-input
-                    v-model="installForm.agent_server_listen_addr"
-                    placeholder="例如: 0.0.0.0:8080"
-                    style="width: 100%"
-                  />
-                  <template #extra>
+                  </div>
+                </n-form-item>
+                <n-form-item label="Agent-Server 监听地址">
+                  <div class="form-item-stack">
+                    <n-input
+                      v-model:value="installForm.agent_server_listen_addr"
+                      placeholder="例如: 0.0.0.0:8080"
+                      style="width: 100%"
+                    />
                     <div class="form-help">Agent-Server 服务监听地址，写入 agent-server 配置</div>
-                  </template>
-                </a-form-item>
-                <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item label="最大连接数">
-                      <a-input-number v-model="installForm.max_connections" :min="100" :max="10000" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="心跳超时(秒)">
-                      <a-input-number v-model="installForm.heartbeat_timeout" :min="30" :max="300" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                </a-row>
+                  </div>
+                </n-form-item>
+                <div class="form-grid-row" :gutter="12">
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="最大连接数">
+                      <n-input-number v-model:value="installForm.max_connections" :min="100" :max="10000" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="心跳超时(秒)">
+                      <n-input-number v-model:value="installForm.heartbeat_timeout" :min="30" :max="300" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                </div>
                 <!-- WebSocket 配置 -->
-                <a-divider>WebSocket 配置</a-divider>
-                <a-row :gutter="12">
-                  <a-col :span="8">
-                    <a-form-item label="握手超时">
-                      <a-input
-                        v-model="installForm.ws_handshake_timeout"
+                <n-divider>WebSocket 配置</n-divider>
+                <div class="form-grid-row" :gutter="12">
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="握手超时">
+                      <n-input
+                        v-model:value="installForm.ws_handshake_timeout"
                         placeholder="例如: 10s"
                       />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="读缓冲区">
-                      <a-input-number v-model="installForm.ws_read_buffer_size" :min="1024" :max="65536" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="写缓冲区">
-                      <a-input-number v-model="installForm.ws_write_buffer_size" :min="1024" :max="65536" style="width: 100%" />
-                    </a-form-item>
-                  </a-col>
-                </a-row>
-                <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item label="启用压缩">
-                      <a-switch v-model="installForm.ws_enable_compression" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="允许来源(逗号分隔)">
-                      <a-input
-                        v-model="ws_allowed_origins_input"
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="读缓冲区">
+                      <n-input-number v-model:value="installForm.ws_read_buffer_size" :min="1024" :max="65536" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 8">
+                    <n-form-item label="写缓冲区">
+                      <n-input-number v-model:value="installForm.ws_write_buffer_size" :min="1024" :max="65536" style="width: 100%" />
+                    </n-form-item>
+                  </div>
+                </div>
+                <div class="form-grid-row" :gutter="12">
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="启用压缩">
+                      <n-switch v-model:value="installForm.ws_enable_compression" />
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="允许来源(逗号分隔)">
+                      <n-input
+                        v-model:value="ws_allowed_origins_input"
                         placeholder="例如: http://example.com,https://app.example.com"
                         @blur="handleOriginsBlur"
                       />
-                    </a-form-item>
-                  </a-col>
-                </a-row>
-                <a-divider>认证</a-divider>
-                <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item label="启用签名校验">
-                      <a-switch v-model="installForm.auth_require_signature" />
-                      <div class="form-help">开启后控制面请求必须携带签名</div>
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="shared_secret">
-                      <a-input
-                        v-model="installForm.auth_shared_secret"
+                    </n-form-item>
+                  </div>
+                </div>
+                <n-divider>认证</n-divider>
+                <div class="form-grid-row" :gutter="12">
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="启用签名校验">
+                      <div class="switch-with-help">
+                        <n-switch v-model:value="installForm.auth_require_signature" />
+                        <span class="form-help">开启后控制面请求必须携带签名</span>
+                      </div>
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="shared_secret">
+                      <n-input
+                        v-model:value="installForm.auth_shared_secret"
                         :disabled="!installForm.auth_require_signature"
                         placeholder="请输入 shared_secret"
                       />
                       <div v-if="getSharedSecretHint()" class="form-help">
                         {{ getSharedSecretHint() }}
                       </div>
-                    </a-form-item>
-                  </a-col>
-                </a-row>
+                    </n-form-item>
+                  </div>
+                </div>
               </template>
-              <a-row :gutter="12">
-                <a-col :span="8">
-                  <a-form-item label="SSH 超时(秒)">
-                    <a-input-number v-model="installForm.ssh_timeout" :min="60" :max="900" style="width: 100%" />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-form-item label="安装包版本">
-                <a-select
-                  v-model="installForm.package_id"
-                  placeholder="请选择安装包版本（留空使用默认版本）"
-                  allow-clear
-                  allow-search
-                  :loading="loadingPackages"
-                  @change="handlePackageChange"
-                >
-                  <a-option
-                    v-for="pkg in availablePackages"
-                    :key="pkg.id"
-                    :value="pkg.id"
-                  :label="`${pkg.version} - ${pkg.os_type_display} - ${pkg.arch_display}`"
-                  >
-                    {{ pkg.version }} - {{ pkg.os_type_display }} - {{ pkg.arch_display }}
-                    <a-tag v-if="pkg.is_default" color="blue" size="small" style="margin-left: 8px">默认</a-tag>
-                  </a-option>
-                </a-select>
-                <template #extra>
-                  <a-link @click="fetchAvailablePackages">刷新安装包列表</a-link>
-                </template>
-              </a-form-item>
-              <a-form-item>
-                <a-space>
-                  <a-button type="primary" @click="handleGenerateScript" :loading="generatingScript">
+              <div class="form-grid-row" :gutter="12">
+                <div class="form-grid-col" style="grid-column: span 8">
+                  <n-form-item label="SSH 超时(秒)">
+                    <n-input-number v-model:value="installForm.ssh_timeout" :min="60" :max="900" style="width: 100%" />
+                  </n-form-item>
+                </div>
+              </div>
+              <n-form-item label="安装包版本">
+                <div class="form-item-stack">
+                  <n-select
+                    v-model:value="installForm.package_id"
+                    placeholder="请选择安装包版本（留空使用默认版本）"
+                    clearable
+                    filterable
+                    :loading="loadingPackages"
+                    @update:value="handlePackageChange"
+                    :options="(availablePackages || []).map((pkg: any) => ({ label: `${pkg.version} - ${pkg.os_type_display} - ${pkg.arch_display}`, value: pkg.id }))"
+                  />
+                  <n-button text size="small" class="form-inline-action" @click="fetchAvailablePackages">刷新安装包列表</n-button>
+                </div>
+              </n-form-item>
+              <n-form-item>
+                <n-space>
+                  <n-button type="primary" @click="handleGenerateScript" :loading="generatingScript">
                     生成安装脚本
-                  </a-button>
-                  <a-button type="primary" status="success" @click="handleBatchInstall" :loading="installing">
+                  </n-button>
+                  <n-button type="success" @click="handleBatchInstall" :loading="installing">
                     批量安装（SSH）
-                  </a-button>
-                </a-space>
-              </a-form-item>
-            </a-form>
+                  </n-button>
+                </n-space>
+              </n-form-item>
+            </n-form>
           </div>
 
           <!-- 安装进度面板已移除，改用独立的 ProgressDrawer 组件 -->
           <div v-if="installScripts">
-          <a-divider>安装脚本</a-divider>
+          <n-divider>安装脚本</n-divider>
           <div class="install-step install-step-scripts">
             <div class="install-script-tip">
               <p class="install-script-tip-title">
@@ -986,37 +673,37 @@
             <div v-for="(scriptGroup, osType) in installScripts" :key="String(osType)">
               <h3 style="margin: 16px 0 8px 0;">{{ String(osType) === 'linux' ? 'Linux' : 'Windows' }} 安装脚本</h3>
               <div v-for="item in scriptGroup" :key="item.host_id" style="margin-bottom: 24px">
-                <a-card :title="`${item.host_name} (${item.host_ip})`" size="small">
-                  <template #extra>
-                    <a-button type="text" size="small" @click="copyScript(item.script)">
+                <n-card :title="`${item.host_name} (${item.host_ip})`" size="small">
+                  <template #footer>
+                    <n-button text size="small" @click="copyScript(item.script)">
                       <template #icon>
-                        <IconCopy />
+                        <Copy />
                       </template>
                       复制脚本
-                    </a-button>
+                    </n-button>
                   </template>
                   <div class="install-script-token-row">
                     <span class="install-script-token-label"><strong>Agent Token:</strong></span>
                     <code class="install-script-token-value">{{ item.agent_token }}</code>
-                    <a-button type="text" size="mini" @click="copyText(item.agent_token)" style="margin-left: 8px">
+                    <n-button text size="tiny" @click="copyText(item.agent_token)" style="margin-left: 8px">
                       <template #icon>
-                        <IconCopy />
+                        <Copy />
                       </template>
-                    </a-button>
+                    </n-button>
                   </div>
-                  <a-textarea
+                  <n-input type="textarea"
                     :model-value="item.script"
                     auto-size
                     readonly
                     style="font-family: 'Courier New', monospace; font-size: 12px; margin-top: 8px;"
                   />
-                </a-card>
+                </n-card>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </a-drawer>
+    </n-drawer-content></n-drawer>
 
     <!-- 卸载进度抽屉 -->
     <ProgressDrawer
@@ -1045,20 +732,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import { IconCopy, IconHistory, IconDelete, IconCloseCircle, IconArrowUp, IconExclamationCircle, IconRefresh, IconLock } from '@arco-design/web-vue/es/icon'
 import { agentsApi, packageApi, agentServerApi, type Agent, type AgentPackage, type AgentServer } from '@/api/agents'
 import { useSSEProgress, createProgressState, type ProgressState } from '@/composables/useSSEProgress'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/stores/auth'
 import ProgressDrawer from '@/components/ProgressDrawer.vue'
+import { NAlert, NButton, NCard, NCheckbox, NDataTable, NDatePicker, NDivider, NDrawer, NDrawerContent, NDropdown, NForm, NFormItem, NInput, NInputNumber, NModal, NProgress, NRadio, NRadioGroup, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { ChevronDown, ChevronUp, CircleAlert, CircleCheck, CircleX, Clock3, Copy, Eye, History, Info, Lock, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Square, Trash2 } from 'lucide-vue-next'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
+const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -1686,104 +1375,231 @@ const agentTypeMap: Record<string, string> = {
 }
 
 // 表格列配置
-const columns = [
+const agentRowActions = (row: any) => {
+  const buttons = [
+    h(NButton, { text: true, size: 'small', onClick: () => handleViewDetail(row.id) }, {
+      icon: () => h(Eye, { size: 14 }),
+      default: () => '详情',
+    }),
+  ]
+  const st = row.computed_status || row.status
+  if (st === 'pending') {
+    buttons.push(h(NButton, { type: 'warning', size: 'small', onClick: () => handleRegenerateScript(row) }, {
+      icon: () => h(Copy, { size: 14 }),
+      default: () => '重新生成脚本',
+    }))
+  } else {
+    buttons.push(h(NButton, { text: true, size: 'small', onClick: () => handleIssueToken(row) }, {
+      icon: () => h(Lock, { size: 14 }),
+      default: () => '发Token',
+    }))
+  }
+  if (st === 'online' && row.is_version_outdated) {
+    buttons.push(h(NButton, { type: 'warning', size: 'small', onClick: () => handleUpgradeAgent(row) }, {
+      icon: () => h(ChevronUp, { size: 14 }),
+      default: () => '升级',
+    }))
+  }
+  if (st === 'online') {
+    buttons.push(h(NButton, { text: true, size: 'small', onClick: () => handleRestartAgent(row) }, {
+      icon: () => h(RefreshCw, { size: 14 }),
+      default: () => '重启',
+    }))
+  }
+  if (st !== 'disabled' && st !== 'pending') {
+    buttons.push(h(NButton, { type: 'warning', size: 'small', onClick: () => handleDisable(row) }, {
+      icon: () => h(CircleX, { size: 14 }),
+      default: () => '禁用',
+    }))
+  }
+  if (st === 'disabled') {
+    buttons.push(h(NButton, { type: 'success', size: 'small', onClick: () => handleEnable(row) }, {
+      icon: () => h(CircleCheck, { size: 14 }),
+      default: () => '启用',
+    }))
+  }
+  return buttons
+}
+
+const columns: DataTableColumns<any> = [
+  {
+    type: 'selection',
+  },
   {
     title: '关联主机',
-    dataIndex: 'host',
-    slotName: 'host',
-    width: 150
+    key: 'host',
+    width: 150,
+    render: (row) =>
+      h('div', { class: 'host-info' }, [
+        h('div', { class: 'host-name' }, row.host.name),
+        h('div', { class: 'host-ip' }, [
+          h('span', { class: 'host-ip-label' }, 'IP'),
+          h('span', { class: 'host-ip-value' }, row.host.ip_address),
+        ]),
+      ]),
   },
   {
     title: '类型',
-    dataIndex: 'agent_type',
-    slotName: 'agent_type',
-    width: 120
+    key: 'agent_type',
+    width: 120,
+    render: (row) =>
+      h(NTag, { type: getAgentTypeColor(row.agent_type) as any, size: 'small' }, {
+        default: () => agentTypeMap[row.agent_type || 'agent'] || (row.agent_type || '-'),
+      }),
   },
   {
     title: '状态',
-    dataIndex: 'status',
-    slotName: 'status',
-    width: 100
+    key: 'status',
+    width: 120,
+    render: (row) => {
+      const st = row.computed_status || row.status
+      return h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h(NTag, { type: getStatusColor(st) as any, size: 'small' }, {
+            default: () => row.computed_status_display || row.status_display,
+          }),
+          getStatusHint(st)
+            ? h(NTooltip, {}, {
+                trigger: () => h(Info, { style: 'color: #d97706; cursor: help' }),
+                default: () => getStatusHint(st),
+              })
+            : null,
+        ],
+      })
+    },
   },
   {
     title: '版本',
-    dataIndex: 'version',
-    slotName: 'version',
-    width: 120
+    key: 'version',
+    width: 120,
+    render: (row) =>
+      h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h('span', row.version || '-'),
+          row.is_version_outdated && row.version
+            ? h(NTooltip, {}, {
+                trigger: () => h(NTag, { type: 'error', size: 'small' }, { default: () => '版本落后' }),
+                default: () => getVersionTooltip(row),
+              })
+            : null,
+        ],
+      }),
   },
   {
     title: '最后心跳',
-    dataIndex: 'last_heartbeat_at',
-    slotName: 'last_heartbeat_at',
-    width: 120
+    key: 'last_heartbeat_at',
+    width: 120,
+    render: (row) => (row.last_heartbeat_at ? formatTime(row.last_heartbeat_at) : '-'),
   },
   {
     title: '任务统计',
-    dataIndex: 'task_stats',
-    slotName: 'task_stats',
-    width: 120
+    key: 'task_stats',
+    width: 120,
+    render: (row) => {
+      if (row.task_stats && row.task_stats.total > 0) {
+        return h(NTooltip, {}, {
+          trigger: () =>
+            h('div', { class: 'task-stats-cell' }, [
+              h(NProgress, {
+                type: 'circle',
+                percentage: row.task_stats.success_rate,
+                strokeColor: getSuccessRateColor(row.task_stats.success_rate),
+                showIndicator: false,
+              }),
+              h('span', { class: 'task-stats-text' }, `${row.task_stats.success_rate?.toFixed(0) || 0}%`),
+            ]),
+          default: () => getTaskStatsTooltip(row.task_stats),
+        })
+      }
+      return h('span', { class: 'text-gray' }, '-')
+    },
   },
   {
     title: '错误码',
-    dataIndex: 'last_error_code',
-    slotName: 'last_error_code',
-    width: 120
+    key: 'last_error_code',
+    width: 120,
+    render: (row) => (row.last_error_code
+      ? h(NTag, { type: 'error', size: 'small' }, { default: () => row.last_error_code })
+      : h('span', { class: 'text-gray' }, '-')),
   },
   {
     title: '标签',
-    dataIndex: 'tags',
-    slotName: 'tags',
-    width: 180
+    key: 'tags',
+    width: 180,
+    render: (row) => {
+      if (row.host?.tags && row.host.tags.length) {
+        return h(NSpace, { wrap: true, size: 4 }, {
+          default: () => row.host.tags.map((tag: any) =>
+            h(NTag, { size: 'small' }, {
+              default: () => (tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag),
+            })),
+        })
+      }
+      return h('span', { class: 'text-gray' }, '-')
+    },
   },
   {
     title: '操作',
-    slotName: 'actions',
-    width: 250,
-    fixed: 'right'
-  }
+    key: 'actions',
+    width: 300,
+    render: (row) =>
+      h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => agentRowActions(row),
+      }),
+  },
 ]
 
-const agentServerColumns = [
-  {
-    title: '名称',
-    dataIndex: 'name',
-    width: 180
-  },
-  {
-    title: '地址',
-    dataIndex: 'base_url',
-    width: 260
-  },
+const agentServerColumns: DataTableColumns<any> = [
+  { title: '名称', key: 'name', width: 180, render: (row) => row.name },
+  { title: '地址', key: 'base_url', width: 240, render: (row) => row.base_url },
   {
     title: '状态',
-    dataIndex: 'is_active',
-    slotName: 'is_active',
-    width: 100
+    key: 'is_active',
+    width: 100,
+    render: (row) =>
+      h(NTag, { type: (row.is_active ? 'success' : 'default') as any, size: 'small' }, {
+        default: () => (row.is_active ? '启用' : '停用'),
+      }),
   },
   {
     title: '签名校验',
-    dataIndex: 'require_signature',
-    slotName: 'require_signature',
-    width: 120
+    key: 'require_signature',
+    width: 120,
+    render: (row) =>
+      h(NTag, { type: (row.require_signature ? 'primary' : 'default') as any, size: 'small' }, {
+        default: () => (row.require_signature ? '开启' : '关闭'),
+      }),
   },
   {
     title: '密钥尾号',
-    dataIndex: 'shared_secret_last4',
-    slotName: 'shared_secret_last4',
-    width: 120
+    key: 'shared_secret_last4',
+    width: 120,
+    render: (row) => (row.shared_secret_last4 ? `****${row.shared_secret_last4}` : '-'),
   },
   {
     title: '更新时间',
-    dataIndex: 'updated_at',
-    slotName: 'updated_at',
-    width: 180
+    key: 'updated_at',
+    width: 180,
+    render: (row) => (row.updated_at ? formatTime(row.updated_at) : '-'),
   },
   {
     title: '操作',
-    slotName: 'agent_server_actions',
-    width: 140,
-    fixed: 'right'
-  }
+    key: 'agent_server_actions',
+    width: 160,
+    render: (row) =>
+      h(NSpace, { size: 4 }, {
+        default: () => [
+          h(NButton, { text: true, size: 'small', onClick: () => handleEditAgentServer(row) }, {
+            icon: () => h(Pencil, { size: 14 }),
+            default: () => '编辑',
+          }),
+          h(NButton, { text: true, size: 'small', onClick: () => copyText(row.base_url) }, {
+            icon: () => h(Copy, { size: 14 }),
+            default: () => '复制地址',
+          }),
+        ],
+      }),
+  },
 ]
 
 // 获取状态颜色
@@ -1883,7 +1699,7 @@ const fetchAgents = async () => {
   } catch (error: any) {
     console.error('获取 Agent 列表失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '获取 Agent 列表失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
     agents.value = []
     pagination.total = 0
   } finally {
@@ -1900,7 +1716,7 @@ const fetchAgentServers = async () => {
     }
   } catch (error: any) {
     console.error('获取 Agent-Server 列表失败:', error)
-    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    message.error(error?.message || '获取 Agent-Server 列表失败')
     agentServers.value = []
   }
 }
@@ -1926,7 +1742,7 @@ const fetchAgentServerTable = async () => {
     agentServerTable.value = response.results || []
   } catch (error: any) {
     console.error('获取 Agent-Server 列表失败:', error)
-    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    message.error(error?.message || '获取 Agent-Server 列表失败')
     agentServerTable.value = []
   } finally {
     agentServerTableLoading.value = false
@@ -2040,19 +1856,19 @@ const handleAgentServerEditCancel = () => {
 
 const handleAgentServerEditConfirm = async () => {
   if (!agentServerEditForm.id) {
-    Message.error('缺少 Agent-Server ID')
+    message.error('缺少 Agent-Server ID')
     return
   }
   if (!agentServerEditForm.name.trim()) {
-    Message.error('请输入名称')
+    message.error('请输入名称')
     return
   }
   if (!agentServerEditForm.base_url.trim()) {
-    Message.error('请输入基础地址(base_url)')
+    message.error('请输入基础地址(base_url)')
     return
   }
   if (agentServerEditForm.require_signature && !agentServerEditForm.shared_secret && !agentServerEditing.value?.has_secret) {
-    Message.error('启用签名校验必须提供 shared_secret')
+    message.error('启用签名校验必须提供 shared_secret')
     return
   }
 
@@ -2069,13 +1885,13 @@ const handleAgentServerEditConfirm = async () => {
 
   try {
     await agentServerApi.updateAgentServer(agentServerEditForm.id, payload)
-    Message.success('更新 Agent-Server 成功')
+    message.success('更新 Agent-Server 成功')
     agentServerEditVisible.value = false
     resetAgentServerEditForm()
     fetchAgentServerTable()
     fetchAgentServers()
   } catch (error: any) {
-    Message.error(error?.response?.data?.message || error?.message || '更新 Agent-Server 失败')
+    message.error(error?.response?.data?.message || error?.message || '更新 Agent-Server 失败')
   }
 }
 
@@ -2129,7 +1945,7 @@ const handleIssueToken = (agent: Agent) => {
 // 确认发 Token
 const handleIssueTokenConfirm = async () => {
   if (!tokenForm.confirmed) {
-    Message.warning('请先确认此操作')
+    message.warning('请先确认此操作')
     return
   }
   if (!currentAgent.value) return
@@ -2146,20 +1962,55 @@ const handleIssueTokenConfirm = async () => {
     }
 
     const result = await agentsApi.issueToken(currentAgent.value.id, params)
-    Message.success('Token 签发成功')
-    // 显示 Token（仅此一次）
-    Modal.info({
-      title: 'Token 签发成功',
-      content: `Token: ${result.token}\n\n请妥善保管，此 Token 仅显示一次！`,
-      okText: '我已保存'
-    })
+    message.success('Token 签发成功')
+    const issuedToken = result?.token || ''
     tokenModalVisible.value = false
+    showIssuedTokenDialog(issuedToken)
     fetchAgents()
   } catch (error: any) {
     console.error('Token 签发失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || 'Token 签发失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   }
+}
+
+/** One-time token dialog with copy (蓝鲸式：签发后立即可复制) */
+const showIssuedTokenDialog = (token: string) => {
+  const tokenText = token || ''
+  if (!tokenText) {
+    message.warning('未返回 Token，请检查接口响应')
+    return
+  }
+  dialog.create({
+    title: 'Token 签发成功',
+    content: () =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:12px;' }, [
+        h(NAlert, { type: 'warning', bordered: false }, {
+          default: () => '此 Token 仅显示一次，请立即复制并妥善保管。',
+        }),
+        h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, [
+          h(NInput, {
+            value: tokenText,
+            readonly: true,
+            type: 'textarea',
+            autosize: { minRows: 2, maxRows: 4 },
+            style: 'flex:1;',
+          }),
+          h(
+            NButton,
+            {
+              type: 'primary',
+              onClick: () => copyText(tokenText),
+            },
+            {
+              icon: () => h(Copy, { size: 14 }),
+              default: () => '复制',
+            },
+          ),
+        ]),
+      ]),
+    positiveText: '我已保存',
+  })
 }
 
 // 取消发 Token
@@ -2173,20 +2024,20 @@ const handleTokenModalCancel = () => {
 
 // 禁用 Agent
 const handleDisable = (agent: Agent) => {
-  Modal.confirm({
+  dialog.warning({
     title: '确认禁用',
     content: `确定要禁用 Agent (${agent.host.name}) 吗？`,
-    okText: '确认禁用',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确认禁用',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await agentsApi.disableAgent(agent.id, { confirmed: true })
-        Message.success('禁用成功')
+        message.success('禁用成功')
         fetchAgents()
       } catch (error: any) {
         console.error('禁用失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '禁用失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -2196,36 +2047,36 @@ const handleDisable = (agent: Agent) => {
 const handleEnable = async (agent: Agent) => {
   try {
     await agentsApi.enableAgent(agent.id)
-    Message.success('启用成功')
+    message.success('启用成功')
     fetchAgents()
   } catch (error: any) {
     console.error('启用失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '启用失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   }
 }
 
 // 重启 Agent
 const handleRestartAgent = (agent: Agent) => {
-  Modal.confirm({
+  dialog.warning({
     title: '确认重启',
     content: `确定要重启 Agent (${agent.host.name}) 吗？重启期间 Agent 将短暂离线。`,
-    okText: '确认重启',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确认重启',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await agentsApi.controlAgent(agent.id, {
           action: 'restart',
           reason: '用户手动重启',
           agent_server_id: searchForm.agent_server_id || undefined
         })
-        Message.success('重启指令已下发，Agent 将在几秒内重启')
+        message.success('重启指令已下发，Agent 将在几秒内重启')
         // 延迟刷新，等待 Agent 重启完成
         setTimeout(() => fetchAgents(), 3000)
       } catch (error: any) {
         console.error('重启失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '重启失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -2233,24 +2084,24 @@ const handleRestartAgent = (agent: Agent) => {
 
 // 升级 Agent
 const handleUpgradeAgent = (agent: Agent) => {
-  Modal.confirm({
+  dialog.warning({
     title: '确认升级',
     content: `确定要升级 Agent (${agent.host.name}) 吗？\n\n当前版本: ${agent.version}\n期望版本: ${agent.expected_min_version || '最新版本'}\n\n升级期间 Agent 将短暂离线。`,
-    okText: '确认升级',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确认升级',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await agentsApi.upgradeAgent(agent.id, {
           target_version: agent.expected_min_version,
           confirmed: true,
           agent_server_id: searchForm.agent_server_id || undefined
         })
-        Message.success('升级指令已下发，Agent 将在几秒内完成升级')
+        message.success('升级指令已下发，Agent 将在几秒内完成升级')
         setTimeout(() => fetchAgents(), 5000)
       } catch (error: any) {
         console.error('升级失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '升级失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -2370,7 +2221,7 @@ const fetchAvailablePackages = async () => {
     const packages = await packageApi.getActivePackages({ package_type: installForm.install_type })
     availablePackages.value = packages
   } catch (error: any) {
-    Message.error(error.message || '获取安装包列表失败')
+    message.error(error.message || '获取安装包列表失败')
     availablePackages.value = []
   } finally {
     loadingPackages.value = false
@@ -2412,7 +2263,7 @@ const fetchAvailableHosts = async () => {
     availableHosts.value = response.hosts || []
   } catch (error) {
     console.error('获取主机列表失败:', error)
-    Message.error('获取主机列表失败')
+    message.error('获取主机列表失败')
   }
 }
 
@@ -2455,19 +2306,19 @@ const getAgentTypeColor = (type?: string) => {
 // 生成安装脚本
 const handleGenerateScript = async () => {
   if (!installForm.host_ids || installForm.host_ids.length === 0) {
-    Message.warning('请至少选择一个主机')
+    message.warning('请至少选择一个主机')
     return
   }
   if (installForm.install_type === 'agent' && !installForm.agent_server_url) {
-    Message.warning('安装 Agent 需要填写 Agent-Server 地址')
+    message.warning('安装 Agent 需要填写 Agent-Server 地址')
     return
   }
   if (installForm.install_type === 'agent-server' && !installForm.agent_server_listen_addr) {
-    Message.warning('安装 Agent-Server 需要填写监听地址')
+    message.warning('安装 Agent-Server 需要填写监听地址')
     return
   }
   if (installForm.install_type === 'agent-server' && !resolveAgentServerBaseUrl()) {
-    Message.warning('安装 Agent-Server 需要填写控制面访问地址')
+    message.warning('安装 Agent-Server 需要填写控制面访问地址')
     return
   }
   if (
@@ -2475,7 +2326,7 @@ const handleGenerateScript = async () => {
     installForm.auth_require_signature &&
     !installForm.auth_shared_secret
   ) {
-    Message.warning('启用签名校验需要填写 shared_secret')
+    message.warning('启用签名校验需要填写 shared_secret')
     return
   }
 
@@ -2518,17 +2369,17 @@ const handleGenerateScript = async () => {
     
     // 显示提示信息
     if (response.notice) {
-      Message.warning(response.notice)
+      message.warning(response.notice)
     }
     if (response.errors && response.errors.length > 0) {
-      Message.warning(`部分主机生成脚本失败: ${response.errors.join('; ')}`)
+      message.warning(`部分主机生成脚本失败: ${response.errors.join('; ')}`)
     }
     
-    Message.success('安装脚本生成成功')
+    message.success('安装脚本生成成功')
   } catch (error: any) {
     console.error('生成安装脚本失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '生成安装脚本失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   } finally {
     generatingScript.value = false
   }
@@ -2554,19 +2405,19 @@ const connectInstallProgressSSE = (installTaskId: string) => {
 // 批量安装
 const handleBatchInstall = async () => {
   if (!installForm.host_ids || installForm.host_ids.length === 0) {
-    Message.warning('请至少选择一个主机')
+    message.warning('请至少选择一个主机')
     return
   }
   if (installForm.install_type === 'agent' && !installForm.agent_server_url) {
-    Message.warning('安装 Agent 需要填写 Agent-Server 地址')
+    message.warning('安装 Agent 需要填写 Agent-Server 地址')
     return
   }
   if (installForm.install_type === 'agent-server' && !installForm.agent_server_listen_addr) {
-    Message.warning('安装 Agent-Server 需要填写监听地址')
+    message.warning('安装 Agent-Server 需要填写监听地址')
     return
   }
   if (installForm.install_type === 'agent-server' && !resolveAgentServerBaseUrl()) {
-    Message.warning('安装 Agent-Server 需要填写控制面访问地址')
+    message.warning('安装 Agent-Server 需要填写控制面访问地址')
     return
   }
   if (
@@ -2574,7 +2425,7 @@ const handleBatchInstall = async () => {
     installForm.auth_require_signature &&
     !installForm.auth_shared_secret
   ) {
-    Message.warning('启用签名校验需要填写 shared_secret')
+    message.warning('启用签名校验需要填写 shared_secret')
     return
   }
 
@@ -2589,19 +2440,19 @@ const handleBatchInstall = async () => {
 
   if (hostsToReinstall.length > 0) {
     // 有需要覆盖的Agent，先确认覆盖
-    Modal.confirm({
+    dialog.warning({
       title: `确认覆盖安装${installTarget}`,
       content: `${hostsToReinstall.length} 台主机已安装${installTarget}，确定要覆盖安装吗？此操作将停止现有服务并重新安装。`,
-      onOk: () => {
+      onPositiveClick: () => {
         performInstall(true) // allow_reinstall = true
       }
     })
   } else {
     // 没有需要覆盖的Agent，直接安装
-    Modal.confirm({
+    dialog.warning({
       title: `确认批量安装${installTarget}`,
       content: `确定要在 ${installForm.host_ids.length} 台主机上安装 ${installTarget} 吗？`,
-      onOk: () => {
+      onPositiveClick: () => {
         performInstall(false) // allow_reinstall = false
       }
     })
@@ -2649,10 +2500,10 @@ const performInstall = async (allowReinstall: boolean) => {
     // 如果有 install_task_id，连接sse查看实时进度
     if (response.install_task_id) {
       connectInstallProgressSSE(response.install_task_id)
-      Message.info('安装已启动，正在查看实时进度...')
+      message.info('安装已启动，正在查看实时进度...')
     } else {
       // 如果没有sse，显示最终结果
-      Message.success(
+      message.success(
         `批量安装完成：成功 ${response.success_count} 个，失败 ${response.failed_count} 个`
       )
 
@@ -2662,10 +2513,10 @@ const performInstall = async (allowReinstall: boolean) => {
           .filter((r: any) => !r.success)
           .map((r: any) => `${r.host_name}: ${r.message}`)
           .join('\n')
-        Modal.warning({
+        dialog.warning({
           title: '部分主机安装失败',
           content: failedHosts,
-          width: 600,
+          style: { width: '600px' },
         })
       }
 
@@ -2676,7 +2527,7 @@ const performInstall = async (allowReinstall: boolean) => {
   } catch (error: any) {
     console.error('批量安装失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '批量安装失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   } finally {
     installing.value = false
   }
@@ -2685,18 +2536,18 @@ const performInstall = async (allowReinstall: boolean) => {
 // 复制脚本
 const copyScript = (script: string) => {
   navigator.clipboard.writeText(script).then(() => {
-    Message.success('脚本已复制到剪贴板')
+    message.success('脚本已复制到剪贴板')
   }).catch(() => {
-    Message.error('复制失败，请手动复制')
+    message.error('复制失败，请手动复制')
   })
 }
 
 // 复制文本
 const copyText = (text: string) => {
   navigator.clipboard.writeText(text).then(() => {
-    Message.success('已复制到剪贴板')
+    message.success('已复制到剪贴板')
   }).catch(() => {
-    Message.error('复制失败')
+    message.error('复制失败')
   })
 }
 
@@ -2718,30 +2569,63 @@ const resetStatistics = () => {
 
 // 表格选择变化
 const handleSelectionChange = (rowKeys: (string | number)[]) => {
-  selectedAgentIds.value = rowKeys as number[]
+  selectedAgentIds.value = rowKeys.map((key) => Number(key)).filter((key) => !Number.isNaN(key))
+}
+
+// 蓝鲸节点管理式：勾选 Agent 后批量重装（预填安装抽屉，允许覆盖）
+const handleBatchReinstall = () => {
+  if (selectedAgentIds.value.length === 0) {
+    message.warning('请先勾选要重装的 Agent')
+    return
+  }
+  const selected = agents.value.filter((agent: any) => selectedAgentIds.value.includes(agent.id))
+  const hostIds = selected
+    .map((agent: any) => agent.host?.id)
+    .filter((id: any) => id !== undefined && id !== null)
+
+  if (hostIds.length === 0) {
+    message.warning('所选 Agent 缺少关联主机，无法重装')
+    return
+  }
+
+  dialog.warning({
+    title: '确认批量重装',
+    content: `将对 ${hostIds.length} 台关联主机执行 Agent 重装（覆盖安装）。请在安装抽屉中确认 Agent-Server 地址与安装包版本后，点击「批量安装（SSH）」。`,
+    positiveText: '继续',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      installForm.install_type = 'agent'
+      installForm.host_ids = [...new Set(hostIds)] as number[]
+      activeTab.value = 'agent'
+      installModalVisible.value = true
+      fetchAvailableHosts()
+      fetchAvailablePackages()
+      message.info('已预填所选主机，请确认参数后执行批量安装')
+    },
+  })
 }
 
 // 查看安装脚本（用于 pending 状态的 Agent）
 const handleRegenerateScript = async (agent: any) => {
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '重新生成安装脚本',
       content: '将为该 Agent 签发新 token 并生成新的安装脚本，旧 token 将失效，确认继续？',
-      okText: '重新生成',
-      async onOk() {
+      positiveText: '重新生成',
+      async onPositiveClick() {
         try {
           const response = await agentsApi.regenerateScript(agent.id)
           installScripts.value = response.scripts
           installModalVisible.value = true
 
           if (response.notice) {
-            Message.warning(response.notice)
+            message.warning(response.notice)
           }
-          Message.success('已重新生成安装脚本并签发新 token')
+          message.success('已重新生成安装脚本并签发新 token')
         } catch (error: any) {
           console.error('获取安装脚本失败:', error)
           const errorMsg = error?.response?.data?.message || error?.message || '获取安装脚本失败'
-          Message.error(errorMsg)
+          message.error(errorMsg)
           throw error
         }
       },
@@ -2754,7 +2638,7 @@ const handleRegenerateScript = async (agent: any) => {
 // 批量重新生成脚本
 const handleBatchRegenerateScript = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请至少选择一个 Agent')
+    message.warning('请至少选择一个 Agent')
     return
   }
   
@@ -2763,14 +2647,14 @@ const handleBatchRegenerateScript = async () => {
   )
   
   if (pendingAgents.length === 0) {
-    Message.warning('选中的 Agent 中没有待激活状态的 Agent')
+    message.warning('选中的 Agent 中没有待激活状态的 Agent')
     return
   }
   
-  Modal.confirm({
+  dialog.warning({
     title: '确认批量重新生成脚本',
     content: `将为 ${pendingAgents.length} 个待激活的 Agent 签发新 token 并重新生成安装脚本，旧 token 将失效，确认继续？`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         // 为每个 Agent 生成脚本
         const scripts: any = {}
@@ -2799,13 +2683,13 @@ const handleBatchRegenerateScript = async () => {
         if (successCount > 0) {
           installScripts.value = scripts
           installModalVisible.value = true
-          Message.success(`成功为 ${successCount} 个 Agent 重新生成脚本${failCount > 0 ? `，${failCount} 个失败` : ''}`)
+          message.success(`成功为 ${successCount} 个 Agent 重新生成脚本${failCount > 0 ? `，${failCount} 个失败` : ''}`)
         } else {
-          Message.error('批量生成脚本失败')
+          message.error('批量生成脚本失败')
         }
       } catch (error: any) {
         console.error('批量生成脚本失败:', error)
-        Message.error('批量生成脚本失败')
+        message.error('批量生成脚本失败')
       }
     }
   })
@@ -2815,7 +2699,7 @@ const handleBatchRegenerateScript = async () => {
 // 批量禁用 Agent
 const handleBatchDisable = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请先选择要禁用的 Agent')
+    message.warning('请先选择要禁用的 Agent')
     return
   }
 
@@ -2826,7 +2710,7 @@ const handleBatchDisable = async () => {
   )
 
   if (disableableAgents.length === 0) {
-    Message.warning('选中的 Agent 中没有可禁用的（只有非 pending 且非 disabled 状态的 Agent 可以禁用）')
+    message.warning('选中的 Agent 中没有可禁用的（只有非 pending 且非 disabled 状态的 Agent 可以禁用）')
     return
   }
 
@@ -2841,26 +2725,26 @@ const handleBatchDisable = async () => {
     })
   )
   if (prodAgents.length > 0 && disableableAgents.length > 10) {
-    Message.warning('生产环境批量操作最多支持 10 个 Agent')
+    message.warning('生产环境批量操作最多支持 10 个 Agent')
     return
   }
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认批量禁用',
       content: `确定要禁用选中的 ${disableableAgents.length} 个 Agent 吗？禁用后这些 Agent 将不再接收新任务。`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           const result = await agentsApi.batchDisable({
             agent_ids: disableableAgents.map(a => a.id),
             confirmed: true
           })
-          Message.success(`批量禁用成功，共 ${result.count} 个 Agent`)
+          message.success(`批量禁用成功，共 ${result.count} 个 Agent`)
           selectedAgentIds.value = []
           fetchAgents()
         } catch (error: any) {
           console.error('批量禁用失败:', error)
-          Message.error(error?.message || '批量禁用失败')
+          message.error(error?.message || '批量禁用失败')
         }
       }
     })
@@ -2872,7 +2756,7 @@ const handleBatchDisable = async () => {
 // 批量启用 Agent
 const handleBatchEnable = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请先选择要启用的 Agent')
+    message.warning('请先选择要启用的 Agent')
     return
   }
 
@@ -2882,7 +2766,7 @@ const handleBatchEnable = async () => {
   )
 
   if (enableableAgents.length === 0) {
-    Message.warning('选中的 Agent 中没有可启用的（只有 disabled 状态的 Agent 可以启用）')
+    message.warning('选中的 Agent 中没有可启用的（只有 disabled 状态的 Agent 可以启用）')
     return
   }
 
@@ -2897,26 +2781,26 @@ const handleBatchEnable = async () => {
     })
   )
   if (prodAgents.length > 0 && enableableAgents.length > 10) {
-    Message.warning('生产环境批量操作最多支持 10 个 Agent')
+    message.warning('生产环境批量操作最多支持 10 个 Agent')
     return
   }
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认批量启用',
       content: `确定要启用选中的 ${enableableAgents.length} 个 Agent 吗？启用后这些 Agent 将恢复接收新任务。`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           const result = await agentsApi.batchEnable({
             agent_ids: enableableAgents.map(a => a.id),
             confirmed: true
           })
-          Message.success(`批量启用成功，共 ${result.count} 个 Agent`)
+          message.success(`批量启用成功，共 ${result.count} 个 Agent`)
           selectedAgentIds.value = []
           fetchAgents()
         } catch (error: any) {
           console.error('批量启用失败:', error)
-          Message.error(error?.message || '批量启用失败')
+          message.error(error?.message || '批量启用失败')
         }
       }
     })
@@ -2928,19 +2812,19 @@ const handleBatchEnable = async () => {
 // 批量重启 Agent
 const handleBatchRestart = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请先选择要重启的 Agent')
+    message.warning('请先选择要重启的 Agent')
     return
   }
   if (!selectedAgentServerId.value) {
-    Message.warning('请先选择 Agent-Server')
+    message.warning('请先选择 Agent-Server')
     return
   }
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认批量重启',
       content: `确定要重启选中的 ${selectedAgentIds.value.length} 个 Agent 吗？重启期间这些 Agent 将短暂离线。`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           const result = await agentsApi.batchRestart({
             agent_ids: selectedAgentIds.value,
@@ -2951,16 +2835,16 @@ const handleBatchRestart = async () => {
           // 如果有 batch_task_id，连接 SSE 查看实时进度
           if (result.batch_task_id) {
             connectBatchOperationSSE(result.batch_task_id, '重启')
-            Message.info('重启已启动，正在查看实时进度...')
+            message.info('重启已启动，正在查看实时进度...')
           } else {
             // 如果没有 SSE，显示最终结果
-            Message.success(`批量重启已启动`)
+            message.success(`批量重启已启动`)
             selectedAgentIds.value = []
             fetchAgents()
           }
         } catch (error: any) {
           console.error('批量重启失败:', error)
-          Message.error(error?.message || '批量重启失败')
+          message.error(error?.message || '批量重启失败')
         }
       }
     })
@@ -2971,7 +2855,7 @@ const handleBatchRestart = async () => {
 
 const handleBatchUpdateAgentServer = () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请先选择要更新的 Agent')
+    message.warning('请先选择要更新的 Agent')
     return
   }
   batchUpdateAgentServerForm.agent_server_id = selectedAgentServerId.value ?? null
@@ -2985,7 +2869,7 @@ const handleBatchUpdateAgentServerCancel = () => {
 
 const handleBatchUpdateAgentServerConfirm = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请先选择要更新的 Agent')
+    message.warning('请先选择要更新的 Agent')
     return
   }
 
@@ -2995,7 +2879,7 @@ const handleBatchUpdateAgentServerConfirm = async () => {
       agent_server_id: batchUpdateAgentServerForm.agent_server_id,
       confirmed: true
     })
-    Message.success(`批量更新完成：成功 ${result.success_count} 个，失败 ${result.failed_count} 个`)
+    message.success(`批量更新完成：成功 ${result.success_count} 个，失败 ${result.failed_count} 个`)
     batchUpdateAgentServerVisible.value = false
     batchUpdateAgentServerForm.agent_server_id = null
     selectedAgentIds.value = []
@@ -3003,13 +2887,13 @@ const handleBatchUpdateAgentServerConfirm = async () => {
   } catch (error: any) {
     console.error('批量更新 Agent-Server 失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '批量更新 Agent-Server 失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   }
 }
 
 const handleBatchDeletePending = async () => {
   if (selectedAgentIds.value.length === 0) {
-    Message.warning('请至少选择一个 Agent')
+    message.warning('请至少选择一个 Agent')
     return
   }
   
@@ -3018,16 +2902,16 @@ const handleBatchDeletePending = async () => {
   )
   
   if (pendingAgents.length === 0) {
-    Message.warning('选中的 Agent 中没有待激活状态的 Agent')
+    message.warning('选中的 Agent 中没有待激活状态的 Agent')
     return
   }
   
-  Modal.confirm({
+  dialog.warning({
     title: '确认批量删除',
     content: `确定要删除 ${pendingAgents.length} 个待激活的 Agent 吗？此操作不可恢复！`,
-    okText: '确认删除',
-    okButtonProps: { status: 'danger' },
-    onOk: async () => {
+    positiveText: '确认删除',
+    positiveButtonProps: { type: 'error' },
+    onPositiveClick: async () => {
       try {
         const agentIds = pendingAgents.map(a => a.id)
         const response = await agentsApi.batchDelete({
@@ -3035,13 +2919,13 @@ const handleBatchDeletePending = async () => {
           confirmed: true
         })
         
-        Message.success(`成功删除 ${response.count} 个 Agent`)
+        message.success(`成功删除 ${response.count} 个 Agent`)
         selectedAgentIds.value = []
         fetchAgents()
       } catch (error: any) {
         console.error('批量删除失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '批量删除失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -3126,6 +3010,38 @@ onBeforeUnmount(() => {
     agentServerVersionSearchTimer = null
   }
 })
+
+const batchActionOptions = computed<any[]>(() => [
+  { label: `批量重装 (${selectedAgentIds.value.length})`, key: 'reinstall', disabled: selectedAgentIds.value.length === 0 },
+  { label: `重新生成脚本 (${selectedAgentIds.value.length})`, key: 'regen', disabled: selectedAgentIds.value.length === 0 },
+  { label: `编辑 Agent-Server (${selectedAgentIds.value.length})`, key: 'updateServer', disabled: selectedAgentIds.value.length === 0 },
+  { type: 'divider', key: 'd0' },
+  { label: `启用 (${selectedEnableableCount.value})`, key: 'enable', disabled: !hasEnableableAgents.value },
+  { label: `禁用 (${selectedDisableableCount.value})`, key: 'disable', disabled: !hasDisableableAgents.value },
+  { label: `重启 (${selectedAgentIds.value.length})`, key: 'restart', disabled: selectedAgentIds.value.length === 0 },
+  { type: 'divider', key: 'd1' },
+  { label: `删除待激活 (${selectedPendingCount.value})`, key: 'deletePending', disabled: !hasPendingAgents.value, props: { class: 'danger' } },
+  { label: `卸载 (${selectedAgentIds.value.length})`, key: 'uninstall', disabled: selectedAgentIds.value.length === 0, props: { class: 'danger' } },
+])
+
+const onBatchAction = (key: string) => {
+  if (key === 'reinstall') handleBatchReinstall()
+  if (key === 'regen') handleBatchRegenerateScript()
+  if (key === 'updateServer') handleBatchUpdateAgentServer()
+  if (key === 'enable') handleBatchEnable()
+  if (key === 'disable') handleBatchDisable()
+  if (key === 'restart') handleBatchRestart()
+  if (key === 'deletePending') handleBatchDeletePending()
+  if (key === 'uninstall') handleUninstallAgent()
+}
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 </script>
 
 <style scoped>
@@ -3164,21 +3080,6 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-/* 批量操作按钮组过渡动画 - 使用 width + flex 避免布局抖动 */
-.batch-actions {
-  flex-shrink: 0;
-  width: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
-  white-space: nowrap;
-}
-
-.batch-actions-visible {
-  width: auto;
-  opacity: 1;
 }
 
 .header-left h2 {
@@ -3227,9 +3128,14 @@ onBeforeUnmount(() => {
 .table-container {
   background: white;
   border-radius: 6px;
-  overflow: auto;
+  overflow: visible;
   padding-bottom: 20px;
   box-sizing: border-box;
+}
+
+.table-container :deep(.n-data-table-th) {
+  background: #fafafa;
+  font-weight: 600;
 }
 
 .install-step-scripts {
@@ -3291,7 +3197,7 @@ onBeforeUnmount(() => {
 
 .host-name {
   font-weight: 500;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .host-ip {
@@ -3299,7 +3205,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-family: 'Courier New', monospace;
 }
 
@@ -3312,11 +3218,11 @@ onBeforeUnmount(() => {
 }
 
 .host-ip-value {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .text-gray {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 /* 任务统计单元格 */
@@ -3328,7 +3234,7 @@ onBeforeUnmount(() => {
   .task-stats-text {
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-text-2);
+    color: var(--app-fg-secondary);
   }
 }
 
@@ -3374,7 +3280,7 @@ onBeforeUnmount(() => {
 .filter-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin: 0;
 }
 
@@ -3382,12 +3288,12 @@ onBeforeUnmount(() => {
   width: 100%;
   flex-basis: 100%;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border-2);
+  border-top: 1px solid var(--app-border);
 }
 
 .stats-text {
   font-size: 13px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-weight: 500;
 }
 
@@ -3421,5 +3327,34 @@ onBeforeUnmount(() => {
 
 :deep(.danger-option .arco-dropdown-option-content) {
   color: inherit;
+}
+
+.form-item-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+}
+
+.form-inline-action {
+  align-self: flex-start;
+}
+
+.form-help {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.switch-with-help {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.switch-with-help .form-help {
+  margin: 0;
 }
 </style>

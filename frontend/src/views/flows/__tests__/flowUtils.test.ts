@@ -10,10 +10,17 @@ import {
   buildStartInputs,
   canCancelFlowRun,
   canConfirmManualNodeRun,
+  canForceFailFlowNodeRun,
+  canRejectManualNodeRun,
   canRetryFlowNodeRun,
   canSkipFlowNodeRun,
   canStartFlow,
+  FLOW_SYSTEM_VARIABLE_HINTS,
   createsCycle,
+  listHookedOutputFields,
+  makeComponentOutputVariable,
+  serializeFlowVariables,
+  upsertFlowVariable,
   evaluateFlowGraph,
   filterFlowTemplates,
   flowNodeConfigDisplayRows,
@@ -267,6 +274,15 @@ describe('flow utils', () => {
     expect(canConfirmManualNodeRun(makeNodeRun({ node_type: 'manual', status: 'paused' }))).toBe(true)
     expect(canConfirmManualNodeRun(makeNodeRun({ node_type: 'manual', status: 'failed' }))).toBe(false)
     expect(canConfirmManualNodeRun(makeNodeRun({ node_type: 'script', status: 'paused' }))).toBe(false)
+    expect(canRejectManualNodeRun(makeNodeRun({ node_type: 'manual', status: 'paused' }))).toBe(true)
+    expect(canRejectManualNodeRun(makeNodeRun({ node_type: 'manual', status: 'success' }))).toBe(false)
+  })
+
+  it('allows force-fail only for running or paused non-manual node runs', () => {
+    expect(canForceFailFlowNodeRun(makeNodeRun({ node_type: 'script', status: 'running' }))).toBe(true)
+    expect(canForceFailFlowNodeRun(makeNodeRun({ node_type: 'script', status: 'paused' }))).toBe(true)
+    expect(canForceFailFlowNodeRun(makeNodeRun({ node_type: 'script', status: 'failed' }))).toBe(false)
+    expect(canForceFailFlowNodeRun(makeNodeRun({ node_type: 'manual', status: 'paused' }))).toBe(false)
   })
 
   it('allows cancel actions only for active flow runs', () => {
@@ -405,7 +421,7 @@ describe('flow utils', () => {
     }))
 
     expect(timeline.find(event => event.kind === 'manual_confirm')).toMatchObject({
-      title: '人工确认 人工确认',
+      title: '人工确认 审批通过',
       description: 'admin / checked',
       status: 'success',
     })
@@ -1041,5 +1057,45 @@ describe('flow utils', () => {
     expect(parseLooseValue('12')).toBe(12)
     expect(parseLooseValue('{"a":1}')).toEqual({ a: 1 })
     expect(parseLooseValue('prod')).toBe('prod')
+  })
+
+  it('exposes SOPS-like system variable hints and serializes select options', () => {
+    expect(FLOW_SYSTEM_VARIABLE_HINTS.map(item => item.key)).toEqual([
+      '_system.task_url',
+      '_system.task_start_time',
+      '_system.language',
+      '_system.bk_biz_id',
+      '_system.bk_biz_name',
+      '_system.operator',
+      '_system.executor',
+      '_system.task_id',
+      '_system.task_name',
+    ])
+    const hooked = makeComponentOutputVariable(
+      { uuid: 'script-1', name: '脚本', node_type: 'script' },
+      'success',
+      '是否成功',
+      'boolean',
+    )
+    expect(hooked.source_type).toBe('component_outputs')
+    expect(hooked.show_on_start).toBe(false)
+    expect(hooked.key).toContain('success')
+    const hookedVars = upsertFlowVariable({}, hooked)
+    expect(hookedVars[hooked.key].source_type).toBe('component_outputs')
+    expect(listHookedOutputFields(hookedVars, 'script-1')).toContain('success')
+    const selectVars = serializeFlowVariables([
+      {
+        key: 'Env',
+        name: '环境',
+        type: 'select',
+        widget: 'select',
+        required: true,
+        show_on_start: true,
+        options: ['prod', 'staging'],
+        default: 'prod',
+      },
+    ])
+    expect(selectVars.Env.type).toBe('select')
+    expect(selectVars.Env.options).toEqual(['prod', 'staging'])
   })
 })

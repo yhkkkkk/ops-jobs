@@ -1,97 +1,87 @@
 <template>
-  <a-modal
-    v-model:visible="modalVisible"
+  <n-modal
+    v-model:show="modalVisible"
+    preset="card"
     :title="modalTitle"
-    :width="500"
-    :footer="false"
+    :style="{ width: '500px' }"
     :mask-closable="false"
-    :esc-to-close="false"
+    :close-on-esc="false"
   >
-    <a-form
+    <n-form
       ref="formRef"
       :model="form"
       :rules="rules"
       layout="vertical"
     >
-      <a-form-item label="分组名称" field="name">
-        <a-input
-          v-model="form.name"
+      <n-form-item label="分组名称" path="name">
+        <n-input
+          v-model:value="form.name"
           placeholder="请输入分组名称"
-          allow-clear
+          clearable
         />
-      </a-form-item>
+      </n-form-item>
 
-      <a-form-item label="父分组" field="parent">
-        <a-select
-          v-model="form.parent"
+      <n-form-item label="父分组" path="parent">
+        <n-select
+          v-model:value="form.parent"
           placeholder="请选择父分组（可选）"
-          allow-clear
-          allow-search
+          clearable
+          filterable
           :loading="groupsLoading"
-        >
-          <a-option
-            v-for="group in availableParentGroups"
-            :key="group.id"
-            :value="group.id"
-            :label="group.full_path || group.name"
-            :disabled="group.id === currentGroupId"
-          >
-            <span :style="{ paddingLeft: (group.level || 0) * 20 + 'px' }">
-              {{ group.name }}
-            </span>
-          </a-option>
-        </a-select>
-      </a-form-item>
+        
+          :options="parentGroupOptions"
+        />
+      </n-form-item>
 
-      <a-form-item label="排序" field="sort_order">
-        <a-input-number
-          v-model="form.sort_order"
+      <n-form-item label="排序" path="sort_order">
+        <n-input-number
+          v-model:value="form.sort_order"
           :min="0"
           :max="9999"
           placeholder="0"
           style="width: 100%"
         />
         <div class="form-tip">
-          <icon-info-circle />
+          <Info  />
           <span>数字越小排序越靠前</span>
         </div>
-      </a-form-item>
+      </n-form-item>
 
-      <a-form-item label="描述" field="description">
-        <a-textarea
-          v-model="form.description"
+      <n-form-item label="描述" path="description">
+        <n-input type="textarea"
+          v-model:value="form.description"
           placeholder="请输入分组描述（可选）"
           :rows="3"
         />
-      </a-form-item>
+      </n-form-item>
 
       <!-- 自定义按钮 -->
-      <a-form-item>
+      <n-form-item>
         <div style="text-align: right; margin-top: 20px;">
-          <a-space>
-            <a-button @click="handleCancel">
+          <n-space>
+            <n-button @click="handleCancel">
               取消
-            </a-button>
-            <a-button
+            </n-button>
+            <n-button
               type="primary"
               @click="handleSubmit"
               :loading="loading"
             >
               保存
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
-      </a-form-item>
-    </a-form>
-  </a-modal>
+      </n-form-item>
+    </n-form>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { Message } from '@arco-design/web-vue'
-import { IconInfoCircle } from '@arco-design/web-vue/es/icon'
 import { hostGroupApi } from '@/api/ops'
 import type { HostGroup } from '@/types'
+import { NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSpace, type FormRules, useMessage } from 'naive-ui'
+import { Info } from 'lucide-vue-next'
 
 interface Props {
   visible: boolean
@@ -103,6 +93,8 @@ interface Emits {
   (e: 'update:visible', visible: boolean): void
   (e: 'success'): void
 }
+
+const message = useMessage()
 
 const props = withDefaults(defineProps<Props>(), {
   group: null,
@@ -125,11 +117,11 @@ const form = reactive({
 })
 
 // 表单验证规则
-const rules = {
+const rules: FormRules = {
   name: [
     { required: true, message: '请输入分组名称' },
-    { minLength: 2, message: '分组名称至少2个字符' },
-    { maxLength: 50, message: '分组名称最多50个字符' },
+    { min: 2, message: '分组名称至少2个字符' },
+    { max: 50, message: '分组名称最多50个字符' },
   ],
   sort_order: [
     { type: 'number', min: 0, max: 9999, message: '排序值范围：0-9999' },
@@ -232,10 +224,10 @@ const handleSubmit = async () => {
 
     if (isEdit.value) {
       await hostGroupApi.updateGroup(props.group!.id, data)
-      Message.success('分组更新成功')
+      message.success('分组更新成功')
     } else {
       await hostGroupApi.createGroup(data)
-      Message.success('分组创建成功')
+      message.success('分组创建成功')
     }
 
     emit('success')
@@ -246,7 +238,7 @@ const handleSubmit = async () => {
     if (error.response?.data?.message) {
       errorMessage += ': ' + error.response.data.message
     }
-    Message.error(errorMessage)
+    message.error(errorMessage)
   } finally {
     loading.value = false
   }
@@ -289,6 +281,14 @@ watch(
 onMounted(() => {
   fetchAllGroups()
 })
+
+const parentGroupOptions = computed(() =>
+  availableParentGroups.value.map((group: any) => ({
+    label: group.full_path || group.name,
+    value: group.id,
+    disabled: group.id === currentGroupId,
+  }))
+)
 </script>
 
 <style scoped>
@@ -300,7 +300,7 @@ onMounted(() => {
   color: #86909c;
 }
 
-.form-tip .arco-icon {
+.form-tip svg {
   margin-right: 4px;
 }
 </style>

@@ -8,8 +8,9 @@ export interface StartVariable {
   value: string
 }
 
-export type FlowVariableType = 'text' | 'number' | 'boolean' | 'secret' | 'host_list'
-export type FlowVariableWidget = 'input' | 'textarea' | 'password' | 'host_list'
+export type FlowVariableType = 'text' | 'number' | 'boolean' | 'secret' | 'host_list' | 'select'
+export type FlowVariableWidget = 'input' | 'textarea' | 'password' | 'host_list' | 'select' | 'switch'
+export type FlowVariableSourceType = 'custom' | 'component_inputs' | 'component_outputs' | 'system'
 
 export interface FlowVariableDefinition {
   key: string
@@ -20,10 +21,98 @@ export interface FlowVariableDefinition {
   has_default?: boolean
   required: boolean
   regex?: string
+  options?: string[]
   show_on_start: boolean
   placeholder?: string
   description?: string
+  source_type?: FlowVariableSourceType
+  source_tag?: string
+  source_info?: Record<string, string[]>
 }
+
+export const FLOW_EDGE_CONDITION_OPERATORS = [
+  { label: '等于', value: 'eq' },
+  { label: '不等于', value: 'ne' },
+  { label: '包含', value: 'contains' },
+  { label: '不包含', value: 'not_contains' },
+  { label: '大于', value: 'gt' },
+  { label: '大于等于', value: 'gte' },
+  { label: '小于', value: 'lt' },
+  { label: '小于等于', value: 'lte' },
+  { label: '为真', value: 'truthy' },
+  { label: '为假', value: 'falsy' },
+  { label: '为空', value: 'empty' },
+  { label: '不为空', value: 'not_empty' },
+] as const
+
+export const FLOW_NODE_OUTPUT_HOOKS: Record<string, Array<{ field: string; name: string; type?: FlowVariableType }>> = {
+  script: [
+    { field: 'success', name: '是否成功', type: 'boolean' },
+    { field: 'success_count', name: '成功主机数', type: 'number' },
+    { field: 'failed_count', name: '失败主机数', type: 'number' },
+  ],
+  file_transfer: [
+    { field: 'success', name: '是否成功', type: 'boolean' },
+    { field: 'transferred_count', name: '传输文件数', type: 'number' },
+    { field: 'failed_count', name: '失败数', type: 'number' },
+  ],
+  job_plan: [
+    { field: 'success', name: '是否成功', type: 'boolean' },
+    { field: 'execution_record_id', name: '执行记录 ID', type: 'number' },
+  ],
+  manual: [
+    { field: 'confirmed', name: '是否通过', type: 'boolean' },
+    { field: 'confirm_remark', name: '审批备注', type: 'text' },
+  ],
+  condition: [
+    { field: 'default_used', name: '是否走默认分支', type: 'boolean' },
+    { field: 'matched_count', name: '匹配分支数', type: 'number' },
+  ],
+  sub_process: [
+    { field: 'success', name: '子流程是否成功', type: 'boolean' },
+    { field: 'child_flow_run_id', name: '子任务 ID', type: 'number' },
+  ],
+}
+
+export const buildComponentOutputVariableKey = (nodeUuid: string, field: string) =>
+  `${String(nodeUuid || 'node').replace(/[^A-Za-z0-9_]/g, '_')}_${field}`
+
+export const makeComponentOutputVariable = (
+  node: Pick<FlowNode, 'uuid' | 'name' | 'node_type'>,
+  field: string,
+  name: string,
+  type: FlowVariableType = 'text',
+): FlowVariableDefinition => ({
+  key: buildComponentOutputVariableKey(node.uuid, field),
+  name: `${node.name || flowNodeTypeText(node.node_type)}.${name}`,
+  type,
+  widget: type === 'boolean' ? 'switch' : type === 'number' ? 'input' : 'input',
+  required: false,
+  show_on_start: false,
+  description: `来自节点输出 outputs.${node.uuid}.${field}`,
+  source_type: 'component_outputs',
+  source_tag: `${node.node_type}.${field}`,
+  source_info: { [node.uuid]: [field] },
+})
+
+export interface FlowSystemVariableHint {
+  key: string
+  name: string
+  description: string
+}
+
+/** 对齐蓝鲸标准运维 TaskContext.flat_details 顺序与命名。 */
+export const FLOW_SYSTEM_VARIABLE_HINTS: FlowSystemVariableHint[] = [
+  { key: '_system.task_url', name: '任务URL', description: '当前任务详情页地址' },
+  { key: '_system.task_start_time', name: '任务开始时间', description: '任务开始时间（本地时区格式）' },
+  { key: '_system.language', name: '执行环境语言CODE', description: '中文对应 zh-hans，英文对应 en' },
+  { key: '_system.bk_biz_id', name: '任务所属的CMDB业务ID', description: '未对接 CMDB 时为空' },
+  { key: '_system.bk_biz_name', name: '任务所属的CMDB业务名称', description: '未对接 CMDB 时为空' },
+  { key: '_system.operator', name: '任务的执行人（点击开始执行的人员）', description: '' },
+  { key: '_system.executor', name: '任务的执行代理人', description: '无代理人时与执行人相同' },
+  { key: '_system.task_id', name: '任务ID', description: '' },
+  { key: '_system.task_name', name: '任务名称', description: '' },
+]
 
 export interface BuildStartInputsParams {
   scope: PipelineScope | string
@@ -587,9 +676,24 @@ export const buildFlowRunTimeline = (run?: FlowRun | null, auditLogs: FlowAuditL
         key: `manual-confirm-${nodeRun.id}`,
         kind: 'manual_confirm',
         timestamp: String(nodeRun.outputs.confirmed_at),
-        title: `${nodeRun.node_name} 人工确认`,
+        title: `${nodeRun.node_name} 审批通过`,
         description: `${nodeRun.outputs.confirmed_by || '-'}${nodeRun.outputs.confirm_remark ? ` / ${nodeRun.outputs.confirm_remark}` : ''}`,
         status: 'success',
+        nodeRunId: nodeRun.id,
+        nodeUuid: nodeRun.node_uuid,
+        nodeName: nodeRun.node_name,
+        nodeType: nodeRun.node_type,
+      })
+    }
+
+    if (nodeRun.outputs?.rejected_at) {
+      addEvent({
+        key: `manual-reject-${nodeRun.id}`,
+        kind: 'manual_confirm',
+        timestamp: String(nodeRun.outputs.rejected_at),
+        title: `${nodeRun.node_name} 审批拒绝`,
+        description: `${nodeRun.outputs.rejected_by || '-'}${nodeRun.outputs.reject_remark ? ` / ${nodeRun.outputs.reject_remark}` : ''}`,
+        status: 'failed',
         nodeRunId: nodeRun.id,
         nodeUuid: nodeRun.node_uuid,
         nodeName: nodeRun.node_name,
@@ -758,12 +862,37 @@ export const parseLooseValue = (value: string) => {
 
 export const flowVariableReference = (key: string) => `\${${key}}`
 
+const normalizeOptions = (raw: any): string[] | undefined => {
+  if (Array.isArray(raw)) return raw.map(item => String(item)).filter(Boolean)
+  if (typeof raw === 'string') {
+    return raw.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+  }
+  return undefined
+}
+
 export const normalizeFlowVariables = (variables: Record<string, any> = {}): FlowVariableDefinition[] =>
   Object.entries(variables).map(([key, raw]) => {
     const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
     const rawType = String(value.type || 'text')
-    const type = (rawType === 'password' ? 'secret' : rawType) as FlowVariableType
-    const widget = (value.widget || (type === 'secret' ? 'password' : type === 'host_list' ? 'host_list' : 'input')) as FlowVariableWidget
+    const type = (
+      rawType === 'password' ? 'secret'
+        : rawType === 'enum' ? 'select'
+          : rawType
+    ) as FlowVariableType
+    const widget = (
+      value.widget
+      || (type === 'secret' ? 'password'
+        : type === 'host_list' ? 'host_list'
+          : type === 'select' ? 'select'
+            : type === 'boolean' ? 'switch'
+              : 'input')
+    ) as FlowVariableWidget
+    const showOnStart = value.show_type === 'hide'
+      ? false
+      : value.show_type === 'show'
+        ? true
+        : value.show_on_start !== false
+    const sourceType = (value.source_type || 'custom') as FlowVariableSourceType
     return {
       key,
       name: String(value.name || value.label || key),
@@ -773,9 +902,13 @@ export const normalizeFlowVariables = (variables: Record<string, any> = {}): Flo
       has_default: Boolean(value.has_default),
       required: Boolean(value.required),
       regex: value.regex ? String(value.regex) : undefined,
-      show_on_start: value.show_on_start !== false,
+      options: normalizeOptions(value.options),
+      show_on_start: showOnStart,
       placeholder: value.placeholder ? String(value.placeholder) : undefined,
       description: value.description ? String(value.description) : undefined,
+      source_type: sourceType,
+      source_tag: value.source_tag ? String(value.source_tag) : undefined,
+      source_info: value.source_info && typeof value.source_info === 'object' ? value.source_info : undefined,
     }
   })
 
@@ -791,12 +924,33 @@ export const serializeFlowVariables = (definitions: FlowVariableDefinition[] = [
       has_default: Boolean(item.has_default),
       required: Boolean(item.required),
       regex: item.regex || '',
+      options: item.type === 'select' ? (item.options || []) : undefined,
       show_on_start: item.show_on_start !== false,
+      show_type: item.show_on_start !== false ? 'show' : 'hide',
       placeholder: item.placeholder || '',
       description: item.description || '',
+      source_type: item.source_type || 'custom',
+      source_tag: item.source_tag || '',
+      source_info: item.source_info || {},
     }
     return acc
   }, {})
+
+export const upsertFlowVariable = (
+  variables: Record<string, any>,
+  definition: FlowVariableDefinition,
+) => serializeFlowVariables([
+  ...normalizeFlowVariables(variables).filter(item => item.key !== definition.key),
+  definition,
+])
+
+export const removeFlowVariable = (variables: Record<string, any>, key: string) =>
+  serializeFlowVariables(normalizeFlowVariables(variables).filter(item => item.key !== key))
+
+export const listHookedOutputFields = (variables: Record<string, any>, nodeUuid: string) =>
+  normalizeFlowVariables(variables)
+    .filter(item => item.source_type === 'component_outputs' && item.source_info?.[nodeUuid]?.length)
+    .flatMap(item => item.source_info?.[nodeUuid] || [])
 
 export const flowVariableSelectOptions = (definitions: FlowVariableDefinition[] = [], type?: FlowVariableType) =>
   definitions
@@ -809,6 +963,8 @@ export const flowVariableSelectOptions = (definitions: FlowVariableDefinition[] 
 
 const buildStandardVariableInputs = (definitions: FlowVariableDefinition[] = [], values: Record<string, any> = {}) =>
   definitions.reduce<Record<string, any>>((acc, item) => {
+    // component_outputs / system are filled by runner; do not ship empty start defaults.
+    if (item.source_type === 'component_outputs' || item.source_type === 'system') return acc
     const value = Object.prototype.hasOwnProperty.call(values, item.key) ? values[item.key] : item.default
     acc[item.key] = value
     return acc
@@ -851,8 +1007,15 @@ export const canSkipFlowNodeRun = (nodeRun?: Pick<FlowNodeRun, 'status'> | null)
 export const canRetryFlowNodeRun = (nodeRun?: Pick<FlowNodeRun, 'status'> | null) =>
   nodeRun?.status === 'failed' || nodeRun?.status === 'paused'
 
+export const canForceFailFlowNodeRun = (nodeRun?: Pick<FlowNodeRun, 'node_type' | 'status'> | null) =>
+  Boolean(nodeRun) &&
+  nodeRun!.node_type !== 'manual' &&
+  (nodeRun!.status === 'running' || nodeRun!.status === 'paused')
+
 export const canConfirmManualNodeRun = (nodeRun?: Pick<FlowNodeRun, 'node_type' | 'status'> | null) =>
   nodeRun?.node_type === 'manual' && nodeRun.status === 'paused'
+
+export const canRejectManualNodeRun = canConfirmManualNodeRun
 
 export const canCancelFlowRun = (run?: Pick<FlowRun, 'status'> | null) =>
   run?.status === 'pending' || run?.status === 'running' || run?.status === 'paused'

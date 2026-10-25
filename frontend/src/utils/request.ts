@@ -1,5 +1,5 @@
 import axios, { getAdapter, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
-import { Message } from '@arco-design/web-vue'
+import { message } from '@/utils/naiveFeedback'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiResponse } from '@/types'
 import { API_BASE_URL, MOCK_API_ENABLED, MOCK_API_STRICT, MOCK_LATENCY_MS } from '@/utils/env'
@@ -22,9 +22,9 @@ const showUniqueErrorMessage = (message: string, type: 'error' | 'warning' = 'er
   if (!currentErrorMessages.has(message)) {
     currentErrorMessages.add(message)
     if (type === 'error') {
-      Message.error(message)
+      message.error(message)
     } else {
-      Message.warning(message)
+      message.warning(message)
     }
     clearErrorMessage(message)
   }

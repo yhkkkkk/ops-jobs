@@ -4,12 +4,12 @@
     <div v-if="showValidationPanel && validationResults.length > 0" class="validation-panel">
       <div class="validation-header">
         <span class="validation-title">
-          <icon-exclamation-circle />
+          <AlertTriangle :size="14" />
           脚本验证结果
         </span>
-        <a-button type="text" size="small" @click="showValidationPanel = false">
-          <icon-close />
-        </a-button>
+        <n-button quaternary circle size="tiny" @click="showValidationPanel = false">
+          <X :size="14" />
+        </n-button>
       </div>
       <div class="validation-content">
         <div
@@ -20,14 +20,15 @@
           @click="goToLine(result.line)"
         >
           <div class="validation-message">
-            <component 
-              :is="getSeverityIcon(result.severity)" 
+            <component
+              :is="getSeverityIcon(result.severity)"
+              :size="14"
               :class="`validation-icon-${result.severity}`"
             />
             <span class="message-text">{{ result.message }}</span>
           </div>
           <div v-if="result.suggestion" class="validation-suggestion">
-            <icon-bulb />
+            <Lightbulb :size="12" class="suggestion-icon" />
             {{ result.suggestion }}
           </div>
           <div class="validation-location">
@@ -49,22 +50,21 @@
         :options="editorOptions"
         @change="(value: string) => scriptContent = value"
       />
-      
+
       <!-- 验证状态指示器 -->
       <div v-if="validationResults.length > 0" class="validation-indicator">
-        <a-badge 
-          :count="validationResults.length" 
-          :number-style="{ backgroundColor: getValidationColor() }"
-        >
-          <a-button 
-            type="primary" 
-            size="small" 
+        <n-badge :value="validationResults.length" :color="getValidationColor()">
+          <n-button
+            type="primary"
+            size="small"
             @click="showValidationPanel = !showValidationPanel"
           >
-            <icon-exclamation-circle />
+            <template #icon>
+              <AlertTriangle :size="14" />
+            </template>
             验证结果
-          </a-button>
-        </a-badge>
+          </n-button>
+        </n-badge>
       </div>
     </div>
   </div>
@@ -73,6 +73,8 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import type * as monaco from 'monaco-editor'
+import { NBadge, NButton } from 'naive-ui'
+import { AlertTriangle, CircleHelp, CircleX, Info, Lightbulb, X } from 'lucide-vue-next'
 import MonacoEditor from './MonacoEditor.vue'
 import { validateScript, type ScriptValidationResult } from '@/utils/scriptValidator'
 
@@ -107,7 +109,7 @@ const editorRef = ref()
 const scriptContent = ref(props.modelValue)
 const validationResults = ref<ScriptValidationResult[]>([])
 const showValidationPanel = ref(false)
-const validationTimer = ref<NodeJS.Timeout | null>(null)
+const validationTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 // 编辑器选项
 const editorOptions = computed<monaco.editor.IStandaloneEditorConstructionOptions>(() => ({
@@ -136,7 +138,7 @@ watch(() => props.modelValue, (newValue) => {
 watch(scriptContent, (newValue) => {
   emit('update:modelValue', newValue)
   emit('change', newValue)
-  
+
   if (props.autoValidate) {
     validateScriptContent(newValue)
   }
@@ -155,7 +157,7 @@ const validateScriptContent = (content: string) => {
       const results = validateScript(content, props.language)
       validationResults.value = results
       emit('validation-change', results)
-      
+
       // 如果有错误，自动显示验证面板
       if (results.some(r => r.severity === 'error')) {
         showValidationPanel.value = true
@@ -182,13 +184,13 @@ const goToLine = (lineNumber: number) => {
 const getSeverityIcon = (severity: string) => {
   switch (severity) {
     case 'error':
-      return 'icon-close-circle'
+      return CircleX
     case 'warning':
-      return 'icon-exclamation-circle'
+      return AlertTriangle
     case 'info':
-      return 'icon-info-circle'
+      return Info
     default:
-      return 'icon-question-circle'
+      return CircleHelp
   }
 }
 
@@ -196,10 +198,10 @@ const getSeverityIcon = (severity: string) => {
 const getValidationColor = () => {
   const hasErrors = validationResults.value.some(r => r.severity === 'error')
   const hasWarnings = validationResults.value.some(r => r.severity === 'warning')
-  
-  if (hasErrors) return '#ff4d4f'
-  if (hasWarnings) return '#faad14'
-  return '#52c41a'
+
+  if (hasErrors) return '#dc2626'
+  if (hasWarnings) return '#d97706'
+  return '#16a34a'
 }
 
 // 手动触发验证
@@ -242,10 +244,10 @@ onUnmounted(() => {
   right: 0;
   width: 400px;
   max-height: 300px;
-  background: white;
-  border: 1px solid #d9d9d9;
+  background: var(--app-surface, #fff);
+  border: 1px solid var(--app-border, #e5e7eb);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--app-shadow-md, 0 4px 12px rgba(0, 0, 0, 0.15));
   z-index: 1000;
   overflow: hidden;
 }
@@ -255,13 +257,16 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: #fafafa;
-  border-bottom: 1px solid #d9d9d9;
+  background: var(--app-surface-soft, #fafafa);
+  border-bottom: 1px solid var(--app-border, #d9d9d9);
 }
 
 .validation-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 500;
-  color: #262626;
+  color: var(--app-fg, #262626);
 }
 
 .validation-content {
@@ -271,13 +276,13 @@ onUnmounted(() => {
 
 .validation-item {
   padding: 8px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--app-border-soft, #f0f0f0);
   cursor: pointer;
   transition: background-color 0.2s;
 }
 
 .validation-item:hover {
-  background-color: #f5f5f5;
+  background-color: var(--app-surface-soft, #f5f5f5);
 }
 
 .validation-item:last-child {
@@ -291,21 +296,24 @@ onUnmounted(() => {
 }
 
 .validation-icon-error {
-  color: #ff4d4f;
+  color: #dc2626;
   margin-right: 6px;
   margin-top: 2px;
+  flex: 0 0 auto;
 }
 
 .validation-icon-warning {
-  color: #faad14;
+  color: #d97706;
   margin-right: 6px;
   margin-top: 2px;
+  flex: 0 0 auto;
 }
 
 .validation-icon-info {
-  color: #1890ff;
+  color: #2f6feb;
   margin-right: 6px;
   margin-top: 2px;
+  flex: 0 0 auto;
 }
 
 .message-text {
@@ -319,21 +327,22 @@ onUnmounted(() => {
   align-items: flex-start;
   margin: 4px 0;
   padding: 6px 8px;
-  background: #f6ffed;
+  background: var(--app-success-soft, #f6ffed);
   border: 1px solid #b7eb8f;
   border-radius: 4px;
   font-size: 12px;
-  color: #52c41a;
+  color: #16a34a;
 }
 
-.validation-suggestion .arco-icon {
+.suggestion-icon {
   margin-right: 4px;
   margin-top: 1px;
+  flex: 0 0 auto;
 }
 
 .validation-location {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--app-meta, #8c8c8c);
   margin-top: 2px;
 }
 
@@ -350,14 +359,14 @@ onUnmounted(() => {
 }
 
 .validation-error {
-  border-left: 3px solid #ff4d4f;
+  border-left: 3px solid #dc2626;
 }
 
 .validation-warning {
-  border-left: 3px solid #faad14;
+  border-left: 3px solid #d97706;
 }
 
 .validation-info {
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid #2f6feb;
 }
 </style>

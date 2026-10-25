@@ -15,7 +15,7 @@ describe('flow entry workbench', () => {
       expect(page).toContain('<PageHeader')
       expect(page).toContain('<DataToolbar')
       expect(page).toContain('<DetailPanel')
-      expect(page).toContain('<a-table')
+      expect(page).toContain('<n-data-table')
     }
     expect(templates).toContain('流水线任务')
     expect(tasks).toContain('流程模板')

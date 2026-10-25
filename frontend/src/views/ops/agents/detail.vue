@@ -1,91 +1,85 @@
 <template>
   <div class="agent-detail">
     <div class="page-header">
-      <a-breadcrumb>
-        <a-breadcrumb-item @click="goBack">Agent 管理</a-breadcrumb-item>
-        <a-breadcrumb-item>Agent 详情</a-breadcrumb-item>
-      </a-breadcrumb>
-
       <div class="header-actions">
-        <a-space>
-          <a-button @click="goBack">
+        <n-space>
+          <n-button @click="goBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
-          <a-button v-if="agentDetail" @click="handleEditAgentServer">
+          </n-button>
+          <n-button v-if="agentDetail" @click="handleEditAgentServer">
             <template #icon>
-              <icon-edit />
+              <Pencil  />
             </template>
             编辑
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             type="primary"
             @click="handleIssueToken"
           >
             <template #icon>
-              <icon-key />
+              <Key />
             </template>
             签发 Token
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-if="agentDetail && (agentDetail.computed_status || agentDetail.status) !== 'disabled'"
-            status="warning"
+           type="warning"
             @click="handleDisable"
           >
             <template #icon>
-              <icon-close-circle />
+              <CircleX  />
             </template>
             禁用
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-else-if="agentDetail"
-            status="success"
+           type="success"
             @click="handleEnable"
           >
             <template #icon>
-              <icon-check-circle />
+              <CircleCheck  />
             </template>
             启用
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
     </div>
 
     <div v-if="agentDetail" class="agent-detail-content">
       <!-- Agent 基本信息 -->
-      <a-card class="mb-4">
-        <template #title>Agent 基本信息</template>
+      <n-card class="mb-4">
+        <template #header>Agent 基本信息</template>
         <div class="info-grid">
           <div class="info-item">
             <span class="label">状态：</span>
-            <span class="value">
-            <a-tag :color="getStatusColor(agentDetail.computed_status || agentDetail.status)">
+            <span class="value"><n-tag :type="getStatusColor(agentDetail.computed_status || agentDetail.status) as any">
                 {{ agentDetail.computed_status_display || agentDetail.status_display }}
-              </a-tag>
+              </n-tag>
             </span>
           </div>
           <div class="info-item">
             <span class="label">版本：</span>
             <span class="value">
-              <a-space>
+              <n-space>
                 <span>{{ agentDetail.version || '-' }}</span>
-                <a-tooltip
+                <n-tooltip
                   v-if="agentDetail.is_version_outdated && agentDetail.version"
                   :content="getVersionTooltip(agentDetail)"
                 >
-                  <a-tag color="red" size="small">
+                  <n-tag type="error" size="small">
                     版本落后
-                  </a-tag>
-                </a-tooltip>
-              </a-space>
+                  </n-tag>
+                </n-tooltip>
+              </n-space>
             </span>
           </div>
           <div class="info-item">
             <span class="label">类型：</span>
             <span class="value">
-              <a-tag color="purple">{{ agentDetail.agent_type_display || agentDetail.agent_type || '-' }}</a-tag>
+              <n-tag type="info">{{ agentDetail.agent_type_display || agentDetail.agent_type || '-' }}</n-tag>
             </span>
           </div>
           <div class="info-item">
@@ -105,9 +99,9 @@
           <div class="info-item">
             <span class="label">最近错误码：</span>
             <span class="value">
-              <a-tag v-if="agentDetail.last_error_code" color="red" size="small">
+              <n-tag v-if="agentDetail.last_error_code" type="error" size="small">
                 {{ agentDetail.last_error_code }}
-              </a-tag>
+              </n-tag>
               <span v-else>-</span>
             </span>
           </div>
@@ -120,11 +114,11 @@
             <span class="value">{{ formatTime(agentDetail.updated_at) }}</span>
           </div>
         </div>
-      </a-card>
+      </n-card>
 
       <!-- 关联主机信息 -->
-      <a-card class="mb-4">
-        <template #title>关联主机信息</template>
+      <n-card class="mb-4">
+        <template #header>关联主机信息</template>
         <div class="info-grid">
           <div class="info-item">
             <span class="label">主机名称：</span>
@@ -141,20 +135,20 @@
           <div class="info-item">
             <span class="label">操作系统：</span>
             <span class="value">
-              <a-tag color="blue">{{ agentDetail.host.os_type_display }}</a-tag>
+              <n-tag type="info">{{ agentDetail.host.os_type_display }}</n-tag>
             </span>
           </div>
           <div class="info-item" v-if="agentDetail.host.tags && agentDetail.host.tags.length">
             <span class="label">标签：</span>
             <span class="value">
-              <a-space wrap>
-                <a-tag
+              <n-space wrap>
+                <n-tag
                   v-for="tag in agentDetail.host.tags"
                   :key="typeof tag === 'object' ? `${tag.key || ''}-${tag.value || ''}` : String(tag)"
                 >
                   {{ tag.key ? (tag.value ? `${tag.key}=${tag.value}` : tag.key) : tag }}
-                </a-tag>
-              </a-space>
+                </n-tag>
+              </n-space>
             </span>
           </div>
           <div class="info-item" v-if="agentDetail.host.service_role">
@@ -162,150 +156,116 @@
             <span class="value">{{ agentDetail.host.service_role }}</span>
           </div>
         </div>
-      </a-card>
+      </n-card>
 
       <!-- Token 历史 -->
-      <a-card class="mb-4">
-        <template #title>Token 历史</template>
-        <a-table
+      <n-card class="mb-4">
+        <template #header>Token 历史</template>
+        <n-data-table
           :columns="tokenColumns"
           :data="agentDetail.tokens || []"
           :pagination="false"
-        >
-          <template #token_last4="{ record }">
-            <span v-if="record.token_last4">****{{ record.token_last4 }}</span>
-            <span v-else>-</span>
-          </template>
-          <template #status="{ record }">
-            <a-tag
-              :color="record.revoked_at ? 'red' : (record.expired_at && new Date(record.expired_at) < new Date() ? 'orange' : 'green')"
-              size="small"
-            >
-              {{ record.revoked_at ? '已吊销' : (record.expired_at && new Date(record.expired_at) < new Date() ? '已过期' : '有效') }}
-            </a-tag>
-          </template>
-          <template #actions="{ record }">
-            <a-button
-              v-if="!record.revoked_at && (!record.expired_at || new Date(record.expired_at) > new Date())"
-              type="text"
-              status="danger"
-              size="small"
-              @click="handleRevokeToken(record)"
-            >
-              <template #icon>
-                <icon-close />
-              </template>
-              吊销
-            </a-button>
-          </template>
-        </a-table>
-      </a-card>
+        />
+      </n-card>
 
       <!-- 任务执行统计 -->
-      <a-card v-if="agentDetail.task_stats" class="mb-4">
+      <n-card v-if="agentDetail.task_stats" class="mb-4">
         <AgentTaskStatsCard :stats="agentDetail.task_stats" />
-      </a-card>
-      <a-card v-else class="mb-4">
-        <a-empty description="暂无任务统计">
-          <template #image>
-            <icon-chart-pie />
+      </n-card>
+      <n-card v-else class="mb-4">
+        <n-empty description="暂无任务统计">
+          <template #icon>
+            <PieChart  />
           </template>
-        </a-empty>
-      </a-card>
+        </n-empty>
+      </n-card>
     </div>
 
     <!-- 发 Token 弹窗 -->
-    <a-modal
-      v-model:visible="tokenModalVisible"
+    <n-modal
+      preset="card"
+      v-model:show="tokenModalVisible"
       title="签发 Agent Token"
-      @ok="handleIssueTokenConfirm"
-      @cancel="handleTokenModalCancel"
+      style="width: 480px"
     >
-      <a-form :model="tokenForm" ref="tokenFormRef">
-        <a-form-item
+      <n-form :model="tokenForm" ref="tokenFormRef">
+        <n-form-item
           label="过期时间"
-          field="expired_at"
+          path="expired_at"
         >
-          <a-date-picker
-            v-model="tokenForm.expired_at"
-            show-time
-            format="YYYY-MM-DD HH:mm:ss"
+          <n-date-picker
+            v-model:value="tokenForm.expired_at"
+            type="datetime"
+            clearable
             style="width: 100%"
           />
-        </a-form-item>
-        <a-form-item
+        </n-form-item>
+        <n-form-item
           label="备注"
-          field="note"
+          path="note"
         >
-          <a-textarea
-            v-model="tokenForm.note"
+          <n-input type="textarea"
+            v-model:value="tokenForm.note"
             placeholder="请输入备注"
             :max-length="255"
-            :auto-size="{ minRows: 2, maxRows: 4 }"
+            :autosize="{ minRows: 2, maxRows: 4 }"
           />
-        </a-form-item>
-        <a-form-item
+        </n-form-item>
+        <n-form-item
           label="二次确认"
-          field="confirmed"
+          path="confirmed"
         >
-          <a-checkbox v-model="tokenForm.confirmed">
+          <n-checkbox v-model:checked="tokenForm.confirmed">
             我已确认此操作（高危操作）
-          </a-checkbox>
-        </a-form-item>
-      </a-form>
+          </n-checkbox>
+        </n-form-item>
+      </n-form>
       <template #footer>
-        <a-space>
-          <a-button @click="handleTokenModalCancel">取消</a-button>
-          <a-button type="primary" @click="handleIssueTokenConfirm" :disabled="!tokenForm.confirmed">
+        <n-space justify="end">
+          <n-button @click="handleTokenModalCancel">取消</n-button>
+          <n-button type="primary" @click="handleIssueTokenConfirm" :disabled="!tokenForm.confirmed">
             确认签发
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
-    </a-modal>
+    </n-modal>
 
     <!-- 编辑 Agent 关联的 Agent-Server -->
-    <a-modal
-      v-model:visible="agentServerEditVisible"
+    <n-modal preset="card"
+      v-model:show="agentServerEditVisible"
       title="编辑 Agent"
       @ok="handleAgentServerEditConfirm"
       @cancel="handleAgentServerEditCancel"
     >
-      <a-alert type="info" show-icon style="margin-bottom: 12px;">
+      <n-alert type="info" show-icon style="margin-bottom: 12px;">
         仅更新控制面记录，不会自动下发/重装
-      </a-alert>
-      <a-form :model="agentServerEditForm" layout="vertical">
-        <a-form-item label="关联 Agent-Server">
-          <a-select
-            v-model="agentServerEditForm.agent_server_id"
+      </n-alert>
+      <n-form :model="agentServerEditForm" layout="vertical">
+        <n-form-item label="关联 Agent-Server">
+          <n-select
+            v-model:value="agentServerEditForm.agent_server_id"
             placeholder="请选择 Agent-Server"
-            allow-clear
-            allow-search
-            :filter-option="filterAgentServerOption"
-          >
-            <a-option
-              v-for="server in agentServers"
-              :key="server.id"
-              :value="server.id"
-              :label="formatAgentServerLabel(server)"
-            >
-              {{ formatAgentServerLabel(server) }}
-            </a-option>
-          </a-select>
+            clearable
+            filterable
+            :filter-option="filterAgentServerOption" :options="(agentServers || []).map((server: any) => ({ label: formatAgentServerLabel(server), value: String(server.id) }))" />
           <div class="form-help">留空表示解除绑定（仅控制面记录）</div>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+        </n-form-item>
+      </n-form>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { agentsApi, agentServerApi, type AgentDetail, type AgentToken, type AgentServer } from '@/api/agents'
 import AgentTaskStatsCard from './components/AgentTaskStatsCard.vue'
 import dayjs from 'dayjs'
+import { NAlert, NButton, NCard, NCheckbox, NDataTable, NDatePicker, NEmpty, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NTag, NTooltip, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { ChevronLeft, CircleCheck, CircleX, Copy, Key, Pencil, PieChart, X } from 'lucide-vue-next'
 
+const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 const route = useRoute()
 
@@ -329,51 +289,40 @@ const tokenForm = reactive({
 })
 
 // Token 表格列
-const tokenColumns = [
+const tokenColumns: DataTableColumns<any> = [
   {
     title: 'Token 标识',
-    dataIndex: 'token_last4',
-    slotName: 'token_last4',
-    width: 120
+    key: 'token_last4',
+    width: 120,
+    render: (row) => (row.token_last4 ? `****${row.token_last4}` : '-'),
   },
-  {
-    title: '签发人',
-    dataIndex: 'issued_by_name',
-    width: 120
-  },
-  {
-    title: '签发时间',
-    dataIndex: 'created_at',
-    width: 180,
-    render: ({ record }: any) => {
-      return dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')
-    }
-  },
-  {
-    title: '过期时间',
-    dataIndex: 'expired_at',
-    width: 180,
-    render: ({ record }: any) => {
-      return record.expired_at ? dayjs(record.expired_at).format('YYYY-MM-DD HH:mm:ss') : '-'
-    }
-  },
+  { title: '签发人', key: 'issued_by_name', width: 120, render: (row) => row.issued_by_name },
+  { title: '签发时间', key: 'created_at', width: 180, render: (row) => formatTime(row.created_at) },
   {
     title: '状态',
-    dataIndex: 'status',
-    slotName: 'status',
-    width: 100
-  },
-  {
-    title: '备注',
-    dataIndex: 'note',
-    width: 150
+    key: 'status',
+    width: 100,
+    render: (row) => {
+      const expired = row.expired_at && new Date(row.expired_at) < new Date()
+      const type = row.revoked_at ? 'error' : expired ? 'warning' : 'success'
+      const text = row.revoked_at ? '已吊销' : expired ? '已过期' : '有效'
+      return h(NTag, { type, size: 'small' }, { default: () => text })
+    },
   },
   {
     title: '操作',
-    slotName: 'actions',
+    key: 'actions',
     width: 100,
-    fixed: 'right'
-  }
+    render: (row) => {
+      const active = !row.revoked_at && (!row.expired_at || new Date(row.expired_at) > new Date())
+      return active
+        ? h(NButton, { text: true, type: 'error', size: 'small', onClick: () => handleRevokeToken(row) }, {
+            icon: () => h(X, { size: 14 }),
+            default: () => '吊销',
+          })
+        : h('span', '-')
+    },
+  },
 ]
 
 // 获取状态颜色
@@ -422,7 +371,7 @@ const fetchAgentServers = async () => {
     agentServers.value = response.results || []
   } catch (error: any) {
     console.error('获取 Agent-Server 列表失败:', error)
-    Message.error(error?.message || '获取 Agent-Server 列表失败')
+    message.error(error?.message || '获取 Agent-Server 列表失败')
     agentServers.value = []
   }
 }
@@ -431,7 +380,7 @@ const fetchAgentServers = async () => {
 const fetchAgentDetail = async () => {
   const id = Number(route.params.id)
   if (!id) {
-    Message.error('无效的 Agent ID')
+    message.error('无效的 Agent ID')
     router.back()
     return
   }
@@ -442,7 +391,7 @@ const fetchAgentDetail = async () => {
     agentDetail.value = result
   } catch (error: any) {
     console.error('获取 Agent 详情失败:', error)
-    Message.error(error.message || '获取 Agent 详情失败')
+    message.error(error.message || '获取 Agent 详情失败')
     router.back()
   } finally {
     loading.value = false
@@ -465,7 +414,7 @@ const handleIssueToken = () => {
 // 确认发 Token
 const handleIssueTokenConfirm = async () => {
   if (!tokenForm.confirmed) {
-    Message.warning('请先确认此操作')
+    message.warning('请先确认此操作')
     return
   }
   if (!agentDetail.value) return
@@ -482,19 +431,61 @@ const handleIssueTokenConfirm = async () => {
     }
 
     const result = await agentsApi.issueToken(agentDetail.value.id, params)
-    Message.success('Token 签发成功')
-    // 显示 Token（仅此一次）
-    Modal.info({
-      title: 'Token 签发成功',
-      content: `Token: ${result.token}\n\n请妥善保管，此 Token 仅显示一次！`,
-      okText: '我已保存'
-    })
+    message.success('Token 签发成功')
     tokenModalVisible.value = false
+    showIssuedTokenDialog(result?.token || '')
     fetchAgentDetail()
   } catch (error: any) {
     console.error('Token 签发失败:', error)
-    Message.error(error.message || 'Token 签发失败')
+    message.error(error.message || 'Token 签发失败')
   }
+}
+
+const copyText = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    message.success('已复制到剪贴板')
+  }).catch(() => {
+    message.error('复制失败')
+  })
+}
+
+/** One-time token dialog with copy */
+const showIssuedTokenDialog = (token: string) => {
+  const tokenText = token || ''
+  if (!tokenText) {
+    message.warning('未返回 Token，请检查接口响应')
+    return
+  }
+  dialog.create({
+    title: 'Token 签发成功',
+    content: () =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:12px;' }, [
+        h(NAlert, { type: 'warning', bordered: false }, {
+          default: () => '此 Token 仅显示一次，请立即复制并妥善保管。',
+        }),
+        h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, [
+          h(NInput, {
+            value: tokenText,
+            readonly: true,
+            type: 'textarea',
+            autosize: { minRows: 2, maxRows: 4 },
+            style: 'flex:1;',
+          }),
+          h(
+            NButton,
+            {
+              type: 'primary',
+              onClick: () => copyText(tokenText),
+            },
+            {
+              icon: () => h(Copy, { size: 14 }),
+              default: () => '复制',
+            },
+          ),
+        ]),
+      ]),
+    positiveText: '我已保存',
+  })
 }
 
 // 取消发 Token
@@ -522,33 +513,33 @@ const handleAgentServerEditConfirm = async () => {
     await agentsApi.updateAgentServer(agentDetail.value.id, {
       agent_server_id: agentServerEditForm.agent_server_id
     })
-    Message.success('更新 Agent 成功')
+    message.success('更新 Agent 成功')
     agentServerEditVisible.value = false
     fetchAgentDetail()
   } catch (error: any) {
     console.error('更新 Agent 失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '更新 Agent 失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   }
 }
 
 // 禁用 Agent
 const handleDisable = () => {
   if (!agentDetail.value) return
-  Modal.confirm({
+  dialog.warning({
     title: '确认禁用',
     content: `确定要禁用 Agent (${agentDetail.value.host.name}) 吗？`,
-    okText: '确认禁用',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确认禁用',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await agentsApi.disableAgent(agentDetail.value!.id, { confirmed: true })
-        Message.success('禁用成功')
+        message.success('禁用成功')
         fetchAgentDetail()
       } catch (error: any) {
         console.error('禁用失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '禁用失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -559,32 +550,32 @@ const handleEnable = async () => {
   if (!agentDetail.value) return
   try {
     await agentsApi.enableAgent(agentDetail.value.id)
-    Message.success('启用成功')
+    message.success('启用成功')
     fetchAgentDetail()
   } catch (error: any) {
     console.error('启用失败:', error)
     const errorMsg = error?.response?.data?.message || error?.message || '启用失败'
-    Message.error(errorMsg)
+    message.error(errorMsg)
   }
 }
 
 // 吊销 Token
 const handleRevokeToken = (token: AgentToken) => {
   if (!agentDetail.value) return
-  Modal.confirm({
+  dialog.warning({
     title: '确认吊销',
     content: '确定要吊销此 Token 吗？',
-    okText: '确认吊销',
-    cancelText: '取消',
-    onOk: async () => {
+    positiveText: '确认吊销',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await agentsApi.revokeToken(agentDetail.value!.id, { confirmed: true })
-        Message.success('吊销成功')
+        message.success('吊销成功')
         fetchAgentDetail()
       } catch (error: any) {
         console.error('吊销失败:', error)
         const errorMsg = error?.response?.data?.message || error?.message || '吊销失败'
-        Message.error(errorMsg)
+        message.error(errorMsg)
       }
     }
   })
@@ -600,7 +591,7 @@ onMounted(() => {
 <style scoped>
 .agent-detail .page-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 16px;
 }

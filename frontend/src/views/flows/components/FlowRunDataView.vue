@@ -1,8 +1,8 @@
 <template>
   <div class="flow-run-data-view">
-    <a-tabs size="small">
-      <a-tab-pane key="fields" title="字段">
-        <a-empty v-if="rows.length === 0" :description="emptyText" />
+    <n-tabs size="small">
+      <n-tab-pane name="fields" tab="字段">
+        <n-empty v-if="rows.length === 0" :description="emptyText" />
         <div v-else class="run-data-fields">
           <div v-for="(row, index) in rows" :key="`${row.key}-${index}`" class="run-data-row">
             <span>{{ row.key }}</span>
@@ -10,17 +10,18 @@
             <strong v-else>{{ row.value }}</strong>
           </div>
         </div>
-      </a-tab-pane>
-      <a-tab-pane key="json" title="JSON">
+      </n-tab-pane>
+      <n-tab-pane name="json" tab="JSON">
         <pre class="run-data-json">{{ formattedJson }}</pre>
-      </a-tab-pane>
-    </a-tabs>
+      </n-tab-pane>
+    </n-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { flowRunDisplayRows, formatFlowRunDisplayJson } from '../flowUtils'
+import { NEmpty, NTabPane, NTabs } from 'naive-ui'
 
 const props = withDefaults(defineProps<{
   value?: Record<string, any>

@@ -1,11 +1,19 @@
 <template>
   <div id="app">
-    <router-view />
+    <n-config-provider :theme-overrides="platformThemeOverrides">
+      <n-message-provider>
+        <n-notification-provider>
+          <n-dialog-provider>
+            <router-view />
+          </n-dialog-provider>
+        </n-notification-provider>
+      </n-message-provider>
+    </n-config-provider>
   </div>
 </template>
 
 <script setup lang="ts">
-// 根组件，只负责渲染路由视图
+import { platformThemeOverrides } from './components/ui/theme'
 </script>
 
 <style>

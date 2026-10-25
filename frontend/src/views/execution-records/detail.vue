@@ -8,82 +8,80 @@
     }"
   >
     <!-- 基本信息 -->
-    <a-card class="info-card" title="执行信息">
-      <template #extra>
-        <a-space>
-          <a-button @click="goBack">
-            <template #icon><icon-arrow-left /></template>
+    <n-card class="info-card" title="执行信息">
+      <template #footer>
+        <n-space>
+          <n-button @click="goBack">
+            <template #icon><ChevronLeft /></template>
             返回
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.related_object_info?.type === 'executionplan'"
-            type="outline"
+            secondary
             @click="goPlanDetail(executionInfo.related_object_info.id)"
           >
             查看执行方案
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-if="executionInfo.status === 'failed'"
             type="primary"
             v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleRetry"
           >
-            <template #icon><icon-refresh /></template>
+            <template #icon><RefreshCw  /></template>
             重试
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-if="executionInfo.status === 'success' || executionInfo.status === 'cancelled'"
             type="primary"
             v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleRetry"
           >
-            <template #icon><icon-refresh /></template>
+            <template #icon><RefreshCw  /></template>
             重做
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-if="executionInfo.status === 'running'"
-            status="danger"
+           type="error"
             v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: executionInfo.id }"
             @click="handleCancel"
           >
-            <template #icon><icon-close /></template>
+            <template #icon><X  /></template>
             取消执行
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
-      <a-descriptions :column="2" bordered>
-        <a-descriptions-item label="执行名称">
+      <n-descriptions :column="2" bordered>
+        <n-descriptions-item label="执行名称">
           {{ displayName || '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="执行ID">
-          <a-typography-text copyable>{{ executionInfo.execution_id || '-' }}</a-typography-text>
-        </a-descriptions-item>
-        <a-descriptions-item label="执行类型">
-          <a-tag :color="getExecutionTypeColor(executionInfo.execution_type)">
+        </n-descriptions-item>
+        <n-descriptions-item label="执行ID">
+          <n-text copyable>{{ executionInfo.execution_id || '-' }}</n-text>
+        </n-descriptions-item>
+        <n-descriptions-item label="执行类型"><n-tag :type="getExecutionTypeColor(executionInfo.execution_type) as any">
             {{ getExecutionTypeText(executionInfo.execution_type) }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="执行状态">
-          <a-tag :color="getStatusColor(executionInfo.status)">
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="执行状态"><n-tag :type="getStatusColor(executionInfo.status) as any">
             <template #icon>
               <component :is="getStatusIcon(executionInfo.status)" />
             </template>
             {{ getStatusText(executionInfo.status) }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="执行用户">
+          </n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item label="执行用户">
           {{ executionInfo.executed_by_name || '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="创建时间">
+        </n-descriptions-item>
+        <n-descriptions-item label="创建时间">
           {{ formatDateTime(executionInfo.created_at) }}
-        </a-descriptions-item>
-        <a-descriptions-item label="开始时间">
+        </n-descriptions-item>
+        <n-descriptions-item label="开始时间">
           {{ formatDateTime(executionInfo.started_at) }}
-        </a-descriptions-item>
-        <a-descriptions-item label="结束时间">
+        </n-descriptions-item>
+        <n-descriptions-item label="结束时间">
           {{ formatDateTime(executionInfo.finished_at) }}
-        </a-descriptions-item>
-        <a-descriptions-item label="执行时长">
+        </n-descriptions-item>
+        <n-descriptions-item label="执行时长">
           <span v-if="executionInfo.started_at && executionInfo.finished_at">
             {{ formatDuration(executionInfo.started_at, executionInfo.finished_at) }}
           </span>
@@ -91,48 +89,48 @@
             {{ formatDuration(executionInfo.started_at, new Date()) }}
           </span>
           <span v-else>-</span>
-        </a-descriptions-item>
-      </a-descriptions>
-    </a-card>
+        </n-descriptions-item>
+      </n-descriptions>
+    </n-card>
 
     <!-- 实时日志 -->
-    <a-card v-if="executionInfo.is_running && executionId" class="realtime-card" title="实时日志">
+    <n-card v-if="executionInfo.is_running && executionId" class="realtime-card" title="实时日志">
       <RealtimeLog :execution-id="executionId" :auto-connect="true" />
-    </a-card>
+    </n-card>
 
     <!-- 执行日志 -->
-    <a-card v-if="!executionInfo.is_running" class="logs-card" title="执行流程">
-      <template #extra>
-        <a-space>
-          <a-button
+    <n-card v-if="!executionInfo.is_running" class="logs-card" title="执行流程">
+      <template #footer>
+        <n-space>
+          <n-button
             v-if="executionInfo.execution_type === 'job_workflow' && executionInfo.execution_parameters"
             size="small"
-            type="outline"
+            secondary
             @click="openGlobalVarDrawer"
           >
-            <IconSettings /> 全局变量
-          </a-button>
-          <a-button size="small" type="outline" @click="openOperationDrawer">
-            <template #icon><IconEye /></template>
+            <Settings2 /> 全局变量>
+          </n-button>
+          <n-button size="small" secondary @click="openOperationDrawer">
+            <template #icon><Eye /></template>
             查看操作记录
-          </a-button>
-          <a-button size="small" type="outline" @click="openChainDrawer">
-            <template #icon><IconLink /></template>
+          </n-button>
+          <n-button size="small" secondary @click="openChainDrawer">
+            <template #icon><Link /></template>
             链路视图
-          </a-button>
-          <a-button size="small" @click="refreshLogs">
-            <template #icon><icon-refresh /></template>
+          </n-button>
+          <n-button size="small" @click="refreshLogs">
+            <template #icon><RefreshCw  /></template>
             刷新
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
 
       <div v-if="loading" class="loading-container">
-        <a-spin size="large" />
+        <n-spin size="large" />
       </div>
 
       <div v-else-if="(!stepLogs || Object.keys(stepLogs).length === 0) && (!hostLogs || Object.keys(hostLogs).length === 0)" class="empty-logs">
-        <a-empty :description="getEmptyLogsDescription()" />
+        <n-empty :description="getEmptyLogsDescription()" />
       </div>
 
       <div v-else class="execution-flow-layout" :class="{ 'has-selected-step': selectedStepId }">
@@ -190,17 +188,17 @@
                     <div class="step-card-content">
                       <div class="step-title-row">
                         <h5 class="step-title">{{ step.step_name }}</h5>
-                        <a-tag
-                          :color="getStepStatusColor(step.status)"
+                        <n-tag
+                          :type="getStepStatusColor(step.status) as any"
                           size="small"
                           class="step-status-tag"
                         >
                           {{ getStepStatusText(step.status) }}
-                        </a-tag>
+                        </n-tag>
                       </div>
                       <div class="step-meta-row">
                         <span class="step-hosts">
-                          <icon-user /> {{ getTotalHostCountInStep(step.id) }} 台主机
+                          <UserRound  /> {{ getTotalHostCountInStep(step.id) }} 台主机
                         </span>
                         <span v-if="step.finished_at || step.end_time" class="step-duration">
                         耗时: {{ formatDuration(step.started_at || step.start_time, step.finished_at || step.end_time) }}
@@ -220,74 +218,42 @@
               <div class="step-detail-header">
                 <div class="step-detail-info">
                   <h3>{{ stepLogs[selectedStepKey].step_name }}</h3>
-                  <div class="step-detail-meta">
-                    <a-tag :color="getStepStatusColor(stepLogs[selectedStepKey].status)">
+                  <div class="step-detail-meta"><n-tag :type="getStepStatusColor(stepLogs[selectedStepKey].status) as any">
                       {{ getStepStatusText(stepLogs[selectedStepKey].status) }}
-                    </a-tag>
+                    </n-tag>
                     <span class="step-order-text">步骤 {{ stepLogs[selectedStepKey].step_order }}</span>
                   </div>
                 </div>
                 <div class="step-detail-actions">
-                  <a-space>
-                    <a-dropdown
+                  <n-space>
+<n-dropdown
                       v-if="canRetryStep(stepLogs[selectedStepKey])"
                       trigger="click"
+                      :options="stepRetryOptions"
+                      @select="(key: string) => onStepRetryAction(key)"
                     >
-                      <a-button size="small">
-                        <IconRefresh /> 步骤操作 <IconDown />
-                      </a-button>
-                      <template #content>
-                        <a-doption
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click.stop="() => handleClickStepRetry('failed_only', selectedStepKey)"
-                        >
-                          <IconExclamation /> 仅重试失败主机
-                        </a-doption>
-                        <a-doption
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click.stop="() => handleClickStepRetry('all', selectedStepKey)"
-                        >
-                          <IconRefresh /> 重试该步骤
-                        </a-doption>
-                        <a-doption
-                          :class="{ 'disabled-option': !canExecuteStep(executionInfo.id) }"
-                          @click.stop="() => handleClickStepIgnoreError(selectedStepKey)"
-                        >
-                          <IconCheck /> 忽略错误继续
-                        </a-doption>
-                      </template>
-                    </a-dropdown>
+                      <n-button size="small">
+                        <RefreshCw /> 步骤操作 <ChevronDown />
+                      </n-button>
+                    </n-dropdown>
 
-                    <a-dropdown trigger="click">
-                      <a-button size="small">
-                        批量复制 <IconDown />
-                      </a-button>
-                      <template #content>
-                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepKey, 'success')">
-                          <IconCopy /> 复制成功主机IP
-                        </a-doption>
-                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepKey, 'failed')">
-                          <IconCopy /> 复制失败主机IP
-                        </a-doption>
-                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepKey, 'running')">
-                          <IconCopy /> 复制运行中主机IP
-                        </a-doption>
-                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepKey, 'pending')">
-                          <IconCopy /> 复制等待中主机IP
-                        </a-doption>
-                        <a-doption @click.stop="() => copyHostsByStatusInStep(selectedStepKey, 'all')">
-                          <IconCopy /> 复制所有主机IP
-                        </a-doption>
-                      </template>
-                    </a-dropdown>
+<n-dropdown
+                      trigger="click"
+                      :options="copyHostOptions"
+                      @select="(key: string) => copyHostsByStatusInStep(selectedStepKey, key as any)"
+                    >
+                      <n-button size="small">
+                        批量复制 <ChevronDown />
+                      </n-button>
+                    </n-dropdown>
 
-                    <a-button size="small" type="secondary" @click="openStepContentDrawer(selectedStepKey)">
-                      <IconEye /> 查看步骤内容
-                    </a-button>
-                    <a-button size="small" type="secondary" @click="exportStepLogs(selectedStepKey)">
-                      <IconDownload /> 导出步骤日志
-                    </a-button>
-                  </a-space>
+                    <n-button size="small" @click="openStepContentDrawer(selectedStepKey)">
+                      <Eye /> 查看步骤内容
+                    </n-button>
+                    <n-button size="small" @click="exportStepLogs(selectedStepKey)">
+                      <Download /> 导出步骤日志
+                    </n-button>
+                  </n-space>
                 </div>
               </div>
               <!-- 主机列表概览 -->
@@ -298,22 +264,22 @@
                 </div>
                 <div class="host-status-summary">
                   <div class="status-summary-item success">
-                    <icon-check-circle />
+                    <CircleCheck  />
                     <span class="status-count">{{ getHostCountByStatusInStep(selectedStepKey, 'success') }}</span>
                     <span class="status-label">成功</span>
                   </div>
                   <div class="status-summary-item failed">
-                    <icon-close-circle />
+                    <CircleX  />
                     <span class="status-count">{{ getHostCountByStatusInStep(selectedStepKey, 'failed') }}</span>
                     <span class="status-label">失败</span>
                   </div>
                   <div class="status-summary-item running">
-                    <icon-clock-circle />
+                    <Clock3  />
                     <span class="status-count">{{ getHostCountByStatusInStep(selectedStepKey, 'running') }}</span>
                     <span class="status-label">执行中</span>
                   </div>
                   <div class="status-summary-item pending">
-                    <icon-minus-circle />
+                    <CircleMinus />
                     <span class="status-count">{{ getHostCountByStatusInStep(selectedStepKey, 'pending') }}</span>
                     <span class="status-label">等待中</span>
                   </div>
@@ -322,8 +288,8 @@
 
                 <!-- 搜索栏 -->
                 <div class="search-bar">
-                  <a-space>
-                    <a-input-search
+                  <n-space>
+                    <n-input
                       :value="hostSearchTexts[selectedStepKey] || ''"
                       placeholder="搜索主机名称或IP"
                       size="small"
@@ -333,7 +299,7 @@
                       @update:value="(value) => updateSearchText(selectedStepKey, value)"
                       allow-clear
                     />
-                    <a-input-search
+                    <n-input
                       :value="logSearchTexts[selectedStepKey] || ''"
                       placeholder="搜索日志内容"
                       size="small"
@@ -343,7 +309,7 @@
                       @update:value="(value) => updateLogSearchText(selectedStepKey, value)"
                       allow-clear
                     />
-                  </a-space>
+                  </n-space>
               </div>
 
               <!-- 主机分组显示 -->
@@ -356,19 +322,19 @@
                 >
                   <div class="host-group-header" @click="toggleGroupInStep(selectedStepKey, String(status))">
                     <div class="group-info">
-                      <a-tag
-                        :color="getHostStatusColor(String(status))"
+                      <n-tag
+                        :type="getHostStatusColor(String(status)) as any"
                         class="group-status-tag"
                       >
                         {{ getHostStatusText(String(status)) }}
-                      </a-tag>
+                      </n-tag>
                       <span class="group-count">{{ group.hosts.length }}台主机</span>
                       <!-- 失败主机分组显示选中数量和批量重试按钮 -->
                       <template v-if="String(status) === 'failed' && group.expanded">
                         <span class="selected-count" v-if="getSelectedFailedHostIds(selectedStepKey).length > 0">
                           已选中 {{ getSelectedFailedHostIds(selectedStepKey).length }} 台
                         </span>
-                        <a-button
+                        <n-button
                           v-if="getSelectedFailedHostIds(selectedStepKey).length > 0"
                           size="small"
                           type="primary"
@@ -376,55 +342,55 @@
                           @click.stop="handleBatchRetrySelectedHosts(selectedStepKey)"
                           :loading="batchRetrying[selectedStepKey]"
                         >
-                          <template #icon><IconRefresh /></template>
+                          <template #icon><RefreshCw /></template>
                           批量重试选中主机
-                        </a-button>
+                        </n-button>
                       </template>
                     </div>
                     <div class="group-actions">
-                      <a-button
+                      <n-button
                         size="small"
-                        type="text"
+                        text
                         @click.stop="copyHostsByStatusInStep(selectedStepKey, String(status))"
                         title="复制该状态下的所有主机IP"
                       >
-                        <template #icon><IconCopy /></template>
+                        <template #icon><Copy /></template>
                         复制IP
-                      </a-button>
-                      <a-button
+                      </n-button>
+                      <n-button
                         size="small"
-                        type="text"
+                        text
                         @click.stop="toggleGroupInStep(selectedStepKey, String(status))"
                         title="展开/收起分组"
                       >
-                      <IconDown
+                      <ChevronDown
                         :class="{ 'rotate-180': group.expanded }"
                         class="expand-icon"
                       />
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
 
                   <div v-show="group.expanded" class="host-group-content">
                     <div v-if="group.hosts.length === 0" class="no-hosts">
-                      <a-empty description="该状态下暂无主机" />
+                      <n-empty description="该状态下暂无主机" />
                     </div>
                     <!-- 失败主机分组：显示复选框列表 -->
                     <div v-else-if="String(status) === 'failed'" class="failed-hosts-list">
                       <div class="failed-hosts-header">
-                        <a-checkbox
+                        <n-checkbox
                           :model-value="isAllFailedHostsSelected(selectedStepKey)"
                           :indeterminate="isIndeterminateFailedHosts(selectedStepKey)"
                           @change="handleToggleAllFailedHosts(selectedStepKey, $event)"
                         >
                           全选
-                        </a-checkbox>
+                        </n-checkbox>
                         <span class="selected-info">
                           已选中 {{ getSelectedFailedHostIds(selectedStepKey).length }} / {{ group.hosts.length }} 台主机
                         </span>
                       </div>
                       <div class="failed-hosts-checkboxes">
-                        <a-checkbox-group
+                        <n-checkbox-group
                           :model-value="selectedFailedHostIds[selectedStepKey] || []"
                           @change="(values) => handleFailedHostSelectionChange(selectedStepKey, values)"
                         >
@@ -433,17 +399,17 @@
                             :key="hostLog.host_id"
                             class="failed-host-item"
                           >
-                            <a-checkbox :value="hostLog.host_id">
+                            <n-checkbox :value="hostLog.host_id">
                               {{ getHostDisplayName(hostLog) }}
-                            </a-checkbox>
+                            </n-checkbox>
                           </div>
-                        </a-checkbox-group>
+                        </n-checkbox-group>
                       </div>
                     </div>
                     <!-- 其他状态的主机：使用标签页显示 -->
-                    <a-tabs
+                    <n-tabs
                       v-else
-                      v-model:active-key="selectedHostIds[selectedStepKey]"
+                      v-model:value="selectedHostIds[selectedStepKey]"
                       type="card"
                       size="small"
                       class="host-tabs"
@@ -451,12 +417,12 @@
                       :scrollable="true"
                       @change="handleHostTabChange"
                     >
-                      <a-tab-pane
+                      <n-tab-pane
                         v-for="hostLog in group.hosts"
-                        :key="hostLog.host_id"
+                        :name="hostLog.host_id"
                         :class="`host-tab-${hostLog.status}`"
                       >
-                        <template #title>
+                        <template #tab>
                           <div class="host-tab-title">
                             <div class="host-name">{{ getHostDisplayName(hostLog) }}</div>
                           </div>
@@ -468,42 +434,41 @@
                     <div class="host-info-header">
                       <div class="host-info">
                         <h5>{{ getHostDisplayName(hostLog) }}</h5>
-                        <a-space>
-                          <a-tag :color="getHostStatusColor(hostLog.status)">
+                        <n-space><n-tag :type="getHostStatusColor(hostLog.status) as any">
                             {{ getHostStatusText(hostLog.status) }}
-                          </a-tag>
-                          <a-tag
+                          </n-tag>
+                          <n-tag
                             v-if="executionMode === 'agent'"
-                            color="blue"
+                           type="info"
                             size="small"
                           >
                             Agent 模式
-                          </a-tag>
-                          <a-tag
+                          </n-tag>
+                          <n-tag
                             v-else-if="executionMode === 'ssh'"
-                            color="gray"
+                           type="default"
                             size="small"
                           >
                             SSH 模式
-                          </a-tag>
-                          <a-tooltip
+                          </n-tag>
+                          <n-tooltip
                             v-if="getHostAgentServerTooltip(hostLog)"
                             :content="getHostAgentServerTooltip(hostLog)"
                           >
-                            <a-tag color="cyan" size="small">
+                            <n-tag type="info" size="small">
                               {{ getHostAgentServerBadge(hostLog) }}
-                            </a-tag>
-                          </a-tooltip>
-                          <a-button
+                            </n-tag>
+                          </n-tooltip>
+                          <n-button
                             size="small"
-                            type="text"
+                            text
                             @click="copyHostIP(getHostIP(hostLog))"
                             title="复制IP地址"
                           >
-                            <template #icon><IconCopy /></template>
+                            <template #icon><Copy /></template>
                             {{ getHostIP(hostLog) }}
-                          </a-button>
-                        </a-space>
+                          </n-button>
+                        </n-space>
                       </div>
                     </div>
 
@@ -511,28 +476,28 @@
                     <div class="log-section">
                       <div class="log-section-header">
                         <h5>输出</h5>
-                        <a-space>
-                          <a-space size="mini" align="center">
+                        <n-space>
+                          <n-space :size="4" align="center">
                             <span class="switch-label">自动滚动</span>
-                            <a-switch
-                              v-model="stepLogAutoScroll"
+                            <n-switch
+                              v-model:value="stepLogAutoScroll"
                               size="small"
                               @change="handleLogAutoScrollChange"
                             />
-                          </a-space>
-                          <a-button size="small" @click="exportHostLog(selectedStepKey, hostLog)">
-                            <template #icon><IconDownload /></template>
+                          </n-space>
+                          <n-button size="small" @click="exportHostLog(selectedStepKey, hostLog)">
+                            <template #icon><Download /></template>
                             下载日志
-                          </a-button>
-                          <a-button size="small" @click="zoomLogs(getMergedLogs(hostLog), '输出')">
-                            <template #icon><IconEye /></template>
+                          </n-button>
+                          <n-button size="small" @click="zoomLogs(getMergedLogs(hostLog), '输出')">
+                            <template #icon><Eye /></template>
                             放大查看
-                          </a-button>
-                          <a-button size="small" @click="copyLogs(getMergedLogs(hostLog))">
-                            <template #icon><IconCopy /></template>
+                          </n-button>
+                          <n-button size="small" @click="copyLogs(getMergedLogs(hostLog))">
+                            <template #icon><Copy /></template>
                             复制日志
-                          </a-button>
-                        </a-space>
+                          </n-button>
+                        </n-space>
                       </div>
                       <div class="log-text-container" ref="logContainerRef">
                         <pre class="log-text" v-html="highlightLogContent(getMergedLogs(hostLog), selectedStepId)"></pre>
@@ -541,13 +506,13 @@
                         v-if="hasMoreHostLogs(selectedStepKey, hostLog.host_id || hostLog.id)"
                         class="log-section-footer"
                       >
-                        <a-button
+                        <n-button
                           size="small"
                           :loading="isHostLogLoading(selectedStepKey, hostLog.host_id || hostLog.id)"
                           @click="loadHostLogs(selectedStepKey, hostLog.host_id || hostLog.id, { append: true, force: true })"
                         >
                           加载更多
-                        </a-button>
+                        </n-button>
                       </div>
                     </div>
 
@@ -555,11 +520,11 @@
                       v-if="!getMergedLogs(hostLog) && !isHostLogLoading(selectedStepKey, hostLog.host_id || hostLog.id)"
                       class="no-logs"
                     >
-                      <a-empty description="该主机在此步骤暂无日志数据" />
+                      <n-empty description="该主机在此步骤暂无日志数据" />
                     </div>
                   </div>
-                </a-tab-pane>
-              </a-tabs>
+                </n-tab-pane>
+              </n-tabs>
           </div>
         </div>
       </div>
@@ -567,96 +532,96 @@
     </div>
   </div>
 </div>
-</a-card>
+</n-card>
   </div>
 
   <!-- 日志放大模态框 -->
-  <a-modal
-    v-model:visible="logZoomVisible"
+  <n-modal preset="card"
+    v-model:show="logZoomVisible"
     :title="logZoomTitle"
     width="90%"
-    :footer="false"
+   
     :mask-closable="false"
   >
     <div class="log-zoom-container">
       <div class="log-zoom-header">
-        <a-space>
-          <a-button @click="copyZoomLogs">
-            <template #icon><IconCopy /></template>
+        <n-space>
+          <n-button @click="copyZoomLogs">
+            <template #icon><Copy /></template>
             复制全部
-          </a-button>
-          <a-button @click="logZoomVisible = false">
-            <template #icon><IconClose /></template>
+          </n-button>
+          <n-button @click="logZoomVisible = false">
+            <template #icon><X /></template>
             关闭
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
     <div class="log-zoom-content">
       <pre class="log-zoom-text" v-html="logZoomContent"></pre>
     </div>
   </div>
-</a-modal>
+</n-modal>
 
   <!-- 步骤内容抽屉 -->
-  <a-drawer
-    v-model:visible="stepContentDrawerVisible"
+  <n-drawer
+    v-model:show="stepContentDrawerVisible"
     width="50%"
-    unmount-on-close
+   
     :mask-closable="true"
-    title="步骤内容"
-  >
+   
+  ><n-drawer-content title="步骤内容">
     <div v-if="!currentStepForContent">
-      <a-empty description="请选择步骤后查看" />
+      <n-empty description="请选择步骤后查看" />
     </div>
     <div v-else>
       <div class="step-content-toolbar">
-        <a-button size="small" type="outline" @click="loadStepContent(currentStepForContent, { force: true })">
-          <template #icon><IconRefresh /></template>
+        <n-button size="small" secondary @click="loadStepContent(currentStepForContent, { force: true })">
+          <template #icon><RefreshCw /></template>
           刷新步骤内容
-        </a-button>
+        </n-button>
       </div>
 
       <div v-if="stepContentLoading[currentStepForContent]" class="step-content-body loading">
-        <a-spin />
+        <n-spin />
       </div>
       <div v-else-if="stepContentError[currentStepForContent]" class="step-content-body error">
-        <a-result
+        <n-result
           status="warning"
           :title="stepContentError[currentStepForContent]"
           subtitle="加载失败，可重试"
         >
-          <template #extra>
-            <a-button type="primary" size="small" @click="loadStepContent(currentStepForContent, { force: true })">
+          <template #footer>
+            <n-button type="primary" size="small" @click="loadStepContent(currentStepForContent, { force: true })">
               重新加载
-            </a-button>
+            </n-button>
           </template>
-        </a-result>
+        </n-result>
       </div>
       <div v-else-if="stepContent[currentStepForContent]" class="step-content-body">
         <div class="step-content-card">
           <div class="step-content-header">
             <h4>基础信息</h4>
           </div>
-          <a-descriptions :column="2" size="small" bordered>
-            <a-descriptions-item label="步骤名称">
+          <n-descriptions :column="2" size="small" bordered>
+            <n-descriptions-item label="步骤名称">
               {{ stepContent[currentStepForContent].step_name || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="步骤类型">
+            </n-descriptions-item>
+            <n-descriptions-item label="步骤类型">
               {{ stepContent[currentStepForContent].step_type === 'file_transfer' ? '文件传输' : '脚本执行' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="超时">
+            </n-descriptions-item>
+            <n-descriptions-item label="超时">
               {{ stepContent[currentStepForContent].timeout ?? '-' }}s
-            </a-descriptions-item>
-            <a-descriptions-item label="忽略错误">
+            </n-descriptions-item>
+            <n-descriptions-item label="忽略错误">
               {{ stepContent[currentStepForContent].ignore_error ? '是' : '否' }}
-            </a-descriptions-item>
-            <a-descriptions-item
+            </n-descriptions-item>
+            <n-descriptions-item
               v-if="stepContent[currentStepForContent].step_type === 'script'"
               label="脚本类型"
             >
               {{ stepContent[currentStepForContent].script_type || '-' }}
-            </a-descriptions-item>
-          </a-descriptions>
+            </n-descriptions-item>
+          </n-descriptions>
         </div>
 
         <div
@@ -667,13 +632,13 @@
             <h4>文件来源</h4>
           </div>
           <div class="file-sources">
-            <a-tag
+            <n-tag
               v-for="(file, index) in stepContent[currentStepForContent].file_sources"
               :key="index"
-              color="arcoblue"
+             type="primary"
             >
               {{ typeof file === 'string' ? file : (file?.path || file?.name || String(file)) }}
-            </a-tag>
+            </n-tag>
           </div>
         </div>
 
@@ -683,14 +648,14 @@
         >
           <div class="step-content-header">
             <h4>脚本内容</h4>
-            <a-button
-              size="mini"
-              type="text"
+            <n-button
+              size="tiny"
+              text
               @click="copyLogs(stepContent[currentStepForContent].script_content)"
             >
-              <template #icon><IconCopy /></template>
+              <template #icon><Copy /></template>
               复制
-            </a-button>
+            </n-button>
           </div>
           <div class="script-block">
             <pre class="script-pre">{{ stepContent[currentStepForContent].script_content }}</pre>
@@ -700,14 +665,14 @@
         <div class="step-content-card">
           <div class="step-content-header">
             <h4>执行参数</h4>
-            <a-space size="small">
+            <n-space size="small">
               <span class="switch-label">显示敏感值</span>
-              <a-switch
+              <n-switch
                 size="small"
                 :model-value="stepContentShowSensitive[currentStepForContent] === true"
                 @change="(val) => toggleSensitive(currentStepForContent, val)"
               />
-            </a-space>
+            </n-space>
           </div>
           <div class="params-block">
             <div v-if="stepContent[currentStepForContent].rendered_parameters?.length" class="params-list">
@@ -723,83 +688,81 @@
                     <span class="param-value">{{ formatIpListPreview(param.display_value) }}</span>
                   </div>
                   <div class="param-row-body">
-                    <a-collapse
-                      v-model:active-key="ipListActiveKeys"
+                    <n-collapse
+                      v-model:expanded-names="ipListActiveKeys"
                       class="ip-list-collapse"
-                      :bordered="false"
                     >
-                      <a-collapse-item key="ip_list" :header="`IP列表 (${ipListPagination.total})`">
-                        <a-table
+                      <n-collapse-item name="ip_list" :title="`IP列表 (${ipListPagination.total})`">
+                        <n-data-table
                           :columns="ipListColumns"
                           :data="ipListRows"
                           :pagination="false"
                           size="small"
-                          row-key="ip"
+                          :row-key="(row: any) => row.ip"
                           :loading="ipListLoading"
                         />
-                        <a-empty v-if="ipListPagination.total === 0" description="暂无IP" />
+                        <n-empty v-if="ipListPagination.total === 0" description="暂无IP" />
                         <div v-if="ipListPagination.total > ipListPagination.pageSize" class="table-pagination">
-                          <a-pagination
-                            :current="ipListPagination.page"
+                          <n-pagination
+                            :page="ipListPagination.page"
                             :page-size="ipListPagination.pageSize"
-                            :total="ipListPagination.total"
+                            :item-count="ipListPagination.total"
                             size="small"
-                            show-total
-                            @change="handleIpListPageChange"
+                           
+                            @update:page="handleIpListPageChange"
                           />
                         </div>
-                      </a-collapse-item>
-                    </a-collapse>
+                      </n-collapse-item>
+                    </n-collapse>
                   </div>
                 </template>
                 <template v-else>
                   <span class="param-value" :class="{ masked: isStepParamMasked(param) }">
                     {{ getStepParamDisplay(param) }}
                   </span>
-                  <a-tag v-if="isStepParamMasked(param)" size="small" color="gray">已掩码</a-tag>
+                  <n-tag v-if="isStepParamMasked(param)" size="small" type="default">已掩码</n-tag>
                 </template>
               </div>
             </div>
-            <a-empty v-else description="暂无参数" />
+            <n-empty v-else description="暂无参数" />
           </div>
         </div>
       </div>
       <div v-else class="step-content-body">
-        <a-empty description="暂无步骤内容" />
+        <n-empty description="暂无步骤内容" />
       </div>
     </div>
-  </a-drawer>
+  </n-drawer-content></n-drawer>
 
   <!-- 操作记录抽屉 -->
-  <a-drawer
-    v-model:visible="operationDrawerVisible"
+  <n-drawer
+    v-model:show="operationDrawerVisible"
     :width="DRAWER_WIDTH"
-    title="操作记录"
-    unmount-on-close
-  >
+   
+   
+  ><n-drawer-content title="操作记录">
     <div v-if="operationLoading" class="operation-loading">
-      <a-spin />
+      <n-spin />
     </div>
     <div v-else-if="operationError" class="operation-error">
-      <a-result status="warning" :title="operationError">
-        <template #extra>
-          <a-button size="small" type="primary" @click="loadOperationLogs(true)">重新加载</a-button>
+      <n-result status="warning" :title="operationError">
+        <template #footer>
+          <n-button size="small" type="primary" @click="loadOperationLogs(true)">重新加载</n-button>
         </template>
-      </a-result>
+      </n-result>
     </div>
     <div v-else-if="operationLogs.length === 0">
-      <a-empty description="暂无操作记录" />
+      <n-empty description="暂无操作记录" />
     </div>
     <div v-else class="operation-list">
-      <a-timeline mode="left">
-        <a-timeline-item
+      <n-timeline mode="left">
+        <n-timeline-item
           v-for="item in operationLogs"
           :key="item.id"
           :dotColor="item.success ? 'green' : 'red'"
         >
           <div class="op-item">
-            <div class="op-meta">
-              <a-tag :color="item.success ? 'green' : 'red'">{{ item.action_display || item.action }}</a-tag>
+            <div class="op-meta"><n-tag :type="item.success ? 'green' : 'red' as any">{{ item.action_display || item.action }}</n-tag>
               <span class="op-user">{{ item.user_name || '-' }}</span>
               <span class="op-time">{{ formatDateTime(item.created_at) }}</span>
             </div>
@@ -814,40 +777,40 @@
               </span>
             </div>
           </div>
-        </a-timeline-item>
-      </a-timeline>
+        </n-timeline-item>
+      </n-timeline>
       <div v-if="operationPagination.total > operationPagination.page_size" class="op-pagination">
-        <a-pagination
-          :total="operationPagination.total"
+        <n-pagination
+          :item-count="operationPagination.total"
           :page-size="operationPagination.page_size"
-          :current="operationPagination.page"
+          :page="operationPagination.page"
           size="small"
-          show-total
-          @change="handleOperationPageChange"
+         
+          @update:page="handleOperationPageChange"
         />
       </div>
     </div>
-  </a-drawer>
+  </n-drawer-content></n-drawer>
 
   <!-- 链路视图 -->
-  <a-drawer
-    v-model:visible="chainDrawerVisible"
+  <n-drawer
+    v-model:show="chainDrawerVisible"
     :width="DRAWER_WIDTH"
-    title="链路视图"
-    unmount-on-close
-  >
+   
+   
+  ><n-drawer-content title="链路视图">
     <div v-if="chainLoading" class="chain-loading">
-      <a-spin />
+      <n-spin />
     </div>
     <div v-else-if="chainError" class="chain-error">
-      <a-result status="warning" :title="chainError" subtitle="加载失败，可重试">
-        <template #extra>
-          <a-button size="small" type="primary" @click="loadChainTrace(true)">重新加载</a-button>
+      <n-result status="warning" :title="chainError" subtitle="加载失败，可重试">
+        <template #footer>
+          <n-button size="small" type="primary" @click="loadChainTrace(true)">重新加载</n-button>
         </template>
-      </a-result>
+      </n-result>
     </div>
     <div v-else>
-      <a-empty
+      <n-empty
         v-if="!chainData.chain && chainTimeline.length === 0"
         description="暂无链路数据"
       />
@@ -866,13 +829,13 @@
               <div class="node-card">
                 <div class="node-head">
                   <span class="node-label">{{ node.label }}</span>
-                  <a-tag
+                  <n-tag
                     v-if="node.status"
                     size="small"
-                    :color="getStatusColor(node.status)"
+                    :type="getStatusColor(node.status) as any"
                   >
                     {{ getStatusText(node.status) }}
-                  </a-tag>
+                  </n-tag>
                 </div>
                 <div class="node-name">{{ node.name }}</div>
                 <div class="node-meta">
@@ -880,15 +843,15 @@
                   <span v-else>未关联</span>
                 </div>
                 <div class="node-actions">
-                  <a-button
-                    size="mini"
-                    type="text"
+                  <n-button
+                    size="tiny"
+                    text
                     :disabled="!getNodePath(node)"
                     class="chain-link"
                     @click="openNodeInNewTab(node)"
                   >
                     新标签打开
-                  </a-button>
+                  </n-button>
                 </div>
               </div>
               <div v-if="index < chainNodes.length - 1" class="chain-arrow">→</div>
@@ -898,71 +861,71 @@
           <div v-if="scheduledJobList.length > 1" class="chain-sublist">
             <div class="chain-subtitle">定时任务列表</div>
             <div class="chain-subitems">
-              <a-button
+              <n-button
                 v-for="job in scheduledJobList"
                 :key="job.id"
-                size="mini"
-                type="text"
+                size="tiny"
+                text
                 class="chain-link"
                 @click="openScheduledJobInNewTab(job.id)"
               >
                 {{ job.name }}
-              </a-button>
+              </n-button>
             </div>
           </div>
         </div>
 
-        <a-divider />
+        <n-divider />
 
         <div class="chain-section">
           <div class="chain-header">
             <h4>最近执行</h4>
           </div>
-          <a-empty v-if="chainTimeline.length === 0" description="暂无执行记录" />
-          <a-timeline v-else mode="left" class="chain-timeline">
-            <a-timeline-item
+          <n-empty v-if="chainTimeline.length === 0" description="暂无执行记录" />
+          <n-timeline v-else mode="left" class="chain-timeline">
+            <n-timeline-item
               v-for="item in chainTimeline"
               :key="item.id"
               :dotColor="getStatusColor(item.statusRaw)"
             >
               <div class="chain-item">
                 <div class="chain-item-title">
-                  <a-button
-                    size="mini"
-                    type="text"
+                  <n-button
+                    size="tiny"
+                    text
                     class="chain-link"
                     @click="openExecutionRecordInNewTab(item.id)"
                   >
                     {{ item.name }}
-                  </a-button>
-                  <a-tag :color="getStatusColor(item.statusRaw)" size="small">{{ item.status }}</a-tag>
+                  </n-button>
+                  <n-tag :type="getStatusColor(item.statusRaw) as any" size="small">{{ item.status }}</n-tag>
                 </div>
                 <div class="chain-item-meta">{{ item.time }}</div>
               </div>
-            </a-timeline-item>
-          </a-timeline>
+            </n-timeline-item>
+          </n-timeline>
         </div>
       </template>
     </div>
-  </a-drawer>
+  </n-drawer-content></n-drawer>
 
   <!-- 全局变量抽屉（仅 job_workflow） -->
-  <a-drawer
-    v-model:visible="globalVarDrawerVisible"
+  <n-drawer
+    v-model:show="globalVarDrawerVisible"
     :width="DRAWER_WIDTH"
-    title="全局变量"
-    unmount-on-close
-  >
+   
+   
+  ><n-drawer-content title="全局变量">
     <div v-if="globalVarItems.length === 0" class="var-empty">
-      <a-empty description="暂无全局变量" />
+      <n-empty description="暂无全局变量" />
     </div>
     <div v-else class="params-block">
       <div class="step-content-header">
         <h4>全局变量</h4>
-        <a-space size="small">
+        <n-space size="small">
           <span class="switch-label">显示敏感值</span>
-          <a-switch v-model="globalVarShowSensitive" size="small" />
-        </a-space>
+          <n-switch v-model:value="globalVarShowSensitive" size="small" />
+        </n-space>
       </div>
       <div class="params-list">
         <div
@@ -977,33 +940,32 @@
               <span class="param-value">{{ formatIpListPreview(item.rawValue) }}</span>
             </div>
             <div class="param-row-body">
-              <a-collapse
-                v-model:active-key="globalIpListActiveKeys"
+              <n-collapse
+                v-model:expanded-names="globalIpListActiveKeys"
                 class="ip-list-collapse"
-                :bordered="false"
               >
-                <a-collapse-item key="ip_list" :header="`IP列表 (${globalIpListPagination.total})`">
-                  <a-table
-                    :columns="ipListColumns"
+                <n-collapse-item name="ip_list" :title="`IP列表 (${globalIpListPagination.total})`">
+                  <n-data-table
+                    :columns="globalIpListColumns"
                     :data="globalIpListRows"
                     :pagination="false"
                     size="small"
-                    row-key="ip"
+                    :row-key="(row: any) => row.ip"
                     :loading="globalIpListLoading"
                   />
-                  <a-empty v-if="globalIpListPagination.total === 0" description="暂无IP" />
+                  <n-empty v-if="globalIpListPagination.total === 0" description="暂无IP" />
                   <div v-if="globalIpListPagination.total > globalIpListPagination.pageSize" class="table-pagination">
-                    <a-pagination
-                      :current="globalIpListPagination.page"
+                    <n-pagination
+                      :page="globalIpListPagination.page"
                       :page-size="globalIpListPagination.pageSize"
-                      :total="globalIpListPagination.total"
+                      :item-count="globalIpListPagination.total"
                       size="small"
-                      show-total
-                      @change="handleGlobalIpListPageChange"
+                     
+                      @update:page="handleGlobalIpListPageChange"
                     />
                   </div>
-                </a-collapse-item>
-              </a-collapse>
+                </n-collapse-item>
+              </n-collapse>
             </div>
           </template>
           <template v-else>
@@ -1015,39 +977,22 @@
                 {{ item.description }}
               </div>
             </div>
-            <a-tag v-if="item.isMasked" size="small" color="gray">已掩码</a-tag>
+            <n-tag v-if="item.isMasked" size="small" type="default">已掩码</n-tag>
           </template>
         </div>
       </div>
     </div>
-  </a-drawer>
+  </n-drawer-content></n-drawer>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import {
-  IconRefresh,
-  IconClose,
-  IconCopy,
-  IconDown,
-  IconArrowLeft,
-  IconCheck,
-  IconCheckCircle,
-  IconCloseCircle,
-  IconClockCircle,
-  IconMinusCircle,
-  IconExclamation,
-  IconEye,
-  IconUser,
-  IconDownload,
-  IconLink,
-  IconSettings
-} from '@arco-design/web-vue/es/icon'
 import { executionRecordApi, hostApi } from '@/api/ops'
 import RealtimeLog from '@/components/RealtimeLog.vue'
 import { usePermissionsStore } from '@/stores/permissions'
+import { NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDescriptions, NDescriptionsItem, NDivider, NDrawer, NDrawerContent, NEmpty, NInput, NModal, NPagination, NResult, NSpace, NSpin, NSwitch, NTabPane, NTabs, NTag, NText, NTimeline, NTimelineItem, NTooltip, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { Check, ChevronDown, ChevronLeft, CircleAlert, CircleCheck, CircleMinus, CircleX, Clock3, Copy, Download, Eye, Link, Loader2, Pause, RefreshCw, Settings2, UserRound, X } from 'lucide-vue-next'
 
 type HostLog = {
   host_id?: string | number
@@ -1087,6 +1032,8 @@ type ChainNode = {
 
 const toKey = (id: any) => String(id ?? '')
 
+const dialog = useDialog()
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const permissionsStore = usePermissionsStore()
@@ -1130,7 +1077,11 @@ const globalIpListPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const globalIpListSource = ref<Array<string | number | Record<string, any>>>([])
 const globalIpListActiveKeys = ref(['ip_list'])
 const ipListColumns = [
-  { title: 'IP', dataIndex: 'ip' }
+  { title: 'IP', key: 'ip', render: (row: any) => row.ip }
+]
+
+const globalIpListColumns: DataTableColumns<any> = [
+  { title: 'IP', key: 'ip', render: (row: any) => row.ip }
 ]
 const ipListHostCache = reactive<Record<number, string>>({})
 const currentStepForContent = ref(null)
@@ -1355,7 +1306,7 @@ const loadChainTrace = async (force = false) => {
   } catch (error) {
     console.error('加载链路失败:', error)
     chainError.value = error?.message || '加载失败'
-    Message.error('加载链路失败')
+    message.error('加载链路失败')
   } finally {
     chainLoading.value = false
   }
@@ -1680,7 +1631,7 @@ const loadStepResult = async (stepId, options = { force: false }) => {
     }
   } catch (error) {
     console.error('获取步骤结果失败:', error)
-    Message.error('获取步骤结果失败')
+    message.error('获取步骤结果失败')
   } finally {
     stepResultLoading.value = { ...stepResultLoading.value, [stepKey]: false }
   }
@@ -1754,7 +1705,7 @@ const loadHostLogs = async (stepId, hostId, options = { append: false, force: fa
     }
   } catch (error) {
     console.error('获取主机日志失败:', error)
-    Message.error('获取主机日志失败')
+    message.error('获取主机日志失败')
   } finally {
     hostLogLoading.value = {
       ...hostLogLoading.value,
@@ -1832,7 +1783,7 @@ const loadStepContent = async (stepId, options = { force: false }) => {
       ...stepContentError.value,
       [stepId]: error?.message || '加载失败'
     }
-    Message.error('加载步骤内容失败')
+    message.error('加载步骤内容失败')
   } finally {
     stepContentLoading.value = { ...stepContentLoading.value, [stepId]: false }
   }
@@ -2077,7 +2028,7 @@ const loadOperationLogs = async (force = false) => {
   } catch (error) {
     console.error('加载操作记录失败:', error)
     operationError.value = error?.message || '加载失败'
-    Message.error('加载操作记录失败')
+    message.error('加载操作记录失败')
   } finally {
     operationLoading.value = false
   }
@@ -2130,10 +2081,10 @@ const selectStep = async (stepId: string | number) => {
 const copyLogs = async (logContent) => {
   try {
     await navigator.clipboard.writeText(logContent)
-    Message.success('日志已复制到剪贴板')
+    message.success('日志已复制到剪贴板')
   } catch (error) {
     console.error('复制失败:', error)
-    Message.error('复制失败')
+    message.error('复制失败')
   }
 }
 
@@ -2149,10 +2100,10 @@ const zoomLogs = (logContent, logType) => {
 const copyZoomLogs = async () => {
   try {
     await navigator.clipboard.writeText(logZoomRawContent.value)
-    Message.success('日志已复制到剪贴板')
+    message.success('日志已复制到剪贴板')
   } catch (error) {
     console.error('复制失败:', error)
-    Message.error('复制失败')
+    message.error('复制失败')
   }
 }
 
@@ -2160,10 +2111,10 @@ const copyZoomLogs = async () => {
 const copyHostIP = async (ip) => {
   try {
     await navigator.clipboard.writeText(ip)
-    Message.success(`IP地址 ${ip} 已复制到剪贴板`)
+    message.success(`IP地址 ${ip} 已复制到剪贴板`)
   } catch (error) {
     console.error('复制失败:', error)
-    Message.error('复制失败')
+    message.error('复制失败')
   }
 }
 
@@ -2171,12 +2122,12 @@ const copyHostIP = async (ip) => {
 const exportStepLogs = (stepId) => {
   const step = stepLogs.value[stepId]
   if (!step) {
-    Message.warning('未找到步骤日志')
+    message.warning('未找到步骤日志')
     return
   }
   const hosts = step.hosts || step.host_logs || {}
   if (Object.keys(hosts).length === 0) {
-    Message.warning('该步骤没有可导出的日志')
+    message.warning('该步骤没有可导出的日志')
     return
   }
 
@@ -2194,7 +2145,7 @@ const exportStepLogs = (stepId) => {
   })
 
   if (!lines) {
-    Message.warning('该步骤暂无已加载的日志内容')
+    message.warning('该步骤暂无已加载的日志内容')
     return
   }
 
@@ -2209,17 +2160,17 @@ const exportStepLogs = (stepId) => {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 
-  Message.success('步骤日志已导出')
+  message.success('步骤日志已导出')
 }
 
 const exportHostLog = async (stepId, hostLog) => {
   if (!hostLog) {
-    Message.warning('未找到主机日志')
+    message.warning('未找到主机日志')
     return
   }
   const hostId = hostLog.host_id ?? hostLog.id
   if (hostId === undefined || hostId === null) {
-    Message.warning('未找到主机日志')
+    message.warning('未找到主机日志')
     return
   }
   if (!getHostLogText(stepId, hostId)) {
@@ -2227,7 +2178,7 @@ const exportHostLog = async (stepId, hostLog) => {
   }
   const merged = getMergedLogs(hostLog, stepId)
   if (!merged) {
-    Message.warning('该主机没有日志内容')
+    message.warning('该主机没有日志内容')
     return
   }
 
@@ -2244,7 +2195,7 @@ const exportHostLog = async (stepId, hostLog) => {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 
-  Message.success('主机日志已下载')
+  message.success('主机日志已下载')
 }
 
 // 获取步骤状态颜色
@@ -2454,17 +2405,17 @@ const handleRetry = async () => {
     : `确定要重做"${executionInfo.value.name}"吗？`
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title,
       content,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           console.log('开始调用重做API, 执行记录ID:', route.params.id)
           const result = await executionRecordApi.retryExecution(Number(route.params.id))
           console.log('重做API返回结果:', result)
 
           const successMessage = isRetry ? '重试成功' : '重做成功'
-          Message.success(successMessage)
+          message.success(successMessage)
 
           // 如果返回了新的执行记录ID，跳转到新的执行记录详情页面
           // 注意：由于响应拦截器会自动提取content字段，result就是content的内容
@@ -2480,7 +2431,7 @@ const handleRetry = async () => {
           }
         } catch (error) {
           console.error('重做操作失败:', error)
-          Message.error('重做操作失败')
+          message.error('重做操作失败')
         }
       }
     })
@@ -2492,12 +2443,12 @@ const handleRetry = async () => {
 // 取消执行
 const handleCancel = async () => {
   try {
-    await Modal.confirm({
+    await dialog.warning({
       title: '确认取消',
       content: `确定要取消执行"${executionInfo.value.name}"吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         await executionRecordApi.cancelExecution(Number(route.params.id))
-        Message.success('取消成功')
+        message.success('取消成功')
         fetchExecutionDetail()
       }
     })
@@ -2524,7 +2475,7 @@ const canRetryStep = (step) => {
 // 步骤重试
 const handleStepRetry = async (retryType, stepId) => {
   if (!stepId || !stepLogs.value[stepId]) {
-    Message.warning('请先选择要重试的步骤')
+    message.warning('请先选择要重试的步骤')
     return
   }
 
@@ -2535,20 +2486,20 @@ const handleStepRetry = async (retryType, stepId) => {
   }
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认步骤重试',
       content: `确定要${retryTypeText[retryType]}执行步骤"${step.step_name}"吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           await executionRecordApi.retryStepInplace(Number(route.params.id), {
             step_id: stepId,
             retry_type: retryType
           })
-          Message.success('步骤重试成功')
+          message.success('步骤重试成功')
           fetchExecutionDetail()
         } catch (error) {
           console.error('步骤重试API调用失败:', error)
-          Message.error('步骤重试失败')
+          message.error('步骤重试失败')
         }
       }
     })
@@ -2568,7 +2519,7 @@ const canExecuteStep = (recordId) => {
 
 // 显示无权限提示
 const showNoPermissionMessage = () => {
-  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+  message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 // 获取选中失败主机ID列表
@@ -2630,21 +2581,21 @@ const handleBatchRetrySelectedHosts = async (stepId) => {
 
   const selectedIds = getSelectedFailedHostIds(stepId)
   if (selectedIds.length === 0) {
-    Message.warning('请先选择要重试的主机')
+    message.warning('请先选择要重试的主机')
     return
   }
 
   const step = stepLogs.value[stepId]
   if (!step) {
-    Message.warning('步骤不存在')
+    message.warning('步骤不存在')
     return
   }
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认批量重试',
       content: `确定要重试选中的 ${selectedIds.length} 台失败主机吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         batchRetrying.value[stepId] = true
         try {
           await executionRecordApi.retryStepInplace(Number(route.params.id), {
@@ -2652,14 +2603,14 @@ const handleBatchRetrySelectedHosts = async (stepId) => {
             retry_type: 'failed_only',
             host_ids: selectedIds as any
           })
-          Message.success(`批量重试已启动，共 ${selectedIds.length} 台主机`)
+          message.success(`批量重试已启动，共 ${selectedIds.length} 台主机`)
           // 清空选择
           selectedFailedHostIds.value[stepId] = []
           // 刷新详情
           fetchExecutionDetail()
         } catch (error) {
           console.error('批量重试失败:', error)
-          Message.error(error?.message || '批量重试失败')
+          message.error(error?.message || '批量重试失败')
         } finally {
           batchRetrying.value[stepId] = false
         }
@@ -2690,24 +2641,24 @@ const handleClickStepIgnoreError = (stepId) => {
 // 忽略错误继续
 const handleStepIgnoreError = async (stepId) => {
   if (!stepId || !stepLogs.value[stepId]) {
-    Message.warning('请先选择要忽略错误的步骤')
+    message.warning('请先选择要忽略错误的步骤')
     return
   }
 
   const step = stepLogs.value[stepId]
 
   try {
-    Modal.confirm({
+    dialog.warning({
       title: '确认忽略错误',
       content: `确定要忽略步骤"${step.step_name}"的错误并继续执行后续步骤吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           await executionRecordApi.ignoreStepError(Number(route.params.id), stepId)
-          Message.success('已忽略错误，继续执行')
+          message.success('已忽略错误，继续执行')
           fetchExecutionDetail()
         } catch (error) {
           console.error('忽略错误API调用失败:', error)
-          Message.error('忽略错误失败')
+          message.error('忽略错误失败')
         }
       }
     })
@@ -2770,15 +2721,15 @@ const getStatusColor = (status) => {
   return colorMap[status] || 'gray'
 }
 
-const getStatusIcon = (status) => {
-  const iconMap = {
-    'pending': 'icon-pause',
-    'running': 'icon-loading',
-    'success': 'icon-check',
-    'failed': 'icon-exclamation',
-    'cancelled': 'icon-close'
+const getStatusIcon = (status: string) => {
+  const iconMap: Record<string, any> = {
+    pending: Pause,
+    running: Loader2,
+    success: Check,
+    failed: CircleAlert,
+    cancelled: X,
   }
-  return iconMap[status] || 'icon-pause'
+  return iconMap[status] || Pause
 }
 
 const formatDuration = (startTime: any, endTime: any) => {
@@ -2977,14 +2928,14 @@ const copyHostsByStatusInStep = async (stepId: any, status: string | number) => 
   const key = toKey(stepId)
   const stepLog = stepLogs.value[key]
   if (!stepLog) {
-    Message.warning('该步骤暂无主机数据')
+    message.warning('该步骤暂无主机数据')
     return
   }
 
   // 兼容新旧格式：优先使用hosts，其次使用host_logs
   const hostData: Record<string, any> = stepLog.hosts || stepLog.host_logs
   if (!hostData) {
-    Message.warning('该步骤暂无主机数据')
+    message.warning('该步骤暂无主机数据')
     return
   }
 
@@ -2997,16 +2948,16 @@ const copyHostsByStatusInStep = async (stepId: any, status: string | number) => 
   }
 
   if (hosts.length === 0) {
-    Message.warning(`该步骤下没有${statusKey === 'all' ? '' : statusKey}状态的主机`)
+    message.warning(`该步骤下没有${statusKey === 'all' ? '' : statusKey}状态的主机`)
     return
   }
 
   const ips = hosts.map(host => host.host_ip || host.ip || host.ip_address).join('\n')
   try {
     await navigator.clipboard.writeText(ips)
-    Message.success(`已复制 ${hosts.length} 台主机的IP地址`)
+    message.success(`已复制 ${hosts.length} 台主机的IP地址`)
   } catch (err) {
-    Message.error('复制失败，请手动复制')
+    message.error('复制失败，请手动复制')
   }
 }
 
@@ -3149,6 +3100,26 @@ onMounted(() => {
     })
   })
 })
+
+const stepRetryOptions = computed<any[]>(() => [
+  { label: '仅重试失败主机', key: 'failed_only', disabled: !canExecuteStep(executionInfo.value.id), icon: () => h(CircleAlert, { size: 14 }) },
+  { label: '重试该步骤', key: 'all', disabled: !canExecuteStep(executionInfo.value.id), icon: () => h(RefreshCw, { size: 14 }) },
+  { label: '忽略错误继续', key: 'ignore', disabled: !canExecuteStep(executionInfo.value.id), icon: () => h(Check, { size: 14 }) },
+])
+
+const onStepRetryAction = (key: string) => {
+  if (key === 'failed_only') handleClickStepRetry('failed_only', selectedStepKey)
+  if (key === 'all') handleClickStepRetry('all', selectedStepKey)
+  if (key === 'ignore') handleClickStepIgnoreError(selectedStepKey)
+}
+
+const copyHostOptions = [
+  { label: '复制成功主机IP', key: 'success' },
+  { label: '复制失败主机IP', key: 'failed' },
+  { label: '复制运行中主机IP', key: 'running' },
+  { label: '复制等待中主机IP', key: 'pending' },
+  { label: '复制所有主机IP', key: 'all' },
+]
 </script>
 
 <style scoped>
@@ -3472,13 +3443,13 @@ onMounted(() => {
   justify-content: space-between;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
   border-radius: 6px;
 }
 
 .selected-info {
   font-size: 14px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-left: 12px;
 }
 
@@ -3486,9 +3457,9 @@ onMounted(() => {
   max-height: 400px;
   overflow-y: auto;
   padding: 8px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background-color: var(--color-bg-1);
+  background-color: var(--app-surface);
 }
 
 .failed-host-item {
@@ -3499,12 +3470,12 @@ onMounted(() => {
 }
 
 .failed-host-item:hover {
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
 }
 
 .selected-count {
   font-size: 14px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-left: 12px;
   margin-right: 8px;
 }
@@ -4902,10 +4873,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
 }
 
 .global-parameters .parameter-item {
@@ -4920,7 +4891,7 @@ onMounted(() => {
 
 .global-parameters .param-key {
   font-weight: 500;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   min-width: auto;
 }
 
@@ -4928,7 +4899,7 @@ onMounted(() => {
   padding: 4px 6px;
   font-size: 13px;
   word-break: break-all;
-  background: var(--color-bg-2);
+  background: var(--app-bg);
   border-radius: 3px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }

@@ -1,8 +1,8 @@
 <template>
-  <a-modal
-    v-model:visible="visible"
+  <n-modal preset="card" :style="{ width: '800px' }"
+    v-model:show="visible"
     title="批量同步预览与确认"
-    width="800px"
+   
     @ok="handleConfirm"
     @cancel="handleCancel"
     :confirm-loading="loading"
@@ -11,13 +11,13 @@
     cancel-text="取消"
   >
     <div v-if="loadingPreview" class="text-center py-8">
-      <a-spin size="large" />
+      <n-spin size="large" />
       <div class="mt-4 text-gray-500">正在获取执行方案信息...</div>
     </div>
 
   <div v-else>
     <div v-if="plans.length === 0" class="text-center py-8">
-      <a-empty description="未选择任何执行方案或无法获取信息" />
+      <n-empty description="未选择任何执行方案或无法获取信息" />
     </div>
 
     <div v-else>
@@ -54,12 +54,12 @@
                 class="global-param-item"
               >
                 <div class="flex items-center gap-2 mb-2">
-                  <a-tag color="blue" size="small">{{ item.key }}</a-tag>
-                  <a-tag v-if="item.typeOld || item.typeNew" size="small" color="arcoblue">
+                  <n-tag type="info" size="small">{{ item.key }}</n-tag>
+                  <n-tag v-if="item.typeOld || item.typeNew" size="small" type="primary">
                     {{ item.typeNew || item.typeOld }}
-                  </a-tag>
-                  <a-tag v-if="item.status === 'added'" size="small" color="green">新增</a-tag>
-                  <a-tag v-else-if="item.status === 'deleted'" size="small" color="red">删除</a-tag>
+                  </n-tag>
+                  <n-tag v-if="item.status === 'added'" size="small" type="success">新增</n-tag>
+                  <n-tag v-else-if="item.status === 'deleted'" size="small" type="error">删除</n-tag>
                 </div>
                 <div class="global-param-values">
                   <div class="param-value old">
@@ -81,7 +81,7 @@
               <div class="flex flex-col gap-1">
                 <div v-for="step in plan.changes.added_steps" :key="step.step_id" class="flex items-center justify-between text-sm">
                   <span>步骤 {{ step.order }} · {{ step.name }}</span>
-                  <a-tag size="small" color="green">新增</a-tag>
+                  <n-tag size="small" type="success">新增</n-tag>
                 </div>
               </div>
             </div>
@@ -90,7 +90,7 @@
               <div class="flex flex-col gap-1">
                 <div v-for="step in plan.changes.deleted_steps" :key="step.step_id" class="flex items-center justify-between text-sm">
                   <span>步骤 {{ step.order }} · {{ step.name }}</span>
-                  <a-tag size="small" color="red">删除</a-tag>
+                  <n-tag size="small" type="error">删除</n-tag>
                 </div>
               </div>
             </div>
@@ -98,19 +98,19 @@
 
           <div v-if="plan.changes.modified_steps && plan.changes.modified_steps.length > 0">
             <div class="text-sm font-medium text-orange-700 mb-2">
-              <icon-edit class="mr-1" />
+              <Pencil  class="mr-1" />
               修改的步骤 ({{ plan.changes.modified_steps.length }})
             </div>
-            <a-collapse class="detailed-changes-collapse">
-              <a-collapse-item
+            <n-collapse class="detailed-changes-collapse" :default-expanded-names="['all']">
+              <n-collapse-item
                 v-for="step in plan.changes.modified_steps"
                 :key="step.step_id"
-                :header="`步骤 ${step.order}: ${step.name}`"
+                :title="`步骤 ${step.order}: ${step.name}`"
               >
                 <div v-if="step.detailed_changes?.length" class="space-y-4">
                   <div v-for="(change, idx) in step.detailed_changes" :key="idx" class="change-item">
                     <div class="change-header mb-2">
-                      <a-tag color="blue" size="small">{{ change.field_name }}</a-tag>
+                      <n-tag type="info" size="small">{{ change.field_name }}</n-tag>
                     </div>
                     <div v-if="change.change_type === 'text'">
                       <div class="change-row"><span class="change-label old">原值:</span><span class="change-value old">{{ change.old_value || '(空)' }}</span></div>
@@ -125,16 +125,16 @@
                   </div>
                 </div>
                 <div v-else-if="step.changes?.length">
-                  <div v-for="(chg, i) in step.changes" :key="i"><a-tag color="orange" size="small">{{ chg }}</a-tag></div>
+                  <div v-for="(chg, i) in step.changes" :key="i"><n-tag type="warning" size="small">{{ chg }}</n-tag></div>
                 </div>
-              </a-collapse-item>
-            </a-collapse>
+              </n-collapse-item>
+            </n-collapse>
           </div>
         </div>
 
         <div v-else-if="plan.changes && !plan.changes.has_changes" class="mt-2 p-3 bg-green-50 border border-green-200 rounded text-sm">
           <div class="text-green-700 flex items-center">
-            <icon-check-circle class="mr-2" />
+            <CircleCheck  class="mr-2" />
             {{ plan.changes.summary || '执行方案与模板内容一致，无需同步' }}
           </div>
         </div>
@@ -145,7 +145,7 @@
       </div>
     </div>
   </div>
-  </a-modal>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
@@ -153,6 +153,8 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { executionPlanApi, jobTemplateApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
 import { formatDateTime } from '@/utils/date'
+import { NEmpty, NModal, NSpin, NTag } from 'naive-ui'
+import { CircleCheck, Pencil } from 'lucide-vue-next'
 
 const emit = defineEmits(['update:modelValue', 'sync-success'])
 const props = defineProps<{ modelValue: boolean; planIds: number[] }>()

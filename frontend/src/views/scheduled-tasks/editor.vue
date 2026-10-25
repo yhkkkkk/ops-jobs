@@ -3,12 +3,12 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="handleCancel">
+          <n-button text @click="handleCancel">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>{{ isEdit ? '编辑执行方案定时任务' : '创建执行方案定时任务' }}</h2>
             <p class="header-desc">
@@ -17,86 +17,76 @@
           </div>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button @click="handleCancel">取消</a-button>
-            <a-button type="primary" :loading="saving" @click="handleSave">
+          <n-space>
+            <n-button @click="handleCancel">取消</n-button>
+            <n-button type="primary" :loading="saving" @click="handleSave">
               {{ isEdit ? '更新' : '创建' }}
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
-    <a-card>
-      <a-form
+    <n-card>
+      <n-form
         ref="formRef"
         :model="form"
         :rules="rules"
         layout="vertical"
         @submit="handleSave"
       >
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="任务名称" field="name" required>
-              <a-input
-                v-model="form.name"
+        <div class="form-grid-row">
+          <div class="form-grid-col" style="grid-column: span 12">
+            <n-form-item label="任务名称" path="name" required>
+              <n-input
+                v-model:value="form.name"
                 placeholder="请输入任务名称"
                 :max-length="200"
                 show-word-limit
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="状态" field="is_active">
-              <a-switch
-                v-model="form.is_active"
+               />
+            </n-form-item>
+          </div>
+          <div class="form-grid-col" style="grid-column: span 12">
+            <n-form-item label="状态" path="is_active">
+              <n-switch
+                v-model:value="form.is_active"
                 checked-text="启用"
                 unchecked-text="禁用"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+               />
+            </n-form-item>
+          </div>
+        </div>
 
-        <a-form-item label="描述" field="description">
-          <a-textarea
-            v-model="form.description"
+        <n-form-item label="描述" path="description">
+          <n-input type="textarea"
+            v-model:value="form.description"
             placeholder="请输入任务描述"
             :max-length="500"
             show-word-limit
             :auto-size="{ minRows: 3, maxRows: 6 }"
-          />
-        </a-form-item>
+           />
+        </n-form-item>
 
-        <a-form-item label="执行方案" field="execution_plan" required>
-          <a-select
-            v-model="form.execution_plan"
+        <n-form-item label="执行方案" path="execution_plan" required>
+          <n-select
+            v-model:value="form.execution_plan"
             placeholder="请选择执行方案"
             :loading="loadingPlans"
             allow-search
             @search="handleSearchPlans"
-            @change="handleExecutionPlanChange"
-          >
-            <a-option
-              v-for="plan in executionPlans"
-              :key="plan.id"
-              :value="plan.id"
-              :label="`${plan.template_name} - ${plan.name}`"
-            >
-              <div>
-                <div>{{ plan.name }}</div>
-                <div style="color: #86909c; font-size: 12px">
-                  模板: {{ plan.template_name }}
-                </div>
-              </div>
-            </a-option>
-          </a-select>
-        </a-form-item>
+            @update:value="handleExecutionPlanChange"
+            :options="(executionPlans || []).map((plan: any) => ({
+              label: `${plan.name}（模板: ${plan.template_name || '-'}）`,
+              value: plan.id,
+            }))"
+          />
+        </n-form-item>
 
         <!-- 全局变量覆盖 -->
-        <a-form-item v-if="form.execution_plan && globalParameters.length > 0" label="全局变量覆盖（可选）">
+        <n-form-item v-if="form.execution_plan && globalParameters.length > 0" label="全局变量覆盖（可选）">
           <div class="global-parameters-override">
             <div class="form-tip">
-              <icon-info-circle />
+              <Info />
               可以覆盖执行方案的默认全局变量，不填写则使用执行方案的默认值
             </div>
             <div
@@ -108,9 +98,9 @@
                 <div class="parameter-row">
                   <div class="parameter-key">
                     <div class="param-key-label">{{ param.key }}</div>
-                    <a-tag v-if="param.type === 'secret'" size="small" color="orange" style="margin-left: 8px">
+                    <n-tag v-if="param.type === 'secret'" size="small" color="orange" style="margin-left: 8px">
                       密文
-                    </a-tag>
+                    </n-tag>
                   </div>
                   <div class="parameter-value">
                     <template v-if="param.type === 'host_list'">
@@ -119,30 +109,30 @@
                           <span>已选 {{ getOverrideHostCount(param.overrideValue) }} 台主机</span>
                           <span class="host-override-default">默认 {{ getHostListCount(param.defaultValue) }} 台主机</span>
                         </div>
-                        <a-space>
-                          <a-button type="outline" size="small" @click="openHostSelector(param.key)">选择主机</a-button>
-                          <a-button type="text" size="small" @click="clearHostOverride(param)">清空</a-button>
-                        </a-space>
+                        <n-space>
+                          <n-button secondary size="small" @click="openHostSelector(param.key)">选择主机</n-button>
+                          <n-button text size="small" @click="clearHostOverride(param)">清空</n-button>
+                        </n-space>
                       </div>
                     </template>
                     <template v-else>
-                      <a-input
-                        v-model="param.overrideValue"
+                      <n-input
+                        v-model:value="param.overrideValue"
                         :type="param.type === 'secret' && !parameterVisibility[param.key] ? 'password' : 'text'"
                         :placeholder="param.type === 'secret' ? '密文覆盖值（留空使用默认值）' : `覆盖值（留空使用默认值: ${formatParameterValue(param.defaultValue, param.type)}）`"
-                      />
-                      <a-button
+                       />
+                      <n-button
                         v-if="param.type === 'secret'"
-                        type="text"
+                        text
                         size="small"
                         @click="toggleParameterVisibility(param.key)"
                         class="visibility-toggle"
                       >
                         <template #icon>
-                          <icon-eye v-if="parameterVisibility[param.key]" />
-                          <icon-eye-invisible v-else />
+                          <Eye v-if="parameterVisibility[param.key]" />
+                          <EyeOff v-else />
                         </template>
-                      </a-button>
+                      </n-button>
                     </template>
                   </div>
                 </div>
@@ -156,7 +146,7 @@
               </div>
             </div>
           </div>
-        </a-form-item>
+        </n-form-item>
 
         <HostSelector
           v-model:visible="hostSelectorVisible"
@@ -173,94 +163,86 @@
           @host-page-size-change="handleHostPageSizeChange"
         />
 
-        <a-row :gutter="24">
-          <a-col :span="16">
-            <a-form-item label="Cron表达式" field="cron_expression" required>
-              <a-input-group>
-                <a-input
-                  v-model="form.cron_expression"
+        <div class="form-grid-row">
+          <div class="form-grid-col" style="grid-column: span 16">
+            <n-form-item label="Cron表达式" path="cron_expression" required>
+              <div class="naive-input-group">
+                <n-input
+                  v-model:value="form.cron_expression"
                   placeholder="例如: 0 2 * * * (每天凌晨2点)"
                   style="width: calc(100% - 100px)"
                   @blur="handleCronValidation"
-                />
-                <a-button
-                  type="outline"
+                 />
+                <n-button
+                  secondary
                   style="width: 100px"
                   @click="showCronHelper = true"
                 >
                   辅助工具
-                </a-button>
-              </a-input-group>
+                </n-button>
+              </div>
               <div v-if="cronDescription" class="cron-description">
-                <icon-info-circle />
+                <Info />
                 {{ cronDescription }}
               </div>
               <div v-if="cronError" class="cron-error">
-                <icon-exclamation-circle />
+                <CircleAlert />
                 {{ cronError }}
               </div>
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="时区" field="timezone">
-              <a-select
-                v-model="form.timezone"
+            </n-form-item>
+          </div>
+          <div class="form-grid-col" style="grid-column: span 8">
+            <n-form-item label="时区" path="timezone">
+              <n-select
+                v-model:value="form.timezone"
                 placeholder="请选择时区"
-                allow-search
-              >
-                <a-option value="Asia/Shanghai">Asia/Shanghai (北京时间)</a-option>
-                <a-option value="UTC">UTC (协调世界时)</a-option>
-                <a-option value="America/New_York">America/New_York (纽约时间)</a-option>
-                <a-option value="Europe/London">Europe/London (伦敦时间)</a-option>
-                <a-option value="Asia/Tokyo">Asia/Tokyo (东京时间)</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
+                allow-search :options="[{ label: 'Asia/Shanghai (北京时间)', value: 'Asia/Shanghai' }, { label: 'UTC (协调世界时)', value: 'UTC' }, { label: 'America/New_York (纽约时间)', value: 'America/New_York' }, { label: 'Europe/London (伦敦时间)', value: 'Europe/London' }, { label: 'Asia/Tokyo (东京时间)', value: 'Asia/Tokyo' }]" />
+            </n-form-item>
+          </div>
+        </div>
 
         <!-- 下次执行时间预览 -->
-        <a-form-item v-if="nextRuns.length > 0" label="下次执行时间预览">
-          <a-card size="small">
+        <n-form-item v-if="nextRuns.length > 0" label="下次执行时间预览">
+          <n-card size="small">
             <div class="next-runs">
               <div v-for="(time, index) in nextRuns" :key="index" class="next-run-item">
-                <icon-clock-circle />
+                <Clock3 />
                 {{ formatDateTime(time) }}
               </div>
             </div>
-          </a-card>
-        </a-form-item>
-      </a-form>
-    </a-card>
+          </n-card>
+        </n-form-item>
+      </n-form>
+    </n-card>
 
     <!-- Cron表达式辅助工具 -->
-    <a-modal
-      v-model:visible="showCronHelper"
+    <n-modal
+      preset="card"
+      v-model:show="showCronHelper"
       title="Cron表达式辅助工具"
-      width="800px"
-      @ok="handleCronHelperOk"
+      style="width: 800px"
     >
-      <cron-builder v-model="tempCronExpression" />
-    </a-modal>
+      <CronBuilder v-model="tempCronExpression" />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showCronHelper = false">取消</n-button>
+          <n-button type="primary" @click="handleCronHelperOk">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
-import type { FormInstance } from '@arco-design/web-vue'
-import {
-  IconArrowLeft,
-  IconInfoCircle,
-  IconExclamationCircle,
-  IconClockCircle,
-  IconEye,
-  IconEyeInvisible
-} from '@arco-design/web-vue/es/icon'
+import type { FormInst } from 'naive-ui'
 import { scheduledJobApi, executionPlanApi, cronApi } from '@/api/scheduler'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import HostSelector from '@/components/HostSelector.vue'
 import CronBuilder from './components/CronBuilder.vue'
+import { NButton, NCard, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NSwitch, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, CircleAlert, Clock3, Eye, EyeOff, Info } from 'lucide-vue-next'
 
 type ExecutionPlanOption = {
   id: number
@@ -276,12 +258,13 @@ type GlobalParam = {
   overrideValue: any
 }
 
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const presetPlanId = computed(() => route.query.plan_id ? Number(route.query.plan_id) : undefined)
 
 // 响应式数据
-const formRef = ref<FormInstance>()
+const formRef = ref<FormInst>()
 const saving = ref(false)
 const loadingPlans = ref(false)
 const executionPlans = ref<ExecutionPlanOption[]>([])
@@ -366,7 +349,7 @@ const fetchExecutionPlans = async (search = '') => {
     executionPlans.value = response.results || []
   } catch (error) {
     console.error('获取执行方案列表失败:', error)
-    Message.error('获取执行方案列表失败')
+    message.error('获取执行方案列表失败')
   } finally {
     loadingPlans.value = false
   }
@@ -434,7 +417,7 @@ const handleExecutionPlanChange = async (planId) => {
     })
   } catch (error) {
     console.error('获取执行方案详情失败:', error)
-    Message.error('获取执行方案详情失败')
+    message.error('获取执行方案详情失败')
     globalParameters.value = []
   } finally {
     loadingPlanDetail.value = false
@@ -609,10 +592,10 @@ const handleSave = async () => {
 
   if (isEdit.value) {
     await scheduledJobApi.update(Number(route.params.id), form)
-    Message.success('更新成功')
+    message.success('更新成功')
   } else {
       await scheduledJobApi.create(form)
-      Message.success('创建成功')
+      message.success('创建成功')
     }
 
     router.push('/scheduled-tasks')
@@ -625,7 +608,7 @@ const handleSave = async () => {
 
     // 如果是API调用错误
     console.error('保存失败:', validationError)
-    Message.error(validationError.response?.data?.message || '保存失败')
+    message.error(validationError.response?.data?.message || '保存失败')
   } finally {
     saving.value = false
   }
@@ -664,7 +647,7 @@ const loadTask = async () => {
     handleCronValidation()
   } catch (error) {
     console.error('加载任务数据失败:', error)
-    Message.error('加载任务数据失败')
+    message.error('加载任务数据失败')
     router.push('/scheduled-tasks')
   }
 }
@@ -703,6 +686,9 @@ onMounted(() => {
   })
   loadTask()
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: 'Asia/Shanghai (北京时间)', value: 'Asia/Shanghai' }, { label: 'UTC (协调世界时)', value: 'UTC' }, { label: 'America/New_York (纽约时间)', value: 'America/New_York' }, { label: 'Europe/London (伦敦时间)', value: 'Europe/London' }, { label: 'Asia/Tokyo (东京时间)', value: 'Asia/Tokyo' }]
 </script>
 
 <style scoped>
@@ -738,7 +724,7 @@ onMounted(() => {
 
 .header-desc {
   margin: 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -802,20 +788,20 @@ onMounted(() => {
   gap: 4px;
   margin-bottom: 0;
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .global-parameters-override .form-tip .arco-icon {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
   font-size: 14px;
   flex-shrink: 0;
 }
 
 .parameter-override-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 12px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .parameter-content {
@@ -839,7 +825,7 @@ onMounted(() => {
 
 .param-key-label {
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   font-size: 14px;
 }
 
@@ -876,16 +862,16 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .host-override-default {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .param-description-text {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   line-height: 1.4;
 }
 
@@ -897,13 +883,13 @@ onMounted(() => {
 }
 
 .param-default .label {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .param-default .value {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  background: var(--color-bg-2);
+  background: var(--app-bg);
   padding: 2px 6px;
   border-radius: 3px;
 }

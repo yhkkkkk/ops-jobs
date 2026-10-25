@@ -46,66 +46,68 @@
           </div>
       
       <!-- 登录方式选择标签页 -->
-      <a-tabs 
-        v-model:active-key="loginType" 
+      <n-tabs 
+        v-model:value="loginType" 
         type="line"
         class="login-tabs"
         v-if="authConfig.ldap_enabled"
       >
-        <a-tab-pane key="normal" title="普通登录" />
-        <a-tab-pane key="ldap" title="LDAP登录" />
-      </a-tabs>
+        <n-tab-pane name="normal" tab="普通登录" />
+        <n-tab-pane name="ldap" tab="LDAP登录" />
+      </n-tabs>
       
-      <a-form
+      <n-form
         ref="formRef"
         :model="form"
         :rules="rules"
         layout="vertical"
-        @submit="handleSubmit"
+        @keydown.enter.prevent="handleSubmit({ values: form, errors: null } as any)"
       >
-        <a-form-item field="username" label="用户名">
-          <a-input
-            v-model="form.username"
+        <n-form-item path="username" label="用户名">
+          <n-input
+            v-model:value="form.username"
             placeholder="请输入用户名"
             size="large"
-            allow-clear
+            clearable
           >
             <template #prefix>
-              <IconUser />
+              <UserRound />
             </template>
-          </a-input>
-        </a-form-item>
+          </n-input>
+        </n-form-item>
         
-        <a-form-item field="password" label="密码">
-          <a-input-password
-            v-model="form.password"
+        <n-form-item path="password" label="密码">
+          <n-input
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
             placeholder="请输入密码"
             size="large"
-            allow-clear
+            clearable
           >
             <template #prefix>
-              <IconLock />
+              <Lock :size="16" />
             </template>
-          </a-input-password>
-        </a-form-item>
+          </n-input>
+        </n-form-item>
 
         <!-- 验证码（与2FA互斥，如果启用了2FA则不显示验证码） -->
-        <a-form-item 
+        <n-form-item 
           v-if="authConfig.captcha_enabled && !authConfig.two_factor_enabled" 
-          field="captcha_value" 
+          path="captcha_value" 
           label="验证码"
         >
           <div class="captcha-container">
-            <a-input
-              v-model="form.captcha_value"
+            <n-input
+              v-model:value="form.captcha_value"
               placeholder="请输入验证码"
               size="large"
               style="flex: 1"
             >
               <template #prefix>
-                <IconSafe />
+                <ShieldCheck />
               </template>
-            </a-input>
+            </n-input>
             <div class="captcha-image" @click="refreshCaptcha">
               <img 
                 v-if="captchaImage" 
@@ -114,77 +116,76 @@
                 style="width: 100%; height: 100%; cursor: pointer;"
               />
               <div v-else class="captcha-placeholder">
-                <IconRefresh :size="20" />
+                <RefreshCw :size="20" />
               </div>
             </div>
           </div>
           <input v-model="form.captcha_key" type="hidden" />
-        </a-form-item>
+        </n-form-item>
 
         <!-- 2FA验证码 -->
-        <a-form-item 
+        <n-form-item 
           v-if="showOtpInput" 
-          field="otp_token" 
+          path="otp_token" 
           label="双因子验证码"
         >
-          <a-verification-code
-            v-model="form.otp_token"
-            :length="6"
+          <n-input
+            v-model:value="form.otp_token"
+            placeholder="请输入6位验证码"
             size="large"
-            :formatter="formatOtpChar"
-            @finish="handleOtpFinish"
+            :maxlength="6"
+            :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }"
+            @update:value="(v: string) => { form.otp_token = v.replace(/\D/g, '').slice(0, 6); if (v.length === 6) handleOtpFinish({ values: form, errors: null } as any) }"
           />
-          <template #extra>
-            <a-link @click="showOtpHelp = true">如何使用？</a-link>
-          </template>
-        </a-form-item>
+          <n-button text size="small" @click="showOtpHelp = true">如何使用？</n-button>
+        </n-form-item>
 
-        <a-form-item>
+        <n-form-item>
           <div class="login-options">
-            <a-checkbox v-model="form.remember">
+            <n-checkbox v-model:checked="form.remember">
               记住登录状态
-            </a-checkbox>
+            </n-checkbox>
             <div class="platform-selector-inline">
-              <a-radio-group v-model="selectedPlatform" type="button" size="small">
-                <a-radio value="job" class="platform-radio">
+              <n-radio-group v-model:value="selectedPlatform" name="platform" size="small">
+                <n-radio value="job" class="platform-radio">
                   <span class="platform-radio-content">
-                    <IconApps :size="14" />
+                    <AppWindow :size="14" />
                     <span>作业平台</span>
                   </span>
-                </a-radio>
-                <a-radio value="ops" class="platform-radio">
+                </n-radio>
+                <n-radio value="ops" class="platform-radio">
                   <span class="platform-radio-content">
-                    <IconTool :size="14" />
+                    <Wrench :size="14" />
                     <span>运维台</span>
                   </span>
-                </a-radio>
-              </a-radio-group>
+                </n-radio>
+              </n-radio-group>
             </div>
           </div>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item>
-          <a-button
+        <n-form-item>
+          <n-button
             type="primary"
-            html-type="submit"
             size="large"
-            long
+            block
             :loading="loading"
+            @click="handleSubmit({ values: form, errors: null } as any)"
           >
             登录
-          </a-button>
-        </a-form-item>
-      </a-form>
+          </n-button>
+        </n-form-item>
+      </n-form>
         </div>
       </div>
     </div>
 
     <!-- 2FA帮助对话框 -->
-    <a-modal
-      v-model:visible="showOtpHelp"
+    <n-modal
+      v-model:show="showOtpHelp"
+      preset="card"
       title="双因子认证使用说明"
-      :footer="false"
-      width="500px"
+      :style="{ width: '500px' }"
     >
       <div class="otp-help">
         <p>1. 如果您已启用双因子认证，请在登录时输入6位验证码</p>
@@ -192,19 +193,20 @@
         <p>3. 验证码每30秒自动更新</p>
         <p>4. 如果丢失了认证器，可以使用备份码登录</p>
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref, onMounted, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
-import { IconApps, IconTool, IconUser, IconLock, IconSafe, IconRefresh } from '@arco-design/web-vue/es/icon'
+import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NRadio, NRadioGroup, NTabPane, NTabs, useMessage } from 'naive-ui'
+import { AppWindow, Lock, RefreshCw, ShieldCheck, UserRound, Wrench } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, captchaApi } from '@/api/auth'
 import type { LoginParams, AuthConfig } from '@/types'
 
+const message = useMessage()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -315,7 +317,7 @@ const refreshCaptcha = async () => {
     }
   } catch (error) {
     console.error('获取验证码失败:', error)
-    Message.error('获取验证码失败')
+    message.error('获取验证码失败')
   }
 }
 
@@ -336,7 +338,7 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
         if (checkResult.requires_2fa) {
           // 用户启用了2FA，显示OTP输入框
           showOtpInput.value = true
-          Message.warning('该账户已启用双因子认证，请输入验证码')
+          message.warning('该账户已启用双因子认证，请输入验证码')
           loading.value = false
           return
         }
@@ -369,14 +371,14 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
       await authStore.login(loginData)
       // 等待 Vue 微任务队列让 authStore 更新用户信息，避免随后读取 user 时发生竞态
       await nextTick()
-      Message.success('登录成功')
+      message.success('登录成功')
       
       // 记住用户选择的平台
       // 检查用户权限
       const user = authStore.user
       if (selectedPlatform.value === 'ops' && !user?.is_superuser) {
         // 非超级管理员不能访问运维台
-        Message.warning('您没有权限访问运维台，仅超级管理员可访问')
+        message.warning('您没有权限访问运维台，仅超级管理员可访问')
         selectedPlatform.value = 'job'
       }
       
@@ -401,7 +403,7 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
         // 需要2FA验证
         if (authConfig.value.two_factor_enabled) {
           showOtpInput.value = true
-          Message.warning('请输入双因子验证码')
+          message.warning('请输入双因子验证码')
           loading.value = false
           return
         }
@@ -416,7 +418,7 @@ const handleSubmit = async (data: { values: LoginParams; errors: any }) => {
   } catch (error: any) {
     console.error('登录失败:', error)
     const errorMessage = error.response?.data?.message || error.message || '登录失败，请检查用户名和密码'
-    Message.error(errorMessage)
+    message.error(errorMessage)
   } finally {
     loading.value = false
   }
@@ -649,24 +651,11 @@ onMounted(() => {
   margin: 0;
 }
 
-.login-box :deep(.arco-input-wrapper),
-.login-box :deep(.arco-input),
-.login-box :deep(.arco-input-password) {
+.login-box :deep(.n-input) {
   border-radius: 10px;
 }
 
-.login-box :deep(.arco-verification-code) {
-  width: 100%;
-  justify-content: space-between;
-}
-
-.login-box :deep(.arco-verification-code .arco-input) {
-  border-radius: 10px;
-  text-align: center;
-  font-weight: 600;
-}
-
-.login-box :deep(.arco-btn-primary) {
+.login-box :deep(.n-button--primary-type) {
   border-radius: 10px;
   height: 44px;
   font-weight: 600;
@@ -682,7 +671,7 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.login-options :deep(.arco-checkbox) {
+.login-options :deep(.n-checkbox) {
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -694,7 +683,7 @@ onMounted(() => {
   min-width: 0;
 }
 
-.platform-selector-inline :deep(.arco-radio-group) {
+.platform-selector-inline :deep(.n-radio-group) {
   display: inline-flex;
   white-space: nowrap;
   min-width: 0;
@@ -703,7 +692,7 @@ onMounted(() => {
   padding: 2px;
 }
 
-.platform-selector-inline :deep(.arco-radio-button) {
+.platform-selector-inline :deep(.n-radio) {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
@@ -715,12 +704,13 @@ onMounted(() => {
   border-radius: 999px;
 }
 
-.platform-selector-inline :deep(.arco-radio-button.arco-radio-checked) {
+.platform-selector-inline :deep(.n-radio--checked),
+.platform-selector-inline :deep(.n-radio--checked .platform-radio-content) {
   background: #e0f2fe;
   color: #0369a1;
 }
 
-.platform-selector-inline :deep(.arco-radio-button-content) {
+.platform-selector-inline :deep(.n-radio__label) {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
@@ -737,7 +727,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.login-tabs :deep(.arco-tabs-nav) {
+.login-tabs :deep(.n-tabs-nav) {
   margin-bottom: 0;
 }
 

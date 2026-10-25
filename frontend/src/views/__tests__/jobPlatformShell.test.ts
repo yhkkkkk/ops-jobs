@@ -88,15 +88,15 @@ describe('job platform list page shell', () => {
     const scheduledTasks = readFileSync(resolve(__dirname, '../scheduled-tasks/index.vue'), 'utf8')
     const scheduledColumns = scheduledTasks.match(/const columns = \[[\s\S]*?\n\]/)?.[0] ?? ''
 
-    expect(scriptTemplates).toContain('class="template-description"')
-    expect(scriptTemplates).toContain('class="template-primary-action"')
-    expect(jobTemplates).toContain('class="template-description"')
+    expect(scriptTemplates).toContain("class: 'template-description'")
+    expect(scriptTemplates).toContain("class: 'template-primary-action'")
+    expect(jobTemplates).toContain("class: 'template-description'")
     expect(jobTemplates).not.toContain('@click="handleEdit(record)"\n              v-permission')
 
-    expect(scheduledTasks).toContain('slotName: \'task\'')
-    expect(scheduledTasks).toContain('class="task-name-cell"')
-    expect(scheduledTasks).toContain('class="scheduled-primary-action"')
-    expect(scheduledTasks).toContain('class="scheduled-more-action"')
+    expect(scheduledTasks).toContain("key: 'task'")
+    expect(scheduledTasks).toContain("class: 'task-name-cell'")
+    expect(scheduledTasks).toContain("class: 'scheduled-primary-action'")
+    expect(scheduledTasks).toContain("class: 'scheduled-more-action'")
     expect(scheduledColumns).not.toContain("title: '执行方案'")
     expect(scheduledColumns).not.toContain("title: '模板名称'")
     expect(scheduledColumns).not.toContain('width: 96')

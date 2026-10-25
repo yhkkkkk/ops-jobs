@@ -24,7 +24,7 @@ describe('flow pagination contract', () => {
     expect(source).toContain('page: pagination.current')
     expect(source).toContain('page_size: pagination.pageSize')
     expect(source).not.toContain('flowApi.getRuns()')
-    expect(source).toContain('@page-change="handlePageChange"')
+    expect(source).toContain('onChange: (page: number) => handlePageChange(page)')
   })
 
   it('does not use an array fallback for paginated workflow templates', () => {

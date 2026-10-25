@@ -13,25 +13,21 @@
       description="管理服务器登录账号，用于执行命令、文件传输和主机连通性验证。"
     >
       <template #actions>
-        <a-space>
-          <a-button @click="fetchAccounts">
-            <template #icon>
-              <icon-refresh />
-            </template>
+        <n-space>
+          <n-button @click="fetchAccounts">
+            <template #icon><RefreshCw :size="16" /></template>
             刷新
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-permission="{ resourceType: 'serveraccount', permission: 'add' }"
             v-if="!isReadOnly"
             type="primary"
             @click="handleCreate"
           >
-            <template #icon>
-              <icon-plus />
-            </template>
+            <template #icon><Plus :size="16" /></template>
             新建账号
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
@@ -41,38 +37,31 @@
       :active-count="accountActiveFilterCount"
     >
       <div class="app-filter-grid">
-        <a-input
-          v-model="searchForm.search"
+        <n-input
+          v-model:value="searchForm.search"
           placeholder="账号名称/用户名"
-          allow-clear
-          @press-enter="handleSearch"
+          clearable
+          @keyup.enter="handleSearch"
           @clear="handleSearch"
         />
-        <a-select
-          v-model="searchForm.auth_type"
+        <n-select
+          v-model:value="searchForm.auth_type"
           placeholder="认证方式"
-          allow-clear
-          @change="handleSearch"
-          @clear="handleSearch"
-        >
-          <a-option value="password">密码认证</a-option>
-          <a-option value="key">密钥认证</a-option>
-        </a-select>
+          clearable
+          @update:value="handleSearch"
+          :options="authTypeOptions"
+        />
         <div class="app-filter-grid__actions">
-          <a-space>
-            <a-button type="primary" @click="handleSearch">
-              <template #icon>
-                <icon-search />
-              </template>
+          <n-space>
+            <n-button type="primary" @click="handleSearch">
+              <template #icon><Search :size="16" /></template>
               搜索
-            </a-button>
-            <a-button @click="handleReset">
-              <template #icon>
-                <icon-refresh />
-              </template>
+            </n-button>
+            <n-button @click="handleReset">
+              <template #icon><RefreshCw :size="16" /></template>
               重置
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
       <ActiveFiltersBar
@@ -86,64 +75,12 @@
       title="账号列表"
       :description="`共 ${pagination.total} 个账号，当前页 ${accounts.length} 个`"
     >
-      <a-table
-        :columns="columns"
+      <n-data-table
+        :columns="tableColumns"
         :data="accounts"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #name="{ record }">
-          <div class="account-info">
-            <div class="account-name">{{ record.name }}</div>
-            <div class="account-username">{{ record.username }}</div>
-          </div>
-        </template>
-
-        <template #auth_info="{ record }">
-          <div class="auth-info">
-            <a-tag v-if="record.auth_type === 'password'" color="blue" size="small">密码</a-tag>
-            <a-tag v-else-if="record.auth_type === 'key'" color="green" size="small">密钥</a-tag>
-            <a-tag v-else-if="record.auth_type === 'both'" color="purple" size="small">密码+密钥</a-tag>
-            <a-tag v-else color="red" size="small">未配置</a-tag>
-          </div>
-        </template>
-
-        <template #description="{ record }">
-          <span class="description">{{ record.description || '-' }}</span>
-        </template>
-
-        <template #actions="{ record }">
-          <a-space>
-            <a-button
-              v-permission="{ resourceType: 'serveraccount', permission: 'change', resourceId: record.id }"
-              v-if="!isReadOnly"
-              type="text"
-              size="small"
-              @click="handleEdit(record)"
-            >
-              <template #icon>
-                <icon-edit />
-              </template>
-              编辑
-            </a-button>
-            <a-button
-              v-permission="{ resourceType: 'serveraccount', permission: 'delete', resourceId: record.id }"
-              v-if="!isReadOnly"
-              type="text"
-              size="small"
-              class="text-red-500"
-              @click="handleClickDelete(record)"
-            >
-              <template #icon>
-                <icon-delete />
-              </template>
-              删除
-            </a-button>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+      />
     </DetailPanel>
 
     <!-- 账号表单弹窗 -->
@@ -156,13 +93,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRoute } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
+import { NButton, NDataTable, NInput, NSelect, NSpace, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { RefreshCw, Plus, Search, Pencil, Trash2 } from 'lucide-vue-next'
 import { accountApi, type ServerAccount } from '@/api/account'
 import AccountForm from './components/AccountForm.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
-import { useFilterQuerySync, parseNumberQuery } from '@/composables/useFilterQuerySync'
+import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import { usePermissionsStore } from '@/stores/permissions'
 import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
 
@@ -172,6 +110,8 @@ const accounts = ref<ServerAccount[]>([])
 const formVisible = ref(false)
 const currentAccount = ref<ServerAccount | null>(null)
 const permissionsStore = usePermissionsStore()
+const message = useMessage()
+const dialog = useDialog()
 const route = useRoute()
 const isOpsPlatform = computed(() => {
   return route.matched.some((record) => record.meta?.platform === 'ops')
@@ -181,16 +121,10 @@ const isReadOnly = computed(() => !isOpsPlatform.value)
 const defaultSearchForm = () => ({
   search: '',
   auth_type: '',
-  created_by: undefined as number | undefined,
-  updated_by: undefined as number | undefined
 })
 
 // 搜索表单
 const searchForm = reactive(defaultSearchForm())
-
-const availableUsers = ref<Array<{ id: number; username: string; name: string }>>([])
-const filteredCreators = ref<Array<{ id: number; username: string; name: string }>>([])
-const filteredUpdaters = ref<Array<{ id: number; username: string; name: string }>>([])
 
 // 排序
 const ordering = ref('')
@@ -211,9 +145,7 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
   ordering,
   fields: [
     { key: 'search' },
-    { key: 'auth_type' },
-    { key: 'created_by', fromQuery: (value) => parseNumberQuery(value) },
-    { key: 'updated_by', fromQuery: (value) => parseNumberQuery(value) }
+    { key: 'auth_type' }
   ]
 })
 
@@ -226,17 +158,9 @@ const resolveAuthType = (value: string) => {
   return map[value] || value
 }
 
-const resolveUserName = (userId?: number) => {
-  if (!userId) return ''
-  const user = availableUsers.value.find(item => item.id === userId)
-  return user?.name || String(userId)
-}
-
 const activeFilterItems = computed(() => [
   { key: 'search', label: '账号名称/用户名', display: searchForm.search },
-  { key: 'auth_type', label: '认证方式', display: resolveAuthType(searchForm.auth_type) },
-  { key: 'created_by', label: '创建者', display: resolveUserName(searchForm.created_by) },
-  { key: 'updated_by', label: '更新者', display: resolveUserName(searchForm.updated_by) }
+  { key: 'auth_type', label: '认证方式', display: resolveAuthType(searchForm.auth_type) }
 ])
 
 const accountActiveFilterCount = computed(() => countActiveFilters(searchForm as unknown as Record<string, unknown>))
@@ -251,74 +175,78 @@ const handleClearFilter = (key: string) => {
   fetchAccounts()
 }
 
-const filterUsers = (searchValue: string) => {
-  if (!searchValue.trim()) {
-    return [...availableUsers.value]
-  }
-  const keyword = searchValue.toLowerCase().trim()
-  return availableUsers.value.filter(user =>
-    user.name.toLowerCase().includes(keyword) ||
-    user.username.toLowerCase().includes(keyword)
-  )
+const canAccountPermission = (permission: 'change' | 'delete', accountId: number) => {
+  if (permissionsStore.isSuperUser) return true
+  const cacheKey = `serveraccount:${permission}:${accountId}`
+  if (!permissionsStore.permissionCache.has(cacheKey)) return false
+  return permissionsStore.hasPermission('serveraccount', permission, accountId)
 }
 
-const handleCreatorSearch = (value: string) => {
-  filteredCreators.value = filterUsers(value)
-}
-
-const handleUpdaterSearch = (value: string) => {
-  filteredUpdaters.value = filterUsers(value)
-}
-
-const fetchAvailableUsers = () => {
-  const userMap = new Map<number, { id: number; username: string; name: string }>()
-  const appendUser = (id?: number, name?: string) => {
-    if (!id || !name) return
-    userMap.set(id, { id, username: name, name })
-  }
-
-  accounts.value.forEach(account => {
-    appendUser(account.created_by, account.created_by_name)
-    appendUser(account.updated_by, account.updated_by_name)
-  })
-
-  availableUsers.value = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name))
-  filteredCreators.value = [...availableUsers.value]
-  filteredUpdaters.value = [...availableUsers.value]
+const ensureAccountPermission = async (permission: 'change' | 'delete', accountId: number) => {
+  if (permissionsStore.isSuperUser) return true
+  return permissionsStore.checkPermission('serveraccount', permission, accountId)
 }
 
 // 表格列配置
-const columns = [
+const authTypeOptions = [
+  { label: '密码认证', value: 'password' },
+  { label: '密钥认证', value: 'key' }
+]
+
+const tableColumns = computed<DataTableColumns<ServerAccount>>(() => [
   {
     title: '账号信息',
-    dataIndex: 'name',
-    slotName: 'name',
+    key: 'name',
     width: 220,
-    ellipsis: true,
-    tooltip: true
+    ellipsis: { tooltip: true },
+    render: (record: ServerAccount) => h('div', { class: 'account-info' }, [
+      h('div', { class: 'account-name' }, record.name),
+      h('div', { class: 'account-username' }, record.username)
+    ])
   },
   {
     title: '认证方式',
-    dataIndex: 'auth_info',
-    slotName: 'auth_info',
-    width: 120
+    key: 'auth_info',
+    width: 120,
+    render: (record: ServerAccount) => h(NTag, {
+      size: 'small',
+      type: record.auth_type === 'password' ? 'info' : record.auth_type === 'key' ? 'success' : record.auth_type === 'both' ? 'warning' : 'error'
+    }, { default: () => record.auth_type === 'password' ? '密码' : record.auth_type === 'key' ? '密钥' : record.auth_type === 'both' ? '密码+密钥' : '未配置' })
   },
   {
     title: '描述',
-    dataIndex: 'description',
-    slotName: 'description',
-    ellipsis: true,
-    tooltip: true,
-    width: 240
+    key: 'description',
+    width: 240,
+    ellipsis: { tooltip: true },
+    render: (record: ServerAccount) => h('span', { class: 'description' }, record.description || '-')
   },
   {
     title: '操作',
-    dataIndex: 'actions',
-    slotName: 'actions',
+    key: 'actions',
     width: 150,
-    align: 'center'
+    align: 'center' as const,
+    render: (record: ServerAccount) => h(NSpace, { size: 4 }, {
+      default: () => [
+        !isReadOnly.value && canAccountPermission('change', record.id)
+          ? h(NButton, { text: true, size: 'small', onClick: () => handleEdit(record) }, { icon: () => h(Pencil, { size: 15 }), default: () => '编辑' })
+          : null,
+        !isReadOnly.value && canAccountPermission('delete', record.id)
+          ? h(NButton, { text: true, size: 'small', type: 'error', onClick: () => handleClickDelete(record) }, { icon: () => h(Trash2, { size: 15 }), default: () => '删除' })
+          : null
+      ]
+    })
   }
-]
+])
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  showSizePicker: true,
+  pageSizes: pagination.pageSizeOptions.map(Number),
+  onUpdatePage: handlePageChange,
+  onUpdatePageSize: handlePageSizeChange
+}))
 
 // 获取账号列表
 const fetchAccounts = async () => {
@@ -341,7 +269,6 @@ const fetchAccounts = async () => {
     const response = await accountApi.getAccounts(params)
     accounts.value = response.results
     pagination.total = response.total
-    fetchAvailableUsers()
   } catch (error) {
     console.error('获取账号列表失败:', error)
   } finally {
@@ -359,8 +286,6 @@ const handleSearch = () => {
 // 重置
 const handleReset = () => {
   Object.assign(searchForm, defaultSearchForm())
-  filteredCreators.value = [...availableUsers.value]
-  filteredUpdaters.value = [...availableUsers.value]
   pagination.current = 1
   syncToQuery()
   fetchAccounts()
@@ -388,19 +313,32 @@ const handleCreate = () => {
 
 // 编辑账号
 const handleEdit = (account: ServerAccount) => {
-  currentAccount.value = { ...account }
-  formVisible.value = true
+  void ensureAccountPermission('change', account.id).then((allowed) => {
+    if (!allowed) {
+      message.error('没有编辑该账号的权限')
+      return
+    }
+    currentAccount.value = { ...account }
+    formVisible.value = true
+  })
 }
 
 // 删除账号
 const handleDelete = (record: ServerAccount) => {
-  Modal.confirm({
+  void ensureAccountPermission('delete', record.id).then((allowed) => {
+    if (!allowed) {
+      message.error('没有删除该账号的权限')
+      return
+    }
+    dialog.warning({
     title: '确认删除',
     content: `确定要删除账号"${record.name}"吗？此操作不可恢复。`,
-    onOk: async () => {
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
       try {
         await accountApi.deleteAccount(record.id)
-        Message.success('账号删除成功')
+        message.success('账号删除成功')
         fetchAccounts()
       } catch (error: any) {
         console.error('删除账号失败:', error)
@@ -408,12 +346,13 @@ const handleDelete = (record: ServerAccount) => {
         // 检查是否有具体的错误信息
         const errorMessage = error.message || error.response?.data?.message || error.response?.data?.detail
         if (errorMessage && errorMessage !== '请求失败') {
-          Message.error(errorMessage)
+          message.error(errorMessage)
         } else {
-          Message.error('账号删除失败，请稍后重试')
+          message.error('账号删除失败，请稍后重试')
         }
       }
     }
+    })
   })
 }
 
@@ -471,20 +410,4 @@ onMounted(() => {
 }
 
 
-/* 表格样式优化 */
-:deep(.arco-table) {
-  .arco-table-th {
-    background-color: #fff !important;
-    font-weight: 600;
-  }
-
-  .arco-table-td {
-    padding: 12px 16px;
-  }
-
-  /* 操作列按钮间距 */
-  .arco-space-item {
-    margin-right: 8px;
-  }
-}
 </style>

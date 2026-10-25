@@ -13,12 +13,12 @@
       description="按执行类型、状态、发起人和时间窗口追踪平台内所有任务执行。"
     >
       <template #actions>
-        <a-button @click="handleRefresh">
+        <n-button @click="handleRefresh">
           <template #icon>
-            <icon-refresh />
+            <RefreshCw  />
           </template>
           刷新
-        </a-button>
+        </n-button>
       </template>
     </PageHeader>
 
@@ -27,59 +27,46 @@
       description="默认展示最近执行，时间快捷项会同步到地址栏，方便复盘和共享。"
       :active-count="executionActiveFilterCount"
     >
-      <a-row :gutter="16">
-        <a-col :span="4">
-          <a-input
-            v-model="searchForm.name"
+      <div class="form-grid-row">
+        <div class="form-grid-col" style="grid-column: span 4">
+          <n-input
+            v-model:value="searchForm.name"
             placeholder="请输入执行名称"
-            allow-clear
+            clearable
             @press-enter="handleSearch"
           />
-        </a-col>
-        <a-col :span="4">
-          <a-select
-            v-model="searchForm.execution_type"
+        </div>
+        <div class="form-grid-col" style="grid-column: span 4">
+                    <n-select
+            v-model:value="searchForm.execution_type"
             placeholder="请选择执行类型"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option value="quick_script">快速脚本执行</a-option>
-            <a-option value="quick_file_transfer">快速文件传输</a-option>
-            <a-option value="job_workflow">Job工作流执行</a-option>
-            <a-option value="scheduled_job">定时作业执行</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="4">
-          <a-select
-            v-model="searchForm.status"
+            clearable
+            @change="handleSearch" :options="selectOptions1" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 4">
+                    <n-select
+            v-model:value="searchForm.status"
             placeholder="状态"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option value="pending">等待中</a-option>
-            <a-option value="running">执行中</a-option>
-            <a-option value="success">成功</a-option>
-            <a-option value="failed">失败</a-option>
-            <a-option value="cancelled">已取消</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="4">
-          <a-select
-            v-model="searchForm.executed_by"
+            clearable
+            @change="handleSearch" :options="selectOptions2" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 4">
+          <n-select
+            v-model:value="searchForm.executed_by"
             placeholder="执行用户"
-            allow-clear
-            allow-search
+            clearable
+            filterable
             :filter-option="false"
             :options="executedByOptions"
             @search="handleExecutedBySearch"
             @change="handleSearch"
           />
-        </a-col>
-      </a-row>
+        </div>
+      </div>
       
-      <a-row :gutter="16" class="filter-row">
-        <a-col :span="6">
-          <a-date-picker
+      <div class="form-grid-row filter-row">
+        <div class="form-grid-col" style="grid-column: span 6">
+          <n-date-picker
             v-model="searchForm.start_date"
             placeholder="开始时间"
             format="YYYY-MM-DD HH:mm:ss"
@@ -88,9 +75,9 @@
             style="width: 100%"
             @change="handleSearch"
           />
-        </a-col>
-        <a-col :span="6">
-          <a-date-picker
+        </div>
+        <div class="form-grid-col" style="grid-column: span 6">
+          <n-date-picker
             v-model="searchForm.end_date"
             placeholder="结束时间"
             format="YYYY-MM-DD HH:mm:ss"
@@ -99,196 +86,66 @@
             style="width: 100%"
             @change="handleSearch"
           />
-        </a-col>
-        <a-col :span="12">
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
           <div class="time-actions">
-            <a-space size="mini" class="time-shortcuts">
-              <a-button size="mini" @click="applyDateShortcut('last1h')">近1h</a-button>
-              <a-button size="mini" @click="applyDateShortcut('last12h')">近12h</a-button>
-              <a-button size="mini" @click="applyDateShortcut('today')">今天</a-button>
-              <a-button size="mini" @click="applyDateShortcut('yesterday')">昨天</a-button>
-              <a-button size="mini" @click="applyDateShortcut('last7')">近7天</a-button>
-              <a-button size="mini" @click="applyDateShortcut('last30')">近30天</a-button>
-              <a-button size="mini" @click="applyDateShortcut('thisMonth')">本月</a-button>
-            </a-space>
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
-                <template #icon><icon-search /></template>
+            <n-space :size="4" class="time-shortcuts">
+              <n-button size="tiny" @click="applyDateShortcut('last1h')">近1h</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('last12h')">近12h</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('today')">今天</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('yesterday')">昨天</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('last7')">近7天</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('last30')">近30天</n-button>
+              <n-button size="tiny" @click="applyDateShortcut('thisMonth')">本月</n-button>
+            </n-space>
+            <n-space>
+              <n-button type="primary" @click="handleSearch">
+                <template #icon><Search  /></template>
                 搜索
-              </a-button>
-              <a-button @click="handleReset">
-                <template #icon><icon-refresh /></template>
+              </n-button>
+              <n-button @click="handleReset">
+                <template #icon><RefreshCw  /></template>
                 重置
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </div>
-        </a-col>
-      </a-row>
+        </div>
+      </div>
     </DataToolbar>
 
     <DetailPanel
       title="执行明细"
       :description="`共 ${pagination.total} 条记录，当前页 ${tableData.length} 条`"
     >
-      <a-table
+      <n-data-table
         :columns="columns"
         :data="tableData"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-        row-key="id"
-      >
-        <template #execution_id="{ record }">
-          <a-typography-text copyable style="font-family: monospace; font-size: 12px;">
-            {{ record.execution_id || '-' }}
-          </a-typography-text>
-        </template>
-
-        <template #name="{ record }">
-          <div style="max-width: 200px;">
-            <a-tooltip :content="record.name">
-              <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                {{ record.name || '-' }}
-              </div>
-            </a-tooltip>
-          </div>
-        </template>
-
-        <template #execution_type="{ record }">
-          <a-tag :color="getExecutionTypeColor(record.execution_type)">
-            {{ getExecutionTypeText(record.execution_type) }}
-          </a-tag>
-        </template>
-
-        <template #status="{ record }">
-          <a-space>
-            <StatusBadge :status="record.status" :text="getStatusText(record.status)" />
-            <a-tag v-if="record.total_retry_count > 0" color="orange" size="small">
-              <template #icon>
-                <icon-refresh />
-              </template>
-              重试 {{ record.total_retry_count }} 次
-            </a-tag>
-          </a-space>
-        </template>
-
-        <template #duration="{ record }">
-          <span v-if="record.started_at && record.finished_at">
-            {{ formatDuration(record.started_at, record.finished_at) }}
-          </span>
-          <span v-else-if="record.started_at">
-            {{ formatDuration(record.started_at, new Date()) }}
-          </span>
-          <span v-else>-</span>
-        </template>
-
-        <template #created_at="{ record }">
-          <div>
-            <div>{{ formatDateTime(record.created_at) }}</div>
-            <div class="table-meta">
-              {{ record.executed_by_name || '-' }}
-            </div>
-          </div>
-        </template>
-
-        <template #actions="{ record }">
-          <a-space class="table-row-actions">
-            <a-button 
-              type="text" 
-              size="small" 
-              v-permission="{ resourceType: 'executionrecord', permission: 'view', resourceId: record.id }"
-              @click="handleView(record)"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              查看
-            </a-button>
-            <a-dropdown>
-              <a-button type="text" size="small" aria-label="更多操作">
-                <template #icon>
-                  <icon-more />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption
-                  v-if="record.status === 'running'"
-                  class="text-red-500"
-                  v-permission="{ resourceType: 'executionrecord', permission: 'execute', resourceId: record.id }"
-                  @click="handleCancel(record)"
-                >
-                  <template #icon>
-                    <icon-close />
-                  </template>
-                  取消
-                </a-doption>
-                <a-doption
-                  v-else-if="record.status === 'failed'"
-                  :class="{ 'disabled-option': !canExecute(record.id) }"
-                  @click="handleClickRetry(record)"
-                >
-                  <template #icon>
-                    <icon-refresh />
-                  </template>
-                  重试
-                </a-doption>
-                <a-doption
-                  v-else-if="record.status === 'pending'"
-                  :class="['text-red-500', { 'disabled-option': !canExecute(record.id) }]"
-                  @click="handleClickCancel(record)"
-                >
-                  <template #icon>
-                    <icon-close />
-                  </template>
-                  取消
-                </a-doption>
-                <a-doption
-                  v-else-if="record.status === 'success' || record.status === 'cancelled'"
-                  :class="{ 'disabled-option': !canExecute(record.id) }"
-                  @click="handleClickRetry(record)"
-                >
-                  <template #icon>
-                    <icon-refresh />
-                  </template>
-                  重做
-                </a-doption>
-                <a-doption
-                  v-if="record.has_retries"
-                  :class="{ 'disabled-option': !canView(record.id) }"
-                  @click="handleClickShowRetryHistory(record)"
-                >
-                  <template #icon>
-                    <icon-history />
-                  </template>
-                  重试历史
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+        :row-key="(row: any) => row.id"
+      />
     </DetailPanel>
 
     <!-- 重试历史弹窗 -->
-    <a-modal
-      v-model:visible="retryHistoryVisible"
+    <n-modal preset="card" :style="{ width: '800px' }"
+      v-model:show="retryHistoryVisible"
       title="重试历史"
-      width="800px"
-      :footer="false"
+     
+     
     >
       <div v-if="retryHistoryLoading" class="text-center py-8">
-        <a-spin size="large" />
+        <n-spin size="large" />
         <div class="mt-2">加载重试历史中...</div>
       </div>
 
-      <a-timeline v-else-if="retryHistory.length > 0" class="retry-history-timeline">
-        <a-timeline-item
+      <n-timeline v-else-if="retryHistory.length > 0" class="retry-history-timeline">
+        <n-timeline-item
           v-for="(retry, index) in retryHistory"
           :key="retry.id"
           :color="getTimelineColor(retry.status)"
         >
-          <template #dot>
+          <template #icon>
             <component :is="getStatusIcon(retry.status)" />
           </template>
 
@@ -296,16 +153,15 @@
             <div class="retry-header">
               <div class="retry-title">
                 <span class="retry-index">第 {{ retryHistory.length - index }} 次执行</span>
-                <a-tag v-if="retry.is_latest" color="green" size="small">当前</a-tag>
-                <a-tag v-else-if="index === retryHistory.length - 1" color="blue" size="small">原始</a-tag>
+                <n-tag v-if="retry.is_latest" type="success" size="small">当前</n-tag>
+                <n-tag v-else-if="index === retryHistory.length - 1" type="info" size="small">原始</n-tag>
               </div>
               <div class="retry-time">{{ formatDateTime(retry.created_at) }}</div>
             </div>
 
-            <div class="retry-status">
-              <a-tag :color="getStatusColor(retry.status)">
+            <div class="retry-status"><n-tag :type="getStatusColor(retry.status) as any">
                 {{ getStatusText(retry.status) }}
-              </a-tag>
+              </n-tag>
               <span class="retry-duration" v-if="retry.duration">
                 耗时: {{ Math.round(retry.duration) }}秒
               </span>
@@ -324,33 +180,27 @@
             </div>
 
             <div class="retry-actions mt-2">
-              <a-button size="small" @click="handleView(retry)">查看详情</a-button>
+              <n-button size="small" @click="handleView(retry)">查看详情</n-button>
             </div>
           </div>
-        </a-timeline-item>
-      </a-timeline>
+        </n-timeline-item>
+      </n-timeline>
 
-      <a-empty v-else description="暂无重试历史" />
-    </a-modal>
+      <n-empty v-else description="暂无重试历史" />
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { computed, h, onMounted, reactive, ref, resolveDirective, type VNode, withDirectives } from 'vue'
 import { useFilterQuerySync } from '@/composables/useFilterQuerySync'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import {
-  IconSearch,
-  IconRefresh,
-  IconHistory,
-  IconEye,
-  IconClose
-} from '@arco-design/web-vue/es/icon'
 import { executionRecordApi } from '@/api/ops'
 import { usePermissionsStore } from '@/stores/permissions'
 import { DataToolbar, DetailPanel, PageHeader, StatusBadge, countActiveFilters } from '@/components/app'
+import { NButton, NDataTable, NDatePicker, NDropdown, NEmpty, NInput, NModal, NSelect, NSpace, NSpin, NTag, NText, NTimeline, NTimelineItem, NTooltip, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { Check, CircleAlert, Eye, History, Loader2, MoreHorizontal, Pause, RefreshCw, Search, X } from 'lucide-vue-next'
 
 type ExecutionRecordRow = {
   id: number
@@ -387,6 +237,8 @@ type SearchForm = {
   end_date: string | null
 }
 
+const dialog = useDialog()
+const message = useMessage()
 const router = useRouter()
 const permissionsStore = usePermissionsStore()
 
@@ -456,59 +308,137 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
 })
 
 // 表格列配置
-const columns = [
+const recordRowActions = (row: any) => {
+  const actions: any[] = []
+  if (row.status === 'running') {
+    actions.push({ label: '取消', key: 'cancel', icon: () => h(X, { size: 14 }), props: { class: 'danger' } })
+  } else if (row.status === 'failed') {
+    actions.push({ label: '重试', key: 'retry', disabled: !canExecute(row.id), icon: () => h(RefreshCw, { size: 14 }) })
+  } else if (row.status === 'pending') {
+    actions.push({ label: '取消', key: 'cancel', disabled: !canExecute(row.id), icon: () => h(X, { size: 14 }), props: { class: 'danger' } })
+  } else if (row.status === 'success' || row.status === 'cancelled') {
+    actions.push({ label: '重做', key: 'retry', disabled: !canExecute(row.id), icon: () => h(RefreshCw, { size: 14 }) })
+  }
+  if (row.has_retries) {
+    actions.push({ label: '重试历史', key: 'history', disabled: !canView(row.id), icon: () => h(History, { size: 14 }) })
+  }
+  return actions
+}
+
+const onRecordRowAction = (key: string, row: any) => {
+  if (key === 'cancel' && row.status === 'running') handleCancel(row)
+  if (key === 'cancel') handleClickCancel(row)
+  if (key === 'retry') handleClickRetry(row)
+  if (key === 'history') handleClickShowRetryHistory(row)
+}
+
+const columns: DataTableColumns<any> = [
   {
     title: '执行ID',
-    dataIndex: 'execution_id',
-    slotName: 'execution_id',
+    key: 'execution_id',
     width: 180,
-    ellipsis: true,
-    tooltip: true
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h(NText, { copyable: true, style: 'font-family: monospace; font-size: 12px;' }, { default: () => row.execution_id || '-' }),
   },
   {
     title: '执行名称',
-    dataIndex: 'name',
-    slotName: 'name',
+    key: 'name',
     width: 200,
-    ellipsis: true,
-    tooltip: true
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h('div', { style: 'max-width: 200px;' }, [
+        h(NTooltip, {}, {
+          trigger: () => h('div', { style: 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' }, row.name || '-'),
+          default: () => row.name,
+        }),
+      ]),
   },
   {
     title: '执行类型',
-    dataIndex: 'execution_type',
-    slotName: 'execution_type',
-    width: 150
+    key: 'execution_type',
+    width: 150,
+    render: (row) =>
+      h(NTag, { type: getExecutionTypeColor(row.execution_type) as any }, { default: () => getExecutionTypeText(row.execution_type) }),
   },
   {
     title: '状态',
-    dataIndex: 'status',
-    slotName: 'status',
-    width: 100
+    key: 'status',
+    width: 100,
+    render: (row) =>
+      h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h(StatusBadge, { status: row.status, text: getStatusText(row.status) }),
+          row.total_retry_count > 0
+            ? h(NTag, { type: 'warning', size: 'small' }, {
+                icon: () => h(RefreshCw, { size: 12 }),
+                default: () => `重试 ${row.total_retry_count} 次`,
+              })
+            : null,
+        ],
+      }),
   },
   {
     title: '执行时长',
-    dataIndex: 'duration',
-    slotName: 'duration',
-    width: 120
+    key: 'duration',
+    width: 120,
+    render: (row) => {
+      if (row.started_at && row.finished_at) return formatDuration(row.started_at, row.finished_at)
+      if (row.started_at) return formatDuration(row.started_at, new Date())
+      return '-'
+    },
   },
-  {
-    title: '执行用户',
-    dataIndex: 'executed_by_name',
-    width: 120
-  },
+  { title: '执行用户', key: 'executed_by_name', width: 120, render: (row) => row.executed_by_name },
   {
     title: '创建信息',
-    dataIndex: 'created_at',
-    slotName: 'created_at',
-    width: 160
+    key: 'created_at',
+    width: 160,
+    render: (row) =>
+      h('div', {}, [
+        h('div', formatDateTime(row.created_at)),
+        h('div', { class: 'table-meta' }, row.executed_by_name || '-'),
+      ]),
   },
   {
     title: '操作',
     key: 'actions',
-    slotName: 'actions',
-    width: 124
-  }
+    width: 124,
+    render: (row) =>
+      h(NSpace, { class: 'table-row-actions', wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          withPerm(
+            h(NButton, { text: true, size: 'small', onClick: () => handleView(row) }, {
+              icon: () => h(Eye, { size: 14 }),
+              default: () => '查看',
+            }),
+            { resourceType: 'executionrecord', permission: 'view', resourceId: row.id },
+          ),
+          h(NDropdown, {
+            trigger: 'click',
+            options: recordRowActions(row),
+            onSelect: (key: string) => onRecordRowAction(key, row),
+          }, {
+            default: () => h(NButton, { text: true, size: 'small', 'aria-label': '更多操作' }, {
+              icon: () => h(MoreHorizontal, { size: 16 }),
+            }),
+          }),
+        ],
+      }),
+  },
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
+
+const withPerm = (vnode: VNode, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
 
 // 获取执行记录列表
 const fetchRecords = async () => {
@@ -641,16 +571,16 @@ const handleRetry = async (record) => {
   const successMessage = isRetry ? '重试成功' : '重做成功'
 
   try {
-    await Modal.confirm({
+    await dialog.warning({
       title,
       content,
-      onOk: async () => {
+      onPositiveClick: async () => {
         try {
           console.log('开始调用重做API, 执行记录ID:', record.id)
           const result = await executionRecordApi.retryExecution(record.id)
           console.log('重做API返回结果:', result)
 
-          Message.success(successMessage)
+          message.success(successMessage)
 
           // 如果返回了新的执行记录ID，跳转到新的执行记录详情页面
           // 注意：由于响应拦截器会自动提取content字段，result就是content的内容
@@ -665,7 +595,7 @@ const handleRetry = async (record) => {
           }
         } catch (error) {
           console.error('重做操作失败:', error)
-          Message.error('重做操作失败')
+          message.error('重做操作失败')
         }
       }
     })
@@ -677,12 +607,12 @@ const handleRetry = async (record) => {
 // 取消执行
 const handleCancel = async (record) => {
   try {
-    await Modal.confirm({
+    await dialog.warning({
       title: '确认取消',
       content: `确定要取消执行"${record.name}"吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         await executionRecordApi.cancelExecution(record.id)
-        Message.success('取消成功')
+        message.success('取消成功')
         fetchRecords()
       }
     })
@@ -702,7 +632,7 @@ const handleShowRetryHistory = async (record) => {
     retryHistory.value = response.content ?? []
   } catch (error) {
     console.error('获取重试历史失败:', error)
-    Message.error('获取重试历史失败')
+    message.error('获取重试历史失败')
     retryHistory.value = []
   } finally {
     retryHistoryLoading.value = false
@@ -728,7 +658,7 @@ const canView = (recordId) => {
 
 // 显示无权限提示
 const showNoPermissionMessage = () => {
-  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+  message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 // 点击处理函数（带权限检查）
@@ -813,15 +743,15 @@ const getStatusColor = (status) => {
   return colorMap[status] || 'gray'
 }
 
-const getStatusIcon = (status) => {
-  const iconMap = {
-    'pending': 'icon-pause',
-    'running': 'icon-loading',
-    'success': 'icon-check',
-    'failed': 'icon-exclamation',
-    'cancelled': 'icon-close'
+const getStatusIcon = (status: string) => {
+  const iconMap: Record<string, any> = {
+    pending: Pause,
+    running: Loader2,
+    success: Check,
+    failed: CircleAlert,
+    cancelled: X,
   }
-  return iconMap[status] || 'icon-pause'
+  return iconMap[status] || Pause
 }
 
 const formatDuration = (startTime: any, endTime: any) => {
@@ -853,6 +783,10 @@ onMounted(() => {
   initFromQuery()
   fetchRecords()
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '快速脚本执行', value: 'quick_script' }, { label: '快速文件传输', value: 'quick_file_transfer' }, { label: 'Job工作流执行', value: 'job_workflow' }, { label: '定时作业执行', value: 'scheduled_job' }]
+const selectOptions2 = [{ label: '等待中', value: 'pending' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'success' }, { label: '失败', value: 'failed' }, { label: '已取消', value: 'cancelled' }]
 </script>
 
 <style scoped>

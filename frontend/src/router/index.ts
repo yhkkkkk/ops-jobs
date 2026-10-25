@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Message } from '@arco-design/web-vue'
+import { message } from '@/utils/naiveFeedback'
 import type { RouteRecordRaw } from 'vue-router'
 import NProgress from 'nprogress'
 import '@/styles/nprogress.css'
@@ -68,6 +68,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '主机详情',
           hideInMenu: true,
+          breadcrumbParent: { title: '主机管理', to: '/hosts' },
         },
       },
       {
@@ -391,6 +392,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: 'Agent 详情',
           hideInMenu: true,
+          breadcrumbParent: { title: 'Agent 管理', to: '/ops/agents' },
         },
       },
       {
@@ -463,6 +465,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '主机详情',
           hideInMenu: true,
+          breadcrumbParent: { title: '主机管理', to: '/ops/hosts' },
         },
       },
     ],
@@ -498,7 +501,7 @@ const clearAuthErrorMessage = (message: string) => {
 const showUniqueAuthMessage = async (message: string) => {
   if (!authErrorMessages.has(message)) {
     authErrorMessages.add(message)
-    Message.warning(message)
+    message.warning(message)
     clearAuthErrorMessage(message)
   }
 }
@@ -567,7 +570,7 @@ router.beforeEach(async (to, from, next) => {
     // 检查是否需要超级用户权限
     if (to.meta.requiresSuperUser && !authStore.user?.is_superuser) {
       NProgress.done()
-      Message.warning('您没有权限访问该页面，仅超级管理员可访问')
+      message.warning('您没有权限访问该页面，仅超级管理员可访问')
       next({ name: 'Dashboard' })
       return
     }

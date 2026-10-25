@@ -4,12 +4,12 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="handleBack">
+          <n-button text @click="handleBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回详情
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>执行方案: {{ plan?.name || '加载中...' }}</h2>
             <p class="header-desc">配置执行参数并启动方案执行</p>
@@ -19,75 +19,75 @@
     </div>
 
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" />
+      <n-spin size="large" />
     </div>
 
     <div v-else-if="plan" class="execute-content">
-      <a-row :gutter="24">
+      <div class="form-grid-row">
         <!-- 左侧：执行配置 -->
-        <a-col :span="16">
-          <a-card title="执行配置">
-            <a-form :model="executeForm" layout="vertical">
-              <a-form-item label="执行名称" required>
-                <a-input
-                  v-model="executeForm.name"
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="执行配置">
+            <n-form :model="executeForm" layout="vertical">
+              <n-form-item label="执行名称" required>
+                <n-input
+                  v-model:value="executeForm.name"
                   placeholder="请输入执行名称"
                   :max-length="200"
                 />
-              </a-form-item>
+              </n-form-item>
 
-              <a-form-item label="执行描述">
-                <a-textarea
-                  v-model="executeForm.description"
+              <n-form-item label="执行描述">
+                <n-input type="textarea"
+                  v-model:value="executeForm.description"
                   placeholder="请输入执行描述（可选）"
                   :rows="3"
                   :max-length="500"
                 />
-              </a-form-item>
+              </n-form-item>
 
-              <a-form-item label="执行模式">
-                <a-radio-group v-model="executeForm.execution_mode">
-                  <a-radio value="parallel">并行执行</a-radio>
-                  <a-radio value="serial">串行执行</a-radio>
-                  <a-radio value="rolling">滚动执行</a-radio>
-                </a-radio-group>
-              </a-form-item>
+              <n-form-item label="执行模式">
+                <n-radio-group v-model="executeForm.execution_mode">
+                  <n-radio value="parallel">并行执行</n-radio>
+                  <n-radio value="serial">串行执行</n-radio>
+                  <n-radio value="rolling">滚动执行</n-radio>
+                </n-radio-group>
+              </n-form-item>
 
               <div v-if="executeForm.execution_mode === 'rolling'" class="rolling-config">
-                <a-row :gutter="16">
-                  <a-col :span="12">
-                    <a-form-item label="批次大小">
-                      <a-input-number
-                        v-model="executeForm.rolling_batch_size"
+                <div class="form-grid-row">
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="批次大小">
+                      <n-input-number
+                        v-model:value="executeForm.rolling_batch_size"
                         :min="1"
                         :max="100"
                         style="width: 100%"
                       />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="批次延迟(秒)">
-                      <a-input-number
-                        v-model="executeForm.rolling_batch_delay"
+                    </n-form-item>
+                  </div>
+                  <div class="form-grid-col" style="grid-column: span 12">
+                    <n-form-item label="批次延迟(秒)">
+                      <n-input-number
+                        v-model:value="executeForm.rolling_batch_delay"
                         :min="0"
                         :max="3600"
                         style="width: 100%"
                       />
-                    </a-form-item>
-                  </a-col>
-                </a-row>
+                    </n-form-item>
+                  </div>
+                </div>
               </div>
 
-              <a-form-item label="执行参数">
+              <n-form-item label="执行参数">
                 <div class="parameters-section">
                   <div class="parameters-header">
                     <span>全局参数（可覆盖模板中的参数）</span>
-                    <a-button type="text" size="small" @click="addParameter">
+                    <n-button text size="small" @click="addParameter">
                       <template #icon>
-                        <icon-plus />
+                        <Plus  />
                       </template>
                       添加参数
-                    </a-button>
+                    </n-button>
                   </div>
                   <div class="parameters-list">
                     <div
@@ -95,78 +95,77 @@
                       :key="index"
                       class="parameter-item"
                     >
-                      <a-input
-                        v-model="param.key"
+                      <n-input
+                        v-model:value="param.key"
                         placeholder="参数名"
                         style="width: 120px"
                       />
                       <span style="margin: 0 8px">=</span>
-                      <a-input
-                        v-model="param.value"
+                      <n-input
+                        v-model:value="param.value"
                         placeholder="参数值"
                         style="flex: 1"
                       />
-                      <a-button
-                        type="text"
-                        status="danger"
+                      <n-button 
+                       type="error"
                         @click="removeParameter(index)"
                         style="margin-left: 8px"
                       >
                         <template #icon>
-                          <icon-delete />
+                          <Trash2  />
                         </template>
-                      </a-button>
+                      </n-button>
                     </div>
                   </div>
                 </div>
-              </a-form-item>
+              </n-form-item>
 
-              <a-form-item>
-                <a-space>
-                  <a-button
+              <n-form-item>
+                <n-space>
+                  <n-button
                     type="primary"
                     size="large"
                     :loading="executing"
                     @click="handleExecute"
                   >
                     <template #icon>
-                      <icon-play-arrow />
+                      <Play />
                     </template>
                     开始执行
-                  </a-button>
-                  <a-button size="large" @click="handleBack">
+                  </n-button>
+                  <n-button size="large" @click="handleBack">
                     取消
-                  </a-button>
-                </a-space>
-              </a-form-item>
-            </a-form>
-          </a-card>
-        </a-col>
+                  </n-button>
+                </n-space>
+              </n-form-item>
+            </n-form>
+          </n-card>
+        </div>
 
         <!-- 右侧：方案信息 -->
-        <a-col :span="8">
-          <a-card title="方案信息">
-            <a-descriptions :column="1" size="small">
-              <a-descriptions-item label="方案名称">
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="方案信息">
+            <n-descriptions :column="1" size="small">
+              <n-descriptions-item label="方案名称">
                 {{ plan.name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="所属模板">
+              </n-descriptions-item>
+              <n-descriptions-item label="所属模板">
                 {{ plan.template_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="步骤数量">
+              </n-descriptions-item>
+              <n-descriptions-item label="步骤数量">
                 {{ plan.step_count || 0 }} 个
-              </a-descriptions-item>
-              <a-descriptions-item label="同步状态">
-                <a-tag v-if="plan.needs_sync" color="orange">
+              </n-descriptions-item>
+              <n-descriptions-item label="同步状态">
+                <n-tag v-if="plan.needs_sync" type="warning">
                   需要同步
-                </a-tag>
-                <a-tag v-else color="green">
+                </n-tag>
+                <n-tag v-else type="success">>
                   已同步
-                </a-tag>
-              </a-descriptions-item>
-            </a-descriptions>
+                </n-tag>
+              </n-descriptions-item>
+            </n-descriptions>
 
-            <a-divider />
+            <n-divider />
 
             <div class="execution-tips">
               <h4>执行提示</h4>
@@ -178,23 +177,23 @@
                 <li>执行参数会覆盖模板中的默认参数</li>
               </ul>
             </div>
-          </a-card>
-        </a-col>
-      </a-row>
+          </n-card>
+        </div>
+      </div>
     </div>
 
     <div v-else class="error-container">
-      <a-result
+      <n-result
         status="404"
         title="执行方案不存在"
         subtitle="请检查方案ID是否正确"
       >
-        <template #extra>
-          <a-button type="primary" @click="handleBack">
+        <template #footer>
+          <n-button type="primary" @click="handleBack">
             返回
-          </a-button>
+          </n-button>
         </template>
-      </a-result>
+      </n-result>
     </div>
   </div>
 </template>
@@ -202,10 +201,12 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { executionPlanApi } from '@/api/ops'
 import type { ExecutionPlan } from '@/types'
+import { NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NForm, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NResult, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
+import { ChevronLeft, Play, Plus, Trash2 } from 'lucide-vue-next'
 
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -238,7 +239,7 @@ const fetchPlanDetail = async () => {
     }
   } catch (error) {
     console.error('获取方案详情失败:', error)
-    Message.error('获取方案详情失败')
+    message.error('获取方案详情失败')
   } finally {
     loading.value = false
   }
@@ -257,7 +258,7 @@ const removeParameter = (index: number) => {
 // 执行方案
 const handleExecute = async () => {
   if (!executeForm.name.trim()) {
-    Message.error('请输入执行名称')
+    message.error('请输入执行名称')
     return
   }
 
@@ -285,13 +286,13 @@ const handleExecute = async () => {
     const planId = Number(route.params.id)
     const result = await executionPlanApi.executePlan(planId, executeData)
     
-    Message.success('方案执行已启动')
+    message.success('方案执行已启动')
     
     // 跳转到执行记录详情页面
     router.push(`/execution-records/${result.execution_record_id}`)
   } catch (error) {
     console.error('执行方案失败:', error)
-    Message.error('执行方案失败')
+    message.error('执行方案失败')
   } finally {
     executing.value = false
   }
@@ -337,12 +338,12 @@ onMounted(() => {
   margin: 0 0 4px 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .header-desc {
   margin: 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -357,15 +358,15 @@ onMounted(() => {
 .rolling-config {
   margin-top: 12px;
   padding: 12px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
   border-radius: 6px;
 }
 
 .parameters-section {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 12px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .parameters-header {
@@ -374,7 +375,7 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 12px;
   font-size: 13px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .parameters-list {
@@ -397,13 +398,13 @@ onMounted(() => {
   margin: 0 0 8px 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .execution-tips ul {
   margin: 0;
   padding-left: 16px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
   line-height: 1.6;
 }

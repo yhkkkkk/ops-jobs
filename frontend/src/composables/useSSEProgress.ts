@@ -1,5 +1,5 @@
 import { ref, reactive, onUnmounted } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { message } from '@/utils/naiveFeedback'
 import { SSE } from 'sse.js'
 
 // SSE 进度数据类型
@@ -190,7 +190,7 @@ export function useSSEProgress(config: SSEProgressConfig) {
 
     // 检查 SSE 是否可用
     if (typeof SSE === 'undefined') {
-      Message.error('SSE 库未加载，请确保已引入 sse.js')
+      message.error('SSE 库未加载，请确保已引入 sse.js')
       connectionError.value = 'SSE 库未加载'
       return
     }
@@ -241,7 +241,7 @@ export function useSSEProgress(config: SSEProgressConfig) {
 
       // 如果不是终态，提示用户
       if (!terminalStatuses.has(progress.status)) {
-        Message.error('SSE 连接错误，请检查网络')
+        message.error('SSE 连接错误，请检查网络')
       }
     }
 

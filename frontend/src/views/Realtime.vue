@@ -1,13 +1,13 @@
 <template>
   <div class="page">
     <h2>实时监控</h2>
-    <a-card>
-      <a-result
+    <n-card>
+      <n-result
         status="info"
         title="实时监控页面"
-        subtitle="此功能正在开发中，敬请期待..."
+        description="此功能正在开发中，敬请期待..."
       />
-    </a-card>
+    </n-card>
   </div>
 </template>
 

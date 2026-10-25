@@ -3,105 +3,109 @@
     <div class="page-header">
       <h2>执行方案定时任务详情</h2>
       <div class="page-actions">
-        <a-button @click="handleBack">返回</a-button>
-        <a-button type="outline" @click="handleRefresh">
-          <template #icon><icon-refresh /></template>
+        <n-button @click="handleBack">返回</n-button>
+        <n-button secondary @click="handleRefresh">
+          <template #icon><RefreshCw  /></template>
           刷新
-        </a-button>
-        <a-button
-          v-if="task.is_active"
-          type="outline"
-          status="warning"
+        </n-button>
+        <n-button
+          v-if="task.is_active" 
+         type="warning"
           @click="handleToggleStatus"
           v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
         >
-          <template #icon><icon-pause /></template>
+          <template #icon><Pause /></template>
           禁用
-        </a-button>
-        <a-button
-          v-else
-          type="outline"
-          status="success"
+        </n-button>
+        <n-button
+          v-else 
+         type="success"
           @click="handleToggleStatus"
           v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
         >
-          <template #icon><icon-play-arrow /></template>
+          <template #icon><Play /></template>
           启用
-        </a-button>
-        <a-button
+        </n-button>
+        <n-button
           type="primary"
           @click="handleEdit"
           v-permission="{ resourceType: 'job', permission: 'change', resourceId: task?.id }"
         >
-          <template #icon><icon-edit /></template>
+          <template #icon><Pencil  /></template>
           编辑
-        </a-button>
+        </n-button>
       </div>
     </div>
 
-    <a-spin :loading="loading" style="width: 100%">
-      <a-row :gutter="16">
+    <div class="detail-body" :aria-busy="loading">
+      <div v-if="loading" class="detail-loading">
+        <n-spin size="medium" />
+      </div>
+      <div class="form-grid-row">
         <!-- 基本信息 -->
-        <a-col :span="16">
-          <a-card title="基本信息" class="detail-card">
-            <a-descriptions :column="2" bordered>
-              <a-descriptions-item label="任务名称">
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="基本信息" class="detail-card">
+            <n-descriptions :column="2" bordered>
+              <n-descriptions-item label="任务名称">
                 {{ task.name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="状态">
-                <a-tag v-if="task.is_active" color="green">启用</a-tag>
-                <a-tag v-else color="red">禁用</a-tag>
-              </a-descriptions-item>
-              <a-descriptions-item label="执行方案">
-                <a-link v-if="task.execution_plan" @click="handleViewPlan">
+              </n-descriptions-item>
+              <n-descriptions-item label="状态">
+                <n-tag v-if="task.is_active" type="success">启用</n-tag>
+                <n-tag v-else type="error">禁用</n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="执行方案">
+                <n-button text size="small" v-if="task.execution_plan" @click="handleViewPlan">
                   {{ task.plan_name || `方案ID: ${task.execution_plan}` }}
-                </a-link>
+                </n-button>
                 <span v-else>-</span>
-              </a-descriptions-item>
-              <a-descriptions-item label="模板名称">
-                <a-link v-if="task.template_id" @click="handleViewTemplate">
+              </n-descriptions-item>
+              <n-descriptions-item label="模板名称">
+                <n-button text size="small" v-if="task.template_id" @click="handleViewTemplate">
                   {{ task.template_name || `模板ID: ${task.template_id}` }}
-                </a-link>
+                </n-button>
                 <span v-else>-</span>
-              </a-descriptions-item>
-              <a-descriptions-item label="Cron表达式">
+              </n-descriptions-item>
+              <n-descriptions-item label="Cron表达式">
                 <div class="cron-row">
                   <code>{{ task.cron_expression }}</code>
-                  <a-tooltip content="复制">
-                    <a-button
-                      type="text"
-                      size="mini"
-                      class="cron-copy-btn"
-                      :disabled="!task.cron_expression"
-                      @click="handleCopyCron"
-                    >
-                      <template #icon><IconCopy /></template>
-                    </a-button>
-                  </a-tooltip>
+                  <n-tooltip>
+                    <template #trigger>
+                      <n-button
+                        text
+                        size="tiny"
+                        class="cron-copy-btn"
+                        :disabled="!task.cron_expression"
+                        @click="handleCopyCron"
+                      >
+                        <template #icon><Copy /></template>
+                      </n-button>
+                    </template>
+                    复制
+                  </n-tooltip>
                 </div>
-              </a-descriptions-item>
-              <a-descriptions-item label="时区">
+              </n-descriptions-item>
+              <n-descriptions-item label="时区">
                 {{ task.timezone }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建人">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建人">
                 {{ task.created_by_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="创建时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="创建时间">
                 {{ formatDateTime(task.created_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="更新时间">
+              </n-descriptions-item>
+              <n-descriptions-item label="更新时间">
                 {{ formatDateTime(task.updated_at) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="最近执行结果">
-                <a-tag
+              </n-descriptions-item>
+              <n-descriptions-item label="最近执行结果">
+                <n-tag
                   v-if="task.last_execution_status"
-                  :color="getExecutionStatusColor(task.last_execution_status)"
+                  :type="getExecutionStatusColor(task.last_execution_status) as any"
                 >
                   {{ getExecutionStatusText(task.last_execution_status) }}
-                </a-tag>
+                </n-tag>
                 <span v-else style="color: #86909c">暂无</span>
-              </a-descriptions-item>
-            </a-descriptions>
+              </n-descriptions-item>
+            </n-descriptions>
             
             <div v-if="task.description" style="margin-top: 16px">
               <h4>描述</h4>
@@ -111,36 +115,37 @@
             <ExecutionVariablesPanel
               :variables="effectiveVariables"
             />
-          </a-card>
-        </a-col>
+          </n-card>
+        </div>
 
         <!-- 统计信息 -->
-        <a-col :span="8">
-          <a-card title="执行统计" class="detail-card">
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="执行统计" class="detail-card">
             <div class="stats-grid">
               <div class="stat-item">
-                <div class="stat-value">{{ task.total_runs }}</div>
+                <div class="stat-value">{{ task.total_runs ?? 0 }}</div>
                 <div class="stat-label">总执行次数</div>
               </div>
               <div class="stat-item">
-                <div class="stat-value success">{{ task.success_runs }}</div>
+                <div class="stat-value success">{{ task.success_runs ?? 0 }}</div>
                 <div class="stat-label">成功次数</div>
               </div>
               <div class="stat-item">
-                <div class="stat-value error">{{ task.failed_runs }}</div>
+                <div class="stat-value error">{{ task.failed_runs ?? 0 }}</div>
                 <div class="stat-label">失败次数</div>
               </div>
               <div class="stat-item">
-                <div class="stat-value">{{ task.success_rate }}%</div>
+                <div class="stat-value">{{ task.success_rate ?? 0 }}%</div>
                 <div class="stat-label">成功率</div>
               </div>
             </div>
             
             <div style="margin-top: 16px">
-              <a-progress
-                :percent="task.success_rate"
-                :color="getProgressColor(task.success_rate)"
-                size="large"
+              <n-progress
+                type="line"
+                :percentage="Number(task.success_rate ?? 0)"
+                :color="getProgressColor(Number(task.success_rate ?? 0))"
+                :height="10"
               />
             </div>
             
@@ -148,28 +153,22 @@
               <h4>最后执行时间</h4>
               <p>{{ formatDateTime(task.last_execution_at) }}</p>
             </div>
-          </a-card>
-        </a-col>
-      </a-row>
+          </n-card>
+        </div>
+      </div>
 
-    </a-spin>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
-import type { TableColumnData } from '@arco-design/web-vue'
-import {
-  IconRefresh,
-  IconEdit,
-  IconPause,
-  IconPlayArrow,
-  IconCopy
-} from '@arco-design/web-vue/es/icon'
+import type { DataTableColumns } from 'naive-ui'
 import { scheduledJobApi } from '@/api/scheduler'
 import ExecutionVariablesPanel from '@/components/ExecutionVariablesPanel.vue'
+import { NButton, NCard, NDescriptions, NDescriptionsItem, NProgress, NSpin, NTag, NTooltip, useDialog, useMessage } from 'naive-ui'
+import { Copy, Pause, Pencil, Play, RefreshCw } from 'lucide-vue-next'
 
 type ScheduledJob = {
   id: number
@@ -195,6 +194,8 @@ type ScheduledJob = {
   [k: string]: any
 }
 
+const dialog = useDialog()
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -207,7 +208,7 @@ const effectiveVariables = computed(() => {
 })
 
 // 执行历史表格列
-const historyColumns: TableColumnData[] = [
+const historyColumns: DataTableColumns<any> = [
   { title: '执行ID', dataIndex: 'execution_id', ellipsis: true, tooltip: true },
   { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
@@ -225,7 +226,7 @@ const fetchTask = async () => {
     task.value = response
   } catch (error) {
     console.error('获取任务详情失败:', error)
-    Message.error('获取任务详情失败')
+    message.error('获取任务详情失败')
   } finally {
     loading.value = false
   }
@@ -247,18 +248,18 @@ const handleEdit = () => {
 const handleToggleStatus = async () => {
   try {
     const action = task.value.is_active ? '禁用' : '启用'
-    await Modal.confirm({
+    await dialog.warning({
       title: `确认${action}任务`,
       content: `确定要${action}任务"${task.value.name}"吗？`,
-      onOk: async () => {
+      onPositiveClick: async () => {
         await scheduledJobApi.toggleStatus(Number(route.params.id), !task.value.is_active)
-        Message.success(`${action}成功`)
+        message.success(`${action}成功`)
         fetchTask()
       }
     })
   } catch (error) {
     console.error('切换任务状态失败:', error)
-    Message.error('操作失败')
+    message.error('操作失败')
   }
 }
 
@@ -293,12 +294,12 @@ const handleViewTemplate = () => {
 const handleCopyCron = async () => {
   const cron = task.value?.cron_expression
   if (!cron) {
-    Message.warning('Cron 表达式为空')
+    message.warning('Cron 表达式为空')
     return
   }
   try {
     await navigator.clipboard.writeText(cron)
-    Message.success('已复制')
+    message.success('已复制')
   } catch (error) {
     try {
       const input = document.createElement('input')
@@ -307,10 +308,10 @@ const handleCopyCron = async () => {
       input.select()
       document.execCommand('copy')
       document.body.removeChild(input)
-      Message.success('已复制')
+      message.success('已复制')
     } catch (fallbackError) {
       console.error('复制失败:', fallbackError)
-      Message.error('复制失败')
+      message.error('复制失败')
     }
   }
 }
@@ -379,6 +380,21 @@ onMounted(() => {
 <style scoped>
 .page {
   padding: 16px;
+}
+
+.detail-body {
+  position: relative;
+  min-height: 240px;
+}
+
+.detail-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgb(255 255 255 / 65%);
+  pointer-events: none;
 }
 
 .page-header {

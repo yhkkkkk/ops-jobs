@@ -1,16 +1,16 @@
 <template>
-  <a-button
+  <n-button
     v-if="hasPermission"
-    v-bind="$attrs"
     :loading="loading"
     @click="handleClick"
   >
     <slot />
-  </a-button>
+  </n-button>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { NButton } from 'naive-ui'
 import { usePermission } from '@/utils/permissions'
 import type { PermissionLevel, ResourceType } from '@/types'
 
@@ -61,7 +61,3 @@ const handleClick = (event: MouseEvent) => {
   }
 }
 </script>
-
-<style scoped>
-/* 可以添加自定义样式 */
-</style>

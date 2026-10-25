@@ -13,24 +13,24 @@
       description="创建和管理可复用的脚本模板，维护分类、标签、引用关系和上线状态。"
     >
       <template #actions>
-        <a-space>
-          <a-button @click="fetchTemplates">
+        <n-space>
+          <n-button @click="fetchTemplates">
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             刷新
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             v-permission="{ resourceType: 'scripttemplate', permission: 'add' }"
             type="primary"
             @click="handleCreate"
           >
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             新建模板
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
@@ -41,126 +41,86 @@
     >
       <div class="app-filter-grid template-filter-grid">
         <div>
-          <a-input
-            v-model="searchForm.name"
+          <n-input
+            v-model:value="searchForm.name"
             placeholder="模板名称"
-            allow-clear
+            clearable
             @press-enter="handleSearch"
             @clear="handleSearch"
           />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.script_type"
+                    <n-select
+            v-model:value="searchForm.script_type"
             placeholder="脚本类型"
-            allow-clear
+            clearable
             @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option value="shell">Shell</a-option>
-            <a-option value="python">Python</a-option>
-            <a-option value="powershell">PowerShell</a-option>
-            <a-option value="perl">Perl</a-option>
-            <a-option value="javascript">JavaScript</a-option>
-            <a-option value="go">Go</a-option>
-          </a-select>
+            @clear="handleSearch" :options="selectOptions1" />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.category"
+                    <n-select
+            v-model:value="searchForm.category"
             placeholder="分类"
-            allow-clear
+            clearable
             @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option value="deployment">部署</a-option>
-            <a-option value="monitoring">监控</a-option>
-            <a-option value="maintenance">维护</a-option>
-            <a-option value="backup">备份</a-option>
-            <a-option value="security">安全</a-option>
-            <a-option value="other">其他</a-option>
-          </a-select>
+            @clear="handleSearch" :options="selectOptions2" />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.tags"
+          <n-select
+            v-model:value="searchForm.tags"
             placeholder="标签"
-            allow-clear
+            clearable
             multiple
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="tag in availableTags"
-              :key="tag"
-              :value="tag"
-            >
-              {{ tag }}
-            </a-option>
-          </a-select>
+            :options="(availableTags || []).map((t: string) => ({ label: t, value: t }))"
+            @update:value="handleSearch"
+          />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.created_by"
+          <n-select
+            v-model:value="searchForm.created_by"
             placeholder="创建者"
-            allow-clear
-            allow-search
-            :filter-option="false"
+            clearable
+            filterable
+            remote
+            :options="(filteredCreators || []).map((u: any) => ({ label: u.name, value: u.id }))"
             @search="handleCreatorSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="user in filteredCreators"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
+            @update:value="handleSearch"
+          />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.updated_by"
+          <n-select
+            v-model:value="searchForm.updated_by"
             placeholder="更新者"
-            allow-clear
-            allow-search
-            :filter-option="false"
+            clearable
+            filterable
+            remote
+            :options="(filteredUpdaters || []).map((u: any) => ({ label: u.name, value: u.id }))"
             @search="handleUpdaterSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="user in filteredUpdaters"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
+            @update:value="handleSearch"
+          />
         </div>
         <div>
           <div class="filter-switch">
             <span class="filter-label">收藏</span>
-            <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+            <n-switch v-model:value="searchForm.favorites_only" @update:value="handleSearch" />
           </div>
         </div>
         <div class="app-filter-grid__actions">
           <div class="search-actions">
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
+            <n-space>
+              <n-button type="primary" @click="handleSearch">
                 <template #icon>
-                  <icon-search />
+                  <Search  />
                 </template>
                 搜索
-              </a-button>
-              <a-button @click="handleReset">
+              </n-button>
+              <n-button @click="handleReset">
                 <template #icon>
-                  <icon-refresh />
+                  <RefreshCw  />
                 </template>
                 重置
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </div>
         </div>
       </div>
@@ -176,152 +136,21 @@
       title="模板列表"
       :description="`共 ${pagination.total} 个模板，当前页 ${templates.length} 个`"
     >
-      <a-table
+      <n-data-table
         class="template-data-table"
         :columns="columns"
         :data="templates"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #name="{ record }">
-          <div class="template-name-cell">
-            <a-button
-              type="text"
-              size="mini"
-              class="favorite-btn"
-              @click.stop="toggleFavorite(record.id)"
-            >
-              <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
-              <icon-star v-else class="favorite-icon" />
-            </a-button>
-            <div class="template-name-main">
-              <a-link @click="handleDetail(record)" class="template-link">{{ record.name }}</a-link>
-              <div class="template-description">{{ record.description || '暂无描述' }}</div>
-            </div>
-          </div>
-        </template>
-
-        <template #script_type="{ record }">
-          <a-tag :color="getScriptTypeColor(record.script_type)">
-            {{ getScriptTypeText(record.script_type) }}
-          </a-tag>
-        </template>
-
-        <template #category="{ record }">
-          <a-tag v-if="record.category" color="blue">
-            {{ getCategoryText(record.category) }}
-          </a-tag>
-          <span v-else>-</span>
-        </template>
-
-        <template #status="{ record }">
-          <a-tag :color="record.is_active ? 'green' : 'red'">
-            {{ record.is_active ? '上线' : '下线' }}
-          </a-tag>
-        </template>
-
-        <template #references="{ record }">
-          <a-link class="reference-link" @click="handleViewReferences(record)">
-            <div class="meta-line">作业：{{ record.job_template_ref_count || 0 }}</div>
-            <div class="meta-line">方案：{{ record.execution_plan_ref_count || 0 }}</div>
-          </a-link>
-        </template>
-
-        <template #tags="{ record }">
-          <div v-if="record.tag_list && record.tag_list.length">
-            <a-space wrap>
-              <a-tag v-for="tag in record.tag_list" :key="tag.key || tag" class="tag-item">
-                {{ formatTag(tag) }}
-              </a-tag>
-            </a-space>
-          </div>
-          <div v-else-if="record.tags_json && Object.keys(record.tags_json).length">
-            <a-space wrap>
-              <a-tag v-for="(value, key) in record.tags_json" :key="key" class="tag-item">
-                {{ `${key}=${value}` }}
-              </a-tag>
-            </a-space>
-          </div>
-          <span v-else class="text-gray">-</span>
-        </template>
-
-        <template #created_at="{ record }">
-          <MetaInfoLines
-            :created-text="`创建：${formatTime(record.created_at)} · ${record.created_by_name || '-'}`"
-            :updated-text="`更新：${record.updated_at ? formatTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
-          />
-        </template>
-
-        <template #actions="{ record }">
-          <a-space class="table-row-actions">
-            <a-button
-              v-if="record.is_active"
-              v-permission="{ resourceType: 'scripttemplate', permission: 'view', resourceId: record.id }"
-              type="text"
-              size="small"
-              class="template-primary-action"
-              @click="handleExecute(record)"
-            >
-              执行
-            </a-button>
-            <a-dropdown>
-              <a-button type="text" size="small" aria-label="更多操作">
-                <template #icon>
-                  <icon-more />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption
-                  :class="{ 'disabled-option': !canManageVersions(record.id!) }"
-                  @click="handleClickManageVersions(record)"
-                >
-                  <template #icon>
-                    <icon-history />
-                  </template>
-                  版本管理
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canToggleStatus(record.id!) }"
-                  @click="handleClickToggleStatus(record)"
-                >
-                  <template #icon>
-                    <icon-poweroff />
-                  </template>
-                  {{ record.is_active ? '下线' : '上线' }}
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canCopyTemplate }"
-                  @click="handleClickCopy(record)"
-                >
-                  <template #icon>
-                    <icon-copy />
-                  </template>
-                  复制
-                </a-doption>
-                <a-doption 
-                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record) }]"
-                  @click="handleClickDelete(record)" 
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                  删除
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+      />
     </DetailPanel>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, h } from 'vue'
+import { computed, h, onMounted, reactive, ref, resolveDirective, withDirectives } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { scriptTemplateApi } from '@/api/ops'
 import type { ScriptTemplate } from '@/types'
 import dayjs from 'dayjs'
@@ -331,7 +160,11 @@ import MetaInfoLines from '@/components/MetaInfoLines.vue'
 import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
+import { NButton, NDataTable, NDropdown, NInput, NSelect, NSpace, NSwitch, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { Copy, History, MoreHorizontal, Plus, Power, RefreshCw, Search, Star, Trash2 } from 'lucide-vue-next'
 
+const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 const loading = ref(false)
 const templates = ref<ScriptTemplate[]>([])
@@ -369,10 +202,10 @@ const isFavorite = (id: number) => favoritesStore.isFavorite('script_template', 
 const toggleFavorite = async (id: number) => {
   try {
     const isFavorited = await favoritesStore.toggleFavorite('script_template', id, 'personal')
-    Message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
+    message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
   } catch (e) {
     console.error('切换收藏状态失败:', e)
-    Message.error('操作失败')
+    message.error('操作失败')
   }
 }
 
@@ -448,72 +281,175 @@ const handleClearFilter = (key: string) => {
 }
 
 // 表格列配置
-const columns = [
+const renderTemplateStatus = (record: any) =>
+  h(NTag, { type: record.is_active ? 'success' : 'error' }, { default: () => (record.is_active ? '上线' : '下线') })
+
+const rowActionOptions = (record: any) => [
+  {
+    label: '版本管理',
+    key: 'versions',
+    disabled: !canManageVersions(record.id),
+    icon: () => h(History, { size: 14 }),
+  },
+  {
+    label: record.is_active ? '下线' : '上线',
+    key: 'toggle',
+    disabled: !canToggleStatus(record.id),
+    icon: () => h(Power, { size: 14 }),
+  },
+  {
+    label: '复制',
+    key: 'copy',
+    disabled: !canCopyTemplate,
+    icon: () => h(Copy, { size: 14 }),
+  },
+  {
+    label: '删除',
+    key: 'delete',
+    disabled: !canDeleteTemplate(record),
+    icon: () => h(Trash2, { size: 14 }),
+    props: { class: 'danger' },
+  },
+]
+
+const onRowAction = (key: string, record: any) => {
+  if (key === 'versions') handleClickManageVersions(record)
+  if (key === 'toggle') handleClickToggleStatus(record)
+  if (key === 'copy') handleClickCopy(record)
+  if (key === 'delete') handleClickDelete(record)
+}
+
+const columns: DataTableColumns<any> = [
   {
     title: '模板名称',
-    dataIndex: 'name',
     key: 'name',
-    slotName: 'name',
     width: 260,
-    ellipsis: true,
-    tooltip: true
+    ellipsis: { tooltip: true },
+    render: (record: any) =>
+      h('div', { class: 'template-name-cell' }, [
+        h(NButton, {
+          text: true, size: 'tiny', class: 'favorite-btn',
+          onClick: (e: MouseEvent) => { e.stopPropagation(); toggleFavorite(record.id) },
+        }, {
+          icon: () => h(Star, {
+            size: 14,
+            fill: isFavorite(record.id) ? '#f59e0b' : 'none',
+            stroke: isFavorite(record.id) ? '#f59e0b' : 'currentColor',
+          }),
+        }),
+        h('div', { class: 'template-name-main' }, [
+          h(NButton, { text: true, size: 'tiny', class: 'template-link', onClick: () => handleDetail(record) }, { default: () => record.name }),
+          h('div', { class: 'template-description' }, record.description || '暂无描述'),
+        ]),
+      ]),
   },
   {
     title: '脚本类型',
-    dataIndex: 'script_type',
     key: 'script_type',
-    slotName: 'script_type',
     width: 92,
+    render: (record: any) =>
+      h(NTag, { type: getScriptTypeColor(record.script_type) as any }, { default: () => getScriptTypeText(record.script_type) }),
   },
   {
     title: '分类',
-    dataIndex: 'category',
     key: 'category',
-    slotName: 'category',
     width: 92,
+    render: (record: any) => record.category
+      ? h(NTag, { type: 'info' }, { default: () => getCategoryText(record.category) })
+      : h('span', '-',),
   },
-  {
-    title: '线上版本',
-    dataIndex: 'version',
-    key: 'version',
-    width: 90,
-  },
+  { title: '线上版本', key: 'version', width: 90, render: (record: any) => record.version },
   {
     title: '状态',
-    dataIndex: 'is_active',
     key: 'is_active',
-    slotName: 'status',
     width: 76,
+    render: (record: any) => renderTemplateStatus(record),
   },
   {
     title: '被引用',
-    dataIndex: 'references',
     key: 'references',
-    slotName: 'references',
-    width: 96,
+    render: (record: any) =>
+      h(NButton, { text: true, size: 'tiny', class: 'reference-link', onClick: () => handleViewReferences(record) }, {
+        default: () => [
+          h('div', { class: 'meta-line' }, `作业：${record.job_template_ref_count || 0}`),
+          h('div', { class: 'meta-line' }, `方案：${record.execution_plan_ref_count || 0}`),
+        ],
+      }),
   },
   {
     title: '标签',
-    dataIndex: 'tag_list',
-    key: 'tag_list',
-    slotName: 'tags',
-    width: 140,
+    key: 'tags',
+    render: (record: any) => {
+      if (record.tag_list && record.tag_list.length) {
+        return h(NSpace, { wrap: true }, {
+          default: () => record.tag_list.map((tag: any) =>
+            h(NTag, { size: 'small', class: 'tag-item' }, { default: () => formatTag(tag) })),
+        })
+      }
+      if (record.tags_json && Object.keys(record.tags_json).length) {
+        return h(NSpace, { wrap: true }, {
+          default: () => Object.entries(record.tags_json).map(([key, value]) =>
+            h(NTag, { size: 'small', class: 'tag-item' }, { default: () => `${key}=${value}` })),
+        })
+      }
+      return h('span', { class: 'text-gray' }, '-')
+    },
   },
   {
-    title: '创建/更新',
-    dataIndex: 'created_at',
+    title: '创建信息',
     key: 'created_at',
-    slotName: 'created_at',
-    width: 180,
+    render: (record: any) =>
+      h(MetaInfoLines, {
+        createdText: `创建：${formatTime(record.created_at)} · ${record.created_by_name || '-'}`,
+        updatedText: `更新：${record.updated_at ? formatTime(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`,
+      }),
   },
   {
     title: '操作',
     key: 'actions',
-    slotName: 'actions',
-    width: 104,
-    align: 'center',
+    width: 170,
+    render: (record: any) => {
+      const buttons: any[] = []
+      if (record.is_active) {
+        buttons.push(withPerm(
+          h(NButton, {
+            text: true, size: 'small', class: 'template-primary-action',
+            onClick: () => handleExecute(record),
+          }, { default: () => '执行' }),
+          { resourceType: 'scripttemplate', permission: 'view', resourceId: record.id },
+        ))
+      }
+      buttons.push(
+        h(NDropdown, {
+          trigger: 'click',
+          options: rowActionOptions(record),
+          onSelect: (key: string) => onRowAction(key, record),
+        }, {
+          default: () => h(NButton, { text: true, size: 'small', 'aria-label': '更多操作' }, {
+            icon: () => h(MoreHorizontal, { size: 16 }),
+          }),
+        }),
+      )
+      return h(NSpace, { class: 'table-row-actions', wrap: false, wrapItem: false, align: 'center' }, { default: () => buttons })
+    },
   },
 ]
+
+// Naive UI 表格分页对象（远端分页）
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  pageSizes: [10, 20, 50, 100],
+  showSizePicker: true,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
+
+const withPerm = (vnode: any, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
 
 // 获取可用标签列表
 const fetchAvailableTags = async () => {
@@ -618,7 +554,7 @@ const fetchTemplates = async () => {
     // 异步加载收藏状态
     await favoritesStore.batchCheckFavorites('script_template', resultTemplates.map(t => t.id))
   } catch (error) {
-    Message.error('获取脚本模板列表失败')
+    message.error('获取脚本模板列表失败')
     console.error('获取脚本模板列表失败:', error)
     templates.value = []
     pagination.total = 0
@@ -673,11 +609,11 @@ const handleDetail = (record: ScriptTemplate) => {
 // 去执行：跳转到快速执行并携带模板标识
 const handleExecute = (record: ScriptTemplate) => {
   if (!record.id) {
-    Message.warning('模板信息不完整')
+    message.warning('模板信息不完整')
     return
   }
   if (!record.is_active) {
-    Message.warning('模板未上线，无法执行')
+    message.warning('模板未上线，无法执行')
     return
   }
   router.push(`/quick-execute?template_id=${record.id}`)
@@ -729,19 +665,19 @@ const handleDelete = async (record: ScriptTemplate) => {
     hasRefs ? h('div', { style: 'margin-top:8px;color:#f53f3f;' }, '存在引用，无法删除') : null
   ])
 
-  Modal.confirm({
+  dialog.warning({
     title: hasRefs ? '无法删除' : '确认删除',
     content: () => content,
-    okButtonProps: { disabled: hasRefs },
-    onOk: async () => {
+    positiveButtonProps: { disabled: hasRefs },
+    onPositiveClick: async () => {
       if (hasRefs) return
       try {
         await scriptTemplateApi.deleteTemplate(record.id!)
-        Message.success('模板删除成功')
+        message.success('模板删除成功')
         await fetchTemplates()
       } catch (error: any) {
         const message = error?.response?.data?.message || '模板删除失败'
-        Message.error(message)
+        message.error(message)
         console.error('删除模板失败:', error)
       }
     }
@@ -754,7 +690,7 @@ const handleViewReferences = async (record: ScriptTemplate) => {
     references = await scriptTemplateApi.getReferences(record.id!)
   } catch (error: any) {
     const message = error?.response?.data?.message || '获取引用关系失败'
-    Message.error(message)
+    message.error(message)
     console.error('获取引用关系失败:', error)
     return
   }
@@ -803,16 +739,16 @@ const handleViewReferences = async (record: ScriptTemplate) => {
     ])
   ])
 
-  const modal = Modal.info({
+  const modal = dialog.info({
     title: '引用关系',
     content: () => content,
-    okText: '关闭'
+    positiveText: '关闭'
   })
-  modalClose = modal?.close
+  modalClose = modal?.destroy
 }
 
 const showNoPermissionMessage = () => {
-  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+  message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 const handleClickManageVersions = (record: ScriptTemplate) => {
@@ -902,17 +838,17 @@ const handleToggleStatus = async (record: ScriptTemplate) => {
   if (!record.id) return
 
   const action = record.is_active ? '下线' : '上线'
-  Modal.confirm({
+  dialog.warning({
     title: `确认${action}`,
     content: `确定要${action}模板 "${record.name}" 吗？`,
-    onOk: async () => {
+    onPositiveClick: async () => {
       try {
         const result = await scriptTemplateApi.toggleStatus(record.id!)
         record.is_active = result.is_active
-        Message.success(`模板已${action}`)
+        message.success(`模板已${action}`)
       } catch (error) {
         console.error(`${action}失败:`, error)
-        Message.error(`${action}失败`)
+        message.error(`${action}失败`)
       }
     }
   })
@@ -948,6 +884,10 @@ onMounted(() => {
   initFromQuery()
   fetchTemplates()
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: 'Shell', value: 'shell' }, { label: 'Python', value: 'python' }, { label: 'PowerShell', value: 'powershell' }, { label: 'Perl', value: 'perl' }, { label: 'JavaScript', value: 'javascript' }, { label: 'Go', value: 'go' }]
+const selectOptions2 = [{ label: '部署', value: 'deployment' }, { label: '监控', value: 'monitoring' }, { label: '维护', value: 'maintenance' }, { label: '备份', value: 'backup' }, { label: '安全', value: 'security' }, { label: '其他', value: 'other' }]
 </script>
 
 <style scoped>
@@ -982,7 +922,7 @@ onMounted(() => {
 }
 
 .filter-label {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -1027,7 +967,7 @@ onMounted(() => {
 
 .favorite-icon {
   font-size: 14px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   transition: color 0.2s;
 }
 
@@ -1044,13 +984,13 @@ onMounted(() => {
 }
 
 .reference-link:hover .meta-line {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
 }
 
 .meta-line {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .tag-item {

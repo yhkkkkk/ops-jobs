@@ -1,277 +1,234 @@
 <template>
-  <a-modal
-    v-model:visible="modalVisible"
+  <n-modal
+    v-model:show="modalVisible"
+    preset="card"
     :title="isEdit ? '编辑主机' : '新增主机'"
-    :width="600"
-    :footer="false"
+    :style="{ width: '600px' }"
     :mask-closable="false"
-    :esc-to-close="false"
+    :close-on-esc="false"
   >
-    <a-form
+    <n-form
       ref="formRef"
       :model="form"
       :rules="rules"
       layout="vertical"
     >
-      <a-form-item label="主机名称" field="name">
-        <a-input
-          v-model="form.name"
+      <n-form-item label="主机名称" path="name">
+        <n-input
+          v-model:value="form.name"
           placeholder="请输入主机名称"
-          allow-clear
+          clearable
         />
-      </a-form-item>
+      </n-form-item>
 
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="端口" field="port">
-            <a-input-number
-              v-model="form.port"
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="端口" path="port">
+            <n-input-number
+              v-model:value="form.port"
               :min="1"
               :max="65535"
               placeholder="22"
               style="width: 100%"
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="操作系统" field="os_type">
-            <a-select
-              v-model="form.os_type"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="操作系统" path="os_type">
+                        <n-select
+              v-model:value="form.os_type"
               placeholder="请选择操作系统"
-              allow-clear
-            >
-              <a-option value="linux">Linux</a-option>
-              <a-option value="windows">Windows</a-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-      </a-row>
+              clearable :options="formSelectOptions1" />
+          </n-form-item>
+        </div>
+      </div>
 
-      <a-form-item label="服务器账号" field="account">
-        <a-select
-          v-model="form.account"
+      <n-form-item label="服务器账号" path="account">
+        <n-select
+          v-model:value="form.account"
           placeholder="请选择服务器账号"
-          allow-clear
-          allow-search
+          clearable
+          filterable
           :loading="accountsLoading"
-        >
-          <a-option
-            v-for="account in serverAccounts"
-            :key="account.id"
-            :value="account.id"
-            :label="account.name"
-          >
-            {{ account.name }} ({{ account.username }})
-          </a-option>
-        </a-select>
+          :options="accountOptions"
+        />
         <div class="form-tip">
-          <icon-info-circle />
+          <Info  />
           <span>用于ssh连接/agent执行的服务器账号，请先在服务器账号管理中创建</span>
         </div>
-      </a-form-item>
+      </n-form-item>
 
-      <a-form-item label="所属分组" field="groups">
-        <a-select
-          v-model="form.groups"
+      <n-form-item label="所属分组" path="groups">
+        <n-select
+          v-model:value="form.groups"
           placeholder="请选择主机分组（可选）"
           multiple
-          allow-clear
-          allow-search
+          clearable
+          filterable
           :loading="groupsLoading"
-        >
-          <a-option
-            v-for="group in hostGroups"
-            :key="group.id"
-            :value="group.id"
-            :label="group.full_path || group.name"
-          >
-            <div class="group-option">
-              <span
-                class="group-name"
-                :style="{ paddingLeft: (group.level || 0) * 16 + 'px' }"
-              >
-                {{ group.full_path || group.name }}
-              </span>
-              <span v-if="group.description" class="group-desc">
-                （{{ group.description }}）
-              </span>
-            </div>
-          </a-option>
-        </a-select>
-      </a-form-item>
+          :options="hostGroupOptions"
+        />
+      </n-form-item>
 
       <!-- 网络信息 -->
-      <a-divider orientation="left">网络信息</a-divider>
+      <n-divider title-placement="left">网络信息</n-divider>
       <div class="form-tip">
-        <icon-info-circle />
+        <Info  />
         <span>至少需要配置内网 IP 或外网 IP 之一</span>
       </div>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="外网IP" field="public_ip">
-            <a-input
-              v-model="form.public_ip"
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="外网IP" path="public_ip">
+            <n-input
+              v-model:value="form.public_ip"
               placeholder="请输入外网IP（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="内网IP" field="internal_ip">
-            <a-input
-              v-model="form.internal_ip"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="内网IP" path="internal_ip">
+            <n-input
+              v-model:value="form.internal_ip"
               placeholder="请输入内网IP（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
-      <a-form-item label="主机名称" field="hostname">
-        <a-input
-          v-model="form.hostname"
-          placeholder="请输入主机名称（可选）"
-          allow-clear
+      <n-form-item label="系统主机名" path="hostname">
+        <n-input
+          v-model:value="form.hostname"
+          placeholder="请输入系统 Hostname（可选）"
+          clearable
         />
-      </a-form-item>
+      </n-form-item>
 
       <!-- 云厂商信息 -->
-      <a-divider orientation="left">云厂商信息</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="云厂商" field="cloud_provider">
-            <a-select
-              v-model="form.cloud_provider"
+      <n-divider title-placement="left">云厂商信息</n-divider>
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="云厂商" path="cloud_provider">
+                        <n-select
+              v-model:value="form.cloud_provider"
               placeholder="请选择云厂商（可选）"
-              allow-clear
-            >
-              <a-option value="aliyun">阿里云</a-option>
-              <a-option value="tencent">腾讯云</a-option>
-              <a-option value="aws">AWS</a-option>
-              <a-option value="huawei">华为云</a-option>
-              <a-option value="ucloud">UCloud</a-option>
-              <a-option value="qiniu">七牛云</a-option>
-              <a-option value="idc">自建机房</a-option>
-              <a-option value="other">其他</a-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="实例ID" field="instance_id">
-            <a-input
-              v-model="form.instance_id"
+              clearable :options="formSelectOptions2" />
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="实例ID" path="instance_id">
+            <n-input
+              v-model:value="form.instance_id"
               placeholder="请输入实例ID（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="地域" field="region">
-            <a-input
-              v-model="form.region"
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="地域" path="region">
+            <n-input
+              v-model:value="form.region"
               placeholder="请输入地域（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="可用区" field="zone">
-            <a-input
-              v-model="form.zone"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="可用区" path="zone">
+            <n-input
+              v-model:value="form.zone"
               placeholder="请输入可用区（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
       <!-- 硬件信息 -->
-      <a-divider orientation="left">硬件信息</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="设备类型" field="device_type">
-            <a-select
-              v-model="form.device_type"
+      <n-divider title-placement="left">硬件信息</n-divider>
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="设备类型" path="device_type">
+                        <n-select
+              v-model:value="form.device_type"
               placeholder="请选择设备类型（可选）"
-              allow-clear
-            >
-              <a-option value="physical">物理机</a-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="CPU核心数" field="cpu_cores">
-            <a-input-number
-              v-model="form.cpu_cores"
+              clearable :options="formSelectOptions3" />
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="CPU核心数" path="cpu_cores">
+            <n-input-number
+              v-model:value="form.cpu_cores"
               :min="1"
               :max="256"
               placeholder="请输入CPU核心数"
               style="width: 100%"
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="内存(GB)" field="memory_gb">
-            <a-input-number
-              v-model="form.memory_gb"
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="内存(GB)" path="memory_gb">
+            <n-input-number
+              v-model:value="form.memory_gb"
               :min="0.5"
               :max="1024"
               :precision="1"
               placeholder="请输入内存大小"
               style="width: 100%"
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="磁盘(GB)" field="disk_gb">
-            <a-input-number
-              v-model="form.disk_gb"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="磁盘(GB)" path="disk_gb">
+            <n-input-number
+              v-model:value="form.disk_gb"
               :min="1"
               :max="10240"
               placeholder="请输入磁盘大小"
               style="width: 100%"
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
       <!-- 系统信息 -->
-      <a-divider orientation="left">系统信息</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="操作系统版本" field="os_version">
-            <a-input
-              v-model="form.os_version"
+      <n-divider title-placement="left">系统信息</n-divider>
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="操作系统版本" path="os_version">
+            <n-input
+              v-model:value="form.os_version"
               placeholder="请输入操作系统版本（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="内核版本" field="kernel_version">
-            <a-input
-              v-model="form.kernel_version"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="内核版本" path="kernel_version">
+            <n-input
+              v-model:value="form.kernel_version"
               placeholder="请输入内核版本（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
       <!-- 业务信息 -->
-      <a-divider orientation="left">业务信息</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="标签 (键值对，可选)" field="tags">
+      <n-divider title-placement="left">业务信息</n-divider>
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="标签 (键值对，可选)" path="tags">
             <div class="tags-editor">
               <div v-if="tagEntries.length === 0" class="tags-empty">
-                <a-empty description="暂无标签" size="small" />
+                <n-empty description="暂无标签" size="small" />
               </div>
               <div v-else class="tags-list">
                 <div
@@ -279,111 +236,110 @@
                   :key="index"
                   class="tag-row"
                 >
-                  <a-input
-                    v-model="item.key"
+                  <n-input
+                    v-model:value="item.key"
                     placeholder="键"
-                    allow-clear
+                    clearable
                     style="width: 40%"
                   />
-                  <a-input
-                    v-model="item.value"
+                  <n-input
+                    v-model:value="item.value"
                     placeholder="值（可选）"
-                    allow-clear
+                    clearable
                     style="width: 45%"
                   />
-                  <a-button
-                    type="text"
-                    status="danger"
+                  <n-button 
+                   type="error"
                     @click="removeTagRow(index)"
                     style="width: 10%"
                   >
-                    <template #icon><icon-delete /></template>
-                  </a-button>
+                    <template #icon><Trash2  /></template>
+                  </n-button>
                 </div>
               </div>
               <div class="tags-input-row">
-                <a-button type="outline" size="small" @click="addTagRow">
-                  <template #icon><icon-plus /></template>
+                <n-button secondary size="small" @click="addTagRow">
+                  <template #icon><Plus  /></template>
                   添加标签
-                </a-button>
+                </n-button>
               </div>
             </div>
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="服务角色" field="service_role">
-            <a-input
-              v-model="form.service_role"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-form-item label="服务角色" path="service_role">
+            <n-input
+              v-model:value="form.service_role"
               placeholder="请输入服务角色（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
       <!-- 管理信息 -->
-      <a-divider orientation="left">管理信息</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="负责人" field="owner">
-            <a-input
-              v-model="form.owner"
+      <n-divider title-placement="left">管理信息</n-divider>
+      <div class="form-grid-row" :gutter="16">
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="负责人" path="owner">
+            <n-input
+              v-model:value="form.owner"
               placeholder="请输入负责人（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="所属部门" field="department">
-            <a-input
-              v-model="form.department"
+          </n-form-item>
+        </div>
+        <div class="form-grid-col" style="grid-column: span 12">
+          <n-form-item label="所属部门" path="department">
+            <n-input
+              v-model:value="form.department"
               placeholder="请输入所属部门（可选）"
-              allow-clear
+              clearable
             />
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </n-form-item>
+        </div>
+      </div>
 
 
 
-      <a-form-item label="描述" field="description">
-        <a-textarea
-          v-model="form.description"
+      <n-form-item label="描述" path="description">
+        <n-input type="textarea"
+          v-model:value="form.description"
           placeholder="请输入主机描述（可选）"
           :rows="3"
         />
-      </a-form-item>
+      </n-form-item>
 
       <!-- 自定义按钮 -->
-      <a-form-item>
+      <n-form-item>
         <div style="text-align: right; margin-top: 20px;">
-          <a-space>
-            <a-button @click="handleCancel">
+          <n-space>
+            <n-button @click="handleCancel">
               取消
-            </a-button>
-            <a-button
-              type="outline"
+            </n-button>
+            <n-button
+              secondary
               @click="handleConnectionTest"
               :loading="testLoading"
               :disabled="!canTestConnection"
             >
               <template #icon>
-                <icon-link />
+                <Link  />
               </template>
               连接测试
-            </a-button>
-            <a-button
+            </n-button>
+            <n-button
               type="primary"
               @click="handleSubmit"
               :loading="loading"
             >
               保存
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
-      </a-form-item>
-    </a-form>
-  </a-modal>
+      </n-form-item>
+    </n-form>
+  </n-modal>
 </template>
 
 <style scoped>
@@ -396,7 +352,7 @@
   color: #ff7d00;
 }
 
-.form-tip .arco-icon {
+.form-tip svg {
   margin-right: 4px;
 }
 
@@ -425,8 +381,8 @@
 
 .tags-empty {
   padding: 8px;
-  background-color: var(--color-fill-2);
-  border: 1px dashed var(--color-border-3);
+  background-color: var(--app-surface-soft);
+  border: 1px dashed var(--app-border);
   border-radius: 4px;
 }
 
@@ -447,16 +403,25 @@
   align-items: center;
   gap: 8px;
 }
+.form-grid-row {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 16px 16px;
+}
+
+.form-grid-col {
+  min-width: 0;
+}
 </style>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
-import { Message } from '@arco-design/web-vue'
-import { IconInfoCircle, IconLink } from '@arco-design/web-vue/es/icon'
 import { hostApi, hostGroupApi } from '@/api/ops'
 import { accountApi } from '@/api/account'
 import type { Host, HostGroup } from '@/types'
 import { useAuthStore } from '@/stores/auth'
+import { NButton, NDivider, NEmpty, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSpace, type FormRules, useMessage } from 'naive-ui'
+import { Info, Link, Plus, Trash2 } from 'lucide-vue-next'
 
 interface Props {
   visible: boolean
@@ -467,6 +432,8 @@ interface Emits {
   (e: 'update:visible', visible: boolean): void
   (e: 'success'): void
 }
+
+const message = useMessage()
 
 const props = withDefaults(defineProps<Props>(), {
   host: null,
@@ -517,10 +484,10 @@ const form = reactive({
 })
 
 // 表单验证规则
-const rules = {
+const rules: FormRules = {
   name: [
     { required: true, message: '请输入主机名称' },
-    { minLength: 2, message: '主机名称至少2个字符' },
+    { min: 2, message: '主机名称至少2个字符' },
   ],
   port: [
     { required: true, message: '请输入端口号' },
@@ -534,37 +501,33 @@ const rules = {
   ],
   internal_ip: [
     {
-      validator: (value: string, callback: (error?: string) => void) => {
+      validator: (_rule: unknown, value: string) => {
         if (!value && !form.public_ip) {
-          callback('至少需要配置内网IP或外网IP之一')
-        } else if (value) {
+          return new Error('至少需要配置内网IP或外网IP之一')
+        }
+        if (value) {
           const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
           if (!ipRegex.test(value)) {
-            callback('请输入有效的IP地址')
-          } else {
-            callback()
+            return new Error('请输入有效的IP地址')
           }
-        } else {
-          callback()
         }
+        return true
       },
     },
   ],
   public_ip: [
     {
-      validator: (value: string, callback: (error?: string) => void) => {
+      validator: (_rule: unknown, value: string) => {
         if (!value && !form.internal_ip) {
-          callback('至少需要配置内网IP或外网IP之一')
-        } else if (value) {
+          return new Error('至少需要配置内网IP或外网IP之一')
+        }
+        if (value) {
           const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
           if (!ipRegex.test(value)) {
-            callback('请输入有效的IP地址')
-          } else {
-            callback()
+            return new Error('请输入有效的IP地址')
           }
-        } else {
-          callback()
         }
+        return true
       },
     },
   ],
@@ -713,7 +676,7 @@ const handleSubmit = async () => {
       console.log('表单验证通过')
     } catch (error) {
       console.log('表单验证失败:', error)
-      Message.error('请检查表单输入')
+      message.error('请检查表单输入')
       return
     }
 
@@ -773,7 +736,7 @@ const allowedDeviceTypes = ['physical']
       const invalidGroups = data.groups.filter(id => !validGroupIds.includes(id))
       if (invalidGroups.length > 0) {
         console.error('发现无效的分组ID:', invalidGroups)
-        Message.error(`选择的分组不存在: ${invalidGroups.join(', ')}`)
+        message.error(`选择的分组不存在: ${invalidGroups.join(', ')}`)
         return
       }
     }
@@ -781,12 +744,12 @@ const allowedDeviceTypes = ['physical']
     if (isEdit.value) {
       const result = await hostApi.updateHost(props.host!.id, data)
       console.log('更新API返回结果:', result)
-      Message.success('主机更新成功')
+      message.success('主机更新成功')
     } else {
       console.log('调用创建主机API')
       const result = await hostApi.createHost(data)
       console.log('创建API返回结果:', result)
-      Message.success('主机创建成功')
+      message.success('主机创建成功')
     }
 
     console.log('API调用成功，触发success事件')
@@ -805,7 +768,7 @@ const allowedDeviceTypes = ['physical']
       errorMessage += ': ' + error.message
     }
 
-    Message.error(errorMessage)
+    message.error(errorMessage)
   } finally {
     loading.value = false
   }
@@ -869,7 +832,7 @@ const fetchGroups = async () => {
   } catch (error) {
     console.error('获取分组列表失败:', error)
     hostGroups.value = []
-    Message.warning('获取分组列表失败，请刷新重试')
+    message.warning('获取分组列表失败，请刷新重试')
   } finally {
     groupsLoading.value = false
   }
@@ -884,7 +847,7 @@ const fetchAccounts = async () => {
   } catch (error) {
     console.error('获取服务器账号列表失败:', error)
     serverAccounts.value = []
-    Message.warning('获取服务器账号列表失败')
+    message.warning('获取服务器账号列表失败')
   } finally {
     accountsLoading.value = false
   }
@@ -893,12 +856,12 @@ const fetchAccounts = async () => {
 // 连接测试
 const handleConnectionTest = async () => {
   if (!canTestConnection.value) {
-    Message.warning('请先填写完整的连接信息（至少需要IP地址、端口和服务器账号）')
+    message.warning('请先填写完整的连接信息（至少需要IP地址、端口和服务器账号）')
     return
   }
 
   if (!props.host?.id) {
-    Message.warning('请先保存主机后再进行连接测试')
+    message.warning('请先保存主机后再进行连接测试')
     return
   }
 
@@ -906,9 +869,9 @@ const handleConnectionTest = async () => {
   try {
     const result = await hostApi.testConnection(props.host.id)
     if (result.success) {
-      Message.success('连接测试成功！')
+      message.success('连接测试成功！')
     } else {
-      Message.error(result.message || '连接测试失败')
+      message.error(result.message || '连接测试失败')
     }
   } catch (error: any) {
     console.error('连接测试失败:', error)
@@ -918,7 +881,7 @@ const handleConnectionTest = async () => {
     } else if (error.message) {
       errorMessage += ': ' + error.message
     }
-    Message.error(errorMessage)
+    message.error(errorMessage)
   } finally {
     testLoading.value = false
   }
@@ -962,6 +925,24 @@ onMounted(async () => {
 defineExpose({
   refreshGroups: fetchGroups
 })
+
+const formSelectOptions1 = [{ label: 'Linux', value: 'linux' }, { label: 'Windows', value: 'windows' }]
+const formSelectOptions2 = [{ label: '阿里云', value: 'aliyun' }, { label: '腾讯云', value: 'tencent' }, { label: 'AWS', value: 'aws' }, { label: '华为云', value: 'huawei' }, { label: 'UCloud', value: 'ucloud' }, { label: '七牛云', value: 'qiniu' }, { label: '自建机房', value: 'idc' }, { label: '其他', value: 'other' }]
+const formSelectOptions3 = [{ label: '物理机', value: 'physical' }]
+
+const accountOptions = computed(() =>
+  serverAccounts.value.map((account: any) => ({
+    label: `${account.name} (${account.username})`,
+    value: account.id,
+  }))
+)
+
+const hostGroupOptions = computed(() =>
+  hostGroups.value.map((group: any) => ({
+    label: group.full_path || group.name,
+    value: group.id,
+  }))
+)
 </script>
 
 <style scoped>

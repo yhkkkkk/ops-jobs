@@ -14,24 +14,24 @@
       description="维护模板步骤、标签、执行方案引用和同步状态。"
     >
       <template #actions>
-        <a-space>
-          <a-button @click="fetchTemplates">
+        <n-space>
+          <n-button @click="fetchTemplates">
             <template #icon>
-              <icon-refresh />
+              <RefreshCw  />
             </template>
             刷新
-          </a-button>
-          <a-button
+          </n-button>
+          <n-button
             type="primary"
             @click="handleCreate"
             v-permission="{ resourceType: 'jobtemplate', permission: 'add' }"
           >
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             新建模板
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
     </PageHeader>
 
@@ -42,115 +42,72 @@
     >
       <div class="app-filter-grid template-filter-grid">
         <div>
-          <a-input
-            v-model="searchForm.search"
+          <n-input
+            v-model:value="searchForm.search"
             placeholder="模板名称"
-            allow-clear
+            clearable
             @press-enter="handleSearch"
             @clear="handleSearch"
           />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.category"
+                    <n-select
+            v-model:value="searchForm.category"
             placeholder="分类"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option value="deployment">部署</a-option>
-            <a-option value="maintenance">维护</a-option>
-            <a-option value="monitoring">监控</a-option>
-            <a-option value="backup">备份</a-option>
-            <a-option value="other">其他</a-option>
-          </a-select>
+            clearable
+            @update:value="handleSearch"
+            @clear="handleSearch" :options="(availableTags || []).map((tag: any) => ({ label: String(tag), value: String(tag) }))" />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.tags"
-            placeholder="标签"
-            allow-clear
-            multiple
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="tag in availableTags"
-              :key="tag"
-              :value="tag"
-            >
-              {{ tag }}
-            </a-option>
-          </a-select>
-        </div>
-        <div>
-          <a-select
-            v-model="searchForm.created_by"
+          <n-select
+            v-model:value="searchForm.created_by"
             placeholder="创建者"
-            allow-clear
-            allow-search
-            :filter-option="false"
+            clearable
+            filterable
+           
             @search="handleCreatorSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="user in filteredCreators"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
+            @update:value="handleSearch"
+            @clear="handleSearch" :options="(filteredCreators || []).map((user: any) => ({ label: String(user.name), value: String(user.id) }))" />
         </div>
         <div>
-          <a-select
-            v-model="searchForm.updated_by"
+          <n-select
+            v-model:value="searchForm.updated_by"
             placeholder="更新者"
-            allow-clear
-            allow-search
-            :filter-option="false"
+            clearable
+            filterable
+           
             @search="handleUpdaterSearch"
-            @change="handleSearch"
-            @clear="handleSearch"
-          >
-            <a-option
-              v-for="user in filteredUpdaters"
-              :key="user.id"
-              :value="user.id"
-            >
-              {{ user.name }}
-            </a-option>
-          </a-select>
+            @update:value="handleSearch"
+            @clear="handleSearch" :options="(filteredUpdaters || []).map((user: any) => ({ label: String(user.name), value: String(user.id) }))" />
         </div>
         <div>
           <div class="filter-group">
             <div class="filter-switch">
               <span class="filter-label">收藏</span>
-              <a-switch v-model="searchForm.favorites_only" @change="handleSearch" />
+              <n-switch v-model:value="searchForm.favorites_only" @change="handleSearch" />
             </div>
             <div class="filter-switch">
               <span class="filter-label">我的作业</span>
-              <a-switch v-model="searchForm.my_templates_only" @change="handleSearch" />
+              <n-switch v-model:value="searchForm.my_templates_only" @change="handleSearch" />
             </div>
           </div>
         </div>
         <div class="app-filter-grid__actions">
           <div class="search-actions">
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
+            <n-space>
+              <n-button type="primary" @click="handleSearch">
                 <template #icon>
-                  <icon-search />
+                  <Search  />
                 </template>
                 搜索
-              </a-button>
-              <a-button @click="handleReset">
+              </n-button>
+              <n-button @click="handleReset">
                 <template #icon>
-                  <icon-refresh />
+                  <RefreshCw  />
                 </template>
                 重置
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </div>
         </div>
       </div>
@@ -166,165 +123,15 @@
       title="模板列表"
       :description="`共 ${pagination.total} 个模板，当前页 ${templates.length} 个`"
     >
-      <a-table
+      <n-data-table
         class="template-data-table"
         :columns="columns"
         :data="templates"
         :loading="loading"
-        :pagination="pagination"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #name="{ record }">
-          <div class="template-name-cell">
-            <a-button
-              type="text"
-              size="mini"
-              class="favorite-btn"
-              @click.stop="toggleFavorite(record.id)"
-            >
-              <icon-star-fill v-if="isFavorite(record.id)" class="favorite-icon active" />
-              <icon-star v-else class="favorite-icon" />
-            </a-button>
-            <div class="template-name-main">
-              <a-link @click="handleView(record)" class="template-link">{{ record.name }}</a-link>
-              <div class="template-description">{{ record.description || '暂无描述' }}</div>
-            </div>
-          </div>
-        </template>
-        <template #category="{ record }">
-          <a-tag v-if="record.category" :color="getCategoryColor(record.category)">
-            {{ getCategoryText(record.category) }}
-          </a-tag>
-          <span v-else class="text-gray-400">未分类</span>
-        </template>
-
-        <template #tags="{ record }">
-          <div class="tags-container">
-            <a-space v-if="record.tag_list && record.tag_list.length > 0" wrap>
-              <a-tag
-                v-for="tag in record.tag_list.slice(0, 2)"
-                :key="`${tag.key}-${tag.value}`"
-                size="small"
-                class="tag-item"
-              >
-                <strong>{{ tag.key }}:</strong> {{ tag.value }}
-              </a-tag>
-              <a-tag v-if="record.tag_list.length > 2" size="small" class="tag-more">
-                +{{ record.tag_list.length - 2 }}
-              </a-tag>
-            </a-space>
-            <span v-else class="text-gray-400">无标签</span>
-          </div>
-        </template>
-
-        <template #step_count="{ record }">
-          <a-badge :count="record.step_count" :max="99" />
-        </template>
-
-        <template #plan_count="{ record }">
-          <a-space class="table-row-actions">
-            <a-badge :count="record.plan_count" :max="99" />
-            <a-tag v-if="record.has_unsync_plans" color="orange" size="small">
-              有未同步
-            </a-tag>
-          </a-space>
-        </template>
-
-        <template #references="{ record }">
-          <a-link class="reference-link" @click="handleViewReferences(record)">
-            <div class="meta-line">方案：{{ record.plan_count || 0 }}</div>
-            <div class="meta-line">定时：{{ record.scheduled_job_ref_count || 0 }}</div>
-          </a-link>
-        </template>
-
-        <template #created_at="{ record }">
-          <MetaInfoLines
-            :created-text="`创建：${formatDate(record.created_at)} · ${record.created_by_name || '-'}`"
-            :updated-text="`更新：${record.updated_at ? formatDate(record.updated_at) : '-'} · ${record.updated_by_name || record.created_by_name || '-'}`"
-          />
-        </template>
-
-        <template #actions="{ record }">
-          <a-space class="table-row-actions">
-            <a-button
-              type="text"
-              size="small"
-              class="template-primary-action"
-              @click="handleView(record)"
-              v-permission="{ resourceType: 'jobtemplate', permission: 'view', resourceId: record.id }"
-            >
-              <template #icon>
-                <icon-eye />
-              </template>
-              查看
-            </a-button>
-            <a-dropdown>
-              <a-button type="text" size="small" aria-label="更多操作">
-                <template #icon>
-                  <icon-more />
-                </template>
-              </a-button>
-              <template #content>
-                <a-doption
-                  :class="{ 'disabled-option': !canEditTemplate(record.id) }"
-                  @click="handleClickEditTemplate(record)"
-                >
-                  <template #icon>
-                    <icon-edit />
-                  </template>
-                  编辑
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canCreatePlan }"
-                  @click="handleClickCreatePlan(record)"
-                >
-                  <template #icon>
-                    <icon-plus />
-                  </template>
-                  新增执行方案
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canViewPlans }"
-                  @click="handleClickViewPlans(record)"
-                >
-                  <template #icon>
-                    <icon-list />
-                  </template>
-                  查看执行方案
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canSyncPlans }"
-                  @click="handleClickSync(record)"
-                >
-                  <template #icon>
-                    <icon-sync />
-                  </template>
-                  同步方案
-                </a-doption>
-                <a-doption
-                  :class="{ 'disabled-option': !canCopyTemplate }"
-                  @click="handleClickCopyTemplate(record)"
-                >
-                  <template #icon>
-                    <icon-copy />
-                  </template>
-                  复制
-                </a-doption>
-                <a-doption
-                  :class="['text-red-500', { 'disabled-option': !canDeleteTemplate(record.id) }]"
-                  @click="handleClickDeleteTemplate(record)"
-                >
-                  <template #icon>
-                    <icon-delete />
-                  </template>
-                  删除
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+        :row-key="(row: any) => row.id"
+      />
     </DetailPanel>
 
     <!-- 同步确认对话框 -->
@@ -338,9 +145,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, h } from 'vue'
+import { computed, h, onMounted, reactive, ref, resolveDirective, type VNode, withDirectives } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate } from '@/types'
 import SyncConfirmModal from './components/SyncConfirmModal.vue'
@@ -351,11 +157,15 @@ import ActiveFiltersBar from '@/components/ActiveFiltersBar.vue'
 import { useFilterQuerySync, parseBooleanQuery, parseNumberQuery, parseStringArrayQuery, toBooleanQuery } from '@/composables/useFilterQuerySync'
 import { useAuthStore } from '@/stores/auth'
 import { DataToolbar, DetailPanel, PageHeader, countActiveFilters } from '@/components/app'
+import { NBadge, NButton, NDataTable, NDropdown, NInput, NSelect, NSpace, NSwitch, NTag, type DataTableColumns, useDialog, useMessage } from 'naive-ui'
+import { Copy, Eye, List, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-vue-next'
 
 const permissionsStore = usePermissionsStore()
 const favoritesStore = useFavoritesStore()
 const authStore = useAuthStore()
 
+const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 
 // 响应式数据
@@ -386,10 +196,10 @@ const isFavorite = (id: number) => favoritesStore.isFavorite('job_template', id)
 const toggleFavorite = async (id: number) => {
   try {
     const isFavorited = await favoritesStore.toggleFavorite('job_template', id, 'personal')
-    Message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
+    message.success(isFavorited ? '已添加到收藏' : '已取消收藏')
   } catch (e) {
     console.error('切换收藏状态失败:', e)
-    Message.error('操作失败')
+    message.error('操作失败')
   }
 }
 
@@ -481,69 +291,149 @@ const handleClearFilter = (key: string) => {
 }
 
 // 表格列配置
-const columns = [
+const renderTagsCell = (row: any) => {
+  if (row.tag_list && row.tag_list.length > 0) {
+    return h('div', { class: 'tags-container' }, [
+      h(NSpace, { wrap: true }, {
+        default: () => [
+          ...row.tag_list.slice(0, 2).map((tag: any) =>
+            h(NTag, { size: 'small', class: 'tag-item' }, {
+              default: () => [h('strong', `${tag.key}:`), ` ${tag.value}`],
+            })),
+          row.tag_list.length > 2
+            ? h(NTag, { size: 'small', class: 'tag-more' }, { default: () => `+${row.tag_list.length - 2}` })
+            : null,
+        ],
+      }),
+    ])
+  }
+  return h('span', { class: 'text-gray-400' }, '无标签')
+}
+
+const templateRowActions = (row: any) => [
+  { label: '编辑', key: 'edit', disabled: !canEditTemplate(row.id), icon: () => h(Pencil, { size: 14 }) },
+  { label: '新增执行方案', key: 'createPlan', disabled: !canCreatePlan, icon: () => h(Plus, { size: 14 }) },
+  { label: '查看执行方案', key: 'viewPlans', disabled: !canViewPlans, icon: () => h(List, { size: 14 }) },
+  { label: '同步方案', key: 'sync', disabled: !canSyncPlans, icon: () => h(RefreshCw, { size: 14 }) },
+  { label: '复制', key: 'copy', disabled: !canCopyTemplate, icon: () => h(Copy, { size: 14 }) },
+  { label: '删除', key: 'delete', disabled: !canDeleteTemplate(row.id), icon: () => h(Trash2, { size: 14 }), props: { class: 'danger' } },
+]
+
+const onTemplateRowAction = (key: string, row: any) => {
+  if (key === 'edit') handleClickEditTemplate(row)
+  if (key === 'createPlan') handleClickCreatePlan(row)
+  if (key === 'viewPlans') handleClickViewPlans(row)
+  if (key === 'sync') handleClickSync(row)
+  if (key === 'copy') handleClickCopyTemplate(row)
+  if (key === 'delete') handleClickDeleteTemplate(row)
+}
+
+const columns: DataTableColumns<any> = [
   {
     title: '模板名称',
-    dataIndex: 'name',
     key: 'name',
-    slotName: 'name',
-    width: 260,
-    ellipsis: true,
-    tooltip: true
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h('div', { class: 'template-name-cell' }, [
+        h(NButton, {
+          text: true, size: 'tiny', class: 'favorite-btn',
+          onClick: (e: MouseEvent) => { e.stopPropagation(); toggleFavorite(row.id) },
+        }, {
+          icon: () => h(Star, {
+            size: 14,
+            fill: isFavorite(row.id) ? '#f59e0b' : 'none',
+            stroke: isFavorite(row.id) ? '#f59e0b' : 'currentColor',
+          }),
+        }),
+        h('div', { class: 'template-name-main' }, [
+          h(NButton, { text: true, size: 'small', class: 'template-link', onClick: () => handleView(row) }, { default: () => row.name }),
+          h('div', { class: 'template-description' }, row.description || '暂无描述'),
+        ]),
+      ]),
   },
   {
     title: '分类',
-    dataIndex: 'category',
     key: 'category',
-    slotName: 'category',
-    width: 96
+    render: (row) => row.category
+      ? h(NTag, { type: getCategoryColor(row.category) as any }, { default: () => getCategoryText(row.category) })
+      : h('span', { class: 'text-gray-400' }, '未分类'),
   },
-  {
-    title: '标签',
-    dataIndex: 'tags',
-    key: 'tags',
-    slotName: 'tags',
-    width: 150
-  },
+  { title: '标签', key: 'tags', render: renderTagsCell },
   {
     title: '步骤数',
-    dataIndex: 'step_count',
     key: 'step_count',
-    slotName: 'step_count',
-    align: 'center',
-    width: 78
+    render: (row) => h(NBadge, { value: row.step_count, max: 99 }),
   },
   {
     title: '执行方案',
-    dataIndex: 'plan_count',
     key: 'plan_count',
-    slotName: 'plan_count',
-    align: 'center',
-    width: 110
+    render: (row) =>
+      h(NSpace, { class: 'table-row-actions', size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h(NBadge, { value: row.plan_count, max: 99 }),
+          row.has_unsync_plans ? h(NTag, { type: 'warning', size: 'small' }, { default: () => '有未同步' }) : null,
+        ],
+      }),
   },
   {
     title: '被引用',
-    dataIndex: 'references',
     key: 'references',
-    slotName: 'references',
-    align: 'center',
-    width: 96
+    render: (row) =>
+      h(NButton, { text: true, size: 'small', class: 'reference-link', onClick: () => handleViewReferences(row) }, {
+        default: () => [
+          h('div', { class: 'meta-line' }, `方案：${row.plan_count || 0}`),
+          h('div', { class: 'meta-line' }, `定时：${row.scheduled_job_ref_count || 0}`),
+        ],
+      }),
   },
   {
-    title: '创建/更新',
-    dataIndex: 'created_at',
+    title: '创建信息',
     key: 'created_at',
-    slotName: 'created_at',
-    width: 180
+    render: (row) =>
+      h(MetaInfoLines, {
+        createdText: `创建：${formatDate(row.created_at)} · ${row.created_by_name || '-'}`,
+        updatedText: `更新：${row.updated_at ? formatDate(row.updated_at) : '-'} · ${row.updated_by_name || row.created_by_name || '-'}`,
+      }),
   },
   {
     title: '操作',
     key: 'actions',
-    slotName: 'actions',
-    align: 'center',
-    width: 104
-  }
+    render: (row) =>
+      h(NSpace, { class: 'table-row-actions', wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          withPerm(
+            h(NButton, { text: true, size: 'small', class: 'template-primary-action', onClick: () => handleView(row) }, {
+              icon: () => h(Eye, { size: 14 }),
+              default: () => '查看',
+            }),
+            { resourceType: 'jobtemplate', permission: 'view', resourceId: row.id },
+          ),
+          h(NDropdown, {
+            trigger: 'click',
+            options: templateRowActions(row),
+            onSelect: (key: string) => onTemplateRowAction(key, row),
+          }, {
+            default: () => h(NButton, { text: true, size: 'small', 'aria-label': '更多操作' }, {
+              icon: () => h(MoreHorizontal, { size: 16 }),
+            }),
+          }),
+        ],
+      }),
+  },
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
+
+const withPerm = (vnode: VNode, value: unknown) => {
+  const perm = resolveDirective('permission')
+  return perm ? withDirectives(vnode, [[perm, value]]) : vnode
+}
 
 // 获取可用标签列表
 const fetchAvailableTags = async () => {
@@ -653,7 +543,7 @@ const fetchTemplates = async () => {
     await favoritesStore.batchCheckFavorites('job_template', resultTemplates.map(t => t.id))
   } catch (error) {
     console.error('获取作业模板列表失败:', error)
-    Message.error('获取作业模板列表失败')
+    message.error('获取作业模板列表失败')
   } finally {
     loading.value = false
   }
@@ -732,10 +622,10 @@ const handleCopy = async (record: JobTemplate) => {
 
     // 跳转到编辑器页面
     await router.push('/job-templates/create?action=copy')
-    Message.success('模板数据已复制，请修改模板名称后保存')
+    message.success('模板数据已复制，请修改模板名称后保存')
   } catch (error) {
     console.error('复制模板失败:', error)
-    Message.error('复制模板失败')
+    message.error('复制模板失败')
   }
 }
 
@@ -765,20 +655,20 @@ const handleDelete = async (record: JobTemplate) => {
     hasRefs ? h('div', { style: 'margin-top:8px;color:#f53f3f;' }, '存在引用，无法删除') : null
   ])
 
-  Modal.confirm({
+  dialog.warning({
     title: hasRefs ? '无法删除' : '确认删除',
     content: () => content,
-    okButtonProps: { status: 'danger', disabled: hasRefs },
-    onOk: async () => {
+    positiveButtonProps: { type: 'error', disabled: hasRefs },
+    onPositiveClick: async () => {
       if (hasRefs) return
       try {
         await jobTemplateApi.deleteTemplate(record.id)
-        Message.success('作业模板删除成功')
+        message.success('作业模板删除成功')
         await fetchTemplates()
       } catch (error: any) {
         console.error('删除作业模板失败:', error)
         const message = error?.response?.data?.message || '删除作业模板失败'
-        Message.error(message)
+        message.error(message)
       }
     }
   })
@@ -790,7 +680,7 @@ const handleViewReferences = async (record: JobTemplate) => {
     references = await jobTemplateApi.getReferences(record.id)
   } catch (error: any) {
     const message = error?.response?.data?.message || '获取引用关系失败'
-    Message.error(message)
+    message.error(message)
     console.error('获取引用关系失败:', error)
     return
   }
@@ -839,16 +729,16 @@ const handleViewReferences = async (record: JobTemplate) => {
     ])
   ])
 
-  const modal = Modal.info({
+  const modal = dialog.info({
     title: '引用关系',
     content: () => content,
-    okText: '关闭'
+    positiveText: '关闭'
   })
-  modalClose = modal?.close
+  modalClose = modal?.destroy
 }
 
 const showNoPermissionMessage = () => {
-  Message.warning('没有权限执行此操作，请联系管理员开放权限')
+  message.warning('没有权限执行此操作，请联系管理员开放权限')
 }
 
 const handleClickCreatePlan = (record: JobTemplate) => {
@@ -986,6 +876,9 @@ onMounted(() => {
   initFromQuery()
   fetchTemplates()
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '部署', value: 'deployment' }, { label: '维护', value: 'maintenance' }, { label: '监控', value: 'monitoring' }, { label: '备份', value: 'backup' }, { label: '其他', value: 'other' }]
 </script>
 
 <style scoped>
@@ -1028,7 +921,7 @@ onMounted(() => {
 }
 
 .filter-label {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -1073,7 +966,7 @@ onMounted(() => {
 
 .favorite-icon {
   font-size: 14px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   transition: color 0.2s;
 }
 
@@ -1098,13 +991,13 @@ onMounted(() => {
 }
 
 .reference-link:hover .meta-line {
-  color: var(--color-primary-6);
+  color: var(--app-accent);
 }
 
 .meta-line {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 /* 标签容器样式 */

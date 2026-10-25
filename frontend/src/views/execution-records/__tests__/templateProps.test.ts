@@ -12,13 +12,11 @@ describe('execution records template props', () => {
 
   it('keeps secondary row actions behind a more menu', () => {
     const source = readFileSync(resolve(__dirname, '../index.vue'), 'utf8')
-    const actionsStart = source.indexOf('<template #actions="{ record }">')
-    const actionsEnd = source.indexOf('</a-table>', actionsStart)
-    const actions = source.slice(actionsStart, actionsEnd)
+    const actions = source
 
-    expect(actions).toContain('<a-dropdown')
-    expect(actions).toContain('<icon-more')
-    expect(actions).toContain('<a-doption')
+    expect(actions).toContain('h(NDropdown')
+    expect(actions).toContain('MoreHorizontal')
+    expect(actions).toContain('recordRowActions')
     expect(actions).not.toContain('重试历史 ({{ record.total_retry_count }})')
   })
 })

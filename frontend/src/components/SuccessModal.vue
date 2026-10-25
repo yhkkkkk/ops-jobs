@@ -1,59 +1,56 @@
 <template>
-  <a-modal
-    v-model:visible="visible"
+  <n-modal
+    v-model:show="visible"
+    preset="card"
     :title="title"
-    :width="500"
-    :footer="false"
+    :style="{ width: '500px' }"
     :closable="false"
     :mask-closable="false"
+    :close-on-esc="false"
     class="success-modal"
   >
     <div class="success-content">
       <!-- 成功图标 -->
       <div class="success-icon">
-        <icon-check-circle-fill :size="64" style="color: #00b42a" />
+        <CheckCircle2 :size="64" style="color: #16a34a" />
       </div>
-      
+
       <!-- 成功消息 -->
       <div class="success-message">
         <h3>{{ message }}</h3>
         <p v-if="description" class="description">{{ description }}</p>
       </div>
-      
+
       <!-- 操作按钮 -->
       <div class="action-buttons">
-        <a-space direction="vertical" :size="12" style="width: 100%">
-          <a-button
+        <n-space vertical :size="12" style="width: 100%">
+          <n-button
             v-for="action in actions"
             :key="action.key"
-            :type="action.type || 'outline'"
-            :status="action.status"
-            :size="action.size || 'large'"
-            :loading="action.loading"
-            block
+            v-bind="buttonProps(action)"
             @click="handleAction(action)"
           >
-            <template #icon v-if="action.icon">
+            <template v-if="action.icon" #icon>
               <component :is="action.icon" />
             </template>
             {{ action.label }}
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </div>
     </div>
-  </a-modal>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { IconCheckCircleFill } from '@arco-design/web-vue/es/icon'
+import { NButton, NModal, NSpace } from 'naive-ui'
+import { CheckCircle2 } from 'lucide-vue-next'
 
 interface Action {
   key: string
   label: string
   type?: 'primary' | 'secondary' | 'outline' | 'dashed' | 'text'
   status?: 'normal' | 'warning' | 'success' | 'danger'
-  size?: 'mini' | 'small' | 'medium' | 'large'
   icon?: any
   loading?: boolean
   handler?: () => void | Promise<void>
@@ -85,6 +82,29 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
+// 兼容旧的 action.type/status 语义，映射到 Naive UI 按钮属性
+const buttonProps = (action: Action) => {
+  const legacyType = action.type || 'outline'
+  const naiveType = action.status === 'danger'
+    ? 'error'
+    : action.status === 'warning'
+      ? 'warning'
+      : action.status === 'success'
+        ? 'success'
+        : legacyType === 'primary'
+          ? 'primary'
+          : 'default'
+  return {
+    type: naiveType,
+    secondary: legacyType !== 'primary' && legacyType !== 'text',
+    text: legacyType === 'text',
+    dashed: legacyType === 'dashed',
+    block: true,
+    size: 'large',
+    loading: action.loading,
+  } as const
+}
+
 const handleAction = async (action: Action) => {
   if (action.handler) {
     try {
@@ -93,9 +113,9 @@ const handleAction = async (action: Action) => {
       console.error('Action handler error:', error)
     }
   }
-  
+
   emit('action', action)
-  
+
   // 如果是关闭类型的操作，自动关闭弹窗
   if (action.key === 'close' || action.key === 'cancel') {
     visible.value = false
@@ -104,12 +124,6 @@ const handleAction = async (action: Action) => {
 </script>
 
 <style scoped>
-.success-modal :deep(.arco-modal-header) {
-  text-align: center;
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
 .success-content {
   text-align: center;
   padding: 20px 0;
@@ -127,12 +141,12 @@ const handleAction = async (action: Action) => {
   margin: 0 0 8px 0;
   font-size: 18px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--app-fg);
 }
 
 .success-message .description {
   margin: 0;
-  color: #86909c;
+  color: var(--app-muted);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -142,7 +156,7 @@ const handleAction = async (action: Action) => {
   margin: 0 auto;
 }
 
-.success-modal :deep(.arco-btn) {
+.success-modal :deep(.n-button) {
   height: 44px;
   font-size: 14px;
   font-weight: 500;

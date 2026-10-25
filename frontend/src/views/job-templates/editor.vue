@@ -4,12 +4,12 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="handleBack">
+          <n-button text @click="handleBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>{{ isEdit ? '编辑作业模板' : '新建作业模板' }}</h2>
             <p class="header-desc">
@@ -18,105 +18,98 @@
           </div>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button :type="isEdit ? undefined : 'primary'" @click="handleSaveClick" :loading="saving">
+          <n-space>
+            <n-button :type="isEdit ? undefined : 'primary'" @click="handleSaveClick" :loading="saving">
               <template #icon>
-                <icon-save />
+                <Save />
               </template>
               保存
-            </a-button>
-            <a-button v-if="isEdit" type="primary" @click="handleDebugExecute">
+            </n-button>
+            <n-button v-if="isEdit" type="primary" @click="handleDebugExecute">
               <template #icon>
-                <icon-play-arrow />
+                <Play />
               </template>
               调试执行
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
     <!-- 基本信息 -->
-    <a-card title="基本信息" class="mb-4">
-      <a-form :model="form" layout="vertical" @change="handleFormChange">
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="模板名称" required>
-              <a-input
-                v-model="form.name"
+    <n-card title="基本信息" class="mb-4">
+      <n-form :model="form" layout="vertical" @change="handleFormChange">
+        <div class="form-grid-row">
+          <div class="form-grid-col" style="grid-column: span 12">
+            <n-form-item label="模板名称" required>
+              <n-input
+                v-model:value="form.name"
                 placeholder="请输入模板名称"
                 :max-length="200"
               />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="分类">
-              <a-select
-                v-model="form.category"
+            </n-form-item>
+          </div>
+          <div class="form-grid-col" style="grid-column: span 12">
+            <n-form-item label="分类">
+                            <n-select
+                v-model:value="form.category"
                 placeholder="选择分类"
-                allow-clear
-              >
-                <a-option value="deployment">部署</a-option>
-                <a-option value="maintenance">维护</a-option>
-                <a-option value="monitoring">监控</a-option>
-                <a-option value="backup">备份</a-option>
-                <a-option value="other">其他</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="标签">
+                clearable :options="selectOptions1" />
+            </n-form-item>
+          </div>
+        </div>
+        <div class="form-grid-row">
+          <div class="form-grid-col" style="grid-column: span 12">
+            <n-form-item label="标签">
               <TagEditor
                 v-model="form.tags"
                 placeholder="添加键值对标签"
                 :max-tags="10"
               />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="模板描述">
-          <a-textarea
-            v-model="form.description"
+            </n-form-item>
+          </div>
+        </div>
+        <n-form-item label="模板描述">
+          <n-input type="textarea"
+            v-model:value="form.description"
             placeholder="请输入模板描述"
             :rows="3"
             :max-length="1000"
           />
-        </a-form-item>
-      </a-form>
-    </a-card>
+        </n-form-item>
+      </n-form>
+    </n-card>
 
     <!-- 全局变量 -->
-    <a-card title="全局变量" class="mb-4">
+    <n-card title="全局变量" class="mb-4">
       <VariableEditor
         v-model="form.global_parameters"
         :system-vars="systemVars"
       />
-    </a-card>
+    </n-card>
 
     <!-- 作业步骤 -->
-    <a-card title="作业步骤" class="mb-4">
-      <template #extra>
-        <a-space>
-          <a-button type="primary" @click="handleAddStep">
+    <n-card title="作业步骤" class="mb-4">
+      <template #footer>
+        <n-space>
+          <n-button type="primary" @click="handleAddStep">
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             添加步骤
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
 
       <div v-if="form.steps.length === 0" class="empty-steps">
-        <a-empty description="暂无步骤，请添加作业步骤">
-          <a-button type="primary" @click="handleAddStep">
+        <n-empty description="暂无步骤，请添加作业步骤">
+          <n-button type="primary" @click="handleAddStep">
             <template #icon>
-              <icon-plus />
+              <Plus  />
             </template>
             添加步骤
-          </a-button>
-        </a-empty>
+          </n-button>
+        </n-empty>
       </div>
 
       <div v-else class="steps-list">
@@ -129,38 +122,38 @@
           :default-expanded="true"
         >
           <template #actions>
-            <a-space>
-              <a-button type="text" size="small" @click="handleEditStep(index)">
+            <n-space>
+              <n-button text size="small" @click="handleEditStep(index)">
                 <template #icon>
-                  <icon-edit />
+                  <Pencil  />
                 </template>
                 编辑
-              </a-button>
-              <a-button type="text" size="small" @click="handleMoveStepUp(index)" :disabled="index === 0">
+              </n-button>
+              <n-button text size="small" @click="handleMoveStepUp(index)" :disabled="index === 0">
                 <template #icon>
-                  <icon-arrow-up />
+                  <ChevronUp />
                 </template>
-              </a-button>
-              <a-button type="text" size="small" @click="handleMoveStepDown(index)" :disabled="index === form.steps.length - 1">
+              </n-button>
+              <n-button text size="small" @click="handleMoveStepDown(index)" :disabled="index === form.steps.length - 1">
                 <template #icon>
-                  <icon-arrow-down />
+                  <ChevronDown />
                 </template>
-              </a-button>
-              <a-popconfirm
+              </n-button>
+              <n-popconfirm
                 content="确定要删除这个步骤吗？"
                 @ok="handleDeleteStep(index)"
               >
-                <a-button type="text" size="small" status="danger">
+                <n-button  size="small" type="error">
                   <template #icon>
-                    <icon-delete />
+                    <Trash2  />
                   </template>
-                </a-button>
-              </a-popconfirm>
-            </a-space>
+                </n-button>
+              </n-popconfirm>
+            </n-space>
           </template>
         </StepCard>
       </div>
-    </a-card>
+    </n-card>
 
     <!-- 步骤编辑弹窗 -->
     <StepEditor
@@ -182,21 +175,21 @@
     />
 
     <!-- 未保存更改提示 -->
-    <a-modal
-      v-model:visible="leaveConfirmVisible"
+    <n-modal preset="card"
+      v-model:show="leaveConfirmVisible"
       title="未保存更改"
-      :width="480"
-      :footer="false"
+     
+     
     >
       <div class="leave-confirm-content">
         您有未保存的更改，是否保存并离开？
       </div>
       <div class="leave-confirm-actions">
-        <a-button type="primary" :loading="saving" @click="handleLeaveSave">保存并离开</a-button>
-        <a-button status="danger" @click="handleLeaveDiscard">放弃更改</a-button>
-        <a-button @click="handleLeaveCancel">取消</a-button>
+        <n-button type="primary" :loading="saving" @click="handleLeaveSave">保存并离开</n-button>
+        <n-button type="error" @click="handleLeaveDiscard">放弃更改</n-button>
+        <n-button @click="handleLeaveCancel">取消</n-button>
       </div>
-    </a-modal>
+    </n-modal>
 
     <!-- 同步确认弹窗 -->
     <SyncConfirmModal
@@ -211,7 +204,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
 import { jobTemplateApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
 import StepEditor from './components/StepEditor.vue'
@@ -220,9 +212,12 @@ import SyncConfirmModal from './components/SyncConfirmModal.vue'
 import TagEditor from '@/components/TagEditor.vue'
 import VariableEditor from './components/VariableEditor.vue'
 import SuccessModal from '@/components/SuccessModal.vue'
-import { IconEye, IconEyeInvisible, IconPlus, IconPlayArrow, IconList, IconSync, IconDelete, IconEdit, IconArrowUp, IconArrowDown } from '@arco-design/web-vue/es/icon'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { NButton, NCard, NEmpty, NForm, NFormItem, NInput, NModal, NPopconfirm, NSelect, NSpace, useDialog, useMessage } from 'naive-ui'
+import { ChevronDown, ChevronLeft, ChevronUp, Eye, List, Pencil, Play, Plus, RefreshCw, Save, Trash2 } from 'lucide-vue-next'
 
+const message = useMessage()
+const dialog = useDialog()
 const route = useRoute()
 const router = useRouter()
 
@@ -320,7 +315,7 @@ const fetchTemplate = async () => {
     setOriginalData(form)
   } catch (error) {
     console.error('获取模板详情失败:', error)
-    Message.error('获取模板详情失败')
+    message.error('获取模板详情失败')
   } finally {
     loading.value = false
   }
@@ -331,7 +326,7 @@ const handleSave = async (options?: { redirect?: 'back'; showSuccess?: boolean }
   try {
     // 基本验证
     if (!form.name?.trim()) {
-      Message.error('请输入模板名称')
+      message.error('请输入模板名称')
       return false
     }
 
@@ -446,7 +441,7 @@ const handleSave = async (options?: { redirect?: 'back'; showSuccess?: boolean }
     return true
   } catch (error) {
     console.error('保存模板失败:', error)
-    Message.error('保存模板失败')
+    message.error('保存模板失败')
     return false
   } finally {
     saving.value = false
@@ -491,17 +486,17 @@ const showHostWarningModal = (warnings: any[]) => {
   return new Promise<boolean>((resolve) => {
     const warningMessages = warnings.map(w => `• ${w.stepName}: ${w.message}`).join('\n')
 
-    Modal.warning({
+    dialog.warning({
       title: '主机配置提醒',
       content: h('div', [
         h('p', '检测到以下步骤的主机配置问题：'),
         h('pre', { style: 'margin: 12px 0; padding: 12px; background: #f7f8fa; border-radius: 4px; white-space: pre-wrap;' }, warningMessages),
         h('p', { style: 'margin-top: 12px; color: #86909c;' }, '这些步骤在执行时可能无法正常运行，是否继续保存？')
       ]) as any,
-      okText: '继续保存',
-      cancelText: '返回修改',
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false)
+      positiveText: '继续保存',
+      negativeText: '返回修改',
+      onPositiveClick: () => resolve(true),
+      onNegativeClick: () => resolve(false)
     })
   })
 }
@@ -535,12 +530,12 @@ const handleLeaveCancel = () => {
 const handleDebugExecute = async () => {
   const templateId = Number(route.params.id)
   if (!templateId) {
-    Message.error('模板ID不存在')
+    message.error('模板ID不存在')
     return
   }
 
   try {
-    Message.loading('正在启动调试执行...')
+    message.loading('正在启动调试执行...')
 
     const result = await jobTemplateApi.debugTemplate(templateId, {
       execution_parameters: {},
@@ -549,16 +544,16 @@ const handleDebugExecute = async () => {
       rolling_batch_delay: 0
     })
 
-    Message.clear()
-    Message.success('调试执行已启动！')
+    message.destroyAll()
+    message.success('调试执行已启动！')
 
     // 跳转到执行记录页面查看结果
     router.push(`/execution-records/${result.execution_id}`)
 
   } catch (error: any) {
-    Message.clear()
+    message.destroyAll()
     console.error('调试执行失败:', error)
-    Message.error(error.response?.data?.message || '调试执行失败')
+    message.error(error.response?.data?.message || '调试执行失败')
   }
 }
 
@@ -573,7 +568,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         key: 'view',
         label: '查看模板详情',
         type: 'primary',
-        icon: IconEye,
+        icon: Eye,
         handler: () => {
             // 先关闭弹窗再导航，避免弹窗在目标页面残留
             showSuccessModal.value = false
@@ -584,7 +579,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         key: 'create-plan',
         label: '新建执行方案',
         type: 'outline',
-        icon: IconPlus,
+        icon: Plus,
         handler: () => {
             showSuccessModal.value = false
           router.push(`/execution-plans/create?template_id=${template.id}`)
@@ -594,7 +589,7 @@ const showCreateSuccessModal = (template: JobTemplate) => {
         key: 'list',
         label: '返回模板列表',
         type: 'text',
-        icon: IconList,
+        icon: List,
         handler: () => {
             showSuccessModal.value = false
           router.push('/job-templates')
@@ -615,7 +610,7 @@ const showEditSuccessModal = (template: JobTemplate) => {
         key: 'view',
         label: '查看模板详情',
         type: 'primary',
-        icon: IconEye,
+        icon: Eye,
         handler: () => {
           router.push(`/job-templates/detail/${template.id}`)
         }
@@ -624,7 +619,7 @@ const showEditSuccessModal = (template: JobTemplate) => {
         key: 'sync',
         label: '同步执行方案',
         type: 'outline',
-        icon: IconSync,
+        icon: RefreshCw,
         handler: () => {
           showSuccessModal.value = false
           showSyncModal(template)
@@ -634,7 +629,7 @@ const showEditSuccessModal = (template: JobTemplate) => {
         key: 'create-plan',
         label: '新建执行方案',
         type: 'outline',
-        icon: IconPlus,
+        icon: Plus,
         handler: () => {
           router.push(`/execution-plans/create?template_id=${template.id}`)
         }
@@ -644,10 +639,10 @@ const showEditSuccessModal = (template: JobTemplate) => {
         label: '调试执行',
         type: 'outline',
         status: 'success',
-        icon: IconPlayArrow,
+        icon: Play,
         handler: async () => {
           try {
-            Message.loading('正在启动调试执行...')
+            message.loading('正在启动调试执行...')
 
             const result = await jobTemplateApi.debugTemplate(template.id, {
               execution_parameters: {},
@@ -656,16 +651,16 @@ const showEditSuccessModal = (template: JobTemplate) => {
               rolling_batch_delay: 0
             })
 
-            Message.clear()
-            Message.success('调试执行已启动！')
+            message.destroyAll()
+            message.success('调试执行已启动！')
 
             // 跳转到执行记录页面查看结果
             router.push(`/execution-records/${result.execution_id}`)
 
           } catch (error: any) {
-            Message.clear()
+            message.destroyAll()
             console.error('调试执行失败:', error)
-            Message.error(error.response?.data?.message || '调试执行失败')
+            message.error(error.response?.data?.message || '调试执行失败')
           }
         }
       },
@@ -682,7 +677,7 @@ const showEditSuccessModal = (template: JobTemplate) => {
         key: 'list',
         label: '返回模板列表',
         type: 'text',
-        icon: IconList,
+        icon: List,
         handler: () => {
           router.push('/job-templates')
         }
@@ -706,7 +701,7 @@ const showSyncModal = (template: JobTemplate) => {
 
 // 处理同步成功
 const handleSyncSuccess = () => {
-  Message.success('执行方案同步成功')
+  message.success('执行方案同步成功')
 }
 
 // 步骤管理
@@ -940,7 +935,7 @@ const handleParameterKeyChange = (oldKey: string, newKey: string) => {
 
   // 检查新键名是否已存在
   if (form.global_parameters && newKey in form.global_parameters) {
-    Message.warning('变量名已存在')
+    message.warning('变量名已存在')
     parameterKeys.value[oldKey] = oldKey // 恢复原键名
     return
   }
@@ -984,11 +979,11 @@ const loadCopyData = () => {
       // 清除sessionStorage中的数据
       sessionStorage.removeItem('copyTemplateData')
 
-      Message.success('已加载复制的模板数据，请修改模板名称后保存')
+      message.success('已加载复制的模板数据，请修改模板名称后保存')
     }
   } catch (error) {
     console.error('加载复制数据失败:', error)
-    Message.error('加载复制数据失败')
+    message.error('加载复制数据失败')
   }
 }
 
@@ -1018,6 +1013,9 @@ onMounted(() => {
     }
   }
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '部署', value: 'deployment' }, { label: '维护', value: 'maintenance' }, { label: '监控', value: 'monitoring' }, { label: '备份', value: 'backup' }, { label: '其他', value: 'other' }]
 </script>
 
 <style scoped>
@@ -1053,7 +1051,7 @@ onMounted(() => {
 
 .header-desc {
   margin: 4px 0 0 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -1077,10 +1075,10 @@ onMounted(() => {
 }
 
 .step-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 16px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .step-header {
@@ -1119,13 +1117,13 @@ onMounted(() => {
 }
 
 .step-description {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   margin-bottom: 8px;
 }
 
 .step-config {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 /* 全局变量样式 */
@@ -1141,10 +1139,10 @@ onMounted(() => {
 }
 
 .parameter-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 12px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .parameter-content {
@@ -1196,7 +1194,7 @@ onMounted(() => {
 
 .leave-confirm-content {
   margin-bottom: 16px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .leave-confirm-actions {

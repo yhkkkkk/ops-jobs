@@ -2,15 +2,15 @@
   <div class="variable-editor">
     <div class="section-header">
       <div class="title">自定义变量</div>
-      <a-button type="primary" size="small" @click="addVariable">新增变量</a-button>
+      <n-button type="primary" size="small" @click="addVariable">新增变量</n-button>
     </div>
 
-    <a-empty v-if="variablesList.length === 0" description="暂无变量，点击新增">
-      <a-button type="primary" size="small" @click="addVariable">
-        <template #icon><icon-plus /></template>
+    <n-empty v-if="variablesList.length === 0" description="暂无变量，点击新增">
+      <n-button type="primary" size="small" @click="addVariable">
+        <template #icon><Plus  /></template>
         新增变量
-      </a-button>
-    </a-empty>
+      </n-button>
+    </n-empty>
 
     <div v-else class="vars-list">
       <div
@@ -18,84 +18,76 @@
         :key="item.id"
         class="var-row"
       >
-        <a-row :gutter="12" align="center">
-          <a-col :span="5">
-            <a-input
-              v-model="item.name"
+        <div class="form-grid-row" :gutter="12" align="center">
+          <div class="form-grid-col" style="grid-column: span 5">
+            <n-input
+              v-model:value="item.name"
               placeholder="名称"
-              allow-clear
+              clearable
               @blur="emitChange"
             />
-          </a-col>
-          <a-col :span="7">
-            <template v-if="item.type === 'host_list'">
-              <div class="host-var-field">
-                <div class="host-var-summary">
-                  <span class="host-var-name">{{ item.name || '未命名主机列表' }}</span>
-                  <span class="host-var-count">{{ item.hostList?.length || 0 }} 台主机</span>
-                  <div v-if="item.hostList?.length" class="host-var-actions">
-                    <a-button type="text" size="mini" @click="copyHostIps(item)">复制IP</a-button>
-                    <a-button type="text" size="mini" @click="fillAllHosts(item)">填充全部主机</a-button>
-                    <a-button type="text" size="mini" @click="clearHostList(item)">清空</a-button>
-                  </div>
-                </div>
-                <a-button type="outline" size="small" @click="openHostSelector(item)">选择主机</a-button>
-              </div>
-            </template>
-            <template v-else>
-              <a-input
-                v-model="item.value"
-                :type="item.type === 'secret' && !item.show ? 'password' : 'text'"
-                :placeholder="item.type === 'secret' ? '密文值' : '值'"
-                allow-clear
-                @input="emitChange"
-              />
-            </template>
-          </a-col>
-          <a-col :span="3">
-            <a-select v-model="item.type" @change="emitChange" placeholder="类型">
-              <a-option value="text">文本</a-option>
-              <a-option value="secret">密文</a-option>
-              <a-option value="host_list">主机列表</a-option>
-            </a-select>
-          </a-col>
-          <a-col :span="3">
-            <a-checkbox v-model="item.required" @change="emitChange" class="no-wrap">必填</a-checkbox>
-          </a-col>
-          <a-col :span="4">
-            <a-checkbox-group
-              v-model="item.injectInto"
+          </div>
+          <div class="form-grid-col" style="grid-column: span 7">
+            <n-input
+              v-if="item.type !== 'host_list'"
+              v-model:value="item.value"
+              :type="item.type === 'secret' && !item.show ? 'password' : 'text'"
+              :placeholder="item.type === 'secret' ? '密文值' : '值'"
+              clearable
+              @update:value="emitChange"
+            />
+            <div v-else class="host-var-compact">
+              <span class="host-var-count">{{ item.hostList?.length || 0 }} 台主机</span>
+              <n-button secondary size="small" @click="openHostSelector(item)">选择主机</n-button>
+            </div>
+          </div>
+          <div class="form-grid-col" style="grid-column: span 3">
+            <n-select v-model:value="item.type" @update:value="emitChange" placeholder="类型" :options="selectOptions1" />
+          </div>
+          <div class="form-grid-col" style="grid-column: span 3">
+            <n-checkbox v-model:checked="item.required" @update:checked="emitChange" class="no-wrap">必填</n-checkbox>
+          </div>
+          <div class="form-grid-col" style="grid-column: span 4">
+            <n-checkbox-group
+              v-model:value="item.injectInto"
               :options="injectOptions"
-              @change="emitChange"
+              @update:value="emitChange"
             />
-          </a-col>
-          <a-col :span="2" class="actions">
-            <a-button
-              v-if="item.type === 'secret'"
-              type="text"
-              size="small"
-              @click="item.show = !item.show"
-            >
-              <template #icon>
-                <icon-eye v-if="item.show" />
-                <icon-eye-invisible v-else />
-              </template>
-            </a-button>
-            <a-button type="text" status="danger" size="small" @click="remove(idx)">
-              <template #icon><icon-delete /></template>
-            </a-button>
-          </a-col>
-        </a-row>
-        <a-row :gutter="12" style="margin-top: 6px">
-          <a-col :span="16">
-            <a-input
-              v-model="item.description"
+          </div>
+          <div class="form-grid-col" style="grid-column: span 2">
+            <n-space :size="4">
+              <n-button
+                v-if="item.type === 'secret'"
+                text
+                size="small"
+                @click="item.show = !item.show"
+              >
+                <template #icon>
+                  <Eye v-if="item.show" />
+                  <EyeOff v-else />
+                </template>
+              </n-button>
+              <n-button type="error" size="small" @click="remove(idx)">
+                <template #icon><Trash2 /></template>
+              </n-button>
+            </n-space>
+          </div>
+        </div>
+        <div v-if="item.type === 'host_list' && item.hostList?.length" class="host-var-actions-row">
+          <n-button text size="tiny" @click="copyHostIps(item)">复制IP</n-button>
+          <n-button text size="tiny" @click="fillAllHosts(item)">填充全部主机</n-button>
+          <n-button text size="tiny" @click="clearHostList(item)">清空</n-button>
+        </div>
+        <div class="form-grid-row" style="margin-top: 6px">
+          <div class="form-grid-col" style="grid-column: span 16">
+            <n-input
+              v-model:value="item.description"
               placeholder="描述（可选）"
-              allow-clear
-              @input="emitChange"
+              clearable
+              @update:value="emitChange"
             />
-          </a-col>
-        </a-row>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -111,7 +103,7 @@
           </div>
         </div>
       </template>
-      <a-empty v-else description="暂无系统变量" />
+      <n-empty v-else description="暂无系统变量" />
     </div>
 
     <!-- 主机选择器弹窗（用于 host_list 变量） -->
@@ -134,9 +126,10 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { Message } from '@arco-design/web-vue'
 import HostSelector from '@/components/HostSelector.vue'
 import { hostApi, hostGroupApi } from '@/api/ops'
+import { NButton, NCheckbox, NCheckboxGroup, NEmpty, NInput, NSelect, useMessage } from 'naive-ui'
+import { Eye, EyeOff, Plus, Trash2 } from 'lucide-vue-next'
 
 interface VariableItem {
   id: string
@@ -167,6 +160,7 @@ const defaultSystemVars: SystemVar[] = [
   { name: '{{ SYS.BATCH_ID }}', description: '批次ID（滚动执行）' },
 ]
 
+const message = useMessage()
 const props = defineProps<{
   modelValue: Record<string, any> | undefined
   systemVars?: SystemVar[]
@@ -321,7 +315,7 @@ const emitChange = () => {
     const name = (item.name || '').trim()
     if (!name) continue // 空行保留在 UI，但不写回 model
     if (cleaned[name]) {
-      Message.warning(`变量 ${name} 重复，已忽略后者`)
+      message.warning(`变量 ${name} 重复，已忽略后者`)
       continue
     }
     if (item.type === 'host_list') {
@@ -381,7 +375,7 @@ const clearHostList = (item: VariableItem) => {
 const copyHostIps = async (item: VariableItem) => {
   const ids = item.hostList || []
   if (!ids.length) {
-    Message.info('暂无主机可复制')
+    message.info('暂无主机可复制')
     return
   }
   // 将已加载主机的 IP 拼接（不包含端口），找不到的用ID占位
@@ -395,9 +389,9 @@ const copyHostIps = async (item: VariableItem) => {
   })
   try {
     await navigator.clipboard.writeText(ipList.join('\n'))
-    Message.success('已复制主机IP')
+    message.success('已复制主机IP')
   } catch (e) {
-    Message.warning('复制失败，请手动选择文本')
+    message.warning('复制失败，请手动选择文本')
   }
 }
 
@@ -406,7 +400,7 @@ const openHostSelector = async (item: VariableItem) => {
   // 确保变量名称存在
   const varName = (item.name || '').trim()
   if (!varName) {
-    Message.warning('请先填写变量名称')
+    message.warning('请先填写变量名称')
     return
   }
   // 更新 Map 中的引用
@@ -418,7 +412,7 @@ const openHostSelector = async (item: VariableItem) => {
 const fillAllHosts = async (item: VariableItem) => {
   await ensureHostsLoaded(true)
   if (!hosts.value.length) {
-    Message.info('暂无主机可填充')
+    message.info('暂无主机可填充')
     return
   }
   item.hostList = hosts.value.map((host: any) => host.id)
@@ -434,7 +428,7 @@ const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) 
   // 检查变量名称是否存在
   const varName = (currentHostVar.value.name || '').trim()
   if (!varName) {
-    Message.warning('请先填写变量名称')
+    message.warning('请先填写变量名称')
     return
   }
   
@@ -450,6 +444,9 @@ const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) 
   emitChange()
   hostSelectorVisible.value = false
 }
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '文本', value: 'text' }, { label: '密文', value: 'secret' }, { label: '主机列表', value: 'host_list' }]
 </script>
 
 <style scoped>
@@ -474,9 +471,9 @@ const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) 
 }
 .var-row {
   padding: 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
 }
 .actions {
   display: flex;
@@ -490,7 +487,7 @@ const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) 
   font-family: 'Courier New', monospace;
   display: inline-block;
   min-width: 140px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 .sys-list {
   display: flex;
@@ -503,39 +500,32 @@ const handleHostSelectConfirm = (payload: { hosts?: any[], groups?: number[] }) 
   gap: 8px;
   align-items: center;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: var(--color-fill-1);
+  background: var(--app-surface-muted);
 }
 .sys-desc {
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-size: 12px;
 }
 
-.host-var-field {
+.host-var-compact {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-}
-.host-var-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--color-text-2);
-}
-.host-var-name {
-  font-weight: 600;
-  color: var(--color-text-1);
+  min-width: 0;
 }
 .host-var-count {
-  color: var(--color-text-3);
+  color: var(--app-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
-.host-var-actions {
+.host-var-actions-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-top: 6px;
+  padding-left: 2px;
 }
 .no-wrap {
   white-space: nowrap;

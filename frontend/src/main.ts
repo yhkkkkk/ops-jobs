@@ -1,8 +1,5 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ArcoVue from '@arco-design/web-vue'
-import ArcoVueIcon from '@arco-design/web-vue/es/icon'
-import '@arco-design/web-vue/dist/arco.css'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
@@ -21,8 +18,6 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-app.use(ArcoVue as any)
-app.use(ArcoVueIcon as any)
 app.use(cronCore)
 
 // 注册权限指令

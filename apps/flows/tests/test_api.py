@@ -868,6 +868,61 @@ def test_flow_run_api_confirms_manual_node_and_continues_flow():
     assert confirm_log.extra_data["remark"] == "confirmed in window"
 
 
+def test_flow_run_api_rejects_manual_node_and_fails_flow():
+    user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
+    host = Host.objects.create(
+        name=f"host-{uuid.uuid4().hex[:6]}",
+        os_type="linux",
+        device_type="physical",
+        created_by=user,
+    )
+    template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)
+    manual = FlowNode.objects.create(
+        template=template,
+        uuid="manual-1",
+        name="人工确认",
+        node_type=FlowNode.NodeType.MANUAL,
+        config={"instructions": "确认后继续"},
+    )
+    script = FlowNode.objects.create(
+        template=template,
+        uuid="script-1",
+        name="second",
+        node_type=FlowNode.NodeType.SCRIPT,
+        config={"script_content": "echo second", "target_host_ids": [host.id]},
+    )
+    FlowEdge.objects.create(template=template, source=manual, target=script)
+    client = _client_for(user)
+
+    start_resp = client.post(
+        f"/api/flows/templates/{template.id}/start/",
+        {"inputs": {}},
+        format="json",
+    )
+    assert start_resp.status_code == 200
+    flow_run = FlowRun.objects.get(id=start_resp.data["content"]["id"])
+    manual_run = flow_run.node_runs.get(node=manual)
+    assert flow_run.status == FlowRun.Status.PAUSED
+
+    reject_resp = client.post(
+        f"/api/flows/runs/{flow_run.id}/reject_manual_node/",
+        {"node_run_id": manual_run.id, "remark": "rejected in window"},
+        format="json",
+    )
+
+    assert reject_resp.status_code == 200
+    assert reject_resp.data["content"]["status"] == FlowRun.Status.FAILED
+    flow_run.refresh_from_db()
+    manual_run.refresh_from_db()
+    assert manual_run.status == FlowRun.Status.FAILED
+    assert manual_run.outputs["rejected"] is True
+    assert manual_run.outputs["reject_remark"] == "rejected in window"
+    assert not flow_run.node_runs.filter(node=script).exists()
+    reject_log = _flow_run_audit_logs(flow_run).get(action="reject_flow_node")
+    assert reject_log.extra_data["node_run_id"] == manual_run.id
+    assert reject_log.extra_data["remark"] == "rejected in window"
+
+
 def test_flow_run_api_cancels_paused_run():
     user = User.objects.create_user(f"user-{uuid.uuid4().hex[:6]}", password="pass")
     template = FlowTemplate.objects.create(name=f"flow-{uuid.uuid4().hex[:8]}", created_by=user)

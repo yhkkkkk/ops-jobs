@@ -47,7 +47,12 @@ def _filter_visible_flow_templates(queryset, user):
         klass=FlowTemplate,
         accept_global_perms=True,
     ).values("pk")
-    return queryset.filter(Q(created_by=user) | Q(pk__in=permitted_template_ids)).distinct()
+    # Public active templates are visible to everyone (SOPS-like shared catalog).
+    return queryset.filter(
+        Q(created_by=user)
+        | Q(pk__in=permitted_template_ids)
+        | Q(is_public=True, is_active=True)
+    ).distinct()
 
 def _filter_manageable_flow_templates(queryset, user):
     if user.is_superuser:
@@ -161,6 +166,14 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(Q(name__icontains=search) | Q(description__icontains=search) | Q(created_by__username__icontains=search))
         if status in {"active", "inactive"}:
             queryset = queryset.filter(is_active=status == "active")
+        is_public = self.request.query_params.get("is_public")
+        if is_public in ("1", "true", "True"):
+            queryset = queryset.filter(is_public=True, is_active=True)
+        elif is_public in ("0", "false", "False"):
+            queryset = queryset.filter(is_public=False)
+        category = self.request.query_params.get("category")
+        if category:
+            queryset = queryset.filter(category=category)
         run_status = self.request.query_params.get("run_status")
         if run_status:
             latest_run_status = (
@@ -324,9 +337,12 @@ class FlowTemplateViewSet(viewsets.ModelViewSet):
         copied = FlowTemplate.objects.create(
             name=name,
             description=source.description,
+            category=source.category or "",
             variables=source.variables or {},
             encrypted_secret_defaults=source.encrypted_secret_defaults or {},
+            notify_config=source.notify_config or {},
             is_active=False,
+            is_public=False,
             created_by=user,
         )
         nodes_by_source_id = {}
@@ -1024,6 +1040,170 @@ class FlowRunViewSet(viewsets.ReadOnlyModelViewSet):
         return SycResponse.success(
             content=FlowRunSerializer(flow_run).data,
             message="人工确认节点已确认，流程继续执行",
+        )
+
+    @action(detail=True, methods=["post"])
+    def reject_manual_node(self, request, pk=None):
+        flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
+        node_run_id = request.data.get("node_run_id")
+        if not node_run_id:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="reject_flow_node",
+                description="拒绝人工节点失败：缺少节点执行 ID",
+                extra_data={"node_run_id": node_run_id},
+                success=False,
+                error_message="必须指定节点执行 ID",
+            )
+            return SycResponse.validation_error({"node_run_id": "必须指定节点执行 ID"})
+
+        try:
+            node_run = flow_run.node_runs.get(id=node_run_id)
+        except (TypeError, ValueError, FlowNodeRun.DoesNotExist):
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="reject_flow_node",
+                description="拒绝人工节点失败：节点执行不存在或不属于该流程",
+                extra_data={"node_run_id": node_run_id},
+                success=False,
+                error_message="节点执行不存在或不属于该流程",
+            )
+            return SycResponse.validation_error({"node_run_id": "节点执行不存在或不属于该流程"})
+
+        try:
+            previous_status = node_run.status
+            flow_run = FlowRunner.reject_manual_node(
+                flow_run=flow_run,
+                node_run=node_run,
+                user=request.user,
+                remark=request.data.get("remark", ""),
+            )
+            node_run.refresh_from_db()
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="reject_flow_node",
+                description=f"拒绝人工节点: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={
+                    "previous_status": previous_status,
+                    "new_status": node_run.status,
+                    "remark": request.data.get("remark", ""),
+                },
+            )
+        except ValueError as exc:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="reject_flow_node",
+                description=f"拒绝人工节点失败: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={"remark": request.data.get("remark", "")},
+                success=False,
+                error_message=str(exc),
+            )
+            return SycResponse.validation_error({"node_run_id": str(exc)})
+        except Exception as exc:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="reject_flow_node",
+                description=f"拒绝人工节点异常: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={"remark": request.data.get("remark", ""), "exception": str(exc)},
+                success=False,
+                error_message=str(exc),
+            )
+            return SycResponse.error(message=f"拒绝流程节点失败: {exc}")
+
+        return SycResponse.success(
+            content=FlowRunSerializer(flow_run).data,
+            message="人工节点已拒绝，流程结束",
+        )
+
+    @action(detail=True, methods=["post"])
+    def force_fail_node(self, request, pk=None):
+        flow_run = self.get_object()
+        _require_flow_template_change_permission(request.user, flow_run.template)
+        node_run_id = request.data.get("node_run_id")
+        if not node_run_id:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="force_fail_flow_node",
+                description="强制失败节点失败：缺少节点执行 ID",
+                extra_data={"node_run_id": node_run_id},
+                success=False,
+                error_message="必须指定节点执行 ID",
+            )
+            return SycResponse.validation_error({"node_run_id": "必须指定节点执行 ID"})
+
+        try:
+            node_run = flow_run.node_runs.get(id=node_run_id)
+        except (TypeError, ValueError, FlowNodeRun.DoesNotExist):
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="force_fail_flow_node",
+                description="强制失败节点失败：节点执行不存在或不属于该流程",
+                extra_data={"node_run_id": node_run_id},
+                success=False,
+                error_message="节点执行不存在或不属于该流程",
+            )
+            return SycResponse.validation_error({"node_run_id": "节点执行不存在或不属于该流程"})
+
+        try:
+            previous_status = node_run.status
+            flow_run = FlowRunner.force_fail_node(
+                flow_run=flow_run,
+                node_run=node_run,
+                user=request.user,
+                remark=request.data.get("remark", ""),
+            )
+            node_run.refresh_from_db()
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="force_fail_flow_node",
+                description=f"强制失败节点: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={
+                    "previous_status": previous_status,
+                    "new_status": node_run.status,
+                    "remark": request.data.get("remark", ""),
+                },
+            )
+        except ValueError as exc:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="force_fail_flow_node",
+                description=f"强制失败节点失败: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={"remark": request.data.get("remark", "")},
+                success=False,
+                error_message=str(exc),
+            )
+            return SycResponse.validation_error({"node_run_id": str(exc)})
+        except Exception as exc:
+            _log_flow_run_action(
+                request,
+                flow_run,
+                action="force_fail_flow_node",
+                description=f"强制失败节点异常: {node_run.node.name}",
+                node_run=node_run,
+                extra_data={"remark": request.data.get("remark", ""), "exception": str(exc)},
+                success=False,
+                error_message=str(exc),
+            )
+            return SycResponse.error(message=f"强制失败节点失败: {exc}")
+
+        return SycResponse.success(
+            content=FlowRunSerializer(flow_run).data,
+            message="节点已强制失败",
         )
 
     @action(detail=True, methods=["post"])

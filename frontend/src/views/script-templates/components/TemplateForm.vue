@@ -1,74 +1,58 @@
 <template>
   <div class="template-form">
-    <a-form
+    <n-form
       ref="formRef"
       :model="form"
       :rules="rules"
       layout="vertical"
     >
-      <a-row :gutter="16">
+      <div class="form-grid-row">
         <!-- 左侧：基本信息 -->
-        <a-col :span="8">
-          <a-card title="基本信息" class="mb-4">
-            <a-form-item label="模板名称" field="name">
-              <a-input
-                v-model="form.name"
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="基本信息" class="mb-4">
+            <n-form-item label="模板名称" path="name">
+              <n-input
+                v-model:value="form.name"
                 placeholder="请输入模板名称"
-                allow-clear
+                clearable
                 :disabled="isVersionMode"
-              />
-            </a-form-item>
+               />
+            </n-form-item>
 
-            <a-form-item label="脚本类型" field="script_type">
-              <a-select
-                v-model="form.script_type"
+            <n-form-item label="脚本类型" path="script_type">
+              <n-select
+                v-model:value="form.script_type"
                 placeholder="请选择脚本类型"
                 :disabled="isVersionMode"
-                @change="handleScriptTypeChange"
-              >
-                <a-option value="shell">Shell</a-option>
-                <a-option value="python">Python</a-option>
-                <a-option value="powershell">PowerShell</a-option>
-                <a-option value="perl">Perl</a-option>
-                <a-option value="javascript">JavaScript</a-option>
-                <a-option value="go">Go</a-option>
-              </a-select>
-            </a-form-item>
+                @update:value="handleScriptTypeChange" :options="[{ label: 'Shell', value: 'shell' }, { label: 'Python', value: 'python' }, { label: 'PowerShell', value: 'powershell' }, { label: 'Perl', value: 'perl' }, { label: 'JavaScript', value: 'javascript' }, { label: 'Go', value: 'go' }]" />
+            </n-form-item>
 
-            <a-form-item label="分类" field="category">
-              <a-select
-                v-model="form.category"
+            <n-form-item label="分类" path="category">
+              <n-select
+                v-model:value="form.category"
                 placeholder="请选择分类"
-                allow-clear
-                :disabled="isVersionMode"
-              >
-                <a-option value="deployment">部署</a-option>
-                <a-option value="monitoring">监控</a-option>
-                <a-option value="maintenance">维护</a-option>
-                <a-option value="backup">备份</a-option>
-                <a-option value="security">安全</a-option>
-                <a-option value="other">其他</a-option>
-              </a-select>
-            </a-form-item>
+                clearable
+                :disabled="isVersionMode" :options="[{ label: '部署', value: 'deployment' }, { label: '监控', value: 'monitoring' }, { label: '维护', value: 'maintenance' }, { label: '备份', value: 'backup' }, { label: '安全', value: 'security' }, { label: '其他', value: 'other' }]" />
+            </n-form-item>
 
-            <a-form-item label="标签" field="tags_json">
+            <n-form-item label="标签" path="tags_json">
               <div v-if="isVersionMode" class="tags-readonly">
-                <a-space v-if="Object.keys(form.tags_json || {}).length" wrap>
-                  <a-tag v-for="(value, key) in form.tags_json" :key="key">
+                <n-space v-if="Object.keys(form.tags_json || {}).length" wrap>
+                  <n-tag v-for="(value, key) in form.tags_json" :key="key">
                     {{ key }}={{ value }}
-                  </a-tag>
-                </a-space>
+                  </n-tag>
+                </n-space>
                 <span v-else class="text-gray">-</span>
               </div>
               <div v-else class="tags-kv-editor">
                 <div v-if="Object.keys(form.tags_json || {}).length === 0" class="empty-tags">
-                  <a-empty description="暂无标签" size="small" />
-                  <a-button size="small" @click="addTag" class="mt-2">
+                  <n-empty description="暂无标签" size="small" />
+                  <n-button size="small" @click="addTag" class="mt-2">
                     <template #icon>
-                      <icon-plus />
+                      <Plus />
                     </template>
                     添加标签
-                  </a-button>
+                  </n-button>
                 </div>
                 <div v-else class="tags-list">
                   <div
@@ -76,99 +60,96 @@
                     :key="key"
                     class="tag-item"
                   >
-                    <a-input-group compact>
-                      <a-input
-                        v-model="tagKeys[key]"
+                    <div class="naive-input-group">
+                      <n-input
+                        v-model:value="tagKeys[key]"
                         placeholder="键"
                         style="width: 40%"
                         @change="updateTagKey(key, $event)"
-                      />
-                      <a-input
-                        v-model="form.tags_json[key]"
+                       />
+                      <n-input
+                        v-model:value="form.tags_json[key]"
                         placeholder="值"
                         style="width: 50%"
-                      />
-                      <a-button
-                        type="text"
+                       />
+                      <n-button
+                        text
                         status="danger"
                         style="width: 10%"
                         @click="removeTag(key)"
                       >
                         <template #icon>
-                          <icon-delete />
+                          <Trash2 />
                         </template>
-                      </a-button>
-                    </a-input-group>
+                      </n-button>
+                    </div>
                   </div>
-                  <a-button size="small" @click="addTag" class="mt-2">
+                  <n-button size="small" @click="addTag" class="mt-2">
                     <template #icon>
-                      <icon-plus />
+                      <Plus />
                     </template>
                     添加标签
-                  </a-button>
+                  </n-button>
                 </div>
               </div>
-            </a-form-item>
+            </n-form-item>
 
-            <a-form-item :label="isVersionMode ? '版本描述' : '描述'" field="description">
-              <a-textarea
-                v-model="form.description"
+            <n-form-item :label="isVersionMode ? '版本描述' : '描述'" path="description">
+              <n-input type="textarea"
+                v-model:value="form.description"
                 placeholder="请输入描述"
                 :rows="4"
-              />
-            </a-form-item>
-          </a-card>
+               />
+            </n-form-item>
+          </n-card>
 
           <!-- 版本管理 -->
-          <a-card title="版本管理">
-            <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item label="版本号" field="version">
-                  <a-input
-                    v-model="form.version"
+          <n-card title="版本管理">
+            <div class="form-grid-row">
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="版本号" path="version">
+                  <n-input
+                    v-model:value="form.version"
                     placeholder="请输入版本号，如：1.0.0"
+                   />
+                </n-form-item>
+              </div>
+              <div class="form-grid-col" style="grid-column: span 12">
+                <n-form-item label="状态" path="is_active">
+                  <n-select
+                    v-model:value="form.is_active"
+                    placeholder="请选择状态"
+                    :disabled="isVersionMode"
+                    :options="[
+                      { label: '上线', value: true },
+                      { label: '下线', value: false },
+                    ]"
                   />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="状态" field="is_active">
-                  <a-select v-model="form.is_active" placeholder="请选择状态" :disabled="isVersionMode">
-                    <a-option :value="true">
-                      <a-tag color="green">上线</a-tag>
-                    </a-option>
-                    <a-option :value="false">
-                      <a-tag color="red">下线</a-tag>
-                    </a-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-card>
-        </a-col>
+                </n-form-item>
+              </div>
+            </div>
+          </n-card>
+        </div>
 
         <!-- 右侧：脚本编辑器 -->
-        <a-col :span="16">
-          <a-card title="脚本内容">
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="脚本内容">
             <template #extra>
-              <a-space>
-                <a-select
-                  v-model="editorTheme"
+              <n-space>
+                <n-select
+                  v-model:value="editorTheme"
                   size="small"
-                  style="width: 120px"
-                >
-                  <a-option value="vs-dark">深色主题</a-option>
-                  <a-option value="vs">浅色主题</a-option>
-                </a-select>
-                <a-button size="small" @click="formatCode">
+                  style="width: 120px" :options="[{ label: '深色主题', value: 'vs-dark' }, { label: '浅色主题', value: 'vs' }]" />
+                <n-button size="small" @click="formatCode">
                   <template #icon>
-                    <icon-code />
+                    <Code2 />
                   </template>
                   格式化
-                </a-button>
-              </a-space>
+                </n-button>
+              </n-space>
             </template>
 
-            <a-form-item field="content">
+            <n-form-item path="content">
               <script-editor-with-validation
                 ref="editorRef"
                 v-model="form.content"
@@ -179,11 +160,11 @@
                 :auto-validate="true"
                 @validation-change="handleValidationChange"
               />
-            </a-form-item>
-          </a-card>
-        </a-col>
-      </a-row>
-    </a-form>
+            </n-form-item>
+          </n-card>
+        </div>
+      </div>
+    </n-form>
   </div>
 </template>
 
@@ -460,6 +441,8 @@ jobSuccess('done')`,
 package main
 
 import (
+import { NButton, NCard, NEmpty, NForm, NFormItem, NInput, NSelect, NSpace, NTag } from 'naive-ui'
+import { Code2, Plus, Trash2 } from 'lucide-vue-next'
   "fmt"
   "os"
   "time"
@@ -756,6 +739,11 @@ watch(
 onMounted(() => {
   // no-op for now
 })
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: 'Shell', value: 'shell' }, { label: 'Python', value: 'python' }, { label: 'PowerShell', value: 'powershell' }, { label: 'Perl', value: 'perl' }, { label: 'JavaScript', value: 'javascript' }, { label: 'Go', value: 'go' }]
+const selectOptions2 = [{ label: '部署', value: 'deployment' }, { label: '监控', value: 'monitoring' }, { label: '维护', value: 'maintenance' }, { label: '备份', value: 'backup' }, { label: '安全', value: 'security' }, { label: '其他', value: 'other' }]
+const selectOptions3 = [{ label: '深色主题', value: 'vs-dark' }, { label: '浅色主题', value: 'vs' }]
 </script>
 
 <style scoped>
@@ -775,7 +763,7 @@ onMounted(() => {
 }
 
 .text-gray {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .tags-kv-editor {

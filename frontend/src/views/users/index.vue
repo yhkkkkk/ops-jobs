@@ -6,10 +6,10 @@
       description="查看平台用户并维护基本资料。账号权限和管理员状态由后端统一控制。"
     >
       <template #actions>
-        <a-button :loading="loading" @click="fetchUsers">
-          <template #icon><icon-refresh /></template>
+        <n-button :loading="loading" @click="fetchUsers">
+          <template #icon><RefreshCw :size="16" /></template>
           刷新
-        </a-button>
+        </n-button>
       </template>
     </PageHeader>
 
@@ -18,12 +18,12 @@
       description="按用户名、姓名或邮箱搜索。"
       :active-count="search ? 1 : 0"
     >
-      <a-input-search
-        v-model="search"
-        allow-clear
+      <n-input
+        v-model:value="search"
+        clearable
         placeholder="搜索用户名、姓名或邮箱"
         style="max-width: 360px"
-        @search="handleSearch"
+        @keyup.enter="handleSearch"
         @clear="handleSearch"
       />
     </DataToolbar>
@@ -32,82 +32,57 @@
       title="用户列表"
       :description="`共 ${pagination.total} 个用户，当前页 ${users.length} 个`"
     >
-      <a-table
+      <n-data-table
         :data="users"
-        :columns="columns"
+        :columns="tableColumns"
         :loading="loading"
-        :pagination="pagination"
-        row-key="id"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #user="{ record }">
-          <div class="user-cell">
-            <a-avatar :size="32">{{ (record.first_name || record.username).slice(0, 1).toUpperCase() }}</a-avatar>
-            <div>
-              <div class="user-name">{{ displayName(record) }}</div>
-              <div class="user-username">@{{ record.username }}</div>
-            </div>
-          </div>
-        </template>
-        <template #roles="{ record }">
-          <a-space>
-            <a-tag v-if="record.is_superuser" color="red">超级管理员</a-tag>
-            <a-tag v-else-if="record.is_staff" color="orange">后台用户</a-tag>
-            <a-tag v-else color="gray">普通用户</a-tag>
-          </a-space>
-        </template>
-        <template #profile="{ record }">
-          <span>{{ record.profile?.department || '未填写部门' }}</span>
-          <span v-if="record.profile?.position" class="profile-position"> · {{ record.profile.position }}</span>
-        </template>
-        <template #actions="{ record }">
-          <a-button type="text" size="small" @click="openEdit(record)">
-            <template #icon><icon-edit /></template>
-            编辑资料
-          </a-button>
-        </template>
-      </a-table>
+        :row-key="(row) => row.id"
+        :scroll-x="900"
+        :pagination="tablePagination"
+      />
     </DetailPanel>
 
-    <a-modal v-model:visible="editVisible" title="编辑用户资料" :ok-loading="saving" @ok="saveEdit">
-      <a-form ref="formRef" :model="editForm" layout="vertical">
-        <a-form-item label="用户名">
-          <a-input :model-value="editForm.username" disabled />
-        </a-form-item>
-        <a-form-item label="邮箱" field="email">
-          <a-input v-model="editForm.email" type="email" allow-clear />
-        </a-form-item>
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="名" field="first_name">
-              <a-input v-model="editForm.first_name" allow-clear />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="姓" field="last_name">
-              <a-input v-model="editForm.last_name" allow-clear />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="手机号" field="phone">
-          <a-input v-model="editForm.phone" allow-clear />
-        </a-form-item>
-        <a-form-item label="部门" field="department">
-          <a-input v-model="editForm.department" allow-clear />
-        </a-form-item>
-        <a-form-item label="职位" field="position">
-          <a-input v-model="editForm.position" allow-clear />
-        </a-form-item>
-      </a-form>
-      <a-alert type="info">此页面只维护基本资料，不修改密码、角色或管理员状态。</a-alert>
-    </a-modal>
+    <n-modal v-model:show="editVisible" preset="card" title="编辑用户资料" style="width: 560px; max-width: calc(100vw - 32px)" :mask-closable="false">
+      <n-form :model="editForm" label-placement="top">
+        <n-form-item label="用户名">
+          <n-input :value="editForm.username" disabled />
+        </n-form-item>
+        <n-form-item label="邮箱">
+          <n-input v-model:value="editForm.email" clearable />
+        </n-form-item>
+        <n-grid :cols="2" :x-gap="12">
+          <n-form-item-gi label="名">
+            <n-input v-model:value="editForm.first_name" clearable />
+          </n-form-item-gi>
+          <n-form-item-gi label="姓">
+            <n-input v-model:value="editForm.last_name" clearable />
+          </n-form-item-gi>
+        </n-grid>
+        <n-form-item label="手机号">
+          <n-input v-model:value="editForm.phone" clearable />
+        </n-form-item>
+        <n-form-item label="部门">
+          <n-input v-model:value="editForm.department" clearable />
+        </n-form-item>
+        <n-form-item label="职位">
+          <n-input v-model:value="editForm.position" clearable />
+        </n-form-item>
+      </n-form>
+      <n-alert type="info">此页面只维护基本资料，不修改密码、角色或管理员状态。</n-alert>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="editVisible = false">取消</n-button>
+          <n-button type="primary" :loading="saving" @click="saveEdit">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
+import { NAlert, NAvatar, NButton, NDataTable, NForm, NFormItem, NFormItemGi, NGrid, NInput, NModal, NSpace, NTag, type DataTableColumns, useMessage } from 'naive-ui'
+import { Edit3, RefreshCw } from 'lucide-vue-next'
 import { authApi } from '@/api/auth'
 import type { User } from '@/types'
 import { DataToolbar, DetailPanel, PageHeader } from '@/components/app'
@@ -130,22 +105,81 @@ const editForm = reactive({
   position: '',
 })
 
-const pagination = reactive({
-  current: 1,
-  pageSize: 20,
-  total: 0,
-  showTotal: true,
-  showPageSize: true,
-})
+const message = useMessage()
+const pagination = reactive({ current: 1, pageSize: 20, total: 0, pageSizeOptions: [10, 20, 50, 100] })
 
-const columns = [
-  { title: '用户', slotName: 'user', width: 220 },
-  { title: '邮箱', dataIndex: 'email', ellipsis: true, tooltip: true },
-  { title: '部门 / 职位', slotName: 'profile', width: 180 },
-  { title: '角色', slotName: 'roles', width: 130 },
-  { title: '加入时间', dataIndex: 'date_joined', width: 180 },
-  { title: '操作', slotName: 'actions', width: 120 },
+const tableColumns: DataTableColumns<UserRecord> = [
+  {
+    title: '用户',
+    key: 'user',
+    width: 220,
+    render: (record: UserRecord) => h('div', { class: 'user-cell' }, [
+      h(NAvatar, { size: 32, round: true }, {
+        default: () => (record.first_name || record.username).slice(0, 1).toUpperCase()
+      }),
+      h('div', {}, [
+        h('div', { class: 'user-name' }, displayName(record)),
+        h('div', { class: 'user-username' }, `@${record.username}`)
+      ])
+    ])
+  },
+  {
+    title: '邮箱',
+    key: 'email',
+    ellipsis: { tooltip: true },
+    render: (record: UserRecord) => record.email || '-'
+  },
+  {
+    title: '部门 / 职位',
+    key: 'profile',
+    width: 180,
+    render: (record: UserRecord) => h('span', {}, [
+      record.profile?.department || '未填写部门',
+      record.profile?.position ? ` · ${record.profile.position}` : ''
+    ])
+  },
+  {
+    title: '角色',
+    key: 'roles',
+    width: 130,
+    render: (record: UserRecord) => h(NSpace, { size: 4 }, {
+      default: () => [h(NTag, {
+        size: 'small',
+        type: record.is_superuser ? 'error' : record.is_staff ? 'warning' : 'default'
+      }, {
+        default: () => record.is_superuser ? '超级管理员' : record.is_staff ? '后台用户' : '普通用户'
+      })]
+    })
+  },
+  {
+    title: '加入时间',
+    key: 'date_joined',
+    width: 180
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (record: UserRecord) => h(NButton, {
+      text: true,
+      size: 'small',
+      onClick: () => openEdit(record)
+    }, {
+      icon: () => h(Edit3, { size: 15 }),
+      default: () => '编辑资料'
+    })
+  }
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  showSizePicker: true,
+  pageSizes: pagination.pageSizeOptions,
+  onUpdatePage: handlePageChange,
+  onUpdatePageSize: handlePageSizeChange
+}))
 
 const normalizeUsers = (response: { results?: User[]; total?: number } | User[]) => {
   if (Array.isArray(response)) return { results: response, total: response.length }
@@ -164,7 +198,7 @@ const fetchUsers = async () => {
     users.value = normalized.results as UserRecord[]
     pagination.total = normalized.total
   } catch (error: any) {
-    Message.error(error?.message || '获取用户列表失败')
+    message.error(error?.message || '获取用户列表失败')
     users.value = []
     pagination.total = 0
   } finally {
@@ -218,11 +252,11 @@ const saveEdit = async () => {
       department: editForm.department,
       position: editForm.position,
     })
-    Message.success('用户资料已更新')
+    message.success('用户资料已更新')
     editVisible.value = false
     await fetchUsers()
   } catch (error: any) {
-    Message.error(error?.message || '更新用户资料失败')
+    message.error(error?.message || '更新用户资料失败')
   } finally {
     saving.value = false
   }

@@ -8,322 +8,236 @@
           <p class="header-desc">管理 Agent 安装包版本、上传和下载</p>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button type="primary" @click="handleCreatePackage">
+          <n-space>
+            <n-button type="primary" @click="handleCreatePackage">
               <template #icon>
-                <IconPlus />
+                <Plus />
               </template>
               上传安装包
-            </a-button>
-            <a-button @click="fetchPackages">
+            </n-button>
+            <n-button @click="fetchPackages">
               <template #icon>
-                <IconRefresh />
+                <RefreshCw />
               </template>
               刷新
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
     <!-- 搜索栏 -->
-    <a-card class="mb-4">
-      <a-row :gutter="16">
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.version"
+    <n-card class="mb-4">
+      <div class="form-grid-row">
+        <div class="form-grid-col" style="grid-column: span 3">
+          <n-select
+            v-model:value="searchForm.version"
             placeholder="版本号"
-            allow-clear
-            allow-search
-            :filter-option="false"
+            clearable
+            filterable
+           
             @search="handleVersionSearch"
-            @change="handleSearch"
+            @update:value="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option v-for="version in versionOptions" :key="version" :value="version">
-              {{ version }}
-            </a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="2">
-          <a-select
-            v-model="searchForm.os_type"
+            style="width: 100%" :options="(versionOptions || []).map((version: any) => ({ label: String(version), value: String(version) }))" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 2">
+                    <n-select
+            v-model:value="searchForm.os_type"
             placeholder="操作系统"
-            allow-clear
+            clearable
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option value="linux">Linux</a-option>
-            <a-option value="windows">Windows</a-option>
-            <a-option value="darwin">macOS</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.arch"
+            style="width: 100%" :options="selectOptions1" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 3">
+                    <n-select
+            v-model:value="searchForm.arch"
             placeholder="架构"
-            allow-clear
+            clearable
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option value="amd64">AMD64</a-option>
-            <a-option value="arm64">ARM64</a-option>
-            <a-option value="386">i386</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.package_type"
+            style="width: 100%" :options="selectOptions2" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 3">
+                    <n-select
+            v-model:value="searchForm.package_type"
             placeholder="包类型"
-            allow-clear
+            clearable
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option value="agent">Agent</a-option>
-            <a-option value="agent-server">Agent-Server</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="4">
-          <a-select
-            v-model="searchForm.storage_type"
+            style="width: 100%" :options="selectOptions3" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 4">
+                    <n-select
+            v-model:value="searchForm.storage_type"
             placeholder="存储方式"
-            allow-clear
+            clearable
             @change="handleSearch"
             @clear="handleSearch"
-            style="width: 100%"
-          >
-            <a-option value="oss">阿里云OSS</a-option>
-            <a-option value="s3">AWS S3</a-option>
-            <a-option value="cos">腾讯云COS</a-option>
-            <a-option value="minio">MinIO</a-option>
-            <a-option value="rustfs">RustFS</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="3">
-          <a-select
-            v-model="searchForm.is_active"
+            style="width: 100%" :options="selectOptions4" />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 3">
+          <n-select
+            :value="(searchForm.is_active as any)"
             placeholder="状态"
-            allow-clear
-            @change="handleSearch"
-            @clear="handleSearch"
+            clearable
+            :options="[{ label: '启用', value: true }, { label: '禁用', value: false }] as any"
             style="width: 100%"
-          >
-            <a-option :value="true">启用</a-option>
-            <a-option :value="false">禁用</a-option>
-          </a-select>
-        </a-col>
-        <a-col :span="6">
+            @update:value="(v: any) => { searchForm.is_active = v; handleSearch() }"
+          />
+        </div>
+        <div class="form-grid-col" style="grid-column: span 6">
           <div class="search-actions">
-            <a-space>
-              <a-button type="primary" @click="handleSearch">
+            <n-space>
+              <n-button type="primary" @click="handleSearch">
                 <template #icon>
-                  <IconSearch />
+                  <Search />
                 </template>
                 搜索
-              </a-button>
-              <a-button @click="handleReset">
+              </n-button>
+              <n-button @click="handleReset">
                 <template #icon>
-                  <IconRefresh />
+                  <RefreshCw />
                 </template>
                 重置
-              </a-button>
-            </a-space>
+              </n-button>
+            </n-space>
           </div>
-        </a-col>
-      </a-row>
-    </a-card>
+        </div>
+      </div>
+    </n-card>
 
     <!-- 安装包列表 -->
     <div class="table-container">
-      <a-table
+      <n-data-table
         :columns="columns"
         :data="packages"
         :loading="loading"
-        :pagination="pagination"
-        :scroll="{ x: 'max-content' }"
-        @page-change="handlePageChange"
-        @page-size-change="handlePageSizeChange"
-      >
-        <template #storage_type="{ record }">
-          <a-tag :color="getStorageTypeColor(record.storage_type)">
-            {{ getStorageTypeDisplay(record.storage_type) }}
-          </a-tag>
-        </template>
-
-        <template #file_size="{ record }">
-          {{ formatFileSize(record.file_size) }}
-        </template>
-
-        <template #status="{ record }">
-          <a-tag :color="record.is_active ? 'green' : 'red'">
-            {{ record.is_active ? '启用' : '禁用' }}
-          </a-tag>
-        </template>
-
-        <template #is_default="{ record }">
-          <a-tag v-if="record.is_default" color="blue">默认</a-tag>
-          <span v-else>-</span>
-        </template>
-
-        <template #created_at="{ record }">
-          {{ formatDateTime(record.created_at) }}
-        </template>
-
-        <template #actions="{ record }">
-          <a-space>
-            <a-button type="text" size="small" @click="handleEdit(record)">
-              编辑
-            </a-button>
-            <a-button type="text" size="small" @click="handleDownload(record)">
-              下载
-            </a-button>
-            <a-button
-              type="text"
-              size="small"
-              status="danger"
-              @click="handleDelete(record)"
-            >
-              删除
-            </a-button>
-          </a-space>
-        </template>
-      </a-table>
+        :pagination="tablePagination"
+        remote
+        :scroll-x="1200"
+      />
     </div>
 
     <!-- 创建/编辑对话框 -->
-    <a-modal
-      v-model:visible="packageModalVisible"
+    <n-modal preset="card" :style="{ width: '600px' }"
+      v-model:show="packageModalVisible"
       :title="isEdit ? '编辑安装包' : '上传安装包'"
-      width="600px"
+     
       @cancel="handleModalCancel"
       :confirm-loading="submitLoading"
     >
-      <a-form
+      <n-form
         ref="packageFormRef"
         :model="packageForm"
         :rules="packageFormRules"
         layout="vertical"
       >
-        <a-form-item label="包类型" field="package_type" required>
-          <a-radio-group v-model="packageForm.package_type" :disabled="isEdit">
-            <a-radio value="agent">Agent</a-radio>
-            <a-radio value="agent-server">Agent-Server</a-radio>
-          </a-radio-group>
-        </a-form-item>
+        <n-form-item label="包类型" path="package_type" required>
+          <n-radio-group v-model:value="packageForm.package_type" :disabled="isEdit">
+            <n-radio value="agent">Agent</n-radio>
+            <n-radio value="agent-server">Agent-Server</n-radio>
+          </n-radio-group>
+        </n-form-item>
 
-        <a-form-item label="版本号" field="version" required>
-          <a-input
-            v-model="packageForm.version"
+        <n-form-item label="版本号" path="version" required>
+          <n-input
+            v-model:value="packageForm.version"
             placeholder="例如: 1.0.0, v1.0.0"
             :max-length="50"
           />
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="操作系统" field="os_type" required v-if="!isEdit">
-          <a-select
-            v-model="packageForm.os_type"
-            placeholder="请选择操作系统"
-          >
-            <a-option value="linux">Linux</a-option>
-            <a-option value="windows">Windows</a-option>
-            <a-option value="darwin">macOS</a-option>
-          </a-select>
-        </a-form-item>
+        <n-form-item label="操作系统" path="os_type" required v-if="!isEdit">
+                    <n-select
+            v-model:value="packageForm.os_type"
+            placeholder="请选择操作系统" :options="selectOptions5" />
+        </n-form-item>
 
-        <a-form-item label="操作系统" v-if="isEdit">
-          <a-input :model-value="getOsTypeDisplay(currentPackage?.os_type)" readonly>
+        <n-form-item label="操作系统" v-if="isEdit">
+          <n-input :model-value="getOsTypeDisplay(currentPackage?.os_type)" readonly>
             <template #prefix>
-              <IconLock />
+              <Lock :size="14" />
             </template>
-          </a-input>
-          <template #extra>
+          </n-input>
+          <template #footer>
             <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
-              <icon-info-circle />
+              <Info  />
               <span>更新时无法修改操作系统，如需更改请重新上传安装包</span>
             </div>
           </template>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="架构" field="arch" required v-if="!isEdit">
-          <a-select
-            v-model="packageForm.arch"
-            placeholder="请选择架构"
-          >
-            <a-option value="amd64">AMD64/x86_64</a-option>
-            <a-option value="arm64">ARM64</a-option>
-            <a-option value="386">i386</a-option>
-          </a-select>
-        </a-form-item>
+        <n-form-item label="架构" path="arch" required v-if="!isEdit">
+                    <n-select
+            v-model:value="packageForm.arch"
+            placeholder="请选择架构" :options="selectOptions6" />
+        </n-form-item>
 
-        <a-form-item label="架构" v-if="isEdit">
-          <a-input :model-value="getArchDisplay(currentPackage?.arch)" readonly>
+        <n-form-item label="架构" v-if="isEdit">
+          <n-input :model-value="getArchDisplay(currentPackage?.arch)" readonly>
             <template #prefix>
-              <IconLock />
+              <Lock :size="14" />
             </template>
-          </a-input>
-          <template #extra>
+          </n-input>
+          <template #footer>
             <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
-              <icon-info-circle />
+              <Info  />
               <span>更新时无法修改架构，如需更改请重新上传安装包</span>
             </div>
           </template>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="存储方式" field="storage_type" v-if="!isEdit">
-          <a-radio-group v-model="packageForm.storage_type">
-            <a-radio value="oss">阿里云OSS</a-radio>
-            <a-radio value="s3">AWS S3</a-radio>
-            <a-radio value="cos">腾讯云COS</a-radio>
-            <a-radio value="minio">MinIO</a-radio>
-            <a-radio value="rustfs">RustFS</a-radio>
-          </a-radio-group>
-          <template #extra>
+        <n-form-item label="存储方式" path="storage_type" v-if="!isEdit">
+          <n-radio-group v-model:value="packageForm.storage_type">
+            <n-radio value="oss">阿里云OSS</n-radio>
+            <n-radio value="s3">AWS S3</n-radio>
+            <n-radio value="cos">腾讯云COS</n-radio>
+            <n-radio value="minio">MinIO</n-radio>
+            <n-radio value="rustfs">RustFS</n-radio>
+          </n-radio-group>
+          <template #footer>
             <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
-              <icon-info-circle />
+              <Info  />
               <span>选择文件存储方式，对象存储需要在系统配置中设置相关参数</span>
             </div>
           </template>
-        </a-form-item>
+        </n-form-item>
 
         <!-- 编辑时的存储方式显示 -->
-        <a-form-item label="存储方式" v-if="isEdit">
-          <a-input :model-value="getStorageTypeDisplay(currentPackage?.storage_type)" readonly>
+        <n-form-item label="存储方式" v-if="isEdit">
+          <n-input :model-value="getStorageTypeDisplay(currentPackage?.storage_type)" readonly>
             <template #prefix>
-              <IconLock />
+              <Lock :size="14" />
             </template>
-          </a-input>
-          <template #extra>
+          </n-input>
+          <template #footer>
             <div style="color: #ff7d00; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
-              <icon-info-circle />
+              <Info  />
               <span>更新时无法修改存储方式，如需更改存储方式请重新上传安装包</span>
             </div>
           </template>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="安装包文件" field="file" :required="!isEdit">
-          <a-upload
+        <n-form-item label="安装包文件" path="file" :required="!isEdit">
+          <n-upload
             :file-list="fileList"
-            :auto-upload="false"
+            :default-upload="false"
             :limit="1"
             accept=".tar.gz,.zip,.tgz,.exe"
             :show-file-list="false"
-            @change="handleFileChange"
+            @update:file-list="handleFileListUpdate"
             @remove="handleFileRemove"
             class="package-upload"
           >
-            <template #upload-button>
-              <a-button type="outline">
-                <template #icon>
-                  <IconUpload />
-                </template>
-                选择文件
-              </a-button>
-            </template>
-          </a-upload>
+            <n-button secondary>
+              <template #icon>
+                <Upload />
+              </template>
+              选择文件
+            </n-button>
+          </n-upload>
           <!-- 自定义文件列表，包含删除按钮 -->
           <div v-if="fileList.length > 0" class="custom-package-file-list">
             <div
@@ -332,63 +246,63 @@
               class="custom-package-file-item"
             >
               <div class="package-file-info">
-                <IconFile class="package-file-icon" />
+                <FileText class="package-file-icon" />
                 <div class="package-file-details">
                   <div class="package-file-name">{{ fileItem.name || (fileItem.originFile as File)?.name || '未知文件' }}</div>
                   <div class="package-file-size">{{ formatFileSize((fileItem.file as File)?.size || (fileItem.originFile as File)?.size || 0) }}</div>
                 </div>
               </div>
               <div class="package-file-actions">
-                <a-button
-                  type="text"
+                <n-button
+                  text
                   size="small"
                   @click="handleFileRemove"
                   class="package-remove-btn"
                 >
                   <template #icon>
-                    <IconClose />
+                    <X />
                   </template>
-                </a-button>
+                </n-button>
               </div>
             </div>
           </div>
           <div v-else-if="isEdit && currentPackage?.file_name" class="current-file-info">
-            <IconFile class="package-file-icon" />
+            <FileText class="package-file-icon" />
             <span>当前文件: {{ currentPackage.file_name }}</span>
             <span class="file-size-text">({{ formatFileSize(currentPackage.file_size || 0) }})</span>
           </div>
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="描述" field="description">
-          <a-textarea
-            v-model="packageForm.description"
+        <n-form-item label="描述" path="description">
+          <n-input type="textarea"
+            v-model:value="packageForm.description"
             placeholder="请输入描述信息"
             :max-length="500"
-            :auto-size="{ minRows: 2, maxRows: 4 }"
+            :autosize="{ minRows: 2, maxRows: 4 }"
           />
-        </a-form-item>
+        </n-form-item>
 
-        <a-form-item label="状态">
-          <a-space>
-            <a-checkbox v-model="packageForm.is_active">启用</a-checkbox>
-            <a-checkbox v-model="packageForm.is_default">设为默认版本</a-checkbox>
-          </a-space>
-        </a-form-item>
-      </a-form>
+        <n-form-item label="状态">
+          <n-space>
+            <n-checkbox v-model:checked="packageForm.is_active">启用</n-checkbox>
+            <n-checkbox v-model:checked="packageForm.is_default">设为默认版本</n-checkbox>
+          </n-space>
+        </n-form-item>
+      </n-form>
 
       <template #footer>
-        <a-space>
-          <a-button @click="handleModalCancel">取消</a-button>
-          <a-button type="primary" @click="handleSubmitPackage" :loading="submitLoading">
+        <n-space justify="end">
+          <n-button @click="handleModalCancel">取消</n-button>
+          <n-button type="primary" @click="handleSubmitPackage" :loading="submitLoading">
             {{ isEdit ? '保存' : '上传' }}
-          </a-button>
-        </a-space>
+          </n-button>
+        </n-space>
       </template>
-    </a-modal>
+    </n-modal>
 
     <!-- 删除确认对话框 -->
-    <a-modal
-      v-model:visible="deleteModalVisible"
+    <n-modal preset="card"
+      v-model:show="deleteModalVisible"
       title="确认删除"
       @ok="handleConfirmDelete"
       @cancel="deleteModalVisible = false"
@@ -397,31 +311,24 @@
         <p>确定要删除安装包 <strong>{{ currentPackage?.version }} - {{ currentPackage?.os_type_display }} - {{ currentPackage?.arch_display }}</strong> 吗？</p>
         <p style="color: #f53f3f; margin-top: 8px;">此操作不可恢复，请谨慎操作！</p>
       </div>
-    </a-modal>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onBeforeUnmount } from 'vue'
-import { Message } from '@arco-design/web-vue'
-import {
-  IconPlus,
-  IconRefresh,
-  IconSearch,
-  IconUpload,
-  IconFile,
-  IconClose,
-  IconLock, IconInfoCircle,
-} from '@arco-design/web-vue/es/icon'
+import { computed, h, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { packageApi, type AgentPackage } from '@/api/agents'
 import { useFilterQuerySync, parseBooleanQuery } from '@/composables/useFilterQuerySync'
-import type { FileItem } from '@arco-design/web-vue/es/upload'
+import type { UploadFileInfo } from 'naive-ui'
 import { formatFileSize, formatDateTime } from '@/utils/date'
 import { useRoute } from 'vue-router'
+import { NButton, NCard, NCheckbox, NDataTable, NForm, NFormItem, NInput, NModal, NRadio, NRadioGroup, NSelect, NSpace, NTag, NUpload, type DataTableColumns, type FormRules, useMessage } from 'naive-ui'
+import { FileText, Info, Lock, Plus, RefreshCw, Search, Upload } from 'lucide-vue-next'
 
 // 搜索防抖定时器
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
+const message = useMessage()
 const route = useRoute()
 
 // 响应式数据
@@ -446,7 +353,7 @@ const submitLoading = ref(false)
 const packageFormRef = ref()
 const isEdit = ref(false)
 const currentPackage = ref<AgentPackage | null>(null)
-const fileList = ref<FileItem[]>([])
+const fileList = ref<UploadFileInfo[]>([])
 
 // 表单数据
 const packageForm = reactive({
@@ -462,7 +369,7 @@ const packageForm = reactive({
 })
 
 // 表单验证规则
-const packageFormRules = {
+const packageFormRules: FormRules = {
   package_type: [
     { required: true, message: '请选择包类型' },
   ],
@@ -477,12 +384,11 @@ const packageFormRules = {
   ],
   file: [
     {
-      validator: (value: any, callback: (error?: string) => void) => {
+      validator: (_rule: unknown, value: any) => {
         if (!isEdit.value && !value) {
-          callback('请上传文件')
-        } else {
-          callback()
+          return new Error('请上传文件')
         }
+        return true
       },
     },
   ],
@@ -510,76 +416,55 @@ const { initFromQuery, syncToQuery } = useFilterQuerySync({
 })
 
 // 表格列定义
-const columns = ref([
-  {
-    title: '类型',
-    dataIndex: 'package_type_display',
-    width: 130,
-  },
-  {
-    title: '版本号',
-    dataIndex: 'version',
-    width: 100,
-  },
-  {
-    title: '操作系统',
-    dataIndex: 'os_type_display',
-    width: 100,
-  },
-  {
-    title: '架构',
-    dataIndex: 'arch_display',
-    width: 150,
-  },
+const columns: DataTableColumns<any> = [
+  { title: '类型', key: 'package_type_display', width: 130, render: (row) => row.package_type_display },
+  { title: '版本号', key: 'version', width: 100, render: (row) => row.version },
+  { title: '操作系统', key: 'os_type_display', width: 100, render: (row) => row.os_type_display },
+  { title: '架构', key: 'arch_display', width: 150, render: (row) => row.arch_display },
   {
     title: '存储方式',
-    dataIndex: 'storage_type_display',
+    key: 'storage_type',
     width: 120,
-    slotName: 'storage_type',
+    render: (row) => h(NTag, { type: getStorageTypeColor(row.storage_type) as any }, { default: () => getStorageTypeDisplay(row.storage_type) }),
   },
-  {
-    title: '文件名',
-    dataIndex: 'file_name',
-    width: 100,
-    ellipsis: true,
-    tooltip: true,
-  },
-  {
-    title: '文件大小',
-    dataIndex: 'file_size',
-    width: 120,
-    slotName: 'file_size',
-  },
+  { title: '文件名', key: 'file_name', width: 140, ellipsis: { tooltip: true }, render: (row) => row.file_name },
+  { title: '文件大小', key: 'file_size', width: 120, render: (row) => formatFileSize(row.file_size) },
   {
     title: '状态',
-    dataIndex: 'is_active',
+    key: 'status',
     width: 100,
-    slotName: 'status',
+    render: (row) => h(NTag, { type: row.is_active ? 'success' : 'error' }, { default: () => (row.is_active ? '启用' : '禁用') }),
   },
   {
     title: '默认版本',
-    dataIndex: 'is_default',
+    key: 'is_default',
     width: 100,
-    slotName: 'is_default',
+    render: (row) => (row.is_default ? h(NTag, { type: 'info' }, { default: () => '默认' }) : h('span', '-')),
   },
-  {
-    title: '创建人',
-    dataIndex: 'created_by_name',
-    width: 100,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'created_at',
-    width: 180,
-    slotName: 'created_at',
-  },
+  { title: '创建人', key: 'created_by_name', width: 100, render: (row) => row.created_by_name },
+  { title: '创建时间', key: 'created_at', width: 180, render: (row) => formatDateTime(row.created_at) },
   {
     title: '操作',
+    key: 'actions',
     width: 200,
-    fixed: 'right',
-    slotName: 'actions',
+    render: (row) =>
+      h(NSpace, { size: 4, wrap: false, wrapItem: false, align: 'center' }, {
+        default: () => [
+          h(NButton, { text: true, size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
+          h(NButton, { text: true, size: 'small', onClick: () => handleDownload(row) }, { default: () => '下载' }),
+          h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }),
+        ],
+      }),
   },
-])
+]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 
 // 获取安装包列表
 const fetchPackages = async () => {
@@ -613,7 +498,7 @@ const fetchPackages = async () => {
     pagination.total = response.total
     buildAvailableVersions()
   } catch (error: any) {
-    Message.error(error.message || '获取安装包列表失败')
+    message.error(error.message || '获取安装包列表失败')
   } finally {
     loading.value = false
   }
@@ -745,24 +630,16 @@ const resetPackageForm = () => {
   packageForm.is_default = false
 }
 
-// 文件变化处理
-const handleFileChange = (files: FileItem[]) => {
-  // 只保留最后一个文件
-  fileList.value = files.slice(-1)
-  if (fileList.value.length > 0) {
-    const item = fileList.value[0]
-    // 尝试多种方式获取文件对象
-    if (item.file) {
-      packageForm.file = item.file as File
-    } else if (item.originFile) {
-      packageForm.file = item.originFile as File
-    } else if (item.response) {
-      // 如果是上传后的响应，不需要设置文件
-      packageForm.file = null
-    }
-  } else {
+// Naive Upload: update:file-list 传数组；旧 @change 是 { file, fileList }，当数组用会 silent fail
+const handleFileListUpdate = (files: UploadFileInfo[]) => {
+  const list = Array.isArray(files) ? files : []
+  fileList.value = list.slice(-1)
+  const item = fileList.value[0]
+  if (!item) {
     packageForm.file = null
+    return
   }
+  packageForm.file = (item.file || (item as any).originFile || null) as File | null
 }
 
 // 移除文件
@@ -781,7 +658,7 @@ const handleSubmitPackage = async () => {
 
   // 验证：创建时必须上传文件
   if (!isEdit.value && !packageForm.file) {
-    Message.error('请上传文件')
+    message.error('请上传文件')
     return
   }
 
@@ -808,16 +685,16 @@ const handleSubmitPackage = async () => {
 
     if (isEdit.value && currentPackage.value) {
       await packageApi.updatePackage(currentPackage.value.id, formData)
-      Message.success('安装包更新成功')
+      message.success('安装包更新成功')
     } else {
       await packageApi.createPackage(formData)
-      Message.success('安装包上传成功')
+      message.success('安装包上传成功')
     }
 
     packageModalVisible.value = false
     fetchPackages()
   } catch (error: any) {
-    Message.error(error.message || (isEdit.value ? '更新失败' : '上传失败'))
+    message.error(error.message || (isEdit.value ? '更新失败' : '上传失败'))
   } finally {
     submitLoading.value = false
   }
@@ -849,7 +726,7 @@ const handleDownload = async (record: AgentPackage) => {
     link.click()
     document.body.removeChild(link)
   } catch (error: any) {
-    Message.error(error.message || '下载失败')
+    message.error(error.message || '下载失败')
   }
 }
 
@@ -865,12 +742,12 @@ const handleConfirmDelete = async () => {
 
   try {
     await packageApi.deletePackage(currentPackage.value.id)
-    Message.success('删除成功')
+    message.success('删除成功')
     deleteModalVisible.value = false
     currentPackage.value = null
     fetchPackages()
   } catch (error: any) {
-    Message.error(error.message || '删除失败')
+    message.error(error.message || '删除失败')
   }
 }
 
@@ -917,6 +794,14 @@ const getStorageTypeColor = (storageType: string): string => {
   return colorMap[storageType] || 'gray'
 }
 
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: 'Linux', value: 'linux' }, { label: 'Windows', value: 'windows' }, { label: 'macOS', value: 'darwin' }]
+const selectOptions2 = [{ label: 'AMD64', value: 'amd64' }, { label: 'ARM64', value: 'arm64' }, { label: 'i386', value: '386' }]
+const selectOptions3 = [{ label: 'Agent', value: 'agent' }, { label: 'Agent-Server', value: 'agent-server' }]
+const selectOptions4 = [{ label: '阿里云OSS', value: 'oss' }, { label: 'AWS S3', value: 's3' }, { label: '腾讯云COS', value: 'cos' }, { label: 'MinIO', value: 'minio' }, { label: 'RustFS', value: 'rustfs' }]
+const selectOptions5 = [{ label: 'Linux', value: 'linux' }, { label: 'Windows', value: 'windows' }, { label: 'macOS', value: 'darwin' }]
+const selectOptions6 = [{ label: 'AMD64/x86_64', value: 'amd64' }, { label: 'ARM64', value: 'arm64' }, { label: 'i386', value: '386' }]
 </script>
 
 <style scoped>
@@ -997,9 +882,9 @@ const getStorageTypeColor = (storageType: string): string => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
 }
 
 .package-file-info {
@@ -1010,7 +895,7 @@ const getStorageTypeColor = (storageType: string): string => {
 
 .package-file-icon {
   font-size: 16px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   margin-right: 8px;
 }
 
@@ -1020,14 +905,14 @@ const getStorageTypeColor = (storageType: string): string => {
 
 .package-file-name {
   font-size: 14px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   font-weight: 500;
   margin-bottom: 2px;
 }
 
 .package-file-size {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .package-file-actions {
@@ -1036,7 +921,7 @@ const getStorageTypeColor = (storageType: string): string => {
 }
 
 .package-remove-btn {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   transition: color 0.3s;
 }
 
@@ -1049,9 +934,9 @@ const getStorageTypeColor = (storageType: string): string => {
   align-items: center;
   margin-top: 8px;
   padding: 8px 12px;
-  background-color: var(--color-fill-1);
+  background-color: var(--app-surface-muted);
   border-radius: 6px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-size: 14px;
 }
 
@@ -1061,7 +946,7 @@ const getStorageTypeColor = (storageType: string): string => {
 
 .file-size-text {
   margin-left: 8px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 </style>

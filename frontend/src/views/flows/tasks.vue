@@ -2,47 +2,46 @@
   <div class="app-page flow-task-page">
     <PageHeader eyebrow="标准运维" title="执行任务" description="">
       <template #actions>
-        <a-space>
-          <a-button @click="router.push('/flows')"><template #icon><icon-branch /></template>流程模板</a-button>
-          <a-button @click="loadTasks"><template #icon><icon-refresh /></template>刷新</a-button>
-        </a-space>
+        <n-space>
+          <n-button @click="router.push('/flows')"><template #icon><GitBranch  /></template>流程模板</n-button>
+          <n-button @click="loadTasks"><template #icon><RefreshCw  /></template>刷新</n-button>
+        </n-space>
       </template>
     </PageHeader>
 
     <DataToolbar title="筛选执行任务" description="按任务、流程、状态和触发方式定位运行实例。" :active-count="activeFilterCount">
       <div class="app-filter-grid flow-task-filter-grid">
-        <a-input v-model="filters.search" allow-clear placeholder="任务名称或流程模板" @press-enter="resetPage" @clear="resetPage" />
-        <a-select v-model="filters.status" allow-clear placeholder="任务状态" @change="resetPage">
-          <a-option v-for="item in statusOptions" :key="item.value" :value="item.value">{{ item.label }}</a-option>
-        </a-select>
-        <a-select v-model="filters.trigger" allow-clear placeholder="触发方式" @change="resetPage">
-          <a-option value="manual">手动触发</a-option><a-option value="scheduled">定时触发</a-option><a-option value="api">API 触发</a-option>
-        </a-select>
-        <div class="app-filter-grid__actions"><a-space><a-button type="primary" @click="resetPage"><template #icon><icon-search /></template>搜索</a-button><a-button @click="resetFilters"><template #icon><icon-refresh /></template>重置</a-button></a-space></div>
+        <n-input v-model:value="filters.search" clearable placeholder="任务名称或流程模板" @press-enter="resetPage" @clear="resetPage" />
+        <n-select v-model:value="filters.status" clearable placeholder="任务状态" @update:value="resetPage" :options="(statusOptions || []).map((item: any) => ({ label: String(item.label), value: String(item.value) }))" />
+                <n-select v-model:value="filters.trigger" clearable placeholder="触发方式" @update:value="resetPage" :options="selectOptions1" />
+        <div class="app-filter-grid__actions"><n-space><n-button type="primary" @click="resetPage"><template #icon><Search  /></template>搜索</n-button><n-button @click="resetFilters"><template #icon><RefreshCw  /></template>重置</n-button></n-space></div>
       </div>
     </DataToolbar>
 
     <DetailPanel title="执行任务" :description="`共 ${pagination.total} 个任务，当前页 ${filteredTasks.length} 个`">
-      <a-table class="flow-task-table" row-key="id" :loading="loading" :columns="columns" :data="filteredTasks" :pagination="pagination" :scroll="{ x: 960 }" @page-change="handlePageChange" @page-size-change="handlePageSizeChange">
-        <template #task="{ record }"><div class="task-name-cell"><a-link @click="openTask(record)">{{ record.name || record.template_name || '未命名任务' }}</a-link><span>{{ triggerText(record.trigger_type) }} / {{ record.started_by_name || '-' }}</span></div></template>
-        <template #template="{ record }"><a-link @click="router.push(`/flows/${record.template}/detail`)">{{ record.template_name || '-' }}</a-link></template>
-        <template #status="{ record }"><StatusBadge :status="record.status" :text="statusText(record.status)" /></template>
-        <template #startedAt="{ record }">{{ formatTime(record.started_at || record.created_at) }}</template>
-        <template #actions="{ record }"><a-button type="text" size="small" @click="openTask(record)"><template #icon><icon-eye /></template>查看</a-button></template>
-      </a-table>
+      <n-data-table
+        class="flow-task-table"
+        :row-key="(row: any) => row.id"
+        :loading="loading"
+        :columns="columns"
+        :data="filteredTasks"
+        :pagination="tablePagination"
+      />
     </DetailPanel>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { flowApi } from '@/api/ops'
 import { DataToolbar, DetailPanel, PageHeader, StatusBadge } from '@/components/app'
 import type { FlowRun, FlowRunStatus } from '@/types'
 import { flowRunStatusText } from './flowUtils'
+import { NButton, NDataTable, NInput, NSelect, NSpace, type DataTableColumns, useMessage } from 'naive-ui'
+import { Eye, GitBranch, RefreshCw, Search } from 'lucide-vue-next'
 
+const message = useMessage()
 const router = useRouter()
 const loading = ref(false)
 const tasks = ref<FlowRun[]>([])
@@ -52,11 +51,50 @@ const statusOptions: Array<{ value: FlowRunStatus; label: string }> = [
   { value: 'pending', label: '等待中' }, { value: 'running', label: '执行中' }, { value: 'paused', label: '已暂停' },
   { value: 'success', label: '成功' }, { value: 'failed', label: '失败' }, { value: 'cancelled', label: '已取消' },
 ]
-const columns = [
-  { title: '任务', key: 'task', slotName: 'task', minWidth: 260 }, { title: '流程模板', key: 'template', slotName: 'template', minWidth: 190 },
-  { title: '状态', key: 'status', slotName: 'status', width: 110 }, { title: '开始时间', key: 'startedAt', slotName: 'startedAt', width: 180 },
-  { title: '操作', key: 'actions', slotName: 'actions', width: 92, fixed: 'right' },
+const columns: DataTableColumns<any> = [
+  {
+    title: '任务',
+    key: 'task',
+    minWidth: 260,
+    render: (row) =>
+      h('div', { class: 'task-name-cell' }, [
+        h(NButton, { text: true, size: 'small', onClick: () => openTask(row) }, { default: () => row.name || row.template_name || '未命名任务' }),
+        h('span', `${triggerText(row.trigger_type)} / ${row.started_by_name || '-'}`),
+      ]),
+  },
+  {
+    title: '流程模板',
+    key: 'template',
+    minWidth: 190,
+    render: (row) =>
+      h(NButton, { text: true, size: 'small', onClick: () => router.push(`/flows/${row.template}/detail`) }, { default: () => row.template_name || '-' }),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    render: (row) => h(StatusBadge, { status: row.status, text: statusText(row.status) }),
+  },
+  { title: '开始时间', key: 'startedAt', width: 180, render: (row) => formatTime(row.started_at || row.created_at) },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 92,
+    render: (row) =>
+      h(NButton, { text: true, size: 'small', onClick: () => openTask(row) }, {
+        icon: () => h(Eye, { size: 14 }),
+        default: () => '查看',
+      }),
+  },
 ]
+
+const tablePagination = computed(() => ({
+  page: pagination.current,
+  pageSize: pagination.pageSize,
+  itemCount: pagination.total,
+  onChange: (page: number) => handlePageChange(page),
+  onUpdatePageSize: (size: number) => handlePageSizeChange(size),
+}))
 const normalizePage = <T,>(value: any) => {
   const content = value?.results ? value : value?.data?.results ? value.data : value?.data
   return {
@@ -90,7 +128,7 @@ const loadTasks = async () => {
     pagination.total = page.total
   } catch (error) {
     console.error('加载流水线任务失败:', error)
-    Message.error('加载流水线任务失败')
+    message.error('加载流水线任务失败')
   } finally {
     loading.value = false
   }
@@ -98,6 +136,9 @@ const loadTasks = async () => {
 const handlePageChange = (page: number) => { pagination.current = page; loadTasks() }
 const handlePageSizeChange = (pageSize: number) => { pagination.pageSize = pageSize; pagination.current = 1; loadTasks() }
 onMounted(loadTasks)
+
+// 机械转换生成的静态下拉选项
+const selectOptions1 = [{ label: '手动触发', value: 'manual' }, { label: '定时触发', value: 'scheduled' }, { label: 'API 触发', value: 'api' }]
 </script>
 
 <style scoped>

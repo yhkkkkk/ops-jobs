@@ -2,7 +2,7 @@
   <div class="global-vars">
     <div class="global-vars-title">{{ title }}</div>
     <div v-if="items.length === 0" class="global-vars-empty">
-      <a-empty :description="emptyText" :image-style="{ height: '40px' }" />
+      <n-empty :description="emptyText" size="small" />
     </div>
     <div v-else class="global-vars-list">
       <div
@@ -14,91 +14,83 @@
         <div class="global-var-key">{{ item.key }}</div>
         <div class="global-var-value">
           <span v-if="item.preview" class="value-preview">{{ item.preview }}</span>
-          <a-button type="text" size="mini" @click.stop="openDrawer(item)">查看</a-button>
+          <n-button text size="tiny" @click.stop="openDrawer(item)">查看</n-button>
         </div>
       </div>
     </div>
 
-    <a-drawer
-      v-model:visible="drawerVisible"
-      :width="820"
-      :footer="false"
-      unmount-on-close
-    >
-      <template #title>
-        <div class="drawer-title">
-          <span>{{ drawerItem?.key || '' }}</span>
-          <span v-if="drawerItem?.description" class="drawer-title-desc">{{ drawerItem?.description }}</span>
+    <n-drawer v-model:show="drawerVisible" :width="820">
+      <n-drawer-content :body-content-style="{ padding: '16px' }">
+        <template #header>
+          <div class="drawer-title">
+            <span>{{ drawerItem?.key || '' }}</span>
+            <span v-if="drawerItem?.description" class="drawer-title-desc">{{ drawerItem?.description }}</span>
+          </div>
+        </template>
+
+        <div v-if="drawerItem" class="drawer-body">
+          <template v-if="drawerItem.kind === 'host_ids' || drawerItem.kind === 'host_objects'">
+            <n-data-table
+              :columns="hostColumns"
+              :data="hostRows"
+              :pagination="false"
+              :loading="hostLoading"
+              size="small"
+              :row-key="(row: any) => row.id"
+            />
+            <div v-if="drawerItem.kind === 'host_ids'" class="table-pagination">
+              <n-pagination
+                :page="hostPagination.page"
+                :page-size="hostPagination.pageSize"
+                :item-count="hostPagination.total"
+                size="small"
+                @update:page="handleHostPageChange"
+              >
+                <template #prefix>
+                  <span class="pagination-total">共 {{ hostPagination.total }} 条</span>
+                </template>
+              </n-pagination>
+            </div>
+          </template>
+
+          <template v-else-if="drawerItem.kind === 'ip_list'">
+            <n-data-table
+              :columns="ipColumns"
+              :data="ipRows"
+              :pagination="false"
+              size="small"
+              :row-key="(row: any) => row.ip"
+            />
+            <div class="table-pagination">
+              <n-pagination
+                :page="ipPagination.page"
+                :page-size="ipPagination.pageSize"
+                :item-count="ipPagination.total"
+                size="small"
+                @update:page="handleIpPageChange"
+              >
+                <template #prefix>
+                  <span class="pagination-total">共 {{ ipPagination.total }} 条</span>
+                </template>
+              </n-pagination>
+            </div>
+          </template>
+
+          <template v-else>
+            <pre class="value-block">{{ drawerItem.displayValue }}</pre>
+          </template>
         </div>
-      </template>
-
-      <div v-if="drawerItem" class="drawer-body">
-        <template v-if="drawerItem.kind === 'host_ids' || drawerItem.kind === 'host_objects'">
-          <a-table
-            :columns="hostColumns"
-            :data="hostRows"
-            :pagination="false"
-            :loading="hostLoading"
-            size="small"
-            row-key="id"
-          >
-            <template #agent_status="{ record }">
-              <a-tag v-if="record.agent_status === 'online'" color="green">在线</a-tag>
-              <a-tag v-else-if="record.agent_status === 'offline'" color="red">离线</a-tag>
-              <a-tag v-else-if="record.agent_status === 'pending'" color="orange">待连接</a-tag>
-              <a-tag v-else-if="record.agent_status === 'disabled'" color="gray">禁用</a-tag>
-              <a-tag v-else color="gray">未知</a-tag>
-            </template>
-            <template #status="{ record }">
-              <a-tag v-if="record.status === 'online'" color="green">在线</a-tag>
-              <a-tag v-else-if="record.status === 'offline'" color="red">离线</a-tag>
-              <a-tag v-else color="gray">未知</a-tag>
-            </template>
-          </a-table>
-          <div v-if="drawerItem.kind === 'host_ids'" class="table-pagination">
-            <a-pagination
-              :current="hostPagination.page"
-              :page-size="hostPagination.pageSize"
-              :total="hostPagination.total"
-              size="small"
-              show-total
-              @change="handleHostPageChange"
-            />
-          </div>
-        </template>
-
-        <template v-else-if="drawerItem.kind === 'ip_list'">
-          <a-table
-            :columns="ipColumns"
-            :data="ipRows"
-            :pagination="false"
-            size="small"
-            row-key="ip"
-          />
-          <div class="table-pagination">
-            <a-pagination
-              :current="ipPagination.page"
-              :page-size="ipPagination.pageSize"
-              :total="ipPagination.total"
-              size="small"
-              show-total
-              @change="handleIpPageChange"
-            />
-          </div>
-        </template>
-
-        <template v-else>
-          <pre class="value-block">{{ drawerItem.displayValue }}</pre>
-        </template>
-      </div>
-    </a-drawer>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { computed, h, ref, reactive, watch } from 'vue'
+import { NButton, NDataTable, NDrawer, NDrawerContent, NEmpty, NPagination, NTag, useMessage, type DataTableColumns } from 'naive-ui'
 import { hostApi } from '@/api/ops'
+
+const message = useMessage()
 
 const props = defineProps({
   title: {
@@ -137,15 +129,29 @@ const hostCache = reactive<Record<number, any>>({})
 
 const ipPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
-const hostColumns = [
-  { title: '主机名', dataIndex: 'name' },
-  { title: 'IP', dataIndex: 'ip_address' },
-  { title: 'Agent状态', dataIndex: 'agent_status', slotName: 'agent_status' },
-  { title: '状态', dataIndex: 'status', slotName: 'status' }
+const renderAgentStatus = (status?: string) => {
+  if (status === 'online') return h(NTag, { size: 'small', type: 'success' }, { default: () => '在线' })
+  if (status === 'offline') return h(NTag, { size: 'small', type: 'error' }, { default: () => '离线' })
+  if (status === 'pending') return h(NTag, { size: 'small', type: 'warning' }, { default: () => '待连接' })
+  if (status === 'disabled') return h(NTag, { size: 'small' }, { default: () => '禁用' })
+  return h(NTag, { size: 'small' }, { default: () => '未知' })
+}
+
+const renderHostStatus = (status?: string) => {
+  if (status === 'online') return h(NTag, { size: 'small', type: 'success' }, { default: () => '在线' })
+  if (status === 'offline') return h(NTag, { size: 'small', type: 'error' }, { default: () => '离线' })
+  return h(NTag, { size: 'small' }, { default: () => '未知' })
+}
+
+const hostColumns: DataTableColumns<any> = [
+  { title: '主机名', key: 'name' },
+  { title: 'IP', key: 'ip_address' },
+  { title: 'Agent状态', key: 'agent_status', render: (row) => renderAgentStatus(row.agent_status) },
+  { title: '状态', key: 'status', render: (row) => renderHostStatus(row.status) }
 ]
 
-const ipColumns = [
-  { title: 'IP', dataIndex: 'ip' }
+const ipColumns: DataTableColumns<any> = [
+  { title: 'IP', key: 'ip' }
 ]
 
 const items = computed(() => {
@@ -226,7 +232,7 @@ const fetchHosts = async () => {
     }))
     hostRows.value = results
   } catch (error) {
-    Message.error('加载主机列表失败')
+    message.error('加载主机列表失败')
   } finally {
     hostLoading.value = false
   }
@@ -356,12 +362,6 @@ const stringifyValue = (value: any) => {
   }
 }
 
-const truncate = (value: string, maxLength: number) => {
-  if (!value) return '-'
-  if (value.length <= maxLength) return value
-  return `${value.slice(0, maxLength)}...`
-}
-
 const isNumeric = (value: any) => {
   const str = String(value)
   return /^\d+$/.test(str)
@@ -390,7 +390,7 @@ watch(drawerVisible, (visible) => {
 .global-vars-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .global-vars-list {
@@ -404,20 +404,20 @@ watch(drawerVisible, (visible) => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--app-surface);
   cursor: pointer;
   transition: border-color 0.2s ease;
 }
 
 .global-var-row:hover {
-  border-color: var(--color-primary-6);
+  border-color: var(--app-accent);
 }
 
 .global-var-key {
   width: 160px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
   font-weight: 500;
   font-size: 13px;
 }
@@ -432,7 +432,7 @@ watch(drawerVisible, (visible) => {
 }
 
 .value-preview {
-  color: var(--color-text-1);
+  color: var(--app-fg);
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
@@ -447,7 +447,7 @@ watch(drawerVisible, (visible) => {
 
 .drawer-title-desc {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .drawer-body {
@@ -459,14 +459,20 @@ watch(drawerVisible, (visible) => {
 .value-block {
   margin: 0;
   padding: 12px 14px;
-  background: #f7f8fa;
-  border: 1px solid var(--color-border-2);
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   white-space: pre-wrap;
   word-break: break-all;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 12px;
-  color: var(--color-text-1);
+  color: var(--app-fg);
+}
+
+.pagination-total {
+  font-size: 12px;
+  color: var(--app-muted);
+  margin-right: 12px;
 }
 
 .table-pagination {

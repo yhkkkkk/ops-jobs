@@ -4,77 +4,68 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <a-button type="text" @click="handleBack">
+          <n-button text @click="handleBack">
             <template #icon>
-              <icon-arrow-left />
+              <ChevronLeft />
             </template>
             返回
-          </a-button>
+          </n-button>
           <div class="header-info">
             <h2>{{ isEdit ? '编辑执行方案' : '创建执行方案' }}</h2>
             <p class="header-desc">{{ isEdit ? '修改执行方案配置' : '基于作业模板创建新的执行方案' }}</p>
           </div>
         </div>
         <div class="header-right">
-          <a-space>
-            <a-button @click="handleBack">取消</a-button>
-            <a-button type="primary" :loading="saving" @click="handleSave">
+          <n-space>
+            <n-button @click="handleBack">取消</n-button>
+            <n-button type="primary" :loading="saving" @click="handleSave">
               <template #icon>
-                <icon-save />
+                <Save />
               </template>
               {{ isEdit ? '保存' : '创建' }}
-            </a-button>
-          </a-space>
+            </n-button>
+          </n-space>
         </div>
       </div>
     </div>
 
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" />
+      <n-spin size="large" />
     </div>
 
     <div v-else class="editor-content">
-      <a-row :gutter="24">
+      <div class="form-grid-row">
         <!-- 左侧：基本信息 -->
-        <a-col :span="16">
-          <a-card title="基本信息" class="mb-4">
-            <a-form :model="form" layout="vertical">
-              <a-form-item label="方案名称" required>
-                <a-input
-                  v-model="form.name"
+        <div class="form-grid-col" style="grid-column: span 16">
+          <n-card title="基本信息" class="mb-4">
+            <n-form :model="form" layout="vertical">
+              <n-form-item label="方案名称" required>
+                <n-input
+                  v-model:value="form.name"
                   placeholder="请输入方案名称"
                   :max-length="200"
                 />
-              </a-form-item>
+              </n-form-item>
 
-              <a-form-item label="方案描述">
-                <a-textarea
-                  v-model="form.description"
+              <n-form-item label="方案描述">
+                <n-input type="textarea"
+                  v-model:value="form.description"
                   placeholder="请输入方案描述（可选）"
                   :rows="3"
                   :max-length="500"
                 />
-              </a-form-item>
+              </n-form-item>
 
               <!-- 创建模式：显示模板选择器 -->
-              <a-form-item v-if="!isEdit" label="所属模板" required>
-                <a-select
-                  v-model="form.template_id"
+              <n-form-item v-if="!isEdit" label="所属模板" required>
+                <n-select
+                  v-model:value="form.template_id"
                   placeholder="选择作业模板"
                   :loading="templateLoading"
-                  @change="handleTemplateChange"
-                >
-                  <a-option
-                    v-for="template in templates"
-                    :key="template.id"
-                    :value="template.id"
-                  >
-                    {{ template.name }}
-                  </a-option>
-                </a-select>
-              </a-form-item>
+                  @update:value="handleTemplateChange" :options="(templates || []).map((template: any) => ({ label: String(template.name), value: String(template.id) }))" />
+              </n-form-item>
             <!-- 模板全局变量覆盖（创建模式显示） -->
-            <a-card v-if="!isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（覆盖，仅允许修改值）" class="mb-4">
+            <n-card v-if="!isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（覆盖，仅允许修改值）" class="mb-4">
               <div class="global-parameters-list">
                 <div
                   v-for="(val, key) in selectedTemplate.global_parameters"
@@ -94,14 +85,14 @@
                               <span>已选 {{ getOverrideHostCount(key) }} 台主机</span>
                               <span class="host-override-default">默认 {{ getHostListCount(getHostListValue(val)) }} 台主机</span>
                             </div>
-                            <a-space>
-                              <a-button type="outline" size="small" @click="openHostSelector(key)">选择主机</a-button>
-                              <a-button type="text" size="small" @click="clearHostOverride(key)">清空</a-button>
-                            </a-space>
+                            <n-space>
+                              <n-button secondary size="small" @click="openHostSelector(key)">选择主机</n-button>
+                              <n-button text size="small" @click="clearHostOverride(key)">清空</n-button>
+                            </n-space>
                           </div>
                         </template>
                         <template v-else>
-                          <a-input
+                          <n-input
                             v-model:value="form.global_parameter_overrides[key]"
                             :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
                             :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
@@ -115,13 +106,13 @@
                   </div>
                 </div>
               </div>
-            </a-card>
+            </n-card>
 
             <!-- 模板全局变量覆盖（编辑模式显示 - 可以修改覆盖值） -->
-            <a-card v-if="isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（可覆盖修改值）" class="mb-4">
-              <a-alert type="info" style="margin-bottom: 12px;">
+            <n-card v-if="isEdit && selectedTemplate && selectedTemplate.global_parameters && Object.keys(selectedTemplate.global_parameters).length > 0" title="模板全局变量（可覆盖修改值）" class="mb-4">
+              <n-alert type="info" style="margin-bottom: 12px;">
                 可以修改全局变量的覆盖值。留空则使用模板默认值。
-              </a-alert>
+              </n-alert>
               <div class="global-parameters-list">
                 <div
                   v-for="(val, key) in selectedTemplate.global_parameters"
@@ -141,14 +132,14 @@
                               <span>已选 {{ getOverrideHostCount(key) }} 台主机</span>
                               <span class="host-override-default">默认 {{ getHostListCount(getHostListValue(val)) }} 台主机</span>
                             </div>
-                            <a-space>
-                              <a-button type="outline" size="small" @click="openHostSelector(key)">选择主机</a-button>
-                              <a-button type="text" size="small" @click="clearHostOverride(key)">清空</a-button>
-                            </a-space>
+                            <n-space>
+                              <n-button secondary size="small" @click="openHostSelector(key)">选择主机</n-button>
+                              <n-button text size="small" @click="clearHostOverride(key)">清空</n-button>
+                            </n-space>
                           </div>
                         </template>
                         <template v-else>
-                          <a-input
+                          <n-input
                             v-model:value="form.global_parameter_overrides[key]"
                             :type="(typeof val === 'object' && val.type === 'secret') ? 'password' : 'text'"
                             :placeholder="`模板默认值: ${formatGlobalParameterValue(val) || '(空)'}`"
@@ -162,9 +153,9 @@
                   </div>
                 </div>
               </div>
-            </a-card>
+            </n-card>
 
-            </a-form>
+            </n-form>
 
             <HostSelector
               v-model:visible="hostSelectorVisible"
@@ -180,20 +171,20 @@
               @host-page-change="handleHostPageChange"
               @host-page-size-change="handleHostPageSizeChange"
             />
-          </a-card>
+          </n-card>
 
           <!-- 步骤选择 -->
-          <a-card title="步骤配置">
-            <template #extra>
-              <a-space>
+          <n-card title="步骤配置">
+            <template #footer>
+              <n-space>
                 <span class="step-count">已选择 {{ selectedSteps.length }} 个步骤</span>
-                <a-button size="small" @click="handleSelectAllSteps">全选</a-button>
-                <a-button size="small" @click="handleClearSteps">清空</a-button>
-              </a-space>
+                <n-button size="small" @click="handleSelectAllSteps">全选</n-button>
+                <n-button size="small" @click="handleClearSteps">清空</n-button>
+              </n-space>
             </template>
 
             <div v-if="displaySteps.length === 0" class="empty-steps">
-              <a-empty :description="isEdit ? '该执行方案没有步骤' : '请先选择作业模板'" />
+              <n-empty :description="isEdit ? '该执行方案没有步骤' : '请先选择作业模板'" />
             </div>
 
             <div v-else class="steps-list">
@@ -207,85 +198,87 @@
                 :default-expanded="true"
               >
                 <template #prefix>
-                  <a-checkbox
+                  <n-checkbox
                     :model-value="isStepSelected(getStepId(step))"
                     @change="(checked) => handleStepSelect(getStepId(step), checked)"
                   />
                 </template>
                 <template #footer>
                   <div v-if="isStepSelected(getStepId(step))" class="step-config">
-                    <a-form layout="inline" size="small">
-                      <a-form-item label="执行顺序">
-                        <a-input-number
+                    <n-form layout="inline" size="small">
+                      <n-form-item label="执行顺序">
+                        <n-input-number
                           :model-value="getStepOrder(getStepId(step))"
                           @change="(value) => handleStepOrderChange(getStepId(step), value)"
                           :min="1"
                           :max="selectedSteps.length"
                           style="width: 80px"
                         />
-                      </a-form-item>
-                      <a-form-item label="超时时间(秒)">
-                        <a-input-number
+                      </n-form-item>
+                      <n-form-item label="超时时间(秒)">
+                        <n-input-number
                           :model-value="getStepTimeout(getStepId(step))"
                           @change="(value) => handleStepTimeoutChange(getStepId(step), value)"
                           :min="10"
                           :max="3600"
                           style="width: 100px"
                         />
-                      </a-form-item>
-                    </a-form>
+                      </n-form-item>
+                    </n-form>
                   </div>
                 </template>
               </StepCard>
             </div>
-          </a-card>
-        </a-col>
+          </n-card>
+        </div>
 
         <!-- 右侧：模板信息 -->
-        <a-col :span="8">
-          <a-card title="模板信息">
+        <div class="form-grid-col" style="grid-column: span 8">
+          <n-card title="模板信息">
             <div v-if="selectedTemplate" class="template-info">
-              <a-descriptions :column="1" size="small">
-                <a-descriptions-item label="模板名称">
+              <n-descriptions :column="1" size="small">
+                <n-descriptions-item label="模板名称">
                   {{ selectedTemplate.name }}
-                </a-descriptions-item>
-                <a-descriptions-item label="模板描述">
+                </n-descriptions-item>
+                <n-descriptions-item label="模板描述">
                   {{ selectedTemplate.description || '无描述' }}
-                </a-descriptions-item>
-                <a-descriptions-item label="分类">
-                  <a-tag v-if="selectedTemplate.category" color="blue">
+                </n-descriptions-item>
+                <n-descriptions-item label="分类">
+                  <n-tag v-if="selectedTemplate.category" type="info">
                     {{ selectedTemplate.category }}
-                  </a-tag>
+                  </n-tag>
                   <span v-else>未分类</span>
-                </a-descriptions-item>
-                <a-descriptions-item label="总步骤数">
+                </n-descriptions-item>
+                <n-descriptions-item label="总步骤数">
                   {{ selectedTemplate.step_count || 0 }} 个
-                </a-descriptions-item>
-                <a-descriptions-item label="创建人">
+                </n-descriptions-item>
+                <n-descriptions-item label="创建人">
                   {{ selectedTemplate.created_by_name }}
-                </a-descriptions-item>
-              </a-descriptions>
+                </n-descriptions-item>
+              </n-descriptions>
             </div>
 
             <div v-else class="no-template">
-              <a-empty description="请选择作业模板" />
+              <n-empty description="请选择作业模板" />
             </div>
-          </a-card>
-        </a-col>
-      </a-row>
+          </n-card>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ChevronLeft, Save } from 'lucide-vue-next'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
 import { jobTemplateApi, executionPlanApi, hostApi, hostGroupApi } from '@/api/ops'
 import type { JobTemplate, JobStep } from '@/types'
 import StepCard from '@/components/StepCard.vue'
 import HostSelector from '@/components/HostSelector.vue'
+import { NAlert, NButton, NCard, NCheckbox, NDescriptions, NDescriptionsItem, NEmpty, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
 
+const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 
@@ -359,7 +352,7 @@ const fetchTemplates = async () => {
     templates.value = response.results || []
   } catch (error) {
     console.error('获取模板列表失败:', error)
-    Message.error('获取模板列表失败')
+    message.error('获取模板列表失败')
   } finally {
     templateLoading.value = false
   }
@@ -380,7 +373,7 @@ const fetchTemplateSteps = async (templateId: number) => {
     }
   } catch (error) {
     console.error('获取模板步骤失败:', error)
-    Message.error('获取模板步骤失败')
+    message.error('获取模板步骤失败')
   }
 }
 
@@ -463,7 +456,7 @@ const fetchPlanDetail = async () => {
     }
   } catch (error) {
     console.error('获取方案详情失败:', error)
-    Message.error('获取方案详情失败')
+    message.error('获取方案详情失败')
   } finally {
     loading.value = false
   }
@@ -645,17 +638,17 @@ const handleStepTimeoutChange = (stepId: number, timeout: number) => {
 const handleSave = async () => {
   // 验证表单
   if (!form.name?.trim()) {
-    Message.error('请输入方案名称')
+    message.error('请输入方案名称')
     return
   }
 
   if (!isEdit.value && !form.template_id) {
-    Message.error('请选择作业模板')
+    message.error('请选择作业模板')
     return
   }
 
   if (selectedSteps.value.length === 0) {
-    Message.error('请至少选择一个步骤')
+    message.error('请至少选择一个步骤')
     return
   }
 
@@ -696,17 +689,17 @@ const handleSave = async () => {
       // 更新方案
       const planId = Number(route.params.id)
       await executionPlanApi.updatePlan(planId, data)
-      Message.success('方案更新成功')
+      message.success('方案更新成功')
     } else {
       // 创建方案
       await executionPlanApi.createPlan(data)
-      Message.success('方案创建成功')
+      message.success('方案创建成功')
     }
 
     router.push('/execution-plans')
   } catch (error) {
     console.error('保存方案失败:', error)
-    Message.error('保存方案失败')
+    message.error('保存方案失败')
   } finally {
     saving.value = false
   }
@@ -784,12 +777,12 @@ onMounted(() => {
   margin: 0 0 4px 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
 }
 
 .header-desc {
   margin: 0;
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 14px;
 }
 
@@ -810,12 +803,12 @@ onMounted(() => {
   gap: 4px;
   margin-top: 4px;
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .step-count {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 .empty-steps {
@@ -830,19 +823,19 @@ onMounted(() => {
 }
 
 .step-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 16px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
   transition: all 0.2s;
 }
 
 .step-item:hover {
-  border-color: var(--color-primary-6);
+  border-color: var(--app-accent);
 }
 
 .step-selected {
-  border-color: var(--color-primary-6);
+  border-color: var(--app-accent);
   background: var(--color-primary-1);
 }
 
@@ -856,8 +849,8 @@ onMounted(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--color-fill-3);
-  color: var(--color-text-2);
+  background: var(--app-surface-soft);
+  color: var(--app-fg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -866,7 +859,7 @@ onMounted(() => {
 }
 
 .step-selected .step-number {
-  background: var(--color-primary-6);
+  background: var(--app-accent);
   color: white;
 }
 
@@ -876,12 +869,12 @@ onMounted(() => {
 
 .step-name {
   font-weight: 600;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   margin-bottom: 4px;
 }
 
 .step-desc {
-  color: var(--color-text-3);
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -900,20 +893,20 @@ onMounted(() => {
 
 .template-display {
   padding: 8px 12px;
-  background-color: var(--color-fill-2);
-  border: 1px solid var(--color-border-2);
+  background-color: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
 }
 
 .template-name {
   font-weight: 500;
-  color: var(--color-text-1);
+  color: var(--app-fg);
   margin-bottom: 4px;
 }
 
 .template-desc {
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 
 /* 模板全局变量覆盖样式（复用作业模板的样式） */
@@ -924,10 +917,10 @@ onMounted(() => {
 }
 
 .parameter-item {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 12px;
-  background: var(--color-bg-1);
+  background: var(--app-surface);
 }
 
 .parameter-content {
@@ -968,10 +961,10 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--color-text-2);
+  color: var(--app-fg-secondary);
 }
 
 .host-override-default {
-  color: var(--color-text-3);
+  color: var(--app-muted);
 }
 </style>
