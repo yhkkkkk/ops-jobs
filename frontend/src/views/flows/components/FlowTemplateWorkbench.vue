@@ -51,21 +51,19 @@
 
         <main class="flow-canvas-stage">
           <div class="flow-canvas-toolbar flow-canvas-toolbar--compact">
-            <div>
-              <h2>可视化编排</h2>
-              <p>{{ isReadonly ? '只读查看模板 DAG；点击节点或条件连线查看配置。' : '拖拽标准插件；点击条件出边配置分支表达式。' }}</p>
+            <div class="flow-canvas-toolbar__lead">
+              <h2>编排画布</h2>
+              <div class="flow-validation-strip flow-validation-strip--inline">
+                <div :class="{ ok: validation.missingRequired === 0 }"><strong>{{ validation.missingRequired }}</strong><span>必填</span></div>
+                <div :class="{ ok: validation.disconnected === 0 }"><strong>{{ validation.disconnected }}</strong><span>未连</span></div>
+                <div><strong>{{ validation.startNodes }}</strong><span>起点</span></div>
+                <div :class="{ ok: validation.terminalNodes >= 1 || nodes.length <= 1 }"><strong>{{ validation.terminalNodes }}</strong><span>终点</span></div>
+              </div>
             </div>
-            <n-space v-if="!isReadonly">
-              <n-button size="small" @click="selectFirstInvalidNode">定位问题</n-button>
-              <n-button size="small" type="error" :disabled="!selectedNode" @click="removeSelectedNode">删除节点</n-button>
+            <n-space v-if="!isReadonly" :size="6">
+              <n-button size="tiny" @click="selectFirstInvalidNode">定位问题</n-button>
+              <n-button size="tiny" type="error" :disabled="!selectedNode" @click="removeSelectedNode">删除节点</n-button>
             </n-space>
-          </div>
-
-          <div class="flow-validation-strip">
-            <div :class="{ ok: validation.missingRequired === 0 }"><strong>{{ validation.missingRequired }}</strong><span>缺失必填</span></div>
-            <div :class="{ ok: validation.disconnected === 0 }"><strong>{{ validation.disconnected }}</strong><span>未连接</span></div>
-            <div><strong>{{ validation.startNodes }}</strong><span>起点</span></div>
-            <div :class="{ ok: validation.terminalNodes >= 1 || nodes.length <= 1 }"><strong>{{ validation.terminalNodes }}</strong><span>终点</span></div>
           </div>
 
           <div class="flow-canvas-frame" @dragover.prevent @drop.prevent="handleCanvasDrop">
@@ -86,7 +84,7 @@
               @connect="handleConnect"
             >
               <Background :gap="24" :size="1" pattern-color="#d8dee9" />
-              <Controls position="bottom-left" />
+              <Controls position="bottom-left" :show-interactive="false" />
               <MiniMap pannable zoomable node-color="#dbe7f6" mask-color="rgba(247, 248, 250, 0.76)" />
 
               <template #node-ops="{ data }">
@@ -1095,7 +1093,7 @@ onMounted(loadData)
 }
 .flow-editor-command {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -1164,7 +1162,7 @@ onMounted(loadData)
 }
 .flow-editor-workbench {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 360px);
   gap: 8px;
   flex: 1 1 auto;
   width: 100%;
@@ -1175,7 +1173,7 @@ onMounted(loadData)
   overflow: hidden;
 }
 .flow-editor-workbench:has(.flow-setting-panel--collapsed) {
-  grid-template-columns: 220px minmax(0, 1fr) 44px;
+  grid-template-columns: 200px minmax(0, 1fr) 44px;
 }
 .output-hook-list {
   display: grid;
@@ -1212,11 +1210,11 @@ onMounted(loadData)
 }
 .flow-canvas-stage {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 8px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
   min-width: 0;
   min-height: 0;
-  padding: 10px;
+  padding: 8px;
   overflow: hidden;
   background: #fff;
   border: 1px solid var(--app-border);
@@ -1224,32 +1222,41 @@ onMounted(loadData)
 }
 .flow-canvas-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
+}
+.flow-canvas-toolbar__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 .flow-canvas-toolbar h2 {
   margin: 0;
   color: var(--app-fg);
-  font-size: 15px;
-}
-.flow-canvas-toolbar p {
-  margin: 4px 0 0;
-  color: var(--app-muted);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 .flow-validation-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
-.flow-validation-strip div {
+.flow-validation-strip--inline {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.flow-validation-strip div {
+  display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 2px 6px;
   color: var(--app-warn);
   background: var(--app-warn-soft);
   border: 1px solid color-mix(in srgb, var(--app-warn) 20%, transparent);
@@ -1262,11 +1269,12 @@ onMounted(loadData)
 }
 .flow-validation-strip strong {
   font-family: var(--app-mono);
-  font-size: 14px;
+  font-size: 12px;
 }
 .flow-validation-strip span {
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .flow-canvas-frame {
   position: relative;
@@ -1284,11 +1292,21 @@ onMounted(loadData)
   min-height: 0;
 }
 .ops-flow :deep(.vue-flow__controls) {
-  margin: 0 0 12px 12px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  left: 8px;
+  bottom: 8px;
+  margin: 0;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+.ops-flow :deep(.vue-flow__controls-button) {
+  width: 26px;
+  height: 26px;
 }
 .ops-flow :deep(.vue-flow__minimap) {
-  margin: 0 12px 12px 0;
+  right: 8px;
+  bottom: 8px;
+  margin: 0;
+  width: 112px !important;
+  height: 72px !important;
 }
 .ops-node-card {
   display: grid;
@@ -1547,7 +1565,7 @@ onMounted(loadData)
 }
 @media (max-width: 1180px) {
   .flow-editor-workbench {
-    grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 360px);
+    grid-template-columns: 180px minmax(0, 1fr) minmax(260px, 320px);
   }
 }
 @media (max-width: 780px) {

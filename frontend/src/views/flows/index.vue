@@ -1,28 +1,38 @@
 <template>
   <div class="app-page flows-page">
-    <PageHeader eyebrow="标准运维" title="流程模板" description="">
+    <PageHeader
+      eyebrow="标准运维"
+      title="流程模板"
+      description="管理私有流程与公共目录；从模板新建任务。"
+    >
       <template #actions>
         <n-space>
-          <n-button @click="router.push('/flows/tasks')"><template #icon><History  /></template>流水线任务</n-button>
-          <n-button @click="loadData"><template #icon><RefreshCw  /></template>刷新</n-button>
-          <n-button type="primary" @click="router.push('/flows/create')"><template #icon><Plus  /></template>新建流程</n-button>
+          <n-button @click="router.push('/flows/tasks')"><template #icon><History /></template>流水线任务</n-button>
+          <n-button @click="loadData"><template #icon><RefreshCw /></template>刷新</n-button>
+          <n-button type="primary" @click="router.push('/flows/create')"><template #icon><Plus /></template>新建流程</n-button>
         </n-space>
       </template>
     </PageHeader>
 
-    <DataToolbar title="筛选流程模板" description="我的流程 / 公共目录；按名称、状态和最近执行结果定位。" :active-count="activeFilterCount">
+    <DataToolbar title="筛选" description="目录、名称、状态与最近执行结果。" :active-count="activeFilterCount">
       <div class="app-filter-grid flows-filter-grid">
         <n-radio-group v-model:value="catalogScope" size="small" @update:value="handleCatalogScopeChange">
           <n-radio-button value="mine">我的流程</n-radio-button>
           <n-radio-button value="public">公共目录</n-radio-button>
         </n-radio-group>
-        <n-input v-model:value="filters.search" clearable placeholder="搜索模板名称、描述、负责人" @press-enter="loadData" @clear="loadData" />
-                <n-select v-model:value="filters.status" clearable placeholder="模板状态" @update:value="loadData" :options="selectOptions1" />
-                <n-select v-model:value="filters.runStatus" clearable placeholder="执行状态" @update:value="loadData" :options="selectOptions2" />
+        <n-input
+          v-model:value="filters.search"
+          clearable
+          placeholder="搜索名称、描述、负责人"
+          @press-enter="loadData"
+          @clear="loadData"
+        />
+        <n-select v-model:value="filters.status" clearable placeholder="模板状态" @update:value="loadData" :options="selectOptions1" />
+        <n-select v-model:value="filters.runStatus" clearable placeholder="执行状态" @update:value="loadData" :options="selectOptions2" />
         <div class="app-filter-grid__actions">
           <n-space>
             <n-button type="primary" @click="loadData">
-              <template #icon><Search  /></template>
+              <template #icon><Search /></template>
               搜索
             </n-button>
             <n-button @click="resetFilters">重置</n-button>
@@ -223,7 +233,7 @@ const loadData = async () => {
       search: filters.search,
       status: filters.status,
       run_status: filters.runStatus,
-      is_public: catalogScope.value === 'public' ? true : undefined,
+      is_public: catalogScope.value === 'public',
       page: templatePagination.current,
       page_size: templatePagination.pageSize,
     })

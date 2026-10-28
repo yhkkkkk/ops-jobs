@@ -709,7 +709,10 @@ let flowTemplates: any[] = [
         show_on_start: true,
       },
     },
+    category: '巡检',
+    notify_config: { enabled: false, events: ['success', 'failed'], webhook_url: '' },
     is_active: true,
+    is_public: false,
     created_by: 1,
     created_by_name: 'SRE',
     created_at: iso(-12, 11),
@@ -812,7 +815,10 @@ let flowTemplates: any[] = [
         show_on_start: true,
       },
     },
+    category: '变更',
+    notify_config: { enabled: false, events: ['success', 'failed', 'paused'], webhook_url: '' },
     is_active: true,
+    is_public: false,
     created_by: 1,
     created_by_name: 'DBA',
     created_at: iso(-5, 16),
@@ -2056,8 +2062,12 @@ export const mockRoutes: MockRoute[] = [
       const search = String(query.search || '').trim().toLowerCase()
       const status = String(query.status || '')
       const isPublic = String(query.is_public || '')
-      return flowTemplates.filter((item) => {
-        const matchesSearch = !search || item.name.toLowerCase().includes(search) || item.description.toLowerCase().includes(search)
+      const filtered = flowTemplates.filter((item) => {
+        const matchesSearch =
+          !search ||
+          item.name.toLowerCase().includes(search) ||
+          (item.description || '').toLowerCase().includes(search) ||
+          String(item.created_by_name || '').toLowerCase().includes(search)
         const matchesStatus =
           !status ||
           (status === 'active' && item.is_active) ||
@@ -2068,6 +2078,8 @@ export const mockRoutes: MockRoute[] = [
           (['0', 'false', 'False'].includes(isPublic) && !item.is_public)
         return matchesSearch && matchesStatus && matchesPublic
       })
+      // List API is paginated; bare arrays break frontend normalizePage.
+      return paginate(filtered, { ...query, search: '' })
     },
   },
   {
@@ -2214,12 +2226,28 @@ export const mockRoutes: MockRoute[] = [
     pattern: '/flows/runs/',
     handler: ({ query }) => {
       const templateId = Number(query.template || query.template_id || 0)
+      const templateIds = String(query.template_ids || '')
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter(Boolean)
       const status = String(query.status || '')
-      return flowRuns.filter((run) => {
-        const matchesTemplate = !templateId || run.template === templateId
+      const latestPerTemplate = ['1', 'true', 'True'].includes(String(query.latest_per_template || ''))
+      let filtered = flowRuns.filter((run) => {
+        const matchesTemplate =
+          (!templateId && templateIds.length === 0) ||
+          (templateId ? run.template === templateId : templateIds.includes(run.template))
         const matchesStatus = !status || run.status === status
         return matchesTemplate && matchesStatus
       })
+      if (latestPerTemplate) {
+        const seen = new Set<number>()
+        filtered = filtered.filter((run) => {
+          if (seen.has(run.template)) return false
+          seen.add(run.template)
+          return true
+        })
+      }
+      return paginate(filtered, { ...query, search: '' })
     },
   },
   {

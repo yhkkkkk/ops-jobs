@@ -19,7 +19,7 @@ describe('flow editor layout', () => {
     expect(workbenchSource).toContain('<FlowEdgeConditionDrawer')
     expect(workbenchSource).not.toContain('<aside v-if="selectedNode" class="property-panel">')
     expect(workbenchSource).not.toContain('editor-workbench--no-selection')
-    expect(workbenchSource).toMatch(/grid-template-columns:\s*220px\s+minmax\(0,\s*1fr\)\s+minmax\(320px,\s*420px\);/)
+    expect(workbenchSource).toMatch(/grid-template-columns:\s*200px\s+minmax\(0,\s*1fr\)\s+minmax\(280px,\s*360px\);/)
   })
 
   it('keeps script node configuration close to the job step editor pattern', () => {

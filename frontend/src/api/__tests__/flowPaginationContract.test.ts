@@ -12,10 +12,22 @@ describe('flow pagination contract', () => {
     expect(source).toContain('page: templatePagination.current')
     expect(source).toContain('page_size: templatePagination.pageSize')
     expect(source).toContain('run_status: filters.runStatus')
+    expect(source).toContain("is_public: catalogScope.value === 'public'")
     expect(source).toContain("template_ids: templateIds.join(',')")
     expect(source).toContain('page_size: templateIds.length')
     expect(source).toContain('latest_per_template: 1')
     expect(source).not.toContain('flowApi.getRuns()')
+    expect(source).not.toContain("is_public: catalogScope.value === 'public' ? true : undefined")
+  })
+
+  it('mock flow list endpoints return a paginated results envelope', () => {
+    const source = readFileSync(resolve(testDir, '../../mocks/routes.ts'), 'utf8')
+
+    expect(source).toContain("pattern: '/flows/templates/'")
+    expect(source).toContain("pattern: '/flows/runs/'")
+    expect(source).toContain('return paginate(filtered, { ...query, search: \'\' })')
+    expect(source).toContain('latest_per_template')
+    expect(source).toContain('template_ids')
   })
 
   it('keeps the task center on the paginated run API', () => {

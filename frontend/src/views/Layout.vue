@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 12px 16px;
+  padding: 8px 10px;
   overflow: hidden !important;
 }
 
