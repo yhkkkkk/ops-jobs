@@ -2,20 +2,16 @@
   <aside :class="['node-library', { 'node-library--readonly': readonly }]">
     <div class="workbench-panel-head">
       <div>
-        <h2>节点插件库</h2>
-        <p>标准插件 / 场景模板</p>
+        <h2>插件</h2>
+        <p>拖拽或点击添加到画布</p>
       </div>
     </div>
-    <n-input v-model:value="search" class="node-search" clearable placeholder="搜索执行动作或流程控制" />
-    <div class="node-library-note">
-      控制节点由流程引擎处理，不是 Agent 执行动作。
-    </div>
-    <div class="scenario-box">
+    <n-input v-model:value="search" class="node-search" clearable placeholder="搜索插件" />
+    <div v-if="!readonly" class="scenario-box">
       <div class="scenario-box__head">
-        <h3>标准场景</h3>
-        <span>模板化编排</span>
+        <h3>场景模板</h3>
       </div>
-      <button v-for="scenario in scenarios" :key="scenario.key" type="button" class="scenario-row" :disabled="readonly" @click="handleScenarioClick(scenario.key)">
+      <button v-for="scenario in scenarios" :key="scenario.key" type="button" class="scenario-row" @click="handleScenarioClick(scenario.key)">
         <strong>{{ scenario.name }}</strong>
         <em>{{ scenario.description }}</em>
       </button>
@@ -44,7 +40,7 @@
     </section>
     <n-empty v-if="groupedPlugins.every(group => group.plugins.length === 0)" description="没有匹配的节点类型" />
 
-    <div class="status-legend">
+    <div v-if="readonly" class="status-legend">
       <span><i class="legend-dot legend-dot--success" /> 成功</span>
       <span><i class="legend-dot legend-dot--warn" /> 执行/暂停</span>
       <span><i class="legend-dot legend-dot--danger" /> 失败</span>

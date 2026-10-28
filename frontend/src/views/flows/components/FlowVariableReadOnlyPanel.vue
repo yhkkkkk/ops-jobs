@@ -95,31 +95,20 @@ const formattedJson = computed(() => JSON.stringify(jsonSource.value || {}, null
 .flow-variable-readonly { min-width: 0; }
 .variable-readonly-table {
   display: grid;
-  max-height: 520px;
-  overflow: auto;
+  overflow: visible;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: #fff;
 }
-.variable-readonly-table__head,
+.variable-readonly-table__head {
+  display: none;
+}
 .variable-readonly-table__row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.1fr) minmax(120px, .8fr) minmax(160px, 1fr) minmax(160px, 1fr);
-  gap: 10px;
+  gap: 4px;
   align-items: start;
-  min-width: 720px;
+  min-width: 0;
   padding: 8px 10px;
-}
-.variable-readonly-table__head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  color: var(--app-muted);
-  background: var(--app-surface-soft);
-  border-bottom: 1px solid var(--app-border);
-  font-size: 12px;
-}
-.variable-readonly-table__row {
   border-bottom: 1px solid var(--app-border);
 }
 .variable-readonly-table__row:last-child {
@@ -128,7 +117,7 @@ const formattedJson = computed(() => JSON.stringify(jsonSource.value || {}, null
 .variable-readonly-table__row > span {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--app-fg);
+  color: var(--app-muted);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -137,34 +126,27 @@ const formattedJson = computed(() => JSON.stringify(jsonSource.value || {}, null
   gap: 3px;
   min-width: 0;
 }
-.variable-name-cell strong,
-.variable-name-cell code,
-.variable-name-cell p {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .variable-name-cell strong {
   color: var(--app-fg);
   font-size: 13px;
   line-height: 1.35;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .variable-name-cell code {
   color: var(--app-accent);
   font-family: var(--app-mono);
   font-size: 12px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .variable-name-cell p {
   margin: 0;
   color: var(--app-muted);
   font-size: 12px;
   line-height: 1.45;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .variable-json-block {
-  min-height: 260px;
+  min-height: 320px;
   max-height: 520px;
   margin: 0;
   overflow: auto;
@@ -176,11 +158,5 @@ const formattedJson = computed(() => JSON.stringify(jsonSource.value || {}, null
   font-family: var(--app-mono);
   font-size: 12px;
   line-height: 1.55;
-}
-@media (max-width: 720px) {
-  .variable-readonly-table__head,
-  .variable-readonly-table__row {
-    min-width: 640px;
-  }
 }
 </style>

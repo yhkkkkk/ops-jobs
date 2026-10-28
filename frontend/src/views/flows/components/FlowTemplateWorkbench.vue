@@ -17,25 +17,24 @@
       </div>
 
       <n-space class="flow-editor-command__actions" :size="6">
-        <n-button size="small" @click="openSettingTab('variables')">全局变量</n-button>
-        <n-button size="small" @click="openSettingTab('base')">基础信息</n-button>
-        <n-button v-if="!isReadonly" size="small" @click="openSettingTab('notify')">通知</n-button>
+        <n-button size="small" @click="openVariableDrawer">全局变量</n-button>
+        <n-button size="small" @click="openSettingDrawer('base')">流程设置</n-button>
         <n-button v-if="currentTemplate?.id" size="small" @click="scheduleDrawerVisible = true">定时调度</n-button>
         <n-button v-if="isReadonly && currentTemplate?.id" size="small" @click="router.push(`/flows/${currentTemplate.id}/edit`)">编辑</n-button>
-        <n-button v-if="isReadonly" size="small" type="primary" :disabled="!form.is_active" @click="startVisible = true">启动</n-button>
-        <n-button v-if="!isReadonly" size="small" @click="layoutNodes">排布</n-button>
+        <n-button v-if="isReadonly" size="small" type="primary" :disabled="!form.is_active" @click="startVisible = true">新建任务</n-button>
+        <n-button v-if="!isReadonly" size="small" @click="layoutNodes">自动排布</n-button>
         <n-button v-if="!isReadonly" size="small" type="primary" :loading="saving" @click="saveTemplate">保存</n-button>
       </n-space>
     </header>
 
     <n-spin :show="loading" class="flow-editor-spin">
-      <section class="flow-editor-workbench">
+      <section class="flow-editor-workbench" :class="{ 'flow-editor-workbench--inspecting': propertyDrawerVisible }">
         <aside class="flow-plugin-rail" :class="{ 'flow-plugin-rail--collapsed': pluginRailCollapsed }">
           <div class="flow-plugin-rail__toggle">
-            <n-button size="tiny" @click="pluginRailCollapsed = !pluginRailCollapsed">
+            <n-button size="tiny" quaternary @click="pluginRailCollapsed = !pluginRailCollapsed">
               <template #icon>
-                <PanelLeftClose v-if="!pluginRailCollapsed" />
-                <PanelLeftOpen v-else />
+                <PanelLeftClose v-if="!pluginRailCollapsed" :size="16" />
+                <PanelLeftOpen v-else :size="16" />
               </template>
             </n-button>
           </div>
@@ -50,22 +49,6 @@
         </aside>
 
         <main class="flow-canvas-stage">
-          <div class="flow-canvas-toolbar flow-canvas-toolbar--compact">
-            <div class="flow-canvas-toolbar__lead">
-              <h2>编排画布</h2>
-              <div class="flow-validation-strip flow-validation-strip--inline">
-                <div :class="{ ok: validation.missingRequired === 0 }"><strong>{{ validation.missingRequired }}</strong><span>必填</span></div>
-                <div :class="{ ok: validation.disconnected === 0 }"><strong>{{ validation.disconnected }}</strong><span>未连</span></div>
-                <div><strong>{{ validation.startNodes }}</strong><span>起点</span></div>
-                <div :class="{ ok: validation.terminalNodes >= 1 || nodes.length <= 1 }"><strong>{{ validation.terminalNodes }}</strong><span>终点</span></div>
-              </div>
-            </div>
-            <n-space v-if="!isReadonly" :size="6">
-              <n-button size="tiny" @click="selectFirstInvalidNode">定位问题</n-button>
-              <n-button size="tiny" type="error" :disabled="!selectedNode" @click="removeSelectedNode">删除节点</n-button>
-            </n-space>
-          </div>
-
           <div class="flow-canvas-frame" @dragover.prevent @drop.prevent="handleCanvasDrop">
             <VueFlow
               :nodes="flowNodes"
@@ -80,6 +63,7 @@
               class="ops-flow"
               @node-click="handleFlowNodeClick"
               @edge-click="handleFlowEdgeClick"
+              @pane-click="clearCanvasSelection"
               @node-drag-stop="handleNodeDragStop"
               @connect="handleConnect"
             >
@@ -100,44 +84,34 @@
               </template>
             </VueFlow>
 
+            <div class="flow-canvas-overlay">
+              <div class="flow-validation-strip flow-validation-strip--inline">
+                <div :class="{ ok: validation.missingRequired === 0 }"><strong>{{ validation.missingRequired }}</strong><span>必填</span></div>
+                <div :class="{ ok: validation.disconnected === 0 }"><strong>{{ validation.disconnected }}</strong><span>未连</span></div>
+                <div><strong>{{ validation.startNodes }}</strong><span>起点</span></div>
+                <div :class="{ ok: validation.terminalNodes >= 1 || nodes.length <= 1 }"><strong>{{ validation.terminalNodes }}</strong><span>终点</span></div>
+              </div>
+              <n-space v-if="!isReadonly" :size="6">
+                <n-button size="tiny" secondary @click="selectFirstInvalidNode">定位问题</n-button>
+                <n-button size="tiny" secondary type="error" :disabled="!selectedNode" @click="removeSelectedNode">删除节点</n-button>
+              </n-space>
+            </div>
+
             <div v-if="nodes.length === 0" class="flow-canvas-empty">
-              <GitBranch  />
-              <p>{{ isReadonly ? '当前模板暂无节点' : '从左侧插件库添加节点' }}</p>
+              <GitBranch />
+              <p>{{ isReadonly ? '当前模板暂无节点' : '从左侧插件库拖入或点击添加节点' }}</p>
             </div>
           </div>
         </main>
 
-        <FlowSettingPanel
-          v-model:collapsed="settingPanelCollapsed"
-          :readonly="isReadonly"
-          :name="form.name"
-          :description="form.description"
-          :category="form.category"
-          :is-active="form.is_active"
-          :is-public="form.is_public"
-          :variables="form.variables"
-          :notify-config="form.notify_config"
-          :initial-tab="settingInitialTab"
-          @update:name="form.name = $event"
-          @update:description="form.description = $event"
-          @update:category="form.category = $event"
-          @update:is-active="form.is_active = $event"
-          @update:is-public="form.is_public = $event"
-          @update:variables="form.variables = $event"
-          @update:notify-config="form.notify_config = $event"
-        />
-      </section>
-    </n-spin>
-
-    <n-drawer
-      v-model:show="propertyDrawerVisible"
-      :width="propertyDrawerWidth"
-      placement="right"
-     
-      class="flow-property-drawer"
-      @cancel="closePropertyDrawer"
-    ><n-drawer-content>
-      <template #header>节点配置</template>
+        <aside v-show="propertyDrawerVisible" class="flow-inspector-rail">
+          <div class="flow-inspector-rail__head">
+            <div>
+              <strong>节点配置</strong>
+              <span v-if="selectedNode">{{ flowNodeTypeText(selectedNode.node_type) }}</span>
+            </div>
+            <n-button size="tiny" quaternary @click="clearCanvasSelection">收起</n-button>
+          </div>
       <div v-if="selectedNode" class="property-panel">
         <div class="property-panel-head">
           <div>
@@ -145,7 +119,7 @@
             <p>{{ flowNodeTypeText(selectedNode.node_type) }}</p>
           </div>
           <n-button v-if="!isReadonly" size="small" @click="duplicateSelectedNode">
-            <template #icon><Copy  /></template>
+            <template #icon><Copy /></template>
             复制节点
           </n-button>
         </div>
@@ -281,7 +255,7 @@
                     class="script-monaco-editor"
                     :language="scriptEditorLanguage"
                     theme="vs-dark"
-                    :height="560"
+                    :height="360"
                     :readonly="isReadonly"
                     :auto-validate="true"
                   />
@@ -501,8 +475,56 @@
           </template>
         </n-form>
       </div>
-      <n-empty v-else description="请选择画布节点" />
-    </n-drawer-content></n-drawer>
+      <n-empty v-else description="点击画布节点查看配置" />
+        </aside>
+      </section>
+    </n-spin>
+
+    <n-drawer
+      v-model:show="variableDrawerVisible"
+      :width="variableDrawerWidth"
+      placement="right"
+      class="flow-variable-drawer"
+    >
+      <n-drawer-content title="全局变量" :native-scrollbar="false" closable>
+        <FlowVariableEditor
+          v-if="!isReadonly"
+          :model-value="form.variables"
+          @update:model-value="form.variables = $event"
+        />
+        <FlowVariableReadOnlyPanel
+          v-else
+          :variables="form.variables"
+          empty-text="暂无全局变量"
+        />
+      </n-drawer-content>
+    </n-drawer>
+
+    <n-drawer
+      v-model:show="settingDrawerVisible"
+      :width="settingDrawerWidth"
+      placement="right"
+      class="flow-setting-drawer"
+    >
+      <n-drawer-content title="流程设置" :native-scrollbar="false" closable>
+        <FlowSettingPanel
+          :readonly="isReadonly"
+          :name="form.name"
+          :description="form.description"
+          :category="form.category"
+          :is-active="form.is_active"
+          :is-public="form.is_public"
+          :notify-config="form.notify_config"
+          :initial-tab="settingInitialTab"
+          @update:name="form.name = $event"
+          @update:description="form.description = $event"
+          @update:category="form.category = $event"
+          @update:is-active="form.is_active = $event"
+          @update:is-public="form.is_public = $event"
+          @update:notify-config="form.notify_config = $event"
+        />
+      </n-drawer-content>
+    </n-drawer>
 
     <FlowEdgeConditionDrawer
       v-model:visible="edgeConditionVisible"
@@ -540,6 +562,8 @@ import FlowNodeLibraryPanel, { type FlowNodePluginOption, type FlowScenarioOptio
 import FlowScheduleDrawer from './FlowScheduleDrawer.vue'
 import FlowStartModal from './FlowStartModal.vue'
 import FlowSettingPanel from './FlowSettingPanel.vue'
+import FlowVariableEditor from './FlowVariableEditor.vue'
+import FlowVariableReadOnlyPanel from './FlowVariableReadOnlyPanel.vue'
 import FlowEdgeConditionDrawer from './FlowEdgeConditionDrawer.vue'
 import { useMessage, NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NDropdown, NEmpty, NForm, NFormItem, NInput, NInputNumber, NRadio, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NSwitch } from 'naive-ui'
 import {
@@ -572,7 +596,6 @@ const props = withDefaults(defineProps<{
   mode: 'edit',
 })
 
-const FLOW_PROPERTY_DRAWER_WIDTH = '760px'
 const route = useRoute()
 const router = useRouter()
 const isReadonly = computed(() => props.mode === 'readonly')
@@ -582,12 +605,16 @@ const saving = ref(false)
 const startVisible = ref(false)
 const scheduleDrawerVisible = ref(false)
 const propertyDrawerVisible = ref(false)
-const settingPanelCollapsed = ref(false)
-const settingInitialTab = ref<'variables' | 'base' | 'notify'>('variables')
+const variableDrawerVisible = ref(false)
+const settingDrawerVisible = ref(false)
+const settingInitialTab = ref<'base' | 'notify'>('base')
 const edgeConditionVisible = ref(false)
 const selectedEdgeKey = ref('')
 const pluginRailCollapsed = ref(false)
-const propertyDrawerWidth = computed(() => window.innerWidth < 1180 ? '100vw' : FLOW_PROPERTY_DRAWER_WIDTH)
+const FLOW_VARIABLE_DRAWER_WIDTH = '960px'
+const FLOW_SETTING_DRAWER_WIDTH = '440px'
+const variableDrawerWidth = computed(() => window.innerWidth < 1100 ? '100vw' : FLOW_VARIABLE_DRAWER_WIDTH)
+const settingDrawerWidth = computed(() => window.innerWidth < 720 ? '100vw' : FLOW_SETTING_DRAWER_WIDTH)
 const selectedUuid = ref('')
 const currentTemplate = ref<FlowTemplate | null>(null)
 const executionPlans = ref<ExecutionPlan[]>([])
@@ -734,9 +761,12 @@ const selectedNodeOutputHooks = computed(() => {
   const type = selectedNode.value?.node_type || ''
   return FLOW_NODE_OUTPUT_HOOKS[type] || []
 })
-const openSettingTab = (tab: 'variables' | 'base' | 'notify') => {
+const openVariableDrawer = () => {
+  variableDrawerVisible.value = true
+}
+const openSettingDrawer = (tab: 'base' | 'notify' = 'base') => {
   settingInitialTab.value = tab
-  settingPanelCollapsed.value = false
+  settingDrawerVisible.value = true
 }
 const isOutputHooked = (field: string) => {
   if (!selectedNode.value) return false
@@ -787,6 +817,11 @@ const openPropertyDrawer = () => {
 }
 const closePropertyDrawer = () => {
   propertyDrawerVisible.value = false
+}
+const clearCanvasSelection = () => {
+  selectedUuid.value = ''
+  selectedEdgeKey.value = ''
+  closePropertyDrawer()
 }
 const handleFlowNodeClick = ({ node }: { node: Node }) => {
   selectedUuid.value = node.id
@@ -1162,8 +1197,8 @@ onMounted(loadData)
 }
 .flow-editor-workbench {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 360px);
-  gap: 8px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
   flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
@@ -1171,9 +1206,12 @@ onMounted(loadData)
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
 }
-.flow-editor-workbench:has(.flow-setting-panel--collapsed) {
-  grid-template-columns: 200px minmax(0, 1fr) 44px;
+.flow-editor-workbench--inspecting {
+  grid-template-columns: 220px minmax(0, 1fr) minmax(360px, 420px);
 }
 .output-hook-list {
   display: grid;
@@ -1187,64 +1225,36 @@ onMounted(loadData)
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-sm);
+  background: #fafbfc;
+  border-right: 1px solid var(--app-border);
 }
 .flow-plugin-rail :deep(.node-library) {
   flex: 1 1 auto;
   min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .flow-plugin-rail--collapsed {
-  width: 42px;
+  width: 40px;
 }
 .flow-plugin-rail__toggle {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 6px;
+  right: 6px;
   z-index: 4;
 }
 .flow-plugin-rail--collapsed .flow-plugin-rail__toggle {
-  left: 7px;
+  left: 6px;
   right: auto;
 }
 .flow-canvas-stage {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 8px;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-sm);
-}
-.flow-canvas-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-.flow-canvas-toolbar__lead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.flow-canvas-toolbar h2 {
-  margin: 0;
-  color: var(--app-fg);
-  font-size: 13px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-.flow-validation-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  background: #f7f9fc;
 }
 .flow-validation-strip--inline {
   display: flex;
@@ -1258,14 +1268,14 @@ onMounted(loadData)
   min-width: 0;
   padding: 2px 6px;
   color: var(--app-warn);
-  background: var(--app-warn-soft);
-  border: 1px solid color-mix(in srgb, var(--app-warn) 20%, transparent);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid color-mix(in srgb, var(--app-warn) 25%, transparent);
   border-radius: var(--app-radius-sm);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 .flow-validation-strip div.ok {
   color: var(--app-success);
-  background: var(--app-success-soft);
-  border-color: color-mix(in srgb, var(--app-success) 20%, transparent);
+  border-color: color-mix(in srgb, var(--app-success) 25%, transparent);
 }
 .flow-validation-strip strong {
   font-family: var(--app-mono);
@@ -1278,13 +1288,61 @@ onMounted(loadData)
 }
 .flow-canvas-frame {
   position: relative;
+  flex: 1 1 auto;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #f7f9fc;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-sm);
+}
+.flow-canvas-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: calc(100% - 20px);
+  pointer-events: none;
+}
+.flow-canvas-overlay > * {
+  pointer-events: auto;
+}
+.flow-inspector-rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  border-left: 1px solid var(--app-border);
+}
+.flow-inspector-rail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+.flow-inspector-rail__head strong {
+  display: block;
+  color: var(--app-fg);
+  font-size: 13px;
+}
+.flow-inspector-rail__head span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.flow-inspector-rail .property-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
 }
 .ops-flow {
   width: 100%;
@@ -1369,15 +1427,25 @@ onMounted(loadData)
   color: var(--app-accent);
   font-size: 30px;
 }
-.flow-property-drawer :deep(.arco-drawer),
-.flow-variable-drawer :deep(.arco-drawer) {
+.flow-property-drawer,
+.flow-variable-drawer,
+.flow-setting-drawer {
   max-width: 100vw;
 }
-.flow-property-drawer :deep(.arco-drawer-body),
-.flow-variable-drawer :deep(.arco-drawer-body) {
+.flow-variable-drawer :deep(.n-drawer-body-content-wrapper),
+.flow-setting-drawer :deep(.n-drawer-body-content-wrapper) {
   min-width: 0;
-  padding: 12px;
-  overflow-x: hidden;
+  height: 100%;
+}
+.flow-variable-drawer :deep(.n-drawer-body),
+.flow-setting-drawer :deep(.n-drawer-body) {
+  min-width: 0;
+  height: 100%;
+  padding: 12px 16px 16px;
+  overflow: auto;
+}
+.flow-variable-drawer :deep(.flow-variable-editor) {
+  min-height: calc(100vh - 120px);
 }
 .property-panel,
 .node-form,
@@ -1565,13 +1633,17 @@ onMounted(loadData)
 }
 @media (max-width: 1180px) {
   .flow-editor-workbench {
-    grid-template-columns: 180px minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .flow-editor-workbench--inspecting {
+    grid-template-columns: 180px minmax(0, 1fr) minmax(300px, 360px);
   }
 }
 @media (max-width: 780px) {
-  .flow-editor-workbench {
+  .flow-editor-workbench,
+  .flow-editor-workbench--inspecting {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 28vh) minmax(0, 1fr) minmax(220px, 36vh);
+    grid-template-rows: minmax(140px, 22vh) minmax(0, 1fr) minmax(240px, 40vh);
   }
   .flow-plugin-rail {
     min-height: 0;

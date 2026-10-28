@@ -17,11 +17,11 @@ describe('flow variable read only panel', () => {
     expect(source).not.toContain('variable-readonly-row__meta')
   })
 
-  it('is used by the setting panel and run detail views', () => {
-    const settingPanel = readFileSync(resolve(testDir, '../components/FlowSettingPanel.vue'), 'utf8')
+  it('is used by the template workbench and run detail views', () => {
+    const workbench = readFileSync(resolve(testDir, '../components/FlowTemplateWorkbench.vue'), 'utf8')
     const runDetail = readFileSync(resolve(testDir, '../run-detail.vue'), 'utf8')
 
-    expect(settingPanel).toContain('<FlowVariableReadOnlyPanel')
+    expect(workbench).toContain('<FlowVariableReadOnlyPanel')
     expect(runDetail).toContain('<FlowVariableReadOnlyPanel')
   })
 })

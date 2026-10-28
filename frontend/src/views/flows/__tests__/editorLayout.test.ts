@@ -9,23 +9,24 @@ const workbenchSource = readFileSync(resolve(testDir, '../components/FlowTemplat
 const variableEditorSource = readFileSync(resolve(testDir, '../components/FlowVariableEditor.vue'), 'utf8')
 
 describe('flow editor layout', () => {
-  it('keeps node properties in a drawer and settings in a fixed right panel', () => {
+  it('keeps node properties in a docked inspector and globals/settings in drawers', () => {
     expect(editorSource).toContain('<FlowTemplateWorkbench mode="edit"')
-    expect(workbenchSource).toContain('<n-drawer')
-    expect(workbenchSource).toContain('v-model:show="propertyDrawerVisible"')
-    expect(workbenchSource).toContain('@cancel="closePropertyDrawer"')
-    expect(workbenchSource).toContain("const FLOW_PROPERTY_DRAWER_WIDTH = '760px'")
+    expect(workbenchSource).toContain('class="flow-inspector-rail"')
+    expect(workbenchSource).toContain('propertyDrawerVisible')
+    expect(workbenchSource).toContain('flow-editor-workbench--inspecting')
     expect(workbenchSource).toContain('<FlowSettingPanel')
+    expect(workbenchSource).toContain('variableDrawerVisible')
+    expect(workbenchSource).toContain('<FlowVariableEditor')
     expect(workbenchSource).toContain('<FlowEdgeConditionDrawer')
-    expect(workbenchSource).not.toContain('<aside v-if="selectedNode" class="property-panel">')
+    expect(workbenchSource).not.toContain('v-model:show="propertyDrawerVisible"')
     expect(workbenchSource).not.toContain('editor-workbench--no-selection')
-    expect(workbenchSource).toMatch(/grid-template-columns:\s*200px\s+minmax\(0,\s*1fr\)\s+minmax\(280px,\s*360px\);/)
+    expect(workbenchSource).toMatch(/grid-template-columns:\s*220px\s+minmax\(0,\s*1fr\);/)
   })
 
   it('keeps script node configuration close to the job step editor pattern', () => {
     expect(workbenchSource).toContain('<n-radio-group v-model:value="selectedNode.config.script_type"')
     expect(workbenchSource).toContain('@click="insertSelectedScriptExample"')
-    expect(workbenchSource).toContain(':height="560"')
+    expect(workbenchSource).toContain(':height="360"')
     expect(workbenchSource).toContain('class="node-config-hint"')
   })
 

@@ -3,25 +3,17 @@
     <div class="variable-workspace">
       <section class="variable-list-pane">
         <div class="variable-toolbar">
-          <div>
-            <strong>全局变量</strong>
-            <span>节点与分支用 ${KEY} 引用；「执行时显示」的变量会出现在新建任务表单。</span>
+          <div class="variable-toolbar__head">
+            <strong>自定义变量</strong>
+            <n-button size="tiny" type="primary" @click="addVariable">
+              <template #icon><Plus :size="14" /></template>
+              新增变量
+            </n-button>
           </div>
-          <n-button size="small" type="primary" @click="addVariable">
-            <template #icon><Plus /></template>
-            新增变量
-          </n-button>
+          <p class="variable-toolbar__hint">节点与分支用 ${KEY} 引用；「执行时显示」会出现在新建任务表单。</p>
         </div>
 
         <div class="variable-table">
-          <div class="variable-table__head">
-            <span>名称</span>
-            <span>KEY</span>
-            <span>类型</span>
-            <span>来源</span>
-            <span>显示</span>
-            <span>操作</span>
-          </div>
           <n-empty v-if="draft.length === 0" description="暂无自定义变量，点击上方新增" />
           <button
             v-for="(item, index) in draft"
@@ -30,13 +22,17 @@
             :class="['variable-table__row', { 'variable-table__row--active': selectedId === item.id }]"
             @click="selectedId = item.id"
           >
-            <span class="ellipsis">{{ item.name || '未命名' }}</span>
-            <code class="ellipsis">{{ variableReference(item.key) }}</code>
-            <span>{{ typeLabel(item.type) }}</span>
-            <span>{{ sourceLabel(item.source_type) }}</span>
-            <span>{{ item.show_on_start ? '显示' : '隐藏' }}</span>
+            <div class="variable-table__identity">
+              <strong class="ellipsis">{{ item.name || '未命名' }}</strong>
+              <code class="ellipsis">{{ variableReference(item.key) }}</code>
+            </div>
+            <div class="variable-table__tags">
+              <span>{{ typeLabel(item.type) }}</span>
+              <span>{{ sourceLabel(item.source_type) }}</span>
+              <span>{{ item.show_on_start ? '显示' : '隐藏' }}</span>
+            </div>
             <span class="variable-row-actions" @click.stop>
-              <n-button text size="tiny" @click="copyReference(item.key)">复制 KEY</n-button>
+              <n-button text size="tiny" @click="copyReference(item.key)">复制</n-button>
               <n-button text size="tiny" type="error" @click="removeVariable(index)">删除</n-button>
             </span>
           </button>
@@ -45,14 +41,14 @@
         <div class="system-variable-block">
           <div class="system-variable-block__head">
             <strong>系统内置变量</strong>
-            <span>任务启动自动注入，不可编辑</span>
+            <span>任务启动自动注入，只读</span>
           </div>
           <div
             v-for="hint in systemHints"
             :key="hint.key"
             class="system-variable-row"
           >
-            <div>
+            <div class="system-variable-row__text">
               <strong>{{ hint.name }}</strong>
               <span>{{ hint.description }}</span>
             </div>
@@ -66,7 +62,7 @@
 
       <section class="variable-edit-pane">
         <template v-if="selected">
-          <h3>基础信息</h3>
+          <h3>编辑变量</h3>
           <n-form label-placement="left" label-width="88" size="small">
             <n-form-item label="名称" required>
               <n-input v-model:value="selected.name" placeholder="变量显示名称" @update:value="emitChange" />
@@ -163,7 +159,7 @@
             </n-form-item>
           </n-form>
         </template>
-        <n-empty v-else description="选中左侧变量进行编辑，或新增变量" />
+        <n-empty v-else description="选中左侧变量进行编辑，或点击新增" />
       </section>
     </div>
   </div>
@@ -370,24 +366,31 @@ watch(() => props.modelValue, value => {
 
 <style scoped>
 .flow-variable-editor {
+  height: 100%;
+  min-width: 0;
   min-height: 0;
 }
 .variable-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 12px;
+  height: 100%;
   min-height: 520px;
+  min-width: 0;
 }
 .variable-list-pane,
 .variable-edit-pane {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   padding: 12px;
+  overflow: auto;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: #fff;
 }
 .variable-edit-pane {
-  overflow: auto;
   background: var(--app-surface-soft, #f7f8fa);
 }
 .variable-edit-pane h3 {
@@ -399,18 +402,23 @@ watch(() => props.modelValue, value => {
   margin-top: 16px;
 }
 .variable-toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
+  display: grid;
+  gap: 6px;
   margin-bottom: 10px;
 }
-.variable-toolbar strong {
-  display: block;
+.variable-toolbar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.variable-toolbar__head strong {
   color: var(--app-fg);
   font-size: 14px;
 }
-.variable-toolbar span {
+.variable-toolbar__hint {
+  margin: 0;
   color: var(--app-muted);
   font-size: 12px;
   line-height: 1.45;
@@ -423,30 +431,19 @@ watch(() => props.modelValue, value => {
   border-radius: var(--app-radius-sm);
   overflow: hidden;
 }
-.variable-table__head,
 .variable-table__row {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) minmax(100px, 1.1fr) 64px 64px 44px 100px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
   align-items: center;
-  padding: 0 8px;
-  min-height: 40px;
-  text-align: left;
-  font-size: 12px;
-}
-.variable-table__head {
-  color: var(--app-muted);
-  background: var(--app-surface-soft, #f7f8fa);
-  border-bottom: 1px solid var(--app-border);
-  font-size: 12px;
-  font-weight: 600;
-}
-.variable-table__row {
   width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
   border: 0;
   border-bottom: 1px solid var(--app-border);
   background: #fff;
   color: var(--app-fg);
+  text-align: left;
   cursor: pointer;
   font: inherit;
 }
@@ -457,15 +454,43 @@ watch(() => props.modelValue, value => {
 .variable-table__row--active {
   background: rgba(58, 132, 255, 0.08);
 }
-.variable-table__row code {
+.variable-table__identity {
+  grid-column: 1 / 2;
+  min-width: 0;
+}
+.variable-table__identity strong {
+  display: block;
+  color: var(--app-fg);
+  font-size: 13px;
+}
+.variable-table__identity code {
+  display: block;
   color: var(--app-accent);
   font-family: var(--app-mono);
   font-size: 12px;
 }
-.variable-row-actions {
+.variable-table__tags {
+  grid-column: 1 / 2;
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.variable-table__tags span {
+  padding: 0 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-soft, #f7f8fa);
+}
+.variable-row-actions {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
 }
 .ellipsis {
   overflow: hidden;
@@ -487,13 +512,17 @@ watch(() => props.modelValue, value => {
 }
 .system-variable-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
   gap: 10px;
   align-items: center;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: #fff;
+}
+.system-variable-row__text {
+  min-width: 0;
 }
 .system-variable-row strong {
   display: block;
@@ -501,15 +530,19 @@ watch(() => props.modelValue, value => {
   font-size: 13px;
 }
 .system-variable-row span {
+  display: block;
   color: var(--app-muted);
   font-size: 12px;
+  line-height: 1.4;
 }
 .variable-ref-cell {
   display: grid;
   gap: 2px;
+  justify-items: end;
   min-width: 0;
 }
 .variable-ref-cell code {
+  max-width: 100%;
   overflow: hidden;
   color: var(--app-accent);
   font-family: var(--app-mono);
@@ -517,7 +550,7 @@ watch(() => props.modelValue, value => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .variable-workspace {
     grid-template-columns: 1fr;
     min-height: 0;

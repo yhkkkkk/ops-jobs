@@ -30,7 +30,7 @@ describe('rewritten flows frontend contract', () => {
     expect(indexSource).not.toContain('agent_server_id')
   })
 
-  it('keeps editing as plugin rail plus canvas plus drawer inspector', () => {
+  it('keeps editing as plugin rail plus canvas plus docked inspector', () => {
     const editorSource = source('editor.vue')
     const workbenchSource = source('components/FlowTemplateWorkbench.vue')
     const settingSource = source('components/FlowSettingPanel.vue')
@@ -38,10 +38,12 @@ describe('rewritten flows frontend contract', () => {
     expect(workbenchSource).toContain('flow-editor-shell')
     expect(workbenchSource).toContain('class="flow-plugin-rail"')
     expect(workbenchSource).toContain('class="flow-canvas-stage"')
-    expect(workbenchSource).toContain('<n-drawer')
-    expect(workbenchSource).toContain('v-model:show="propertyDrawerVisible"')
+    expect(workbenchSource).toContain('class="flow-inspector-rail"')
+    expect(workbenchSource).toContain('propertyDrawerVisible')
     expect(workbenchSource).toContain('<FlowSettingPanel')
-    expect(settingSource).toContain('<FlowVariableEditor')
+    expect(workbenchSource).toContain('<FlowVariableEditor')
+    expect(workbenchSource).toContain('variableDrawerVisible')
+    expect(settingSource).not.toContain('<FlowVariableEditor')
     expect(workbenchSource).toContain('<ScriptEditorWithValidation')
     expect(workbenchSource).toContain('execution_parameter_bindings')
     expect(workbenchSource).not.toContain('状态预览')
@@ -62,7 +64,7 @@ describe('rewritten flows frontend contract', () => {
     expect(workbenchSource).toContain('<VueFlow')
     expect(workbenchSource).toContain(':nodes-draggable="!isReadonly"')
     expect(workbenchSource).toContain(':nodes-connectable="!isReadonly"')
-    expect(source('components/FlowSettingPanel.vue')).toContain('FlowVariableReadOnlyPanel')
+    expect(workbenchSource).toContain('FlowVariableReadOnlyPanel')
     expect(workbenchSource).toContain('flowNodeConfigDisplayRows')
     expect(detailSource).not.toContain('readonly-topology-stage')
     expect(detailSource).not.toContain('readonly-flow-workspace')
